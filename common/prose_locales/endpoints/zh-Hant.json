@@ -2470,5 +2470,9 @@
   "endpoints.route./admin-api/malware-scanning/:action.name": {
     "en": "5fea7fc18a3a67b9",
     "text": "測試惡意軟體掃描器"
+  },
+  "endpoints.route./admin-api/audit/integrity.name": {
+    "en": "79de5da36fba17bd",
+    "text": "檢查稽核日誌完整性"
   }
 }

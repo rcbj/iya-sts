@@ -207,6 +207,222 @@
     "en": "034b8666bc7feb89",
     "text": "CORS 视为本部署自身的源——协议方案、主机和端口，不带路径——以逗号分隔，与本服务监听的地址、global.publicBaseUrl 和嵌入式调试器并列。此处列出的源可以读取本服务给浏览器的每个应答，无论请求指定的是哪个客户端。留空（默认）不添加任何源：其他每个源只有在某个应用将其列入 appCorsOrigin 时才被允许。不是源的值会被忽略并记录日志，绝不会被放宽。"
   },
+  "security.fileRoots|label": {
+    "en": "7f144086ba380c16",
+    "text": "可读取指定文件的目录"
+  },
+  "security.fileRoots|description": {
+    "en": "a378a866f9204d53",
+    "text": "仅限产品模式。以逗号分隔的绝对目录列表。管理员在设置或请求中指定的文件（CA 文件、SPIFFE 令牌或密钥文件、Sigstore 文件、邮件证书或密钥）仅当其跟随符号链接后的真实路径位于其中某个目录内时才读取。此项在环境或 appconfig 文件中设置，不能通过控制台或 API 更改，因此管理员的请求无法扩大其范围。警告：添加 / 或其他宽泛目录将不满足 ASVS 5.0.0 要求 5.3.2。"
+  },
+  "security.fileRoots|restartReason": {
+    "en": "65fd8c7be0cfb5d3",
+    "text": "它限定了管理员的请求可以指定的内容，因此任何此类请求都不得扩大它"
+  },
+  "security.allowUnscopedPeople|label": {
+    "en": "502e12a150357d63",
+    "text": "允许无角色的人员访问 SCIM 和 Shared Signals"
+  },
+  "security.allowUnscopedPeople|description": {
+    "en": "2bf5565da47abb33",
+    "text": "仅限产品模式。默认关闭时，通过不携带作用域的方案（如 HTTP Basic 或会话 Cookie）向 /scim/v2 或 Shared Signals 进行身份验证的人员，需要 Admin Read 才能读取、Admin Write 才能写入。开启时，任何已通过身份验证的人员均可。警告：开启后不满足 ASVS 5.0.0 要求 8.2.1 和 8.2.2，因为任何人都可更改任何账户。请改用 OAuth 作用域供配置客户端使用。"
+  },
+  "admin.logBootstrapPassword|label": {
+    "en": "02a3293594ba0523",
+    "text": "记录生成的引导密码"
+  },
+  "admin.logBootstrapPassword|description": {
+    "en": "577ec7c125546cdb",
+    "text": "仅限产品模式。默认关闭时，为首位管理员生成的密码写入 persistence.dataDir 中仅此服务可读的 bootstrap-admin-password 文件，日志说明位置。开启时写入服务日志。警告：开启后不满足 ASVS 5.0.0 要求 16.2.5，因为凭据进入了日志。"
+  },
+  "oauth2.allowConfidentialWithoutPkce|label": {
+    "en": "c33a0a31a1d623b1",
+    "text": "允许机密客户端省略 PKCE"
+  },
+  "oauth2.allowConfidentialWithoutPkce|description": {
+    "en": "87599e0feb7aa8e3",
+    "text": "仅限产品模式。默认关闭时，任何客户端不带 code_challenge 的授权请求都会被拒绝。开启时，机密客户端可以省略，请求仅被记录。警告：开启后不满足 ASVS 5.0.0 要求 10.4.6。"
+  },
+  "security.passwordContextWords|label": {
+    "en": "6951c2a585da99f7",
+    "text": "密码不得包含的词"
+  },
+  "security.passwordContextWords|description": {
+    "en": "fac6e61cb1da6802",
+    "text": "新密码不得包含的其他词，例如组织、产品、项目或部门名称。以逗号分隔。服务名称以及信任域的名称和域名始终被拒绝。词至少需要四个字母；检查会忽略大小写和常见字符替换（如用 0 代替 o）。"
+  },
+  "oauth2.refreshTokenMaxChainS|label": {
+    "en": "fd72d81940ff8ab9",
+    "text": "刷新令牌链的最长持续时间（秒）"
+  },
+  "oauth2.refreshTokenMaxChainS|description": {
+    "en": "48b5a77555c81355",
+    "text": "通过刷新令牌续期的授权的绝对上限，从第一个令牌开始计算。超过后用户须重新登录，无论客户端刷新多少次。0 表示无限制，这是开发模式的默认值。产品模式默认 30 天。"
+  },
+  "federation.allowUntypedLogoutToken|label": {
+    "en": "6ef2596a6d379cfa",
+    "text": "接受无显式类型的合作方注销令牌"
+  },
+  "federation.allowUntypedLogoutToken|description": {
+    "en": "5d58103a9e255bdf",
+    "text": "默认关闭时，产品模式仅接受类型为 logout+jwt 的合作方注销令牌。开启后，也接受类型为 jwt 或无类型的令牌，适用于不发送类型的合作方。OpenID 规范仅建议使用该类型。"
+  },
+  "account.recentAuthMinutes|label": {
+    "en": "dfa5936497901458",
+    "text": "更改第二因素所需的登录新近程度（分钟）"
+  },
+  "account.recentAuthMinutes|description": {
+    "en": "50ed3d8089739a00",
+    "text": "用户在门户更改第二因素、恢复代码、通行密钥或电子邮件地址时，必须在此分钟数内登录过，否则须先重新登录。0 表示不要求，这是开发模式的默认值。产品模式默认 15。"
+  },
+  "persistence.allowDefaultDatabasePassword|label": {
+    "en": "24634837693652d6",
+    "text": "在产品模式下允许默认数据库密码"
+  },
+  "persistence.allowDefaultDatabasePassword|description": {
+    "en": "b7b661b267c62aa2",
+    "text": "默认关闭时，产品模式不会使用众所周知的数据库密码（如随附 compose 文件的 sts_app）或与用户名相同的密码启动。开启后仍会启动。仅用于测试环境。"
+  },
+  "authn.sessionsEndedBefore|label": {
+    "en": "174234a42e8c3da2",
+    "text": "在此时刻之前开始的会话已结束（毫秒）"
+  },
+  "authn.sessionsEndedBefore|description": {
+    "en": "c11569be4873c007",
+    "text": "由“会话”页面上的“结束所有会话”设置。在此时刻（自 1970 年起的毫秒数）之前开始的登录会话已结束。0 表示没有。"
+  },
+  "oauth2.consentAlwaysForPublicClients|label": {
+    "en": "b2f544167d0f1309",
+    "text": "始终征求公共客户端的同意"
+  },
+  "oauth2.consentAlwaysForPublicClients|description": {
+    "en": "147cce1b272c536f",
+    "text": "公共客户端无法证明其身份，因此每次请求访问时都会询问用户，无论之前如何回答。本服务自身的应用程序除外。产品模式默认开启。"
+  },
+  "federation.maxPartnerAuthAgeS|label": {
+    "en": "7994b4352961110b",
+    "text": "接受的最早合作方身份验证（秒）"
+  },
+  "federation.maxPartnerAuthAgeS|description": {
+    "en": "c67a42c14975e328",
+    "text": "如果合作方根据 auth_time 或 AuthnInstant 表明用户的身份验证早于此时长，则拒绝联合登录。设置限制后，未说明时间的合作方将被拒绝。默认 0 表示不检查。"
+  },
+  "security.requestsPerAddressPerMinute|label": {
+    "en": "6e933f6a681d3968",
+    "text": "每个地址每分钟允许的请求数"
+  },
+  "security.requestsPerAddressPerMinute|description": {
+    "en": "7324a27b3b761012",
+    "text": "每个进程对单个地址所有请求的上限。这是防滥用的措施，与凭据尝试限制不同。0 表示无上限，这是开发模式的默认值。产品模式默认 6000。在代理后面时，请设置 global.trustedProxies 以正确读取地址。"
+  },
+  "audit.allowPlainSyslog|label": {
+    "en": "1401e9d7380768e3",
+    "text": "在产品模式下允许明文 syslog 审计导出"
+  },
+  "audit.allowPlainSyslog|description": {
+    "en": "cc8beb8a652a3752",
+    "text": "默认关闭时，产品模式的 syslog 审计目标仅接受 tls 传输。开启后也接受 tcp 和 udp，审计日志将以未加密方式通过网络。仅在可信网络中使用。"
+  },
+  "security.outboundAllowedHosts|label": {
+    "en": "48109be8cdfd0972",
+    "text": "此服务可连接的主机"
+  },
+  "security.outboundAllowedHosts|description": {
+    "en": "f1d0447a0b56f74e",
+    "text": "如果设置，合作方、客户端或调用方可影响的出站请求只能访问这些主机。以逗号分隔：精确名称，或以点开头表示整个域，如 .example.com。默认为空，允许任何公共主机。产品模式下始终拒绝内部地址。"
+  },
+  "security.hstsIncludeSubDomains|label": {
+    "en": "1ac0e6ab8c38092f",
+    "text": "将 HSTS 应用于子域"
+  },
+  "security.hstsIncludeSubDomains|description": {
+    "en": "26b0298f1a2bd460",
+    "text": "向 Strict-Transport-Security 添加 includeSubDomains，使浏览器对此服务主机名的所有子域也使用 HTTPS。产品模式默认开启。如果某个子域仍需通过纯 HTTP 响应，请关闭。"
+  },
+  "federation.allowAssertionWithoutAudience|label": {
+    "en": "ed95d7ca4d1f2354",
+    "text": "接受未指定受众的断言"
+  },
+  "federation.allowAssertionWithoutAudience|description": {
+    "en": "af262d18fe96916b",
+    "text": "默认关闭时，产品模式拒绝合作方不含受众限制的 SAML 1.1 或 WS-Federation 断言，因为没有信息表明它是发给此服务的。开启后，会接受并记录警告，适用于无法发送受众限制的合作方。"
+  },
+  "malwareScan.enabled|label": {
+    "en": "d0834826933c0682",
+    "text": "扫描文件中的恶意软件"
+  },
+  "malwareScan.enabled|description": {
+    "en": "bb893f03ed99dd0c",
+    "text": "默认关闭时不扫描任何内容。开启后，每张头像、徽标、从联合身份合作方复制的照片以及上传的风险数据集都会先发送到 malwareScan.url 中的 ICAP 服务，如果服务标记或无法应答，则拒绝。"
+  },
+  "malwareScan.url|label": {
+    "en": "08acec5549f532ea",
+    "text": "ICAP 服务地址"
+  },
+  "malwareScan.url|description": {
+    "en": "03fc5c265603704f",
+    "text": "用于扫描的服务，格式为 icap://主机:端口/服务 或 icaps://主机:端口/服务（RFC 3507）。可使用任何提供 ICAP 服务的防病毒产品。"
+  },
+  "malwareScan.timeoutMs|label": {
+    "en": "e616aee1107e9402",
+    "text": "扫描超时（毫秒）"
+  },
+  "malwareScan.timeoutMs|description": {
+    "en": "59a643baa5f14b91",
+    "text": "等待服务的时长。大文件每 MiB 额外增加一秒。"
+  },
+  "malwareScan.caFile|label": {
+    "en": "15e0140ac004309d",
+    "text": "icaps 服务的 CA 文件"
+  },
+  "malwareScan.caFile|description": {
+    "en": "5ab91aec22f02c61",
+    "text": "icaps 服务可链接到的 CA 证书 PEM 文件，作为公共根证书之外的补充。受 security.fileRoots 限制。"
+  },
+  "malwareScan.allowCleartext|label": {
+    "en": "5538ba47a0743bd0",
+    "text": "在产品模式下允许明文 ICAP"
+  },
+  "malwareScan.allowCleartext|description": {
+    "en": "c00ee2f1e34722ff",
+    "text": "默认关闭时，产品模式拒绝 icap:// 地址，在设置 icaps:// 地址之前不接受任何文件。开启后，文件可能以未加密方式到达扫描器。仅在可信网络中使用。"
+  },
+  "authn.allowOptionalSecondFactor|label": {
+    "en": "54d27fb9494e1370",
+    "text": "允许不使用第二因素登录"
+  },
+  "authn.allowOptionalSecondFactor|description": {
+    "en": "4f841a3ff50e4a00",
+    "text": "仅限产品模式。默认关闭时，无论身份验证策略如何，所有人（包括管理员）都需要第二因素，未持有的人员在登录时注册。豁免的服务账户仍然豁免。开启时由身份验证策略决定。警告：开启后，除非策略要求，否则不满足 ASVS 5.0.0 要求 6.3.3。"
+  },
+  "crypto.allowCbcJwe|label": {
+    "en": "47b44d2ca23a7a17",
+    "text": "允许 JWE CBC-HMAC 内容加密"
+  },
+  "crypto.allowCbcJwe|description": {
+    "en": "20f6a7dc269fe48a",
+    "text": "仅限产品模式。默认关闭时，JWE 仅使用和接受 AES-GCM：既不提供也不接受 A128CBC-HS256、A192CBC-HS384 和 A256CBC-HS512，指定了算法但未指定 enc 的客户端将以 A256GCM 应答。开启时，它们的行为与开发模式相同。警告：开启期间不满足 ASVS 5.0.0 要求 11.3.2，仅为无法读取 AES-GCM 的合作方开启。"
+  },
+  "crypto.allowLegacyHashes|label": {
+    "en": "e64b3dc98c254326",
+    "text": "在协议仍使用时允许 SHA-1 和 MD5"
+  },
+  "crypto.allowLegacyHashes|description": {
+    "en": "21064646f0ea0387",
+    "text": "仅限产品模式。默认关闭时，本服务不在 XML 加密或 JWE 中使用基于 SHA-1 的 OAEP，也不使用 SHA-1 PKINIT 密钥派生或 S4U2Self 的 HMAC-MD5 校验和。开启时则使用。警告：ASVS 5.0.0 要求 11.4.1 禁止这些哈希函数，因此仅为不支持更新算法的合作方或客户端开启。"
+  },
+  "admin.allowDefaultUsername|label": {
+    "en": "0ab7a95a721ff350",
+    "text": "在产品模式下允许默认管理员名称"
+  },
+  "admin.allowDefaultUsername|description": {
+    "en": "261e7a2bb89b22e2",
+    "text": "仅限产品模式。默认关闭时，名为 admin、root、sa 或 administrator 或没有名称的引导管理员会获得一个不可预测的生成名称，并在首次启动时与其密码一起显示。开启时按配置的名称使用。警告：ASVS 5.0.0 要求 6.3.2 禁止默认账户名称，因此除测试环境外请保持关闭。"
+  },
+  "admin.allowDefaultUsername|restartReason": {
+    "en": "0191948468332113",
+    "text": "引导只运行一次，介于持久化存储打开与监听器绑定之间，因此之后的更改已无可命名的对象"
+  },
   "admin.bootstrapUsername|label": {
     "en": "bdb921ce57f149ff",
     "text": "引导管理员账户"
@@ -2759,6 +2975,14 @@
     "en": "19042efe72e28cc6",
     "text": "此领域记住多少个不透明访问令牌。存满时先丢掉过期的行，再拒绝继续签发（STS-OAUTH-0979），而不是逐出一个仍有效的令牌。当 oauth2.accessTokenFormat 为 opaque 时适用。"
   },
+  "oauth2.allowUndeclaredGrants|label": {
+    "en": "48f3e420ff8f61c0",
+    "text": "允许未列出授权类型的客户端使用任何授权"
+  },
+  "oauth2.allowUndeclaredGrants|description": {
+    "en": "22bb986fa3711e13",
+    "text": "仅限产品模式。默认关闭时，未声明授权类型的客户端只能使用 authorization_code 和 refresh_token。开启时，可使用本服务提供的任何授权。警告：ASVS 5.0.0 要求 10.4.4 将客户端限制为其所需的授权，因此除测试环境外请保持关闭。"
+  },
   "oauth2.signedMetadataAlgorithm|label": {
     "en": "71fb31f9a62ec657",
     "text": "signed_metadata 签名算法"
@@ -4098,6 +4322,14 @@
   "scep.enabled|description": {
     "en": "9d0b62856fb7cc83",
     "text": "关闭时，每个 /enroll/scep 请求在此领域中都答复 503。已签发的证书会被保留。"
+  },
+  "scep.allowInProduct|label": {
+    "en": "5a40ad7af32c5eb7",
+    "text": "在产品模式下响应 SCEP"
+  },
+  "scep.allowInProduct|description": {
+    "en": "ad9779aeb9ac6587",
+    "text": "仅限产品模式。开启时，/enroll/scep 在产品模式下响应。默认关闭时返回 503。警告：RFC 8894 要求 RSAES-PKCS1-v1.5 和 AES-CBC，而 ASVS 5.0.0 要求 11.3.1 和 11.3.2 不接受它们，因此仅为不支持更新算法的设备开启。"
   },
   "scep.allowedProfiles|label": {
     "en": "b2cd406490c7676d",
@@ -6647,6 +6879,18 @@
     "en": "6f0fcf17e84ec4f0",
     "text": "服务账户的长期密钥在启动时由它派生。但信任领域仍可携带此项：领域的主体数据库在其 Kerberos 开启时构建，并在此项更改时重建，因此启动时并未使用该领域的值"
   },
+  "krb5.allowSha1Enctypes|label": {
+    "en": "15146ba7e398f699",
+    "text": "在产品模式下提供带 SHA-1 的 AES"
+  },
+  "krb5.allowSha1Enctypes|description": {
+    "en": "bc316355cf713a02",
+    "text": "仅限产品模式。开启时，此 KDC 还可使用 enctype 17 和 18（带 HMAC-SHA1-96 的 AES，RFC 3962）。默认关闭时，产品模式只使用 19 和 20（RFC 8009）。警告：ASVS 5.0.0 要求 11.4.1 在此不接受 SHA-1，因此仅为不支持更新算法的 Kerberos 客户端开启。"
+  },
+  "krb5.allowSha1Enctypes|restartReason": {
+    "en": "8bca2d2d03148c2a",
+    "text": "每个主体的密钥在启动时生成"
+  },
   "krb5.enctypes|label": {
     "en": "e28806e1a9d53522",
     "text": "加密类型"
@@ -8350,6 +8594,14 @@
   "risk.uploadMaxBytes|description": {
     "en": "65308f69a41d480e",
     "text": "上传文件的最大大小，按发送时的大小计算（如经压缩则为压缩后）。若请求声明的大小超过此值，则在读取任何字节之前拒绝；否则在超过此值处停止。DB-IP Lite 的城市文件压缩后有几百 MB。"
+  },
+  "risk.maxSkippedLinesPercent|label": {
+    "en": "f299cbec779c44e8",
+    "text": "数据集中允许解析失败的行的最大比例（百分比）"
+  },
+  "risk.maxSkippedLinesPercent|description": {
+    "en": "ff816ae98311e5a5",
+    "text": "数据集文件中若超过此百分比的非注释行不是该格式的记录，则拒绝该文件，且不保留任何内容。100 表示接受至少含一条记录的任何文件，这是此服务以前的行为。警告：设为 100 时，只要有一行能解析，错误类型的文件也可能被加载。"
   },
   "risk.expandedMaxBytes|label": {
     "en": "c9644dc433201840",
@@ -12170,245 +12422,5 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "仅针对协议调试器监听器：http.http2MaxConcurrentStreams。-1（默认值）时遵循 http.http2MaxConcurrentStreams；其他任何值只对此监听器作出决定。一个 HTTP/2 连接可同时打开的请求数（SETTINGS_MAX_CONCURRENT_STREAMS）；超出的流会被拒绝，直到有流结束。默认值 100 是 RFC 9113 建议的最小值；node 自身的值没有上限，这会让一个连接承载成千上万个连接的工作量。它限制一个连接上的工作量，正如 http.maxConnections 限制连接数。新连接会立即遵循更改，已打开的连接会收到新值。"
-  },
-  "krb5.allowSha1Enctypes|label": {
-    "en": "15146ba7e398f699",
-    "text": "在产品模式下提供带 SHA-1 的 AES"
-  },
-  "krb5.allowSha1Enctypes|description": {
-    "en": "bc316355cf713a02",
-    "text": "仅限产品模式。开启时，此 KDC 还可使用 enctype 17 和 18（带 HMAC-SHA1-96 的 AES，RFC 3962）。默认关闭时，产品模式只使用 19 和 20（RFC 8009）。警告：ASVS 5.0.0 要求 11.4.1 在此不接受 SHA-1，因此仅为不支持更新算法的 Kerberos 客户端开启。"
-  },
-  "krb5.allowSha1Enctypes|restartReason": {
-    "en": "8bca2d2d03148c2a",
-    "text": "每个主体的密钥在启动时生成"
-  },
-  "scep.allowInProduct|label": {
-    "en": "5a40ad7af32c5eb7",
-    "text": "在产品模式下响应 SCEP"
-  },
-  "scep.allowInProduct|description": {
-    "en": "ad9779aeb9ac6587",
-    "text": "仅限产品模式。开启时，/enroll/scep 在产品模式下响应。默认关闭时返回 503。警告：RFC 8894 要求 RSAES-PKCS1-v1.5 和 AES-CBC，而 ASVS 5.0.0 要求 11.3.1 和 11.3.2 不接受它们，因此仅为不支持更新算法的设备开启。"
-  },
-  "oauth2.allowUndeclaredGrants|label": {
-    "en": "48f3e420ff8f61c0",
-    "text": "允许未列出授权类型的客户端使用任何授权"
-  },
-  "oauth2.allowUndeclaredGrants|description": {
-    "en": "22bb986fa3711e13",
-    "text": "仅限产品模式。默认关闭时，未声明授权类型的客户端只能使用 authorization_code 和 refresh_token。开启时，可使用本服务提供的任何授权。警告：ASVS 5.0.0 要求 10.4.4 将客户端限制为其所需的授权，因此除测试环境外请保持关闭。"
-  },
-  "admin.allowDefaultUsername|label": {
-    "en": "0ab7a95a721ff350",
-    "text": "在产品模式下允许默认管理员名称"
-  },
-  "admin.allowDefaultUsername|description": {
-    "en": "261e7a2bb89b22e2",
-    "text": "仅限产品模式。默认关闭时，名为 admin、root、sa 或 administrator 或没有名称的引导管理员会获得一个不可预测的生成名称，并在首次启动时与其密码一起显示。开启时按配置的名称使用。警告：ASVS 5.0.0 要求 6.3.2 禁止默认账户名称，因此除测试环境外请保持关闭。"
-  },
-  "admin.allowDefaultUsername|restartReason": {
-    "en": "0191948468332113",
-    "text": "引导只运行一次，介于持久化存储打开与监听器绑定之间，因此之后的更改已无可命名的对象"
-  },
-  "crypto.allowLegacyHashes|label": {
-    "en": "e64b3dc98c254326",
-    "text": "在协议仍使用时允许 SHA-1 和 MD5"
-  },
-  "crypto.allowLegacyHashes|description": {
-    "en": "21064646f0ea0387",
-    "text": "仅限产品模式。默认关闭时，本服务不在 XML 加密或 JWE 中使用基于 SHA-1 的 OAEP，也不使用 SHA-1 PKINIT 密钥派生或 S4U2Self 的 HMAC-MD5 校验和。开启时则使用。警告：ASVS 5.0.0 要求 11.4.1 禁止这些哈希函数，因此仅为不支持更新算法的合作方或客户端开启。"
-  },
-  "security.allowUnscopedPeople|label": {
-    "en": "502e12a150357d63",
-    "text": "允许无角色的人员访问 SCIM 和 Shared Signals"
-  },
-  "security.allowUnscopedPeople|description": {
-    "en": "2bf5565da47abb33",
-    "text": "仅限产品模式。默认关闭时，通过不携带作用域的方案（如 HTTP Basic 或会话 Cookie）向 /scim/v2 或 Shared Signals 进行身份验证的人员，需要 Admin Read 才能读取、Admin Write 才能写入。开启时，任何已通过身份验证的人员均可。警告：开启后不满足 ASVS 5.0.0 要求 8.2.1 和 8.2.2，因为任何人都可更改任何账户。请改用 OAuth 作用域供配置客户端使用。"
-  },
-  "security.fileRoots|label": {
-    "en": "7f144086ba380c16",
-    "text": "可读取指定文件的目录"
-  },
-  "security.fileRoots|description": {
-    "en": "a378a866f9204d53",
-    "text": "仅限产品模式。以逗号分隔的绝对目录列表。管理员在设置或请求中指定的文件（CA 文件、SPIFFE 令牌或密钥文件、Sigstore 文件、邮件证书或密钥）仅当其跟随符号链接后的真实路径位于其中某个目录内时才读取。此项在环境或 appconfig 文件中设置，不能通过控制台或 API 更改，因此管理员的请求无法扩大其范围。警告：添加 / 或其他宽泛目录将不满足 ASVS 5.0.0 要求 5.3.2。"
-  },
-  "risk.maxSkippedLinesPercent|label": {
-    "en": "f299cbec779c44e8",
-    "text": "数据集中允许解析失败的行的最大比例（百分比）"
-  },
-  "risk.maxSkippedLinesPercent|description": {
-    "en": "ff816ae98311e5a5",
-    "text": "数据集文件中若超过此百分比的非注释行不是该格式的记录，则拒绝该文件，且不保留任何内容。100 表示接受至少含一条记录的任何文件，这是此服务以前的行为。警告：设为 100 时，只要有一行能解析，错误类型的文件也可能被加载。"
-  },
-  "crypto.allowCbcJwe|label": {
-    "en": "47b44d2ca23a7a17",
-    "text": "允许 JWE CBC-HMAC 内容加密"
-  },
-  "crypto.allowCbcJwe|description": {
-    "en": "20f6a7dc269fe48a",
-    "text": "仅限产品模式。默认关闭时，JWE 仅使用和接受 AES-GCM：既不提供也不接受 A128CBC-HS256、A192CBC-HS384 和 A256CBC-HS512，指定了算法但未指定 enc 的客户端将以 A256GCM 应答。开启时，它们的行为与开发模式相同。警告：开启期间不满足 ASVS 5.0.0 要求 11.3.2，仅为无法读取 AES-GCM 的合作方开启。"
-  },
-  "authn.allowOptionalSecondFactor|label": {
-    "en": "54d27fb9494e1370",
-    "text": "允许不使用第二因素登录"
-  },
-  "authn.allowOptionalSecondFactor|description": {
-    "en": "4f841a3ff50e4a00",
-    "text": "仅限产品模式。默认关闭时，无论身份验证策略如何，所有人（包括管理员）都需要第二因素，未持有的人员在登录时注册。豁免的服务账户仍然豁免。开启时由身份验证策略决定。警告：开启后，除非策略要求，否则不满足 ASVS 5.0.0 要求 6.3.3。"
-  },
-  "admin.logBootstrapPassword|label": {
-    "en": "02a3293594ba0523",
-    "text": "记录生成的引导密码"
-  },
-  "admin.logBootstrapPassword|description": {
-    "en": "577ec7c125546cdb",
-    "text": "仅限产品模式。默认关闭时，为首位管理员生成的密码写入 persistence.dataDir 中仅此服务可读的 bootstrap-admin-password 文件，日志说明位置。开启时写入服务日志。警告：开启后不满足 ASVS 5.0.0 要求 16.2.5，因为凭据进入了日志。"
-  },
-  "oauth2.allowConfidentialWithoutPkce|label": {
-    "en": "c33a0a31a1d623b1",
-    "text": "允许机密客户端省略 PKCE"
-  },
-  "oauth2.allowConfidentialWithoutPkce|description": {
-    "en": "87599e0feb7aa8e3",
-    "text": "仅限产品模式。默认关闭时，任何客户端不带 code_challenge 的授权请求都会被拒绝。开启时，机密客户端可以省略，请求仅被记录。警告：开启后不满足 ASVS 5.0.0 要求 10.4.6。"
-  },
-  "malwareScan.enabled|label": {
-    "en": "d0834826933c0682",
-    "text": "扫描文件中的恶意软件"
-  },
-  "malwareScan.enabled|description": {
-    "en": "bb893f03ed99dd0c",
-    "text": "默认关闭时不扫描任何内容。开启后，每张头像、徽标、从联合身份合作方复制的照片以及上传的风险数据集都会先发送到 malwareScan.url 中的 ICAP 服务，如果服务标记或无法应答，则拒绝。"
-  },
-  "malwareScan.url|label": {
-    "en": "08acec5549f532ea",
-    "text": "ICAP 服务地址"
-  },
-  "malwareScan.url|description": {
-    "en": "03fc5c265603704f",
-    "text": "用于扫描的服务，格式为 icap://主机:端口/服务 或 icaps://主机:端口/服务（RFC 3507）。可使用任何提供 ICAP 服务的防病毒产品。"
-  },
-  "malwareScan.timeoutMs|label": {
-    "en": "e616aee1107e9402",
-    "text": "扫描超时（毫秒）"
-  },
-  "malwareScan.timeoutMs|description": {
-    "en": "59a643baa5f14b91",
-    "text": "等待服务的时长。大文件每 MiB 额外增加一秒。"
-  },
-  "malwareScan.caFile|label": {
-    "en": "15e0140ac004309d",
-    "text": "icaps 服务的 CA 文件"
-  },
-  "malwareScan.caFile|description": {
-    "en": "5ab91aec22f02c61",
-    "text": "icaps 服务可链接到的 CA 证书 PEM 文件，作为公共根证书之外的补充。受 security.fileRoots 限制。"
-  },
-  "malwareScan.allowCleartext|label": {
-    "en": "5538ba47a0743bd0",
-    "text": "在产品模式下允许明文 ICAP"
-  },
-  "malwareScan.allowCleartext|description": {
-    "en": "c00ee2f1e34722ff",
-    "text": "默认关闭时，产品模式拒绝 icap:// 地址，在设置 icaps:// 地址之前不接受任何文件。开启后，文件可能以未加密方式到达扫描器。仅在可信网络中使用。"
-  },
-  "security.passwordContextWords|label": {
-    "en": "6951c2a585da99f7",
-    "text": "密码不得包含的词"
-  },
-  "security.passwordContextWords|description": {
-    "en": "fac6e61cb1da6802",
-    "text": "新密码不得包含的其他词，例如组织、产品、项目或部门名称。以逗号分隔。服务名称以及信任域的名称和域名始终被拒绝。词至少需要四个字母；检查会忽略大小写和常见字符替换（如用 0 代替 o）。"
-  },
-  "oauth2.refreshTokenMaxChainS|label": {
-    "en": "fd72d81940ff8ab9",
-    "text": "刷新令牌链的最长持续时间（秒）"
-  },
-  "oauth2.refreshTokenMaxChainS|description": {
-    "en": "48b5a77555c81355",
-    "text": "通过刷新令牌续期的授权的绝对上限，从第一个令牌开始计算。超过后用户须重新登录，无论客户端刷新多少次。0 表示无限制，这是开发模式的默认值。产品模式默认 30 天。"
-  },
-  "federation.allowUntypedLogoutToken|label": {
-    "en": "6ef2596a6d379cfa",
-    "text": "接受无显式类型的合作方注销令牌"
-  },
-  "federation.allowUntypedLogoutToken|description": {
-    "en": "5d58103a9e255bdf",
-    "text": "默认关闭时，产品模式仅接受类型为 logout+jwt 的合作方注销令牌。开启后，也接受类型为 jwt 或无类型的令牌，适用于不发送类型的合作方。OpenID 规范仅建议使用该类型。"
-  },
-  "account.recentAuthMinutes|label": {
-    "en": "dfa5936497901458",
-    "text": "更改第二因素所需的登录新近程度（分钟）"
-  },
-  "account.recentAuthMinutes|description": {
-    "en": "50ed3d8089739a00",
-    "text": "用户在门户更改第二因素、恢复代码、通行密钥或电子邮件地址时，必须在此分钟数内登录过，否则须先重新登录。0 表示不要求，这是开发模式的默认值。产品模式默认 15。"
-  },
-  "persistence.allowDefaultDatabasePassword|label": {
-    "en": "24634837693652d6",
-    "text": "在产品模式下允许默认数据库密码"
-  },
-  "persistence.allowDefaultDatabasePassword|description": {
-    "en": "b7b661b267c62aa2",
-    "text": "默认关闭时，产品模式不会使用众所周知的数据库密码（如随附 compose 文件的 sts_app）或与用户名相同的密码启动。开启后仍会启动。仅用于测试环境。"
-  },
-  "authn.sessionsEndedBefore|label": {
-    "en": "174234a42e8c3da2",
-    "text": "在此时刻之前开始的会话已结束（毫秒）"
-  },
-  "authn.sessionsEndedBefore|description": {
-    "en": "c11569be4873c007",
-    "text": "由“会话”页面上的“结束所有会话”设置。在此时刻（自 1970 年起的毫秒数）之前开始的登录会话已结束。0 表示没有。"
-  },
-  "oauth2.consentAlwaysForPublicClients|label": {
-    "en": "b2f544167d0f1309",
-    "text": "始终征求公共客户端的同意"
-  },
-  "oauth2.consentAlwaysForPublicClients|description": {
-    "en": "147cce1b272c536f",
-    "text": "公共客户端无法证明其身份，因此每次请求访问时都会询问用户，无论之前如何回答。本服务自身的应用程序除外。产品模式默认开启。"
-  },
-  "federation.maxPartnerAuthAgeS|label": {
-    "en": "7994b4352961110b",
-    "text": "接受的最早合作方身份验证（秒）"
-  },
-  "federation.maxPartnerAuthAgeS|description": {
-    "en": "c67a42c14975e328",
-    "text": "如果合作方根据 auth_time 或 AuthnInstant 表明用户的身份验证早于此时长，则拒绝联合登录。设置限制后，未说明时间的合作方将被拒绝。默认 0 表示不检查。"
-  },
-  "security.requestsPerAddressPerMinute|label": {
-    "en": "6e933f6a681d3968",
-    "text": "每个地址每分钟允许的请求数"
-  },
-  "security.requestsPerAddressPerMinute|description": {
-    "en": "7324a27b3b761012",
-    "text": "每个进程对单个地址所有请求的上限。这是防滥用的措施，与凭据尝试限制不同。0 表示无上限，这是开发模式的默认值。产品模式默认 6000。在代理后面时，请设置 global.trustedProxies 以正确读取地址。"
-  },
-  "audit.allowPlainSyslog|label": {
-    "en": "1401e9d7380768e3",
-    "text": "在产品模式下允许明文 syslog 审计导出"
-  },
-  "audit.allowPlainSyslog|description": {
-    "en": "cc8beb8a652a3752",
-    "text": "默认关闭时，产品模式的 syslog 审计目标仅接受 tls 传输。开启后也接受 tcp 和 udp，审计日志将以未加密方式通过网络。仅在可信网络中使用。"
-  },
-  "security.outboundAllowedHosts|label": {
-    "en": "48109be8cdfd0972",
-    "text": "此服务可连接的主机"
-  },
-  "security.outboundAllowedHosts|description": {
-    "en": "f1d0447a0b56f74e",
-    "text": "如果设置，合作方、客户端或调用方可影响的出站请求只能访问这些主机。以逗号分隔：精确名称，或以点开头表示整个域，如 .example.com。默认为空，允许任何公共主机。产品模式下始终拒绝内部地址。"
-  },
-  "security.hstsIncludeSubDomains|label": {
-    "en": "1ac0e6ab8c38092f",
-    "text": "将 HSTS 应用于子域"
-  },
-  "security.hstsIncludeSubDomains|description": {
-    "en": "26b0298f1a2bd460",
-    "text": "向 Strict-Transport-Security 添加 includeSubDomains，使浏览器对此服务主机名的所有子域也使用 HTTPS。产品模式默认开启。如果某个子域仍需通过纯 HTTP 响应，请关闭。"
   }
 }

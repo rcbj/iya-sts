@@ -3668,6 +3668,8 @@ namespace IyaSts.Api.Management {
     @js(#{
       `description`:"The identity exactly as it was presented, when that differs from `actor` — a bind DN, a Kerberos principal, an X.509 subject. Both are carried because the collapse from one to the other is something an auditor has to be able to see rather than infer."
     }) `actorForm`?: string;
+     `mac`?: string;
+      `mac`?: string;
     @js(#{
       `description`:"What it was done to: a DN, a request path, a session id."
     }) `target`?: string;
@@ -45927,6 +45929,10 @@ op `getMalwareScanning`(`responses/200/content/application~1json/schema`: {
         `description`:"How the service answered.",
         `content`:#{`application/json`:#{`schema`:null}}
       },
+      `400`:#{
+        `description`:"The test failed or no ICAP service is set; `errors` says why.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
       `default`:#{
         `description`:"A refusal or a failure.",
         `content`:#{`application/json`:#{`schema`:null}}
@@ -45947,6 +45953,10 @@ op `testMalwareScanning`(`responses/200/content/application~1json/schema`: WithO
     `responses`:#{
       `200`:#{
         `description`:"Every session has ended.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
         `content`:#{`application/json`:#{`schema`:null}}
       },
       `default`:#{

@@ -79,7 +79,8 @@ const log = require("bunyan").createLogger({ name: "authn_signin",
 function pendingIdOf(where) {
   log.debug("Entering pendingIdOf().");
   const text = String(where || "");
-  const m = text.match(/[?&](?:authn|change)=([^&#]+)/);
+  // [?&#]: product mode moves a step's id into the fragment (#1454).
+  const m = text.match(/[?&#](?:authn|change)=([^&#]+)/);
   log.debug("Leaving pendingIdOf().");
   return m ? decodeURIComponent(m[1]) : text;
 }
@@ -944,7 +945,8 @@ async function signOut(base, fields, options) {
 function isConsent(where) {
   log.debug("Entering isConsent().");
   log.debug("Leaving isConsent().");
-  return /\/oauth2\/consent\?(?:[^#]*&)?consent=/.test(String(where || ""));
+  return /\/oauth2\/consent(?:\?[^#]*)?[?&#]consent=/
+    .test(String(where || ""));
 }
 
 /**

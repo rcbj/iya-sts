@@ -1336,6 +1336,8 @@ const SETTINGS = [
           '/usr/local/share/ca-certificates,/run/secrets,/var/run/secrets,' +
           '/etc/sts',
     runtime: false,
+    restartReason: 'it bounds what an administrator\'s request may name, so ' +
+                   'no such request may widen it',
     description: 'Product mode only. A comma-separated list of absolute ' +
                  'directories. A file an administrator names in a setting or ' +
                  'a request (a CA file, a SPIFFE token or key file, a ' +
@@ -1499,6 +1501,16 @@ const SETTINGS = [
                  'host name too. On by default in product mode. Turn it off ' +
                  'if a subdomain of this host name must still answer over ' +
                  'plain HTTP.' },
+
+  { key: 'federation.allowAssertionWithoutAudience', group: 'Federation',
+    label: 'Accept an assertion that names no audience',
+    env: 'STS_FEDERATION_ALLOW_ASSERTION_WITHOUT_AUDIENCE', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Off, the default, product mode refuses a partner\'s SAML 1.1 ' +
+                 'or WS-Federation assertion that carries no audience ' +
+                 'restriction, because nothing says it was meant for this ' +
+                 'service. On, it is accepted with a warning, for a partner ' +
+                 'that cannot send one.' },
 
   { key: 'malwareScan.enabled', group: 'Malware scanning',
     label: 'Scan files for malware',
@@ -2834,7 +2846,7 @@ const SETTINGS = [
   { key: 'security.passwordHashP', group: 'Web security',
     label: 'Password hash parallelism (scrypt p)',
     env: 'STS_SECURITY_PASSWORD_HASH_P',
-    type: 'int', dflt: 1, runtime: true, min: 1, max: 8,
+    type: 'int', dflt: strongerInProduct(3, 1), derived: true, runtime: true, min: 1, max: 8,
     description: 'scrypt\'s parallelism for a newly stored hash. Node ' +
                  'computes it on one thread, so a higher value costs time ' +
                  'rather than cores.' },

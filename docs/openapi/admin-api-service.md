@@ -3248,6 +3248,20 @@ Scope: `admin:write`.
 | `message` | string | yes |  |
 | `ok` | boolean | yes |  |
 
+**400**: The test failed or no ICAP service is set; `errors` says why.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `accepted` | boolean |  |  |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `run` | string |  | The address to follow the run at. |
+| `runId` | string |  |  |
+
 ## GET /admin-api/me
 
 `getMe`

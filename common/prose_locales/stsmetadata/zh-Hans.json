@@ -3958,5 +3958,9 @@
   "stsmetadata.endpoints./admin-api/malware-scanning/:action.what": {
     "en": "1bf7c4937a9313c4",
     "text": "NON-SPEC (#1501). 向配置的 ICAP 服务发送 EICAR 测试文件，仅当服务标记该文件时才成功。"
+  },
+  "stsmetadata.endpoints./admin-api/audit/integrity.what": {
+    "en": "80d0dc13ebf1f23b",
+    "text": "将每条保留的审计记录与其带密钥校验和比较，并报告不再匹配的记录。不做任何更改。"
   }
 }

@@ -207,6 +207,222 @@
     "en": "034b8666bc7feb89",
     "text": "Mga origin — scheme, host at port, walang path — na itinuturing ng CORS na SARILI ng deployment na ito, pinaghihiwalay ng kuwit, katabi ng mga address na pinakikinggan ng serbisyong ito, ng global.publicBaseUrl at ng embedded debugger. Ang origin dito ay puwedeng magbasa ng bawat sagot na ibinibigay ng serbisyong ito sa isang browser, anumang client ang pinangangalanan ng request. Ang WALANG LAMAN, ang default, ay walang idinadagdag: ang bawat ibang origin ay pinapayagan lang kung saan inililista ito ng isang application sa appCorsOrigin. Ang value na hindi origin ay binabalewala at nilo-log, hindi kailanman pinalalawak."
   },
+  "security.fileRoots|label": {
+    "en": "7f144086ba380c16",
+    "text": "Mga direktoryong mababasahan ng pinangalanang file"
+  },
+  "security.fileRoots|description": {
+    "en": "a378a866f9204d53",
+    "text": "Sa product mode lang. Listahan ng mga absolute na direktoryo na pinaghihiwalay ng kuwit. Binabasa lang ang file na pinangalanan ng administrator sa setting o kahilingan (CA file, SPIFFE token o key file, Sigstore file, mail certificate o key) kung ang tunay nitong path, matapos sundan ang mga symbolic link, ay nasa loob ng isa sa mga ito. Itinatakda ito sa environment o sa appconfig file at hindi mababago sa console o API, para hindi ito mapalawak ng kahilingan ng administrator. BABALA: ang pagdagdag ng / o ibang malawak na direktoryo ay nangangahulugang hindi natutugunan ang requirement 5.3.2 ng ASVS 5.0.0."
+  },
+  "security.fileRoots|restartReason": {
+    "en": "65fd8c7be0cfb5d3",
+    "text": "nililimitahan nito ang maaaring pangalanan ng kahilingan ng administrator, kaya walang ganoong kahilingan ang makapagpapalawak nito"
+  },
+  "security.allowUnscopedPeople|label": {
+    "en": "502e12a150357d63",
+    "text": "Hayaang maka-access ang taong walang tungkulin sa SCIM at Shared Signals"
+  },
+  "security.allowUnscopedPeople|description": {
+    "en": "2bf5565da47abb33",
+    "text": "Sa product mode lang. Kapag naka-off, ang default, ang nag-authenticate sa /scim/v2 o Shared Signals gamit ang scheme na walang scope, gaya ng HTTP Basic o session cookie, ay nangangailangan ng Admin Read para magbasa at Admin Write para magsulat. Kapag naka-on, maaari ang sinumang na-authenticate. BABALA: kapag naka-on, hindi natutugunan ang mga requirement 8.2.1 at 8.2.2 ng ASVS 5.0.0, dahil mababago ng sinuman ang anumang account. Gumamit na lang ng mga OAuth scope para sa mga provisioning client."
+  },
+  "admin.logBootstrapPassword|label": {
+    "en": "02a3293594ba0523",
+    "text": "I-log ang nabuong bootstrap password"
+  },
+  "admin.logBootstrapPassword|description": {
+    "en": "577ec7c125546cdb",
+    "text": "Sa product mode lang. Kapag naka-off, ang default, isinusulat ang password na nabuo para sa unang administrator sa file na bootstrap-admin-password sa persistence.dataDir, na ang serbisyong ito lang ang makakabasa, at sinasabi ng log kung saan. Kapag naka-on, isinusulat ito sa service log. BABALA: kapag naka-on, hindi natutugunan ang requirement 16.2.5 ng ASVS 5.0.0, dahil umaabot sa log ang credential."
+  },
+  "oauth2.allowConfidentialWithoutPkce|label": {
+    "en": "c33a0a31a1d623b1",
+    "text": "Hayaang hindi gumamit ng PKCE ang confidential client"
+  },
+  "oauth2.allowConfidentialWithoutPkce|description": {
+    "en": "87599e0feb7aa8e3",
+    "text": "Sa product mode lang. Kapag naka-off, ang default, tinatanggihan ang authorization request na walang code_challenge para sa bawat client. Kapag naka-on, maaari itong alisin ng confidential client at inilo-log lang ang request. BABALA: kapag naka-on, hindi natutugunan ang requirement 10.4.6 ng ASVS 5.0.0."
+  },
+  "security.passwordContextWords|label": {
+    "en": "6951c2a585da99f7",
+    "text": "Mga salitang hindi maaaring nasa password"
+  },
+  "security.passwordContextWords|description": {
+    "en": "fac6e61cb1da6802",
+    "text": "Mga karagdagang salitang hindi maaaring nasa bagong password, gaya ng pangalan ng iyong organisasyon, produkto, proyekto o departamento. Pinaghihiwalay ng kuwit. Laging tinatanggihan ang pangalan ng service at ang pangalan at domain ng realm. Kailangan ng hindi bababa sa apat na titik ang salita, at hindi pinapansin ng pagsusuri ang case at mga karaniwang pagpapalit gaya ng 0 para sa o."
+  },
+  "oauth2.refreshTokenMaxChainS|label": {
+    "en": "fd72d81940ff8ab9",
+    "text": "Pinakamahabang tagal ng chain ng refresh token (s)"
+  },
+  "oauth2.refreshTokenMaxChainS|description": {
+    "en": "48b5a77555c81355",
+    "text": "Ang ganap na limitasyon ng grant na nire-renew ng mga refresh token, binibilang mula sa una. Kapag lumampas, muling magsa-sign in ang tao, gaano man kadalas nag-refresh ang client. Ang 0 ay walang limitasyon, ang default sa development. 30 araw ang default ng product mode."
+  },
+  "federation.allowUntypedLogoutToken|label": {
+    "en": "6ef2596a6d379cfa",
+    "text": "Tanggapin ang Logout Token ng partner na walang tahasang type"
+  },
+  "federation.allowUntypedLogoutToken|description": {
+    "en": "5d58103a9e255bdf",
+    "text": "Kapag naka-off, ang default, tinatanggap lamang ng product mode ang Logout Token ng partner kung logout+jwt ang type. Kapag naka-on, tinatanggap din ang token na jwt ang type o walang type, para sa partner na hindi nagpapadala ng type. Inirerekomenda lamang ito ng OpenID specification."
+  },
+  "account.recentAuthMinutes|label": {
+    "en": "dfa5936497901458",
+    "text": "Gaano kabago dapat ang sign-in para baguhin ang second factor (min)"
+  },
+  "account.recentAuthMinutes|description": {
+    "en": "50ed3d8089739a00",
+    "text": "Ang taong nagbabago ng second factor, recovery code, passkey o email address sa portal ay dapat nakapag-sign in sa loob ng ganitong karaming minuto, o papapag-sign in muna siya. Ang 0 ay hindi hinihingi, ang default sa development. 15 ang default ng product mode."
+  },
+  "persistence.allowDefaultDatabasePassword|label": {
+    "en": "24634837693652d6",
+    "text": "Payagan ang default na database password sa product mode"
+  },
+  "persistence.allowDefaultDatabasePassword|description": {
+    "en": "b7b661b267c62aa2",
+    "text": "Kapag naka-off, ang default, hindi magsisimula ang product mode gamit ang kilalang database password, gaya ng sts_app ng kasamang compose file, o password na katulad ng user name. Kapag naka-on, magsisimula pa rin. Gamitin lamang sa test stack."
+  },
+  "authn.sessionsEndedBefore|label": {
+    "en": "174234a42e8c3da2",
+    "text": "Natapos na ang mga session na nagsimula bago ang sandaling ito (ms)"
+  },
+  "authn.sessionsEndedBefore|description": {
+    "en": "c11569be4873c007",
+    "text": "Itinatakda ng Tapusin ang bawat session sa pahina ng Sessions. Natapos na ang sign-on session na nagsimula bago ang sandaling ito, sa millisecond mula 1970. Ang 0 ay wala."
+  },
+  "oauth2.consentAlwaysForPublicClients|label": {
+    "en": "b2f544167d0f1309",
+    "text": "Laging humingi ng pahintulot para sa public client"
+  },
+  "oauth2.consentAlwaysForPublicClients|description": {
+    "en": "147cce1b272c536f",
+    "text": "Hindi mapapatunayan ng public client kung sino ito, kaya tinatanong ang tao tuwing humihiling ito ng access, anuman ang sagot niya dati. Hindi kasama ang sariling mga application ng service na ito. Naka-on bilang default sa product mode."
+  },
+  "federation.maxPartnerAuthAgeS|label": {
+    "en": "7994b4352961110b",
+    "text": "Pinakalumang partner authentication na tinatanggap (s)"
+  },
+  "federation.maxPartnerAuthAgeS|description": {
+    "en": "c67a42c14975e328",
+    "text": "Tinatanggihan ang federated sign-in kung sinasabi ng partner na mas matagal pa rito nang nag-authenticate ang tao, gamit ang auth_time o AuthnInstant. Habang may limitasyon, tinatanggihan ang partner na hindi nagsasabi. Ang 0, ang default, ay hindi nagtatanong."
+  },
+  "security.requestsPerAddressPerMinute|label": {
+    "en": "6e933f6a681d3968",
+    "text": "Mga request bawat address bawat minuto"
+  },
+  "security.requestsPerAddressPerMinute|description": {
+    "en": "7324a27b3b761012",
+    "text": "Limitasyon sa lahat ng request mula sa isang address, bawat process. Preno ito sa pang-aabuso, hiwalay sa mga limitasyon sa pagsubok ng credential. Ang 0 ay walang limitasyon, ang default sa development. 6000 ang default ng product mode. Sa likod ng proxy, itakda ang global.trustedProxies para mabasa nang tama ang mga address."
+  },
+  "audit.allowPlainSyslog|label": {
+    "en": "1401e9d7380768e3",
+    "text": "Payagan ang plain syslog audit export sa product mode"
+  },
+  "audit.allowPlainSyslog|description": {
+    "en": "cc8beb8a652a3752",
+    "text": "Kapag naka-off, ang default, tls transport lamang ang tinatanggap ng product mode para sa syslog audit destination. Kapag naka-on, tinatanggap din ang tcp at udp, kaya hindi naka-encrypt ang audit log sa network. Gamitin lamang sa network na pinagkakatiwalaan."
+  },
+  "security.outboundAllowedHosts|label": {
+    "en": "48109be8cdfd0972",
+    "text": "Mga host na maaaring tawagan ng service na ito"
+  },
+  "security.outboundAllowedHosts|description": {
+    "en": "f1d0447a0b56f74e",
+    "text": "Kung nakatakda, ang outbound request na maiimpluwensyahan ng partner, client o tumatawag ay makakarating lamang sa mga host na ito. Pinaghihiwalay ng kuwit: eksaktong pangalan, o tuldok sa unahan para sa buong domain, gaya ng .example.com. Ang walang laman, ang default, ay nagpapahintulot ng anumang public host. Laging tinatanggihan ang mga internal address sa product mode."
+  },
+  "security.hstsIncludeSubDomains|label": {
+    "en": "1ac0e6ab8c38092f",
+    "text": "Ilapat ang HSTS sa mga subdomain"
+  },
+  "security.hstsIncludeSubDomains|description": {
+    "en": "26b0298f1a2bd460",
+    "text": "Idinaragdag ang includeSubDomains sa Strict-Transport-Security, para gumamit ang mga browser ng HTTPS sa bawat subdomain ng host name ng service na ito. Naka-on bilang default sa product mode. I-off kung kailangan pang sumagot ng subdomain sa plain HTTP."
+  },
+  "federation.allowAssertionWithoutAudience|label": {
+    "en": "ed95d7ca4d1f2354",
+    "text": "Tanggapin ang assertion na walang audience"
+  },
+  "federation.allowAssertionWithoutAudience|description": {
+    "en": "af262d18fe96916b",
+    "text": "Kapag naka-off, ang default, tinatanggihan ng product mode ang SAML 1.1 o WS-Federation assertion ng partner na walang audience restriction, dahil walang nagsasabing para ito sa service na ito. Kapag naka-on, tinatanggap ito nang may babala, para sa partner na hindi makapagpadala nito."
+  },
+  "malwareScan.enabled|label": {
+    "en": "d0834826933c0682",
+    "text": "I-scan ang mga file para sa malware"
+  },
+  "malwareScan.enabled|description": {
+    "en": "bb893f03ed99dd0c",
+    "text": "Kapag naka-off, ang default, walang ini-scan. Kapag naka-on, bawat profile photo, logo, photo na kinopya mula sa federation partner at in-upload na risk dataset ay ipinapadala muna sa ICAP service sa malwareScan.url, at tinatanggihan kung na-flag ito ng service o hindi makasagot."
+  },
+  "malwareScan.url|label": {
+    "en": "08acec5549f532ea",
+    "text": "Address ng ICAP service"
+  },
+  "malwareScan.url|description": {
+    "en": "03fc5c265603704f",
+    "text": "Ang service na gagamitin, bilang icap://host:port/service o icaps://host:port/service (RFC 3507). Maaaring gamitin ang anumang antivirus na may ICAP service."
+  },
+  "malwareScan.timeoutMs|label": {
+    "en": "e616aee1107e9402",
+    "text": "Timeout ng scan (milliseconds)"
+  },
+  "malwareScan.timeoutMs|description": {
+    "en": "59a643baa5f14b91",
+    "text": "Gaano katagal maghihintay sa service. May dagdag na isang segundo bawat mebibyte ang malaking file."
+  },
+  "malwareScan.caFile|label": {
+    "en": "15e0140ac004309d",
+    "text": "CA file para sa icaps service"
+  },
+  "malwareScan.caFile|description": {
+    "en": "5ab91aec22f02c61",
+    "text": "PEM file ng mga CA certificate na maaaring pagkabitan ng icaps service, bukod sa mga public root. Sakop ng security.fileRoots."
+  },
+  "malwareScan.allowCleartext|label": {
+    "en": "5538ba47a0743bd0",
+    "text": "Payagan ang plain ICAP sa product mode"
+  },
+  "malwareScan.allowCleartext|description": {
+    "en": "c00ee2f1e34722ff",
+    "text": "Kapag naka-off, ang default, tinatanggihan ng product mode ang icap:// na address at walang file na tatanggapin hanggang may icaps:// na address. Kapag naka-on, maaaring makarating ang mga file sa scanner nang hindi naka-encrypt. Gamitin lamang sa network na pinagkakatiwalaan."
+  },
+  "authn.allowOptionalSecondFactor|label": {
+    "en": "54d27fb9494e1370",
+    "text": "Hayaang mag-sign in nang walang second factor"
+  },
+  "authn.allowOptionalSecondFactor|description": {
+    "en": "4f841a3ff50e4a00",
+    "text": "Sa product mode lang. Kapag naka-off, ang default, kailangan ng lahat ng second factor, kasama ang mga administrator, anuman ang authentication policy, at nag-e-enrol sa sign-in ang walang hawak. Nananatiling exempt ang mga exempt na service account. Kapag naka-on, ang authentication policy ang magpapasya. BABALA: kapag naka-on, natutugunan lang ang requirement 6.3.3 ng ASVS 5.0.0 kung hinihingi ito ng policy."
+  },
+  "crypto.allowCbcJwe|label": {
+    "en": "47b44d2ca23a7a17",
+    "text": "Payagan ang JWE CBC-HMAC content encryption"
+  },
+  "crypto.allowCbcJwe|description": {
+    "en": "20f6a7dc269fe48a",
+    "text": "Sa product mode lang. Kapag naka-off, ang default, AES-GCM lang ang ginagamit at tinatanggap ng JWE: hindi iniaalok o tinatanggap ang A128CBC-HS256, A192CBC-HS384 at A256CBC-HS512, at sinasagot sa A256GCM ang client na nagpangalan ng algorithm pero walang enc. Kapag naka-on, gumagana sila gaya sa development. BABALA: habang naka-on ito, hindi natutugunan ang requirement 11.3.2 ng ASVS 5.0.0, kaya i-on lang para sa partner na hindi makabasa ng AES-GCM."
+  },
+  "crypto.allowLegacyHashes|label": {
+    "en": "e64b3dc98c254326",
+    "text": "Payagan ang SHA-1 at MD5 kung saan ginagamit pa ng protocol"
+  },
+  "crypto.allowLegacyHashes|description": {
+    "en": "21064646f0ea0387",
+    "text": "Sa product mode lang. Kapag naka-off, ang default, hindi gumagamit ang serbisyong ito ng OAEP sa SHA-1 sa XML encryption o JWE, ng SHA-1 PKINIT key derivation, o ng HMAC-MD5 checksum ng S4U2Self. Kapag naka-on, ginagamit nito ang mga ito. BABALA: hindi pinapayagan ng requirement 11.4.1 ng ASVS 5.0.0 ang mga hash na iyon, kaya i-on lang ito para sa mga partner o client na walang mas bago."
+  },
+  "admin.allowDefaultUsername|label": {
+    "en": "0ab7a95a721ff350",
+    "text": "Payagan ang default na pangalan ng administrator sa product"
+  },
+  "admin.allowDefaultUsername|description": {
+    "en": "261e7a2bb89b22e2",
+    "text": "Sa product mode lang. Kapag naka-off, ang default, ang bootstrap administrator na pinangalanang admin, root, sa o administrator, o walang pangalan, ay binibigyan ng hindi mahulaang nabuong pangalan, na ipinapakita kasama ng password nito sa unang pagsisimula. Kapag naka-on, ginagamit ang naka-configure na pangalan. BABALA: ipinagbabawal ng requirement 6.3.2 ng ASVS 5.0.0 ang default na pangalan ng account, kaya iwanang naka-off ito sa labas ng test stack."
+  },
+  "admin.allowDefaultUsername|restartReason": {
+    "en": "0191948468332113",
+    "text": "isang beses tumatakbo ang bootstrap, sa pagitan ng pagbukas ng persistence store at ng pag-bind ng listener, kaya ang pagbabago pagkatapos noon ay wala nang mapapangalanan"
+  },
   "admin.bootstrapUsername|label": {
     "en": "bdb921ce57f149ff",
     "text": "Account ng bootstrap administrator"
@@ -2759,6 +2975,14 @@
     "en": "19042efe72e28cc6",
     "text": "Ilan ang opaque na access token na naaalala ng realm na ito. Kapag puno na, tinatanggal ang mga expired na row at tinatanggihan ang karagdagang mint (STS-OAUTH-0979) sa halip na paalisin ang isang buhay na token. Nalalapat kapag opaque ang oauth2.accessTokenFormat."
   },
+  "oauth2.allowUndeclaredGrants|label": {
+    "en": "48f3e420ff8f61c0",
+    "text": "Hayaang gumamit ng anumang grant ang client na walang listahan"
+  },
+  "oauth2.allowUndeclaredGrants|description": {
+    "en": "22bb986fa3711e13",
+    "text": "Sa product mode lang. Kapag naka-off, ang default, authorization_code at refresh_token lang ang magagamit ng client na walang idineklarang grant type. Kapag naka-on, magagamit nito ang anumang grant ng serbisyong ito. BABALA: nililimitahan ng requirement 10.4.4 ng ASVS 5.0.0 ang client sa mga grant na kailangan nito, kaya iwanang naka-off ito sa labas ng test stack."
+  },
   "oauth2.signedMetadataAlgorithm|label": {
     "en": "71fb31f9a62ec657",
     "text": "Algorithm na ipinipirma sa signed_metadata"
@@ -4098,6 +4322,14 @@
   "scep.enabled|description": {
     "en": "9d0b62856fb7cc83",
     "text": "Kapag naka-off, sumasagot ng 503 ang bawat /enroll/scep request sa realm na ito. Itinatago ang mga certificate na naiisyu na."
+  },
+  "scep.allowInProduct|label": {
+    "en": "5a40ad7af32c5eb7",
+    "text": "Sumagot sa SCEP sa product"
+  },
+  "scep.allowInProduct|description": {
+    "en": "ad9779aeb9ac6587",
+    "text": "Sa product mode lang. Kapag naka-on, sumasagot ang /enroll/scep sa product mode. Kapag naka-off, ang default, sumasagot ito ng 503. BABALA: hinihingi ng RFC 8894 ang RSAES-PKCS1-v1.5 at AES-CBC, na hindi tinatanggap ng mga requirement 11.3.1 at 11.3.2 ng ASVS 5.0.0, kaya i-on lang ito para sa mga device na walang mas bago."
   },
   "scep.allowedProfiles|label": {
     "en": "b2cd406490c7676d",
@@ -6647,6 +6879,18 @@
     "en": "6f0fcf17e84ec4f0",
     "text": "hinahango mula rito sa startup ang mga long-term key ng service account. Maaari pa rin itong dalhin ng isang TRUST REALM: binubuo ang principal database ng realm kapag ino-on ang Kerberos nito at binubuo ulit kapag nagbago ito, kaya walang bahagi ng value ng realm ang nagamit sa startup"
   },
+  "krb5.allowSha1Enctypes|label": {
+    "en": "15146ba7e398f699",
+    "text": "Mag-alok ng AES na may SHA-1 sa product"
+  },
+  "krb5.allowSha1Enctypes|description": {
+    "en": "bc316355cf713a02",
+    "text": "Sa product mode lang. Kapag naka-on, maaari ring gumamit ang KDC na ito ng enctype 17 at 18 (AES na may HMAC-SHA1-96, RFC 3962). Kapag naka-off, ang default, 19 at 20 (RFC 8009) lang ang gamit ng product. BABALA: hindi tinatanggap ng requirement 11.4.1 ng ASVS 5.0.0 ang SHA-1 dito, kaya i-on lang ito para sa mga Kerberos client na walang mas bago."
+  },
+  "krb5.allowSha1Enctypes|restartReason": {
+    "en": "8bca2d2d03148c2a",
+    "text": "ginagawa sa pagsisimula ang mga key ng bawat principal"
+  },
   "krb5.enctypes|label": {
     "en": "e28806e1a9d53522",
     "text": "Mga encryption type"
@@ -8350,6 +8594,14 @@
   "risk.uploadMaxBytes|description": {
     "en": "65308f69a41d480e",
     "text": "Ang pinakamalaking maaaring maging file ng upload, gaya ng pagkakapadala (naka-compress, kung ganoon). Tinatanggihan bago mabasa ang anumang byte kapag mas malaki ang idinedeklara ng request, at pinahihinto kung saan ito lumampas sa kabilang kaso. Ilang daang megabyte na naka-compress ang city file ng DB-IP Lite."
+  },
+  "risk.maxSkippedLinesPercent|label": {
+    "en": "f299cbec779c44e8",
+    "text": "Pinakamalaking bahagi ng mga linya ng dataset na maaaring hindi ma-parse (porsiyento)"
+  },
+  "risk.maxSkippedLinesPercent|description": {
+    "en": "ff816ae98311e5a5",
+    "text": "Tinatanggihan ang dataset file kung higit sa porsiyentong ito ng mga linyang hindi komento ang hindi row ng format, at walang itinatabi rito. Tinatanggap ng 100 ang anumang file na may kahit isang row, na siyang ginagawa ng serbisyong ito dati. BABALA: sa 100, maaaring ma-load ang maling uri ng file basta may isang linyang ma-parse."
   },
   "risk.expandedMaxBytes|label": {
     "en": "c9644dc433201840",
@@ -12170,245 +12422,5 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "Para lang sa listener ng Protocol debugger: http.http2MaxConcurrentStreams. Ang -1, ang default, ay sumusunod sa http.http2MaxConcurrentStreams; ang anumang iba ay nagpapasya para sa listener na ito lang. Ilang request ang puwedeng sabay-sabay na bukas sa isang HTTP/2 connection (SETTINGS_MAX_CONCURRENT_STREAMS); tinatanggihan ang stream na lampas dito hanggang may matapos. Ang 100, ang default, ang pinakamaliit na halagang inirerekomenda ng RFC 9113; walang limit ang sa node mismo, kaya madadala ng iisang connection ang trabaho ng libu-libo. Nililimitahan nito ang trabaho sa isang connection gaya ng paglimita ng http.maxConnections sa mga connection. Sinusunod agad ng bagong connection ang pagbabago, at pinapadalhan ng bagong halaga ang bukas na."
-  },
-  "krb5.allowSha1Enctypes|label": {
-    "en": "15146ba7e398f699",
-    "text": "Mag-alok ng AES na may SHA-1 sa product"
-  },
-  "krb5.allowSha1Enctypes|description": {
-    "en": "bc316355cf713a02",
-    "text": "Sa product mode lang. Kapag naka-on, maaari ring gumamit ang KDC na ito ng enctype 17 at 18 (AES na may HMAC-SHA1-96, RFC 3962). Kapag naka-off, ang default, 19 at 20 (RFC 8009) lang ang gamit ng product. BABALA: hindi tinatanggap ng requirement 11.4.1 ng ASVS 5.0.0 ang SHA-1 dito, kaya i-on lang ito para sa mga Kerberos client na walang mas bago."
-  },
-  "krb5.allowSha1Enctypes|restartReason": {
-    "en": "8bca2d2d03148c2a",
-    "text": "ginagawa sa pagsisimula ang mga key ng bawat principal"
-  },
-  "scep.allowInProduct|label": {
-    "en": "5a40ad7af32c5eb7",
-    "text": "Sumagot sa SCEP sa product"
-  },
-  "scep.allowInProduct|description": {
-    "en": "ad9779aeb9ac6587",
-    "text": "Sa product mode lang. Kapag naka-on, sumasagot ang /enroll/scep sa product mode. Kapag naka-off, ang default, sumasagot ito ng 503. BABALA: hinihingi ng RFC 8894 ang RSAES-PKCS1-v1.5 at AES-CBC, na hindi tinatanggap ng mga requirement 11.3.1 at 11.3.2 ng ASVS 5.0.0, kaya i-on lang ito para sa mga device na walang mas bago."
-  },
-  "oauth2.allowUndeclaredGrants|label": {
-    "en": "48f3e420ff8f61c0",
-    "text": "Hayaang gumamit ng anumang grant ang client na walang listahan"
-  },
-  "oauth2.allowUndeclaredGrants|description": {
-    "en": "22bb986fa3711e13",
-    "text": "Sa product mode lang. Kapag naka-off, ang default, authorization_code at refresh_token lang ang magagamit ng client na walang idineklarang grant type. Kapag naka-on, magagamit nito ang anumang grant ng serbisyong ito. BABALA: nililimitahan ng requirement 10.4.4 ng ASVS 5.0.0 ang client sa mga grant na kailangan nito, kaya iwanang naka-off ito sa labas ng test stack."
-  },
-  "admin.allowDefaultUsername|label": {
-    "en": "0ab7a95a721ff350",
-    "text": "Payagan ang default na pangalan ng administrator sa product"
-  },
-  "admin.allowDefaultUsername|description": {
-    "en": "261e7a2bb89b22e2",
-    "text": "Sa product mode lang. Kapag naka-off, ang default, ang bootstrap administrator na pinangalanang admin, root, sa o administrator, o walang pangalan, ay binibigyan ng hindi mahulaang nabuong pangalan, na ipinapakita kasama ng password nito sa unang pagsisimula. Kapag naka-on, ginagamit ang naka-configure na pangalan. BABALA: ipinagbabawal ng requirement 6.3.2 ng ASVS 5.0.0 ang default na pangalan ng account, kaya iwanang naka-off ito sa labas ng test stack."
-  },
-  "admin.allowDefaultUsername|restartReason": {
-    "en": "0191948468332113",
-    "text": "isang beses tumatakbo ang bootstrap, sa pagitan ng pagbukas ng persistence store at ng pag-bind ng listener, kaya ang pagbabago pagkatapos noon ay wala nang mapapangalanan"
-  },
-  "crypto.allowLegacyHashes|label": {
-    "en": "e64b3dc98c254326",
-    "text": "Payagan ang SHA-1 at MD5 kung saan ginagamit pa ng protocol"
-  },
-  "crypto.allowLegacyHashes|description": {
-    "en": "21064646f0ea0387",
-    "text": "Sa product mode lang. Kapag naka-off, ang default, hindi gumagamit ang serbisyong ito ng OAEP sa SHA-1 sa XML encryption o JWE, ng SHA-1 PKINIT key derivation, o ng HMAC-MD5 checksum ng S4U2Self. Kapag naka-on, ginagamit nito ang mga ito. BABALA: hindi pinapayagan ng requirement 11.4.1 ng ASVS 5.0.0 ang mga hash na iyon, kaya i-on lang ito para sa mga partner o client na walang mas bago."
-  },
-  "security.allowUnscopedPeople|label": {
-    "en": "502e12a150357d63",
-    "text": "Hayaang maka-access ang taong walang tungkulin sa SCIM at Shared Signals"
-  },
-  "security.allowUnscopedPeople|description": {
-    "en": "2bf5565da47abb33",
-    "text": "Sa product mode lang. Kapag naka-off, ang default, ang nag-authenticate sa /scim/v2 o Shared Signals gamit ang scheme na walang scope, gaya ng HTTP Basic o session cookie, ay nangangailangan ng Admin Read para magbasa at Admin Write para magsulat. Kapag naka-on, maaari ang sinumang na-authenticate. BABALA: kapag naka-on, hindi natutugunan ang mga requirement 8.2.1 at 8.2.2 ng ASVS 5.0.0, dahil mababago ng sinuman ang anumang account. Gumamit na lang ng mga OAuth scope para sa mga provisioning client."
-  },
-  "security.fileRoots|label": {
-    "en": "7f144086ba380c16",
-    "text": "Mga direktoryong mababasahan ng pinangalanang file"
-  },
-  "security.fileRoots|description": {
-    "en": "a378a866f9204d53",
-    "text": "Sa product mode lang. Listahan ng mga absolute na direktoryo na pinaghihiwalay ng kuwit. Binabasa lang ang file na pinangalanan ng administrator sa setting o kahilingan (CA file, SPIFFE token o key file, Sigstore file, mail certificate o key) kung ang tunay nitong path, matapos sundan ang mga symbolic link, ay nasa loob ng isa sa mga ito. Itinatakda ito sa environment o sa appconfig file at hindi mababago sa console o API, para hindi ito mapalawak ng kahilingan ng administrator. BABALA: ang pagdagdag ng / o ibang malawak na direktoryo ay nangangahulugang hindi natutugunan ang requirement 5.3.2 ng ASVS 5.0.0."
-  },
-  "risk.maxSkippedLinesPercent|label": {
-    "en": "f299cbec779c44e8",
-    "text": "Pinakamalaking bahagi ng mga linya ng dataset na maaaring hindi ma-parse (porsiyento)"
-  },
-  "risk.maxSkippedLinesPercent|description": {
-    "en": "ff816ae98311e5a5",
-    "text": "Tinatanggihan ang dataset file kung higit sa porsiyentong ito ng mga linyang hindi komento ang hindi row ng format, at walang itinatabi rito. Tinatanggap ng 100 ang anumang file na may kahit isang row, na siyang ginagawa ng serbisyong ito dati. BABALA: sa 100, maaaring ma-load ang maling uri ng file basta may isang linyang ma-parse."
-  },
-  "crypto.allowCbcJwe|label": {
-    "en": "47b44d2ca23a7a17",
-    "text": "Payagan ang JWE CBC-HMAC content encryption"
-  },
-  "crypto.allowCbcJwe|description": {
-    "en": "20f6a7dc269fe48a",
-    "text": "Sa product mode lang. Kapag naka-off, ang default, AES-GCM lang ang ginagamit at tinatanggap ng JWE: hindi iniaalok o tinatanggap ang A128CBC-HS256, A192CBC-HS384 at A256CBC-HS512, at sinasagot sa A256GCM ang client na nagpangalan ng algorithm pero walang enc. Kapag naka-on, gumagana sila gaya sa development. BABALA: habang naka-on ito, hindi natutugunan ang requirement 11.3.2 ng ASVS 5.0.0, kaya i-on lang para sa partner na hindi makabasa ng AES-GCM."
-  },
-  "authn.allowOptionalSecondFactor|label": {
-    "en": "54d27fb9494e1370",
-    "text": "Hayaang mag-sign in nang walang second factor"
-  },
-  "authn.allowOptionalSecondFactor|description": {
-    "en": "4f841a3ff50e4a00",
-    "text": "Sa product mode lang. Kapag naka-off, ang default, kailangan ng lahat ng second factor, kasama ang mga administrator, anuman ang authentication policy, at nag-e-enrol sa sign-in ang walang hawak. Nananatiling exempt ang mga exempt na service account. Kapag naka-on, ang authentication policy ang magpapasya. BABALA: kapag naka-on, natutugunan lang ang requirement 6.3.3 ng ASVS 5.0.0 kung hinihingi ito ng policy."
-  },
-  "admin.logBootstrapPassword|label": {
-    "en": "02a3293594ba0523",
-    "text": "I-log ang nabuong bootstrap password"
-  },
-  "admin.logBootstrapPassword|description": {
-    "en": "577ec7c125546cdb",
-    "text": "Sa product mode lang. Kapag naka-off, ang default, isinusulat ang password na nabuo para sa unang administrator sa file na bootstrap-admin-password sa persistence.dataDir, na ang serbisyong ito lang ang makakabasa, at sinasabi ng log kung saan. Kapag naka-on, isinusulat ito sa service log. BABALA: kapag naka-on, hindi natutugunan ang requirement 16.2.5 ng ASVS 5.0.0, dahil umaabot sa log ang credential."
-  },
-  "oauth2.allowConfidentialWithoutPkce|label": {
-    "en": "c33a0a31a1d623b1",
-    "text": "Hayaang hindi gumamit ng PKCE ang confidential client"
-  },
-  "oauth2.allowConfidentialWithoutPkce|description": {
-    "en": "87599e0feb7aa8e3",
-    "text": "Sa product mode lang. Kapag naka-off, ang default, tinatanggihan ang authorization request na walang code_challenge para sa bawat client. Kapag naka-on, maaari itong alisin ng confidential client at inilo-log lang ang request. BABALA: kapag naka-on, hindi natutugunan ang requirement 10.4.6 ng ASVS 5.0.0."
-  },
-  "malwareScan.enabled|label": {
-    "en": "d0834826933c0682",
-    "text": "I-scan ang mga file para sa malware"
-  },
-  "malwareScan.enabled|description": {
-    "en": "bb893f03ed99dd0c",
-    "text": "Kapag naka-off, ang default, walang ini-scan. Kapag naka-on, bawat profile photo, logo, photo na kinopya mula sa federation partner at in-upload na risk dataset ay ipinapadala muna sa ICAP service sa malwareScan.url, at tinatanggihan kung na-flag ito ng service o hindi makasagot."
-  },
-  "malwareScan.url|label": {
-    "en": "08acec5549f532ea",
-    "text": "Address ng ICAP service"
-  },
-  "malwareScan.url|description": {
-    "en": "03fc5c265603704f",
-    "text": "Ang service na gagamitin, bilang icap://host:port/service o icaps://host:port/service (RFC 3507). Maaaring gamitin ang anumang antivirus na may ICAP service."
-  },
-  "malwareScan.timeoutMs|label": {
-    "en": "e616aee1107e9402",
-    "text": "Timeout ng scan (milliseconds)"
-  },
-  "malwareScan.timeoutMs|description": {
-    "en": "59a643baa5f14b91",
-    "text": "Gaano katagal maghihintay sa service. May dagdag na isang segundo bawat mebibyte ang malaking file."
-  },
-  "malwareScan.caFile|label": {
-    "en": "15e0140ac004309d",
-    "text": "CA file para sa icaps service"
-  },
-  "malwareScan.caFile|description": {
-    "en": "5ab91aec22f02c61",
-    "text": "PEM file ng mga CA certificate na maaaring pagkabitan ng icaps service, bukod sa mga public root. Sakop ng security.fileRoots."
-  },
-  "malwareScan.allowCleartext|label": {
-    "en": "5538ba47a0743bd0",
-    "text": "Payagan ang plain ICAP sa product mode"
-  },
-  "malwareScan.allowCleartext|description": {
-    "en": "c00ee2f1e34722ff",
-    "text": "Kapag naka-off, ang default, tinatanggihan ng product mode ang icap:// na address at walang file na tatanggapin hanggang may icaps:// na address. Kapag naka-on, maaaring makarating ang mga file sa scanner nang hindi naka-encrypt. Gamitin lamang sa network na pinagkakatiwalaan."
-  },
-  "security.passwordContextWords|label": {
-    "en": "6951c2a585da99f7",
-    "text": "Mga salitang hindi maaaring nasa password"
-  },
-  "security.passwordContextWords|description": {
-    "en": "fac6e61cb1da6802",
-    "text": "Mga karagdagang salitang hindi maaaring nasa bagong password, gaya ng pangalan ng iyong organisasyon, produkto, proyekto o departamento. Pinaghihiwalay ng kuwit. Laging tinatanggihan ang pangalan ng service at ang pangalan at domain ng realm. Kailangan ng hindi bababa sa apat na titik ang salita, at hindi pinapansin ng pagsusuri ang case at mga karaniwang pagpapalit gaya ng 0 para sa o."
-  },
-  "oauth2.refreshTokenMaxChainS|label": {
-    "en": "fd72d81940ff8ab9",
-    "text": "Pinakamahabang tagal ng chain ng refresh token (s)"
-  },
-  "oauth2.refreshTokenMaxChainS|description": {
-    "en": "48b5a77555c81355",
-    "text": "Ang ganap na limitasyon ng grant na nire-renew ng mga refresh token, binibilang mula sa una. Kapag lumampas, muling magsa-sign in ang tao, gaano man kadalas nag-refresh ang client. Ang 0 ay walang limitasyon, ang default sa development. 30 araw ang default ng product mode."
-  },
-  "federation.allowUntypedLogoutToken|label": {
-    "en": "6ef2596a6d379cfa",
-    "text": "Tanggapin ang Logout Token ng partner na walang tahasang type"
-  },
-  "federation.allowUntypedLogoutToken|description": {
-    "en": "5d58103a9e255bdf",
-    "text": "Kapag naka-off, ang default, tinatanggap lamang ng product mode ang Logout Token ng partner kung logout+jwt ang type. Kapag naka-on, tinatanggap din ang token na jwt ang type o walang type, para sa partner na hindi nagpapadala ng type. Inirerekomenda lamang ito ng OpenID specification."
-  },
-  "account.recentAuthMinutes|label": {
-    "en": "dfa5936497901458",
-    "text": "Gaano kabago dapat ang sign-in para baguhin ang second factor (min)"
-  },
-  "account.recentAuthMinutes|description": {
-    "en": "50ed3d8089739a00",
-    "text": "Ang taong nagbabago ng second factor, recovery code, passkey o email address sa portal ay dapat nakapag-sign in sa loob ng ganitong karaming minuto, o papapag-sign in muna siya. Ang 0 ay hindi hinihingi, ang default sa development. 15 ang default ng product mode."
-  },
-  "persistence.allowDefaultDatabasePassword|label": {
-    "en": "24634837693652d6",
-    "text": "Payagan ang default na database password sa product mode"
-  },
-  "persistence.allowDefaultDatabasePassword|description": {
-    "en": "b7b661b267c62aa2",
-    "text": "Kapag naka-off, ang default, hindi magsisimula ang product mode gamit ang kilalang database password, gaya ng sts_app ng kasamang compose file, o password na katulad ng user name. Kapag naka-on, magsisimula pa rin. Gamitin lamang sa test stack."
-  },
-  "authn.sessionsEndedBefore|label": {
-    "en": "174234a42e8c3da2",
-    "text": "Natapos na ang mga session na nagsimula bago ang sandaling ito (ms)"
-  },
-  "authn.sessionsEndedBefore|description": {
-    "en": "c11569be4873c007",
-    "text": "Itinatakda ng Tapusin ang bawat session sa pahina ng Sessions. Natapos na ang sign-on session na nagsimula bago ang sandaling ito, sa millisecond mula 1970. Ang 0 ay wala."
-  },
-  "oauth2.consentAlwaysForPublicClients|label": {
-    "en": "b2f544167d0f1309",
-    "text": "Laging humingi ng pahintulot para sa public client"
-  },
-  "oauth2.consentAlwaysForPublicClients|description": {
-    "en": "147cce1b272c536f",
-    "text": "Hindi mapapatunayan ng public client kung sino ito, kaya tinatanong ang tao tuwing humihiling ito ng access, anuman ang sagot niya dati. Hindi kasama ang sariling mga application ng service na ito. Naka-on bilang default sa product mode."
-  },
-  "federation.maxPartnerAuthAgeS|label": {
-    "en": "7994b4352961110b",
-    "text": "Pinakalumang partner authentication na tinatanggap (s)"
-  },
-  "federation.maxPartnerAuthAgeS|description": {
-    "en": "c67a42c14975e328",
-    "text": "Tinatanggihan ang federated sign-in kung sinasabi ng partner na mas matagal pa rito nang nag-authenticate ang tao, gamit ang auth_time o AuthnInstant. Habang may limitasyon, tinatanggihan ang partner na hindi nagsasabi. Ang 0, ang default, ay hindi nagtatanong."
-  },
-  "security.requestsPerAddressPerMinute|label": {
-    "en": "6e933f6a681d3968",
-    "text": "Mga request bawat address bawat minuto"
-  },
-  "security.requestsPerAddressPerMinute|description": {
-    "en": "7324a27b3b761012",
-    "text": "Limitasyon sa lahat ng request mula sa isang address, bawat process. Preno ito sa pang-aabuso, hiwalay sa mga limitasyon sa pagsubok ng credential. Ang 0 ay walang limitasyon, ang default sa development. 6000 ang default ng product mode. Sa likod ng proxy, itakda ang global.trustedProxies para mabasa nang tama ang mga address."
-  },
-  "audit.allowPlainSyslog|label": {
-    "en": "1401e9d7380768e3",
-    "text": "Payagan ang plain syslog audit export sa product mode"
-  },
-  "audit.allowPlainSyslog|description": {
-    "en": "cc8beb8a652a3752",
-    "text": "Kapag naka-off, ang default, tls transport lamang ang tinatanggap ng product mode para sa syslog audit destination. Kapag naka-on, tinatanggap din ang tcp at udp, kaya hindi naka-encrypt ang audit log sa network. Gamitin lamang sa network na pinagkakatiwalaan."
-  },
-  "security.outboundAllowedHosts|label": {
-    "en": "48109be8cdfd0972",
-    "text": "Mga host na maaaring tawagan ng service na ito"
-  },
-  "security.outboundAllowedHosts|description": {
-    "en": "f1d0447a0b56f74e",
-    "text": "Kung nakatakda, ang outbound request na maiimpluwensyahan ng partner, client o tumatawag ay makakarating lamang sa mga host na ito. Pinaghihiwalay ng kuwit: eksaktong pangalan, o tuldok sa unahan para sa buong domain, gaya ng .example.com. Ang walang laman, ang default, ay nagpapahintulot ng anumang public host. Laging tinatanggihan ang mga internal address sa product mode."
-  },
-  "security.hstsIncludeSubDomains|label": {
-    "en": "1ac0e6ab8c38092f",
-    "text": "Ilapat ang HSTS sa mga subdomain"
-  },
-  "security.hstsIncludeSubDomains|description": {
-    "en": "26b0298f1a2bd460",
-    "text": "Idinaragdag ang includeSubDomains sa Strict-Transport-Security, para gumamit ang mga browser ng HTTPS sa bawat subdomain ng host name ng service na ito. Naka-on bilang default sa product mode. I-off kung kailangan pang sumagot ng subdomain sa plain HTTP."
   }
 }

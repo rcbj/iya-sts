@@ -682,6 +682,25 @@ function warnsWithoutAuditDestination() {
   return isProduct();
 }
 
+/**
+ * @returns true when an inbound assertion must name its audience
+ */
+function refusesAssertionWithoutAudience() {
+  log.debug("Entering refusesAssertionWithoutAudience().");
+  log.debug("Leaving refusesAssertionWithoutAudience().");
+  return isProduct() &&
+    config.value('federation.allowAssertionWithoutAudience') !== true;
+}
+
+/**
+ * @returns true when a token whose sub no longer resolves is refused
+ */
+function refusesTokenForGoneSubject() {
+  log.debug("Entering refusesTokenForGoneSubject().");
+  log.debug("Leaving refusesTokenForGoneSubject().");
+  return isProduct();
+}
+
 // Must a malware scanner be reached over TLS (#1501, ASVS 5.0.0 12.3.1)?
 /**
  * @returns true when a plain icap:// address may not be used
@@ -4881,6 +4900,8 @@ module.exports = {
   requiresPkceOfEveryClient: requiresPkceOfEveryClient,
   requiresSecondFactorOfEveryone: requiresSecondFactorOfEveryone,
   requiresTlsToMalwareScanner: requiresTlsToMalwareScanner,
+  refusesTokenForGoneSubject: refusesTokenForGoneSubject,
+  refusesAssertionWithoutAudience: refusesAssertionWithoutAudience,
   warnsWithoutAuditDestination: warnsWithoutAuditDestination,
   omitsUnapprovedSigningCurves: omitsUnapprovedSigningCurves,
   refusesPlainSyslog: refusesPlainSyslog,

@@ -6919,6 +6919,12 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC (#717). save writes the realm\'s branding settings ' +
           'together, refusing text or links below 4.5:1 against the card; ' +
           'remove-logo removes the logo and is audited.' },
+  { path: '/admin-api/audit/integrity', group: 'Management API',
+    name: 'Check the audit log\'s integrity',
+    specs: ['openapi'],
+    what: 'NON-SPEC (#1552). Compares each held audit row with its ' +
+          'keyed checksum and reports any that no longer match. It ' +
+          'changes nothing.' },
   { path: '/admin-api/audit', group: 'Management API', name: 'Audit log',
     specs: ['rfc4511'],
     what: 'NON-SPEC. What happened here, in order, as JSON: every ' +

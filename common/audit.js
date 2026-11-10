@@ -2222,6 +2222,7 @@ function record(event) {
       ? (info.summary ? detailOf({ note: info.detail }) : {})
       : detailOf(info.detail)
   };
+  row.mac = rowMac(row);
   events.push(row);
   trimToCap();
   // `summarised: true` (2026-09-17, #36 follow-up): the caller logs a
@@ -2312,6 +2313,51 @@ function failure(code, event) {
  * @returns the row written, or null when it could not be recorded (logged under
  *   STS-REG-0048)
  */
+// A KEYED CHECKSUM ON EVERY ROW (#1552, ASVS 5.0.0 16.4.2). The key is not in
+// the database, so somebody able to rewrite a row there cannot make the
+// checksum agree. `verifyIntegrity()` is what reads it. A row with no checksum
+// was written with no key-encryption key in the process.
+const MAC_FIELDS = ['seq', 'origin', 'at', 'category', 'action', 'actor',
+                    'actorForm', 'target', 'outcome', 'summary'];
+
+function rowMac(row) {
+  log.debug("Entering rowMac().");
+  let mac = '';
+  try {
+    mac = String(require('./keystore').keyedDigest('audit-row',
+      JSON.stringify(MAC_FIELDS.map(function (key) {
+        return row[key] === undefined ? null : row[key];
+      }))) || '');
+  } catch (e) {
+    log.debug("Caught in rowMac(): " + ((e && e.message) || e));
+  }
+  log.debug("Leaving rowMac().");
+  return mac;
+}
+
+/**
+ * Reports which of this realm's held audit rows no longer match their checksum.
+ *
+ * @returns `{ checked, unsigned, altered }`, `altered` being the rows' seq
+ */
+function verifyIntegrity() {
+  log.debug("Entering verifyIntegrity().");
+  const out = { checked: 0, unsigned: 0, altered: [] };
+  list().forEach(function (row) {
+    if (!row.mac) {
+      out.unsigned += 1;
+      return;
+    }
+    out.checked += 1;
+    const again = rowMac(row);
+    if (again && again !== row.mac) {
+      out.altered.push(row.seq);
+    }
+  });
+  log.debug("Leaving verifyIntegrity(). " + out.altered.length + " altered.");
+  return out;
+}
+
 function audit(event) {
   log.debug("Entering audit().");
   try {
@@ -3112,6 +3158,7 @@ function prose() {
  * @namespace
  */
 module.exports = {
+  verifyIntegrity: verifyIntegrity,
   CATEGORIES: CATEGORIES,
   redactedPath: redactedPath,
   redactedQuery: redactedQuery,

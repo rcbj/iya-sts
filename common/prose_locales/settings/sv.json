@@ -207,6 +207,222 @@
     "en": "034b8666bc7feb89",
     "text": "Ursprung — schema, värd och port, ingen sökväg — som CORS behandlar som driftsättningens EGNA, kommaseparerade, vid sidan av adresserna som tjänsten lyssnar på, global.publicBaseUrl och den inbäddade felsökaren. Ett ursprung här får läsa varje svar som tjänsten ger en webbläsare, vilken klient begäran än namnger. TOMT, standardvärdet, lägger inte till några: varje annat ursprung tillåts bara där en applikation listar det i appCorsOrigin. Ett värde som inte är ett ursprung ignoreras och loggas, och vidgas aldrig."
   },
+  "security.fileRoots|label": {
+    "en": "7f144086ba380c16",
+    "text": "Kataloger som en namngiven fil får läsas från"
+  },
+  "security.fileRoots|description": {
+    "en": "a378a866f9204d53",
+    "text": "Endast produktläge. En kommaseparerad lista över absoluta kataloger. En fil som en administratör namnger i en inställning eller begäran (en CA-fil, en SPIFFE-token- eller nyckelfil, en Sigstore-fil, ett e-postcertifikat eller en e-postnyckel) läses bara om dess verkliga sökväg, efter symboliska länkar, ligger i någon av dem. Den anges i miljön eller appconfig-filen och kan inte ändras via konsolen eller API:et, så att en administratörs begäran inte kan vidga den. VARNING: att lägga till / eller en annan bred katalog innebär att krav 5.3.2 i ASVS 5.0.0 inte uppfylls."
+  },
+  "security.fileRoots|restartReason": {
+    "en": "65fd8c7be0cfb5d3",
+    "text": "den begränsar vad en administratörs begäran får namnge, så ingen sådan begäran får utöka den"
+  },
+  "security.allowUnscopedPeople|label": {
+    "en": "502e12a150357d63",
+    "text": "Låt en person utan roll nå SCIM och Shared Signals"
+  },
+  "security.allowUnscopedPeople|description": {
+    "en": "2bf5565da47abb33",
+    "text": "Endast produktläge. Av, standardvärdet, behöver den som autentiserar sig mot /scim/v2 eller Shared Signals med ett schema utan omfång, som HTTP Basic eller sessionscookien, Admin Read för att läsa och Admin Write för att skriva. På får varje autentiserad person det. VARNING: på uppfylls inte krav 8.2.1 och 8.2.2 i ASVS 5.0.0, eftersom vem som helst kan ändra vilket konto som helst. Använd OAuth-omfång för etableringsklienter i stället."
+  },
+  "admin.logBootstrapPassword|label": {
+    "en": "02a3293594ba0523",
+    "text": "Logga det genererade startlösenordet"
+  },
+  "admin.logBootstrapPassword|description": {
+    "en": "577ec7c125546cdb",
+    "text": "Endast produktläge. Av, standardvärdet, skrivs lösenordet som genereras för den första administratören till filen bootstrap-admin-password i persistence.dataDir, som bara den här tjänsten kan läsa, och loggen säger var. På skrivs det till tjänstens logg. VARNING: på uppfylls inte krav 16.2.5 i ASVS 5.0.0, eftersom en autentiseringsuppgift hamnar i loggen."
+  },
+  "oauth2.allowConfidentialWithoutPkce|label": {
+    "en": "c33a0a31a1d623b1",
+    "text": "Låt en konfidentiell klient utelämna PKCE"
+  },
+  "oauth2.allowConfidentialWithoutPkce|description": {
+    "en": "87599e0feb7aa8e3",
+    "text": "Endast produktläge. Av, standardvärdet, avvisas en auktoriseringsbegäran utan code_challenge för varje klient. På får en konfidentiell klient utelämna den och begäran loggas bara. VARNING: på uppfylls inte krav 10.4.6 i ASVS 5.0.0."
+  },
+  "security.passwordContextWords|label": {
+    "en": "6951c2a585da99f7",
+    "text": "Ord som ett lösenord inte får innehålla"
+  },
+  "security.passwordContextWords|description": {
+    "en": "fac6e61cb1da6802",
+    "text": "Extra ord som ett nytt lösenord inte får innehålla, till exempel namn på din organisation, produkt, projekt eller avdelning. Kommaseparerade. Tjänstens namn och sfärens namn och domän avvisas alltid. Ett ord måste ha minst fyra bokstäver, och kontrollen ignorerar skiftläge och vanliga teckenbyten som 0 för o."
+  },
+  "oauth2.refreshTokenMaxChainS|label": {
+    "en": "fd72d81940ff8ab9",
+    "text": "Längsta tid en kedja av uppdateringstoken får vara (s)"
+  },
+  "oauth2.refreshTokenMaxChainS|description": {
+    "en": "48b5a77555c81355",
+    "text": "Den absoluta gränsen för en behörighet som förnyas med uppdateringstoken, räknat från den första. När den passerats loggar personen in igen, hur ofta klienten än uppdaterat. 0 betyder ingen gräns, standardvärdet i utveckling. Produktläget använder 30 dagar som standard."
+  },
+  "federation.allowUntypedLogoutToken|label": {
+    "en": "6ef2596a6d379cfa",
+    "text": "Acceptera en partners utloggningstoken utan uttrycklig typ"
+  },
+  "federation.allowUntypedLogoutToken|description": {
+    "en": "5d58103a9e255bdf",
+    "text": "Av, standardvärdet, accepterar produktläget en partners utloggningstoken bara om typen är logout+jwt. På accepteras även en token med typen jwt eller utan typ, för en partner som inte skickar typen. OpenID-specifikationen rekommenderar den bara."
+  },
+  "account.recentAuthMinutes|label": {
+    "en": "dfa5936497901458",
+    "text": "Hur nyligen inloggningen måste ha skett för att ändra en andra faktor (min)"
+  },
+  "account.recentAuthMinutes|description": {
+    "en": "50ed3d8089739a00",
+    "text": "En person som ändrar sina andra faktorer, återställningskoder, nycklar eller e-postadress på portalen måste ha loggat in inom så många minuter, annars skickas personen till inloggning först. 0 betyder att det inte krävs, standardvärdet i utveckling. Produktläget använder 15 som standard."
+  },
+  "persistence.allowDefaultDatabasePassword|label": {
+    "en": "24634837693652d6",
+    "text": "Tillåt ett standardlösenord för databasen i produktläge"
+  },
+  "persistence.allowDefaultDatabasePassword|description": {
+    "en": "b7b661b267c62aa2",
+    "text": "Av, standardvärdet, startar produktläget inte med ett välkänt databaslösenord, som sts_app i den medföljande compose-filen, eller ett lösenord som är lika med användarnamnet. På startar det ändå. Använd bara för en teststack."
+  },
+  "authn.sessionsEndedBefore|label": {
+    "en": "174234a42e8c3da2",
+    "text": "Sessioner som startade före denna tidpunkt har avslutats (ms)"
+  },
+  "authn.sessionsEndedBefore|description": {
+    "en": "c11569be4873c007",
+    "text": "Sätts av Avsluta alla sessioner på sidan Sessioner. En inloggningssession som startade före denna tidpunkt, i millisekunder sedan 1970, har avslutats. 0 betyder ingen."
+  },
+  "oauth2.consentAlwaysForPublicClients|label": {
+    "en": "b2f544167d0f1309",
+    "text": "Fråga alltid om samtycke för en offentlig klient"
+  },
+  "oauth2.consentAlwaysForPublicClients|description": {
+    "en": "147cce1b272c536f",
+    "text": "En offentlig klient kan inte bevisa vem den är, så personen tillfrågas varje gång den begär åtkomst, oavsett tidigare svar. Tjänstens egna program tillfrågas inte. På som standard i produktläge."
+  },
+  "federation.maxPartnerAuthAgeS|label": {
+    "en": "7994b4352961110b",
+    "text": "Äldsta partnerautentisering som accepteras (s)"
+  },
+  "federation.maxPartnerAuthAgeS|description": {
+    "en": "c67a42c14975e328",
+    "text": "Avvisar en federerad inloggning där partnern anger att personen autentiserades längre tillbaka än så, med auth_time eller AuthnInstant. Så länge en gräns finns avvisas en partner som inte anger tiden. 0, standardvärdet, frågar inte."
+  },
+  "security.requestsPerAddressPerMinute|label": {
+    "en": "6e933f6a681d3968",
+    "text": "Förfrågningar per adress och minut"
+  },
+  "security.requestsPerAddressPerMinute|description": {
+    "en": "7324a27b3b761012",
+    "text": "Ett tak för alla förfrågningar från en adress, per process. Det är en broms mot missbruk, skild från gränserna för inloggningsförsök. 0 betyder inget tak, standardvärdet i utveckling. Produktläget använder 6000 som standard. Bakom en proxy, ange global.trustedProxies så att adresser läses korrekt."
+  },
+  "audit.allowPlainSyslog|label": {
+    "en": "1401e9d7380768e3",
+    "text": "Tillåt okrypterad syslog-export av granskningsloggen i produktläge"
+  },
+  "audit.allowPlainSyslog|description": {
+    "en": "cc8beb8a652a3752",
+    "text": "Av, standardvärdet, accepterar produktläget bara transporten tls för ett syslog-mål. På accepteras även tcp och udp, så granskningsloggen går okrypterad över nätverket. Använd bara på ett nätverk du litar på."
+  },
+  "security.outboundAllowedHosts|label": {
+    "en": "48109be8cdfd0972",
+    "text": "Värdar som tjänsten får ansluta till"
+  },
+  "security.outboundAllowedHosts|description": {
+    "en": "f1d0447a0b56f74e",
+    "text": "Om angivet får en utgående förfrågan som en partner, klient eller anropare kan påverka bara nå dessa värdar. Kommaseparerade: ett exakt namn, eller en inledande punkt för en hel domän, till exempel .example.com. Tomt, standardvärdet, tillåter alla publika värdar. Interna adresser avvisas alltid i produktläge."
+  },
+  "security.hstsIncludeSubDomains|label": {
+    "en": "1ac0e6ab8c38092f",
+    "text": "Tillämpa HSTS på underdomäner"
+  },
+  "security.hstsIncludeSubDomains|description": {
+    "en": "26b0298f1a2bd460",
+    "text": "Lägger till includeSubDomains i Strict-Transport-Security, så att webbläsare använder HTTPS för alla underdomäner till tjänstens värdnamn. På som standard i produktläge. Stäng av om en underdomän fortfarande måste svara över okrypterad HTTP."
+  },
+  "federation.allowAssertionWithoutAudience|label": {
+    "en": "ed95d7ca4d1f2354",
+    "text": "Acceptera ett påstående utan målgrupp"
+  },
+  "federation.allowAssertionWithoutAudience|description": {
+    "en": "af262d18fe96916b",
+    "text": "Av, standardvärdet, avvisar produktläget en partners SAML 1.1- eller WS-Federation-påstående utan målgruppsbegränsning, eftersom inget säger att det var avsett för den här tjänsten. På accepteras det med en varning, för en partner som inte kan skicka en."
+  },
+  "malwareScan.enabled|label": {
+    "en": "d0834826933c0682",
+    "text": "Skanna filer efter skadlig kod"
+  },
+  "malwareScan.enabled|description": {
+    "en": "bb893f03ed99dd0c",
+    "text": "Av, standardvärdet, skannas ingenting. På skickas varje profilbild, logotyp, bild kopierad från en federationspartner och uppladdad riskdatamängd först till ICAP-tjänsten i malwareScan.url, och avvisas om tjänsten flaggar den eller inte kan svara."
+  },
+  "malwareScan.url|label": {
+    "en": "08acec5549f532ea",
+    "text": "ICAP-tjänstens adress"
+  },
+  "malwareScan.url|description": {
+    "en": "03fc5c265603704f",
+    "text": "Tjänsten att skanna med, som icap://värd:port/tjänst eller icaps://värd:port/tjänst (RFC 3507). Vilken antivirusprodukt som helst med en ICAP-tjänst kan användas."
+  },
+  "malwareScan.timeoutMs|label": {
+    "en": "e616aee1107e9402",
+    "text": "Tidsgräns för skanning (millisekunder)"
+  },
+  "malwareScan.timeoutMs|description": {
+    "en": "59a643baa5f14b91",
+    "text": "Hur länge tjänsten väntas på. En stor fil får en sekund mer per mebibyte."
+  },
+  "malwareScan.caFile|label": {
+    "en": "15e0140ac004309d",
+    "text": "CA-fil för en icaps-tjänst"
+  },
+  "malwareScan.caFile|description": {
+    "en": "5ab91aec22f02c61",
+    "text": "En PEM-fil med CA-certifikat som en icaps-tjänst får kedja till, utöver de publika rötterna. Omfattas av security.fileRoots."
+  },
+  "malwareScan.allowCleartext|label": {
+    "en": "5538ba47a0743bd0",
+    "text": "Tillåt okrypterad ICAP i produktläge"
+  },
+  "malwareScan.allowCleartext|description": {
+    "en": "c00ee2f1e34722ff",
+    "text": "Av, standardvärdet, avvisar produktläget en icap://-adress och inga filer tas emot förrän en icaps://-adress är angiven. På kan filer nå skannern okrypterade. Använd bara på ett nätverk du litar på."
+  },
+  "authn.allowOptionalSecondFactor|label": {
+    "en": "54d27fb9494e1370",
+    "text": "Låt en person logga in utan andra faktor"
+  },
+  "authn.allowOptionalSecondFactor|description": {
+    "en": "4f841a3ff50e4a00",
+    "text": "Endast produktläge. Av, standardvärdet, krävs en andra faktor av alla, administratörer inräknade, oavsett autentiseringspolicy, och den som saknar en registrerar en vid inloggning. Undantagna tjänstekonton förblir undantagna. På avgör autentiseringspolicyn. VARNING: på uppfylls krav 6.3.3 i ASVS 5.0.0 bara om policyn kräver det."
+  },
+  "crypto.allowCbcJwe|label": {
+    "en": "47b44d2ca23a7a17",
+    "text": "Tillåt JWE CBC-HMAC-innehållskryptering"
+  },
+  "crypto.allowCbcJwe|description": {
+    "en": "20f6a7dc269fe48a",
+    "text": "Endast produktläge. Av, standardvärdet, använder och godtar JWE enbart AES-GCM: A128CBC-HS256, A192CBC-HS384 och A256CBC-HS512 varken erbjuds eller godtas, och en klient som namnger en algoritm men inget enc besvaras med A256GCM. På fungerar de som i utveckling. VARNING: medan detta är på uppfylls inte krav 11.3.2 i ASVS 5.0.0, så slå på det bara för en partner som inte kan läsa AES-GCM."
+  },
+  "crypto.allowLegacyHashes|label": {
+    "en": "e64b3dc98c254326",
+    "text": "Tillåt SHA-1 och MD5 där ett protokoll fortfarande använder dem"
+  },
+  "crypto.allowLegacyHashes|description": {
+    "en": "21064646f0ea0387",
+    "text": "Endast produktläge. Av, standardvärdet, använder tjänsten inte OAEP över SHA-1 i XML-kryptering eller JWE, SHA-1-nyckelhärledning för PKINIT eller HMAC-MD5-kontrollsumman för S4U2Self. På används de. VARNING: krav 11.4.1 i ASVS 5.0.0 tillåter inte de hashfunktionerna, så slå bara på detta för partner eller klienter som inte klarar något nyare."
+  },
+  "admin.allowDefaultUsername|label": {
+    "en": "0ab7a95a721ff350",
+    "text": "Tillåt ett administratörsnamn som är standard i produktläge"
+  },
+  "admin.allowDefaultUsername|description": {
+    "en": "261e7a2bb89b22e2",
+    "text": "Endast produktläge. Av, standardvärdet, får en startadministratör som heter admin, root, sa eller administrator, eller saknar namn, ett oförutsägbart genererat namn som visas med lösenordet vid första start. På används det konfigurerade namnet som det är. VARNING: krav 6.3.2 i ASVS 5.0.0 förbjuder ett kontonamn som är standard, så låt detta vara av utanför en testmiljö."
+  },
+  "admin.allowDefaultUsername|restartReason": {
+    "en": "0191948468332113",
+    "text": "initieringen körs en gång, mellan att det beständiga lagret öppnas och att lyssnaren binds, så en ändring efter det har inget kvar att namnge"
+  },
   "admin.bootstrapUsername|label": {
     "en": "bdb921ce57f149ff",
     "text": "Konto för initial administratör"
@@ -2759,6 +2975,14 @@
     "en": "19042efe72e28cc6",
     "text": "Hur många ogenomskinliga åtkomsttoken denna sfär sparar. När det är fullt tas utgångna rader bort och ytterligare utfärdande nekas (STS-OAUTH-0979) i stället för att vräka en giltig token. Gäller när oauth2.accessTokenFormat är opaque."
   },
+  "oauth2.allowUndeclaredGrants|label": {
+    "en": "48f3e420ff8f61c0",
+    "text": "Låt en klient utan lista använda valfri behörighetstyp"
+  },
+  "oauth2.allowUndeclaredGrants|description": {
+    "en": "22bb986fa3711e13",
+    "text": "Endast produktläge. Av, standardvärdet, får en klient som inte deklarerar några behörighetstyper bara använda authorization_code och refresh_token. På får den använda alla behörighetstyper tjänsten erbjuder. VARNING: krav 10.4.4 i ASVS 5.0.0 begränsar en klient till de behörighetstyper den behöver, så låt detta vara av utanför en testmiljö."
+  },
   "oauth2.signedMetadataAlgorithm|label": {
     "en": "71fb31f9a62ec657",
     "text": "Algoritm som signed_metadata signeras med"
@@ -4098,6 +4322,14 @@
   "scep.enabled|description": {
     "en": "9d0b62856fb7cc83",
     "text": "Avstängt får varje /enroll/scep-begäran att svara 503 i den här sfären. Redan utfärdade certifikat behålls."
+  },
+  "scep.allowInProduct|label": {
+    "en": "5a40ad7af32c5eb7",
+    "text": "Svara på SCEP i produktläge"
+  },
+  "scep.allowInProduct|description": {
+    "en": "ad9779aeb9ac6587",
+    "text": "Endast produktläge. På svarar /enroll/scep i produktläge. Av, standardvärdet, svarar det 503. VARNING: RFC 8894 kräver RSAES-PKCS1-v1.5 och AES-CBC, som krav 11.3.1 och 11.3.2 i ASVS 5.0.0 inte accepterar, så slå bara på detta för enheter som inte klarar något nyare."
   },
   "scep.allowedProfiles|label": {
     "en": "b2cd406490c7676d",
@@ -6647,6 +6879,18 @@
     "en": "6f0fcf17e84ec4f0",
     "text": "tjänstekontots långtidsnycklar härleds från det vid start. En FÖRTROENDESFÄR kan ändå bära det: en sfärs principaldatabas byggs när dess Kerberos slås på och byggs om när detta ändras, så inget av sfärens värde förbrukades vid start"
   },
+  "krb5.allowSha1Enctypes|label": {
+    "en": "15146ba7e398f699",
+    "text": "Erbjud AES med SHA-1 i produktläge"
+  },
+  "krb5.allowSha1Enctypes|description": {
+    "en": "bc316355cf713a02",
+    "text": "Endast produktläge. På kan denna KDC också använda enctypes 17 och 18 (AES med HMAC-SHA1-96, RFC 3962). Av, standardvärdet, använder produktläget bara 19 och 20 (RFC 8009). VARNING: krav 11.4.1 i ASVS 5.0.0 accepterar inte SHA-1 här, så slå bara på detta för Kerberos-klienter som inte klarar något nyare."
+  },
+  "krb5.allowSha1Enctypes|restartReason": {
+    "en": "8bca2d2d03148c2a",
+    "text": "varje huvudmans nycklar skapas vid start"
+  },
   "krb5.enctypes|label": {
     "en": "e28806e1a9d53522",
     "text": "Krypteringstyper"
@@ -8350,6 +8594,14 @@
   "risk.uploadMaxBytes|description": {
     "en": "65308f69a41d480e",
     "text": "Den största fil en uppladdning får vara, som den skickas (komprimerad, om den är det). Avvisas innan en enda byte läses när begäran anger mer, och stoppas annars där den passerar detta. DB-IP Lites stadsfil är några hundra megabyte komprimerad."
+  },
+  "risk.maxSkippedLinesPercent|label": {
+    "en": "f299cbec779c44e8",
+    "text": "Största andel av en datamängds rader som får misslyckas vid tolkning (procent)"
+  },
+  "risk.maxSkippedLinesPercent|description": {
+    "en": "ff816ae98311e5a5",
+    "text": "En datamängdsfil där mer än denna procentandel av raderna som inte är kommentarer inte är poster i formatet avvisas, och inget av den behålls. 100 godtar varje fil med minst en post, vilket är vad tjänsten gjorde tidigare. VARNING: vid 100 kan en fil av fel slag läsas in så länge en rad går att tolka."
   },
   "risk.expandedMaxBytes|label": {
     "en": "c9644dc433201840",
@@ -12170,245 +12422,5 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "Gäller bara protokollfelsökarens lyssnare: http.http2MaxConcurrentStreams. -1, standardvärdet, följer http.http2MaxConcurrentStreams; allt annat avgör bara för den här lyssnaren. Hur många begäranden en HTTP/2-anslutning får ha öppna samtidigt (SETTINGS_MAX_CONCURRENT_STREAMS); en ström utöver det avvisas tills en annan är klar. 100, standardvärdet, är det minsta värde RFC 9113 rekommenderar; nodes eget är obegränsat, vilket skulle låta en enda anslutning bära arbetet för tusentals. Det begränsar arbetet på en anslutning som http.maxConnections begränsar anslutningarna. En ny anslutning följer en ändring direkt, och en öppen skickas det nya värdet."
-  },
-  "krb5.allowSha1Enctypes|label": {
-    "en": "15146ba7e398f699",
-    "text": "Erbjud AES med SHA-1 i produktläge"
-  },
-  "krb5.allowSha1Enctypes|description": {
-    "en": "bc316355cf713a02",
-    "text": "Endast produktläge. På kan denna KDC också använda enctypes 17 och 18 (AES med HMAC-SHA1-96, RFC 3962). Av, standardvärdet, använder produktläget bara 19 och 20 (RFC 8009). VARNING: krav 11.4.1 i ASVS 5.0.0 accepterar inte SHA-1 här, så slå bara på detta för Kerberos-klienter som inte klarar något nyare."
-  },
-  "krb5.allowSha1Enctypes|restartReason": {
-    "en": "8bca2d2d03148c2a",
-    "text": "varje huvudmans nycklar skapas vid start"
-  },
-  "scep.allowInProduct|label": {
-    "en": "5a40ad7af32c5eb7",
-    "text": "Svara på SCEP i produktläge"
-  },
-  "scep.allowInProduct|description": {
-    "en": "ad9779aeb9ac6587",
-    "text": "Endast produktläge. På svarar /enroll/scep i produktläge. Av, standardvärdet, svarar det 503. VARNING: RFC 8894 kräver RSAES-PKCS1-v1.5 och AES-CBC, som krav 11.3.1 och 11.3.2 i ASVS 5.0.0 inte accepterar, så slå bara på detta för enheter som inte klarar något nyare."
-  },
-  "oauth2.allowUndeclaredGrants|label": {
-    "en": "48f3e420ff8f61c0",
-    "text": "Låt en klient utan lista använda valfri behörighetstyp"
-  },
-  "oauth2.allowUndeclaredGrants|description": {
-    "en": "22bb986fa3711e13",
-    "text": "Endast produktläge. Av, standardvärdet, får en klient som inte deklarerar några behörighetstyper bara använda authorization_code och refresh_token. På får den använda alla behörighetstyper tjänsten erbjuder. VARNING: krav 10.4.4 i ASVS 5.0.0 begränsar en klient till de behörighetstyper den behöver, så låt detta vara av utanför en testmiljö."
-  },
-  "admin.allowDefaultUsername|label": {
-    "en": "0ab7a95a721ff350",
-    "text": "Tillåt ett administratörsnamn som är standard i produktläge"
-  },
-  "admin.allowDefaultUsername|description": {
-    "en": "261e7a2bb89b22e2",
-    "text": "Endast produktläge. Av, standardvärdet, får en startadministratör som heter admin, root, sa eller administrator, eller saknar namn, ett oförutsägbart genererat namn som visas med lösenordet vid första start. På används det konfigurerade namnet som det är. VARNING: krav 6.3.2 i ASVS 5.0.0 förbjuder ett kontonamn som är standard, så låt detta vara av utanför en testmiljö."
-  },
-  "admin.allowDefaultUsername|restartReason": {
-    "en": "0191948468332113",
-    "text": "initieringen körs en gång, mellan att det beständiga lagret öppnas och att lyssnaren binds, så en ändring efter det har inget kvar att namnge"
-  },
-  "crypto.allowLegacyHashes|label": {
-    "en": "e64b3dc98c254326",
-    "text": "Tillåt SHA-1 och MD5 där ett protokoll fortfarande använder dem"
-  },
-  "crypto.allowLegacyHashes|description": {
-    "en": "21064646f0ea0387",
-    "text": "Endast produktläge. Av, standardvärdet, använder tjänsten inte OAEP över SHA-1 i XML-kryptering eller JWE, SHA-1-nyckelhärledning för PKINIT eller HMAC-MD5-kontrollsumman för S4U2Self. På används de. VARNING: krav 11.4.1 i ASVS 5.0.0 tillåter inte de hashfunktionerna, så slå bara på detta för partner eller klienter som inte klarar något nyare."
-  },
-  "security.allowUnscopedPeople|label": {
-    "en": "502e12a150357d63",
-    "text": "Låt en person utan roll nå SCIM och Shared Signals"
-  },
-  "security.allowUnscopedPeople|description": {
-    "en": "2bf5565da47abb33",
-    "text": "Endast produktläge. Av, standardvärdet, behöver den som autentiserar sig mot /scim/v2 eller Shared Signals med ett schema utan omfång, som HTTP Basic eller sessionscookien, Admin Read för att läsa och Admin Write för att skriva. På får varje autentiserad person det. VARNING: på uppfylls inte krav 8.2.1 och 8.2.2 i ASVS 5.0.0, eftersom vem som helst kan ändra vilket konto som helst. Använd OAuth-omfång för etableringsklienter i stället."
-  },
-  "security.fileRoots|label": {
-    "en": "7f144086ba380c16",
-    "text": "Kataloger som en namngiven fil får läsas från"
-  },
-  "security.fileRoots|description": {
-    "en": "a378a866f9204d53",
-    "text": "Endast produktläge. En kommaseparerad lista över absoluta kataloger. En fil som en administratör namnger i en inställning eller begäran (en CA-fil, en SPIFFE-token- eller nyckelfil, en Sigstore-fil, ett e-postcertifikat eller en e-postnyckel) läses bara om dess verkliga sökväg, efter symboliska länkar, ligger i någon av dem. Den anges i miljön eller appconfig-filen och kan inte ändras via konsolen eller API:et, så att en administratörs begäran inte kan vidga den. VARNING: att lägga till / eller en annan bred katalog innebär att krav 5.3.2 i ASVS 5.0.0 inte uppfylls."
-  },
-  "risk.maxSkippedLinesPercent|label": {
-    "en": "f299cbec779c44e8",
-    "text": "Största andel av en datamängds rader som får misslyckas vid tolkning (procent)"
-  },
-  "risk.maxSkippedLinesPercent|description": {
-    "en": "ff816ae98311e5a5",
-    "text": "En datamängdsfil där mer än denna procentandel av raderna som inte är kommentarer inte är poster i formatet avvisas, och inget av den behålls. 100 godtar varje fil med minst en post, vilket är vad tjänsten gjorde tidigare. VARNING: vid 100 kan en fil av fel slag läsas in så länge en rad går att tolka."
-  },
-  "crypto.allowCbcJwe|label": {
-    "en": "47b44d2ca23a7a17",
-    "text": "Tillåt JWE CBC-HMAC-innehållskryptering"
-  },
-  "crypto.allowCbcJwe|description": {
-    "en": "20f6a7dc269fe48a",
-    "text": "Endast produktläge. Av, standardvärdet, använder och godtar JWE enbart AES-GCM: A128CBC-HS256, A192CBC-HS384 och A256CBC-HS512 varken erbjuds eller godtas, och en klient som namnger en algoritm men inget enc besvaras med A256GCM. På fungerar de som i utveckling. VARNING: medan detta är på uppfylls inte krav 11.3.2 i ASVS 5.0.0, så slå på det bara för en partner som inte kan läsa AES-GCM."
-  },
-  "authn.allowOptionalSecondFactor|label": {
-    "en": "54d27fb9494e1370",
-    "text": "Låt en person logga in utan andra faktor"
-  },
-  "authn.allowOptionalSecondFactor|description": {
-    "en": "4f841a3ff50e4a00",
-    "text": "Endast produktläge. Av, standardvärdet, krävs en andra faktor av alla, administratörer inräknade, oavsett autentiseringspolicy, och den som saknar en registrerar en vid inloggning. Undantagna tjänstekonton förblir undantagna. På avgör autentiseringspolicyn. VARNING: på uppfylls krav 6.3.3 i ASVS 5.0.0 bara om policyn kräver det."
-  },
-  "admin.logBootstrapPassword|label": {
-    "en": "02a3293594ba0523",
-    "text": "Logga det genererade startlösenordet"
-  },
-  "admin.logBootstrapPassword|description": {
-    "en": "577ec7c125546cdb",
-    "text": "Endast produktläge. Av, standardvärdet, skrivs lösenordet som genereras för den första administratören till filen bootstrap-admin-password i persistence.dataDir, som bara den här tjänsten kan läsa, och loggen säger var. På skrivs det till tjänstens logg. VARNING: på uppfylls inte krav 16.2.5 i ASVS 5.0.0, eftersom en autentiseringsuppgift hamnar i loggen."
-  },
-  "oauth2.allowConfidentialWithoutPkce|label": {
-    "en": "c33a0a31a1d623b1",
-    "text": "Låt en konfidentiell klient utelämna PKCE"
-  },
-  "oauth2.allowConfidentialWithoutPkce|description": {
-    "en": "87599e0feb7aa8e3",
-    "text": "Endast produktläge. Av, standardvärdet, avvisas en auktoriseringsbegäran utan code_challenge för varje klient. På får en konfidentiell klient utelämna den och begäran loggas bara. VARNING: på uppfylls inte krav 10.4.6 i ASVS 5.0.0."
-  },
-  "malwareScan.enabled|label": {
-    "en": "d0834826933c0682",
-    "text": "Skanna filer efter skadlig kod"
-  },
-  "malwareScan.enabled|description": {
-    "en": "bb893f03ed99dd0c",
-    "text": "Av, standardvärdet, skannas ingenting. På skickas varje profilbild, logotyp, bild kopierad från en federationspartner och uppladdad riskdatamängd först till ICAP-tjänsten i malwareScan.url, och avvisas om tjänsten flaggar den eller inte kan svara."
-  },
-  "malwareScan.url|label": {
-    "en": "08acec5549f532ea",
-    "text": "ICAP-tjänstens adress"
-  },
-  "malwareScan.url|description": {
-    "en": "03fc5c265603704f",
-    "text": "Tjänsten att skanna med, som icap://värd:port/tjänst eller icaps://värd:port/tjänst (RFC 3507). Vilken antivirusprodukt som helst med en ICAP-tjänst kan användas."
-  },
-  "malwareScan.timeoutMs|label": {
-    "en": "e616aee1107e9402",
-    "text": "Tidsgräns för skanning (millisekunder)"
-  },
-  "malwareScan.timeoutMs|description": {
-    "en": "59a643baa5f14b91",
-    "text": "Hur länge tjänsten väntas på. En stor fil får en sekund mer per mebibyte."
-  },
-  "malwareScan.caFile|label": {
-    "en": "15e0140ac004309d",
-    "text": "CA-fil för en icaps-tjänst"
-  },
-  "malwareScan.caFile|description": {
-    "en": "5ab91aec22f02c61",
-    "text": "En PEM-fil med CA-certifikat som en icaps-tjänst får kedja till, utöver de publika rötterna. Omfattas av security.fileRoots."
-  },
-  "malwareScan.allowCleartext|label": {
-    "en": "5538ba47a0743bd0",
-    "text": "Tillåt okrypterad ICAP i produktläge"
-  },
-  "malwareScan.allowCleartext|description": {
-    "en": "c00ee2f1e34722ff",
-    "text": "Av, standardvärdet, avvisar produktläget en icap://-adress och inga filer tas emot förrän en icaps://-adress är angiven. På kan filer nå skannern okrypterade. Använd bara på ett nätverk du litar på."
-  },
-  "security.passwordContextWords|label": {
-    "en": "6951c2a585da99f7",
-    "text": "Ord som ett lösenord inte får innehålla"
-  },
-  "security.passwordContextWords|description": {
-    "en": "fac6e61cb1da6802",
-    "text": "Extra ord som ett nytt lösenord inte får innehålla, till exempel namn på din organisation, produkt, projekt eller avdelning. Kommaseparerade. Tjänstens namn och sfärens namn och domän avvisas alltid. Ett ord måste ha minst fyra bokstäver, och kontrollen ignorerar skiftläge och vanliga teckenbyten som 0 för o."
-  },
-  "oauth2.refreshTokenMaxChainS|label": {
-    "en": "fd72d81940ff8ab9",
-    "text": "Längsta tid en kedja av uppdateringstoken får vara (s)"
-  },
-  "oauth2.refreshTokenMaxChainS|description": {
-    "en": "48b5a77555c81355",
-    "text": "Den absoluta gränsen för en behörighet som förnyas med uppdateringstoken, räknat från den första. När den passerats loggar personen in igen, hur ofta klienten än uppdaterat. 0 betyder ingen gräns, standardvärdet i utveckling. Produktläget använder 30 dagar som standard."
-  },
-  "federation.allowUntypedLogoutToken|label": {
-    "en": "6ef2596a6d379cfa",
-    "text": "Acceptera en partners utloggningstoken utan uttrycklig typ"
-  },
-  "federation.allowUntypedLogoutToken|description": {
-    "en": "5d58103a9e255bdf",
-    "text": "Av, standardvärdet, accepterar produktläget en partners utloggningstoken bara om typen är logout+jwt. På accepteras även en token med typen jwt eller utan typ, för en partner som inte skickar typen. OpenID-specifikationen rekommenderar den bara."
-  },
-  "account.recentAuthMinutes|label": {
-    "en": "dfa5936497901458",
-    "text": "Hur nyligen inloggningen måste ha skett för att ändra en andra faktor (min)"
-  },
-  "account.recentAuthMinutes|description": {
-    "en": "50ed3d8089739a00",
-    "text": "En person som ändrar sina andra faktorer, återställningskoder, nycklar eller e-postadress på portalen måste ha loggat in inom så många minuter, annars skickas personen till inloggning först. 0 betyder att det inte krävs, standardvärdet i utveckling. Produktläget använder 15 som standard."
-  },
-  "persistence.allowDefaultDatabasePassword|label": {
-    "en": "24634837693652d6",
-    "text": "Tillåt ett standardlösenord för databasen i produktläge"
-  },
-  "persistence.allowDefaultDatabasePassword|description": {
-    "en": "b7b661b267c62aa2",
-    "text": "Av, standardvärdet, startar produktläget inte med ett välkänt databaslösenord, som sts_app i den medföljande compose-filen, eller ett lösenord som är lika med användarnamnet. På startar det ändå. Använd bara för en teststack."
-  },
-  "authn.sessionsEndedBefore|label": {
-    "en": "174234a42e8c3da2",
-    "text": "Sessioner som startade före denna tidpunkt har avslutats (ms)"
-  },
-  "authn.sessionsEndedBefore|description": {
-    "en": "c11569be4873c007",
-    "text": "Sätts av Avsluta alla sessioner på sidan Sessioner. En inloggningssession som startade före denna tidpunkt, i millisekunder sedan 1970, har avslutats. 0 betyder ingen."
-  },
-  "oauth2.consentAlwaysForPublicClients|label": {
-    "en": "b2f544167d0f1309",
-    "text": "Fråga alltid om samtycke för en offentlig klient"
-  },
-  "oauth2.consentAlwaysForPublicClients|description": {
-    "en": "147cce1b272c536f",
-    "text": "En offentlig klient kan inte bevisa vem den är, så personen tillfrågas varje gång den begär åtkomst, oavsett tidigare svar. Tjänstens egna program tillfrågas inte. På som standard i produktläge."
-  },
-  "federation.maxPartnerAuthAgeS|label": {
-    "en": "7994b4352961110b",
-    "text": "Äldsta partnerautentisering som accepteras (s)"
-  },
-  "federation.maxPartnerAuthAgeS|description": {
-    "en": "c67a42c14975e328",
-    "text": "Avvisar en federerad inloggning där partnern anger att personen autentiserades längre tillbaka än så, med auth_time eller AuthnInstant. Så länge en gräns finns avvisas en partner som inte anger tiden. 0, standardvärdet, frågar inte."
-  },
-  "security.requestsPerAddressPerMinute|label": {
-    "en": "6e933f6a681d3968",
-    "text": "Förfrågningar per adress och minut"
-  },
-  "security.requestsPerAddressPerMinute|description": {
-    "en": "7324a27b3b761012",
-    "text": "Ett tak för alla förfrågningar från en adress, per process. Det är en broms mot missbruk, skild från gränserna för inloggningsförsök. 0 betyder inget tak, standardvärdet i utveckling. Produktläget använder 6000 som standard. Bakom en proxy, ange global.trustedProxies så att adresser läses korrekt."
-  },
-  "audit.allowPlainSyslog|label": {
-    "en": "1401e9d7380768e3",
-    "text": "Tillåt okrypterad syslog-export av granskningsloggen i produktläge"
-  },
-  "audit.allowPlainSyslog|description": {
-    "en": "cc8beb8a652a3752",
-    "text": "Av, standardvärdet, accepterar produktläget bara transporten tls för ett syslog-mål. På accepteras även tcp och udp, så granskningsloggen går okrypterad över nätverket. Använd bara på ett nätverk du litar på."
-  },
-  "security.outboundAllowedHosts|label": {
-    "en": "48109be8cdfd0972",
-    "text": "Värdar som tjänsten får ansluta till"
-  },
-  "security.outboundAllowedHosts|description": {
-    "en": "f1d0447a0b56f74e",
-    "text": "Om angivet får en utgående förfrågan som en partner, klient eller anropare kan påverka bara nå dessa värdar. Kommaseparerade: ett exakt namn, eller en inledande punkt för en hel domän, till exempel .example.com. Tomt, standardvärdet, tillåter alla publika värdar. Interna adresser avvisas alltid i produktläge."
-  },
-  "security.hstsIncludeSubDomains|label": {
-    "en": "1ac0e6ab8c38092f",
-    "text": "Tillämpa HSTS på underdomäner"
-  },
-  "security.hstsIncludeSubDomains|description": {
-    "en": "26b0298f1a2bd460",
-    "text": "Lägger till includeSubDomains i Strict-Transport-Security, så att webbläsare använder HTTPS för alla underdomäner till tjänstens värdnamn. På som standard i produktläge. Stäng av om en underdomän fortfarande måste svara över okrypterad HTTP."
   }
 }

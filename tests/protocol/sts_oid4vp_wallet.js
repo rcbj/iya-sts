@@ -1080,8 +1080,8 @@ async function signInSections(formats, sdKey, sd, jwtKey, jwtVc,
   const relogin = await hop(browser, "GET", authorizeUrl("openid", pkce(),
                                                          "again") +
                             "&prompt=login");
-  await walletSignin.refreshCsrf(base, browser, new URL(relogin.location ||
-    base, base).searchParams.get("authn") || "");
+  await walletSignin.refreshCsrf(base, browser, walletSignin.fromWaitUrl(
+    new URL(relogin.location || base, base).toString()).authn);
   r = await walletSignin.collect(base, browser, redirect);
   check("the sign-in is collected once: asked again it is refused, 400, " +
         "and starts no second session", function () {

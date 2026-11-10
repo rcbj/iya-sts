@@ -1378,12 +1378,37 @@ function ldapPolicy() {
          'ldaps';
 }
 
+// A certificate names these addresses, so where the operator has listed the
+// hosts this service may reach, they obey the list too (#1550, ASVS 5.0.0 1.3.6).
+function hostAllowed(text) {
+  log.debug("Entering hostAllowed().");
+  const listed = [].concat(config.value('security.outboundAllowedHosts') || [])
+    .join(',').split(',').map(function (one) {
+      return one.trim().toLowerCase();
+    }).filter(Boolean);
+  if (!listed.length) {
+    log.debug("Leaving hostAllowed(). No list.");
+    return true;
+  }
+  let host = '';
+  try {
+    host = new URL(text).hostname.toLowerCase();
+  } catch (e) {
+    log.debug("Caught in hostAllowed(): " + ((e && e.message) || e));
+  }
+  log.debug("Leaving hostAllowed().");
+  return !!host && listed.some(function (one) {
+    return one.charAt(0) === '.' ? host.endsWith(one) : host === one;
+  });
+}
+
 function dialability(uri) {
   log.debug("Entering dialability().");
   const text = String(uri || '');
   if (/^https?:\/\//i.test(text)) {
     log.debug("Leaving dialability().");
-    return { dial: true };
+    return hostAllowed(text) ? { dial: true }
+      : { dial: false, why: 'its host is not in security.outboundAllowedHosts' };
   }
   if (!/^ldaps?:\/\//i.test(text)) {
     log.debug("Leaving dialability().");

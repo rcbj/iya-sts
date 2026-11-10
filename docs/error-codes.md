@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5389** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5395** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -56,7 +56,7 @@ is an ordinary outcome.
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 109
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
-* [Scheduler (`STS-SCHED`)](#sts-sched) — 21
+* [Scheduler (`STS-SCHED`)](#sts-sched) — 22
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 185
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 258
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
@@ -68,7 +68,7 @@ is an ordinary outcome.
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 118
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 70
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
-* [Federation (`STS-FED`)](#sts-fed) — 215
+* [Federation (`STS-FED`)](#sts-fed) — 217
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 257
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 165
@@ -91,15 +91,15 @@ is an ordinary outcome.
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 92
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 265
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 266
 * [Management API (`STS-API`)](#sts-api) — 95
 * [User portal (`STS-PORTAL`)](#sts-portal) — 121
-* [Account API (`STS-ACCOUNT`)](#sts-account) — 22
+* [Account API (`STS-ACCOUNT`)](#sts-account) — 23
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 15
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 185
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
-* [Reporting (`STS-REPORT`)](#sts-report) — 57
+* [Reporting (`STS-REPORT`)](#sts-report) — 58
 * [Audit export (`STS-AUDIT`)](#sts-audit) — 16
 
 ## STS-HTTP
@@ -608,6 +608,7 @@ Raised from: cluster/scheduler.ts, admin-ui/scheduler_admin.ts.
 | `STS-SCHED-0019` | A cluster run handed to a request worker (#408) failed because that worker ended, or could not be reached, before it answered; the run is recorded failed, its claim lapses, and the next slot runs again. | — |
 | `STS-SCHED-0020` | A cluster job is not registered in the request worker its run was handed to (#408), so it ran on the front process's thread, and every later run of it in this process does too; register it at its owner's load, or give it an onFront reason. | — |
 | `STS-SCHED-0021` | A cluster run's body on a request worker stopped owning its run because the leader had not renewed its grant in time (#1305): the leader's thread did not run, or its renewals did not arrive. The body stops at its next step; the leader, or the attempt that takes the run over, decides the run. | — |
+| `STS-SCHED-0022` | The clock of this node differs from the database clock. | — |
 
 ## STS-KEYS
 
@@ -2981,6 +2982,8 @@ Raised from: federation/.
 | `STS-FED-0238` | A federated answer names another issuer, or arrived for another relationship than its state (ASVS 5.0.0 10.2.2). | HTTP 401 |
 | `STS-FED-0239` | An unsolicited SAML assertion was presented a second time (ASVS 5.0.0 6.8.3). | HTTP 401 |
 | `STS-FED-0240` | A federated sign-in was refused because the partner authenticated the person too long ago. | HTTP 401 |
+| `STS-FED-0241` | A federated assertion was refused because it names no audience. | HTTP 401 |
+| `STS-FED-0242` | A partner was asked for a fresh sign-in and answered with an earlier authentication. | HTTP 401 |
 
 ## STS-OIDFED
 
@@ -5521,6 +5524,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0914` | set-row was refused by the settings write path, or a use case an add named is not one this service has (#1360). | HTTP 400 with {ok:false, errors} |
 | `STS-ADMIN-0915` | A software statement was asked for with a lifetimeSeconds that puts its expiry past the last date this service can write (#1470). | a refusal naming the field |
 | `STS-ADMIN-0916` | A second factor was not cleared because the administrator did not say how the person was verified. | HTTP 400 |
+| `STS-ADMIN-0917` | An application was not created because the metadata document given with it was refused. | HTTP 400 |
 
 ## STS-API
 
@@ -5786,6 +5790,7 @@ Raised from: account-api/.
 | `STS-ACCOUNT-0020` | An /account-api request named a query parameter its operation does not declare, and was refused before the handler ran (#1483). | HTTP 400 with {ok:false, errors} |
 | `STS-ACCOUNT-0021` | A query parameter of an /account-api request held a value its declared type does not, and was refused before the handler ran (#1483). | HTTP 400 with {ok:false, errors} |
 | `STS-ACCOUNT-0022` | An /account-api request carried a custom header that its operation does not declare and no specification or known proxy, CDN or tracing family defines, and was refused before the handler ran (#1483). | HTTP 400 with {ok:false, errors} |
+| `STS-ACCOUNT-0023` | A token was refused because the person it names no longer exists. | HTTP 401 |
 
 ## STS-LOGOUT
 
@@ -6123,6 +6128,7 @@ Raised from: report/.
 | `STS-REPORT-0056` | A /report-api request named a query parameter its operation does not declare, and was refused before the operation ran (#1483). | HTTP 400 {error:invalid_query, error_description} |
 | `STS-REPORT-0057` | A query parameter of a /report-api request held a value its declared type does not, and was refused before the operation ran (#1483). | HTTP 400 {error:invalid_query, error_description} |
 | `STS-REPORT-0058` | A /report-api request carried a custom header that its operation does not declare and no specification or known proxy, CDN or tracing family defines, and was refused before the operation ran (#1483). | HTTP 400 {error:invalid_query, error_description} |
+| `STS-REPORT-0059` | A token was refused because the person it names no longer exists. | HTTP 401 |
 
 ## STS-AUDIT
 

@@ -295,6 +295,7 @@ RUN if [ -n "${STS_CLOUD_SDKS}" ]; \
       && grep -q 'BEGIN CERTIFICATE' /opt/sts-sdk/database-ca.pem; \
     fi
 RUN cd /opt/sts-sdk && npm sbom --omit=dev --sbom-format=cyclonedx --sbom-type=application > /usr/src/sts/sbom-sdks.cdx.json
+RUN dpkg-query -W -f='${Package} ${Version}\n' > /usr/src/sts/os-packages.txt
 # ---------------------------------------------------------------------------
 # AND THE SUITE BACK OUT AGAIN, WHICH .dockerignore USED TO DO.
 #

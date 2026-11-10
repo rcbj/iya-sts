@@ -2470,5 +2470,9 @@
   "endpoints.route./admin-api/malware-scanning/:action.name": {
     "en": "5fea7fc18a3a67b9",
     "text": "Tester l’analyseur"
+  },
+  "endpoints.route./admin-api/audit/integrity.name": {
+    "en": "79de5da36fba17bd",
+    "text": "Vérifier l’intégrité du journal d’audit"
   }
 }

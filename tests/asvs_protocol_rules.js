@@ -158,6 +158,51 @@ async function run(t) {
   t.equal(owed({ kind: 'application' }, 'clear-totp'), false,
           'and a program, with nobody to ask, is not');
   config.clearOverride('account.recentAuthMinutes');
+  t.equal(inProduct(function () {
+    return config.value('security.passwordHashP');
+  }), 3, 'product stores scrypt at p=3');
+  t.equal(inProduct(function () {
+    return mode.refusesAssertionWithoutAudience();
+  }), true, 'product needs an assertion to name its audience');
+  const scheduler = require(ROOT + '/cluster/scheduler');
+  const Sched = scheduler.Scheduler || scheduler;
+  Sched.noteClockSkew(Date.now() + 60000);
+  t.equal(Sched.clockFar, true, 'a clock a minute off the database is noted');
+  Sched.noteClockSkew(Date.now());
+  t.equal(Sched.clockFar, false, 'and its return');
+  // The audit checksum: a row altered after it was written is found.
+  const auditLog = require(ROOT + '/common/audit');
+  const keystore = require(ROOT + '/common/keystore');
+  const realKeyed = keystore.keyedDigest;
+  keystore.keyedDigest = function (label, text) {
+    return require('crypto').createHmac('sha256', 'k').update(label + text)
+      .digest('hex');
+  };
+  auditLog.audit({ category: 'admin', action: 'admin.test', summary: 'mac' });
+  const held = auditLog.list()[0];
+  t.check(!!held.mac, 'an audit row carries a checksum');
+  t.equal(auditLog.verifyIntegrity().altered.length, 0, 'and it verifies');
+  const honest = held.summary;
+  held.summary = 'rewritten';
+  t.equal(auditLog.verifyIntegrity().altered.indexOf(held.seq) >= 0, true,
+          'a row rewritten afterwards is reported');
+  held.summary = honest;
+  keystore.keyedDigest = realKeyed;
+  // A partner's sign-in time counts (#1554).
+  const authn = require(ROOT + '/authn/authn');
+  const fedProto = fedSp.FederationSp.prototype;
+  const quiet = require('bunyan').createLogger({ name: 'q', level: 60 });
+  const asked = Math.floor(Date.now() / 1000);
+  const ignored = function (askedAt, partnerAt) {
+    return fedProto.partnerIgnoredFreshSignIn.call({ deps: { log: quiet } },
+      { locals: { fedReauthAskedAt: askedAt, fedPartnerAuthAt: partnerAt } });
+  };
+  t.equal(ignored(asked, asked - 3600), true,
+          'a partner answering a fresh sign-in with an old one is refused');
+  t.equal(ignored(asked, asked + 2), false, 'a fresh answer is not');
+  t.equal(ignored(asked, 0), false, 'nor one that gives no time');
+  t.equal(ignored(0, asked - 3600), false,
+          'and an old time is fine when nothing fresh was asked');
   const budget = require(ROOT + '/common/request_budget');
   const at = Date.now();
   t.equal(budget.allowed('198.51.100.7', 2, at), true, 'a first request passes');

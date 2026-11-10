@@ -8753,6 +8753,15 @@ class AdminApi {
           { action: 'pair', operationId: 'pairKerberosTrust' }
         ] },
 
+      { method: 'GET', path: BASE + '/audit/integrity', tag: 'Audit log',
+        operationId: 'getAuditIntegrity',
+        mirrors: 'GET /admin/audit',
+        handler: function (req, res) {
+          log.debug("Entering the management API audit integrity endpoint.");
+          self.sendJson(res, 200, require('../common/audit').verifyIntegrity());
+          log.debug("Leaving the management API audit integrity endpoint.");
+        } },
+
       { method: 'GET', path: BASE + '/audit', tag: 'Audit log',
         operationId: 'getAudit',
         mirrors: 'GET /admin/audit',
