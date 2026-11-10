@@ -406,7 +406,8 @@ function checkTheJobTimeoutIsAboveOurs(t) {
 
   // And it must not be so large that a genuinely wedged runner is held for a
   // shift. The workflow's own header makes this argument about six hours.
-  t.check(jobMinutes <= 180,
+  // 240 since 2026-11-10, when single-node's own bound went to 150 minutes.
+  t.check(jobMinutes <= 240,
           'and it is still an outer bound rather than a licence (' +
             jobMinutes + 'm)',
           'without a number here a stuck job holds a runner for six hours, ' +
