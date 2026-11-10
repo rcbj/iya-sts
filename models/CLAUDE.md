@@ -89,12 +89,16 @@ undeclared one is a compile error. A new fact about an attribute is added there.
   `directory/oid_register.json`**: `<root>.1.1.n` for an attribute, `<root>.1.2.n`
   for a class. A number is assigned once and never reused, and a new name takes the
   next one (`tests/model_directory.js` fails on a name with neither).
-  **`root` is `1.3.6.1.4.1.32473` for now, the number RFC 5612 reserves for
-  documentation.** It is a placeholder (rcbj, 2026-11-09) until the Private Enterprise
-  Number applied for on #1471 arrives (the swap is #1573); changing `root` and `placeholder` is the whole
-  swap. Nothing may publish these before then. A name somebody else publishes is in
-  the register's `publishedElsewhere` and stays without one. RFC 4512 requires a
-  syntax, and nothing states one for our names, so they take Directory String, and a
+  **`root` is `1.3.6.1.4.1.67607`, Iya CyberSecurity Solutions' IANA Private
+  Enterprise Number** (#1471, assigned 2026-11; the swap was #1573), and
+  `placeholder` is `false`. Until then it was `1.3.6.1.4.1.32473`, the number
+  RFC 5612 reserves for documentation; the numbers under the root did not change.
+  **Nothing published may carry RFC 5612's number while `placeholder` is false**:
+  `tests/model_directory.js` fails on one in the catalogue, the RFC 4512
+  definitions or any page under `docs/`, and the *Directory models* page says the
+  OIDs are placeholders only while the register does. A name somebody else
+  publishes is in the register's `publishedElsewhere` and stays without one.
+  RFC 4512 requires a syntax, and nothing states one for our names, so they take Directory String, and a
   class is auxiliary beside a published structural class and structural otherwise.
 * `common/postgres_import.ts` keeps each column's type and its clauses, and each
   statement's place in the script. Indexes hang off their table; everything else

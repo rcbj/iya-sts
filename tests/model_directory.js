@@ -34,6 +34,88 @@ const EXPECTED_IDS = [
   'xacmlPep', 'xacmlPolicy'
 ];
 
+// RFC 5612's enterprise number, reserved for documentation. This service's
+// own names were numbered under it until its Private Enterprise Number
+// (67607, #1471) was assigned; #1573 moved them.
+const DOCUMENTATION_ROOT = '1.3.6.1.4.1.32473';
+
+/**
+ * NOTHING THIS SERVICE PUBLISHES MAY USE THE DOCUMENTATION NUMBER ONCE THE
+ * REGISTER SAYS ITS ROOT IS REAL (#1573): the catalogue, the RFC 4512
+ * definitions written from it, and every page under docs/. While the root
+ * is still a placeholder the reading page must say so, and it must not
+ * once it is not.
+ *
+ * @param {object} t - the assertion kit
+ * @param {object} catalog - a collected catalogue
+ * @param {object} register - models/directory/oid_register.json
+ */
+function documentationNumber(t, catalog, register) {
+  log.debug("Entering documentationNumber().");
+  const ModelEmit = require('../common/model_emit');
+  const startsAt = function (oid) {
+    return typeof oid === 'string' &&
+      (oid === DOCUMENTATION_ROOT ||
+        oid.indexOf(DOCUMENTATION_ROOT + '.') === 0);
+  };
+  t.equal(catalog.oidRoot.root, register.root,
+    'the catalogue carries the register\'s root');
+  t.equal(catalog.oidRoot.placeholder, register.placeholder === true,
+    'the catalogue carries whether the root is a placeholder');
+  if (register.placeholder === true) {
+    t.check(ModelEmit.directoryDocs(catalog).indexOf('is a placeholder') >= 0,
+      'a placeholder root is said to be one on the reading page');
+    log.debug("Leaving documentationNumber().");
+    return;
+  }
+  t.check(!startsAt(register.root),
+    'a root that is not a placeholder is not RFC 5612\'s number');
+  const onDocumentation = [];
+  catalog.objects.forEach(function (object) {
+    object.attributes.concat(object.personAttributes).concat(
+      object.objectClasses).forEach(function (row) {
+      if (startsAt(row.oid)) {
+        onDocumentation.push(row.name);
+      }
+    });
+  });
+  t.equal(onDocumentation.join(','), '',
+    'no name in the catalogue is numbered under RFC 5612\'s number');
+  const schema = ModelEmit.ldapSchema(catalog.objects);
+  const definitions = schema.attributeTypes.concat(schema.objectClasses)
+    .filter(function (one) {
+      return one.indexOf(DOCUMENTATION_ROOT) >= 0;
+    });
+  t.equal(definitions.length, 0,
+    'no RFC 4512 definition uses RFC 5612\'s number', definitions[0]);
+  const page = ModelEmit.directoryDocs(catalog);
+  t.check(page.indexOf('is a placeholder') < 0,
+    'the reading page no longer calls the OIDs placeholders');
+  const placeholderCatalog = Object.assign({}, catalog, {
+    oidRoot: { root: DOCUMENTATION_ROOT, placeholder: true }
+  });
+  t.check(ModelEmit.directoryDocs(placeholderCatalog).indexOf(
+    'An OID that begins `' + DOCUMENTATION_ROOT + '` is a placeholder') >= 0,
+    'a placeholder root would still be said to be one');
+  const docs = path.join(ROOT, 'docs');
+  const published = [];
+  const walk = function (dir) {
+    fs.readdirSync(dir, { withFileTypes: true }).forEach(function (entry) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if (/\.(md|html|json|yaml|yml|txt)$/.test(entry.name) &&
+          fs.readFileSync(full, 'utf8').indexOf(DOCUMENTATION_ROOT) >= 0) {
+        published.push(path.relative(ROOT, full));
+      }
+    });
+  };
+  walk(docs);
+  t.equal(published.join(','), '',
+    'no page under docs/ carries RFC 5612\'s number');
+  log.debug("Leaving documentationNumber().");
+}
+
 function objectById(catalog, id) {
   log.debug("Entering objectById().");
   const found = catalog.objects.filter(function (object) {
@@ -149,8 +231,13 @@ function run(t) {
     'stsApplication has an OID from this service\'s register');
   t.equal(gapCount(first, 'oid-unassigned'), 0,
     'every name has an OID, or a register entry saying who publishes it');
-  t.check(/^1\.3\.6\.1\.4\.1\.32473\.1\.2\.\d+$/.test(stsClass.oid),
-    'the class is under the arc, which is RFC 5612\'s until Iya has its own');
+  const register = JSON.parse(fs.readFileSync(path.join(ROOT, 'models',
+    'directory', 'oid_register.json'), 'utf8'));
+  t.check(typeof stsClass.oid === 'string' &&
+    stsClass.oid.indexOf(register.root + '.1.2.') === 0 &&
+    /^\d+$/.test(stsClass.oid.slice((register.root + '.1.2.').length)),
+    'the class is under the register\'s class arc', stsClass.oid);
+  documentationNumber(t, first, register);
 
   t.equal(gapCount(first, 'no-schema', 'person'), 1, 'person has no SCHEMA');
   t.equal(gapCount(first, 'no-schema', 'group'), 1, 'group has no SCHEMA');

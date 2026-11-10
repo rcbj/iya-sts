@@ -798,19 +798,28 @@ class ModelEmit {
       'does not say. A name\'s origin is **RFC**, **other standard**,',
       '**this service**, **derived**, or **not stated**. **Secret** marks',
       'a value the model withholds.',
-      '',
-      'An OID that begins `1.3.6.1.4.1.32473` is a placeholder. That is the',
-      'number RFC 5612 reserves for documentation, and this service\'s own',
-      'names use it until its Private Enterprise Number is assigned.',
-      '',
+      ''
+    ];
+    // The register says whether its root is still a placeholder (#1573).
+    // While it is, the page says so; once the Private Enterprise Number is
+    // in place the sentence would be false, so it is not written.
+    const oidRoot = catalog.oidRoot || { root: '', placeholder: false };
+    if (oidRoot.placeholder) {
+      lines.push(
+        'An OID that begins `' + oidRoot.root + '` is a placeholder. That ' +
+          'is the',
+        'number RFC 5612 reserves for documentation, and this service\'s own',
+        'names use it until its Private Enterprise Number is assigned.',
+        '');
+    }
+    lines.push(
       'This page is rewritten whenever that TypeSpec model is written.',
       'Do not edit it by hand.',
       '',
       '## Models',
       '',
       '| Model | TypeSpec | Container | Attributes |',
-      '|---|---|---|---|'
-    ];
+      '|---|---|---|---|');
     entries.forEach(function (entry) {
       const tsp = ModelEmit.className(entry.object.id) +
         (entry.onPerson ? 'OnPerson' : '');

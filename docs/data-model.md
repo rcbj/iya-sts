@@ -19,8 +19,7 @@ directory's lists of attribute spellings and of the attributes it withholds. The
 PostgreSQL and MariaDB tables and indexes are too, and they generate both the
 statements the service runs and the scripts an owner runs. So are all five
 OpenAPI documents. Each object switched only after what the model generated was
-shown to be the same as what was there. One thing is still to come: this
-service's own OIDs, below, are placeholders.
+shown to be the same as what was there.
 
 [![The current state: code and SQL are read into TypeSpec, the compiler checks it, and what it generates is compared with the code and SQL it came from](data-model.svg)](data-model.svg)
 
@@ -97,10 +96,10 @@ An OID, an LDAP syntax, and matching rules are recorded where a published
 standard defines the name, read from that standard's text. An object class
 also records its kind, its superiors, and its MUST and MAY lists.
 
-This service's own names are numbered in `models/directory/oid_register.json`.
-Those OIDs currently begin `1.3.6.1.4.1.32473`, the enterprise number RFC 5612
-reserves for documentation. They are placeholders and will change when this
-service's own Private Enterprise Number is assigned.
+This service's own names are numbered in `models/directory/oid_register.json`,
+under Iya CyberSecurity Solutions' IANA Private Enterprise Number, 67607. An
+attribute type is `1.3.6.1.4.1.67607.1.1.n` and an object class
+`1.3.6.1.4.1.67607.1.2.n`. A number is assigned once and never reused.
 
 Each object's container, classes, and attributes are listed on
 [Directory models](data-model-directory.md).

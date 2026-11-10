@@ -1,6 +1,6 @@
 {
- "root": "1.3.6.1.4.1.32473",
- "placeholder": true,
+ "root": "1.3.6.1.4.1.67607",
+ "placeholder": false,
  "attributes": {
   "acmeAllowedProfiles": 1,
   "acmeCertificateLifetimeDays": 2,

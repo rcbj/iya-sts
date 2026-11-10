@@ -160,6 +160,10 @@ interface DirectoryCatalog {
   objects: ModelObject[];
   gaps: ModelGap[];
   policyKindIds: string[];
+  // The register's root and whether it is still RFC 5612's documentation
+  // number (#1573), so a page drawn from the catalogue says so only while
+  // it is.
+  oidRoot: { root: string; placeholder: boolean };
 }
 
 /**
@@ -264,7 +268,11 @@ class DirectoryModel {
     const catalog = {
       objects: objects,
       gaps: ModelIr.sortGaps(gaps),
-      policyKindIds: POLICY_KIND_IDS.slice()
+      policyKindIds: POLICY_KIND_IDS.slice(),
+      oidRoot: {
+        root: maps.register.root,
+        placeholder: maps.register.placeholder === true
+      }
     };
     log.debug("Leaving DirectoryModel.collect().");
     return catalog;
