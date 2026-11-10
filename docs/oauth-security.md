@@ -470,6 +470,14 @@ required to sign their request objects, because a public client in a browser
 holds no registered key; an explicit `oauth2.requireSignedRequestObject`
 still applies to them.
 
+**The browser applications check what comes back**, the report application
+included. The discovery document they read must name, as its `issuer`, the
+server it was fetched from (RFC 8414 section 3.3), or it is ignored as if none
+had answered. An authorization response's `iss` (RFC 9207), where one is sent,
+must be that issuer. The ID Token must carry the application's own `client_id`
+in `aud`, the `nonce` it asked for and, where the document was read, that issuer
+in `iss`. A sign-in that fails one of these does not complete.
+
 ### Requiring a sender constraint — five settings
 
 Neither mode requires DPoP or mutual TLS. OAuth 2.1 section 4.3.1 lets a public
