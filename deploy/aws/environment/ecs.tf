@@ -266,6 +266,9 @@ locals {
     # this region, because every cell must hold the same values.
     local.product ? [
       { name = "STS_ADMIN_BOOTSTRAP_PASSWORD", valueFrom = local.shared_secret_arns["bootstrap-admin-password"] },
+      # And its NAME (secrets.tf, 2026-11-10): product mode replaces a default
+      # name with one nobody outside the database can read.
+      { name = "STS_ADMIN_BOOTSTRAP_USERNAME", valueFrom = local.shared_secret_arns["bootstrap-admin-username"] },
       # And the KDC's two (secrets.tf, 2026-09-18): without them a product
       # KDC builds no krbtgt and no service account, and issues nothing.
       { name = "KRB5_KRBTGT_PASSWORD", valueFrom = local.shared_secret_arns["krb5-krbtgt-password"] },

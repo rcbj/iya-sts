@@ -280,6 +280,7 @@ data "aws_iam_policy_document" "execution" {
       actions = ["secretsmanager:GetSecretValue"]
       resources = [
         local.shared_secret_arns["bootstrap-admin-password"],
+        local.shared_secret_arns["bootstrap-admin-username"],
         local.shared_secret_arns["krb5-krbtgt-password"],
         local.shared_secret_arns["krb5-service-password"],
       ]

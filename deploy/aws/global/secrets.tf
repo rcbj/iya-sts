@@ -80,6 +80,48 @@ resource "random_password" "bootstrap_admin" {
   override_special = "!#%*+-=?@^_~"
 }
 
+# THE BOOTSTRAP ADMINISTRATOR'S NAME (rcbj, 2026-11-10), beside its password.
+# Product mode refuses a default name (`admin`, `root`, `sa`; #1447, ASVS
+# 5.0.0 6.3.2) and derives one from a key in the database when it is given
+# one, and on AWS that derived name was in one log line and nowhere else, so
+# the password in Secrets Manager signed nobody in. Generated HERE instead,
+# not a default name, and handed to the nodes as
+# STS_ADMIN_BOOTSTRAP_USERNAME, it is used as it is and can be read whenever
+# it is wanted:
+#
+#   aws secretsmanager get-secret-value --region us-west-2 \
+#     --secret-id iya-sts/<env>/bootstrap-admin-username \
+#     --query SecretString --output text
+#
+# NEITHER IS WRITTEN INTO THE CONTAINER: ECS injects both, and the service
+# writes its bootstrap file only for a password it generated
+# (common/credentials.ts), never for a supplied one.
+#
+# READ ONCE AND KEPT (`ignore_changes`), like the carry-over: the account it
+# names is created once and can never be renamed, so a later apply must not
+# hand the nodes another name. `TF_VAR_bootstrap_admin_username` supplies the
+# name of an account that already exists — an environment built before this
+# secret did — on the apply that first creates it.
+resource "random_id" "bootstrap_admin_username" {
+  count       = 1
+  byte_length = 8
+}
+
+resource "terraform_data" "bootstrap_admin_username" {
+  count = 1
+  input = sensitive(lookup(local.carried, "bootstrap-admin-username",
+    trimspace(var.bootstrap_admin_username) != "" ? trimspace(var.bootstrap_admin_username) :
+  "admin-${random_id.bootstrap_admin_username[0].hex}"))
+
+  lifecycle {
+    ignore_changes = [input]
+    precondition {
+      condition     = !contains(["admin", "root", "sa", "administrator"], lower(trimspace(var.bootstrap_admin_username)))
+      error_message = "bootstrap_admin_username is a default account name, which product mode replaces (common/bootstrap_name.ts); name the account the service actually created."
+    }
+  }
+}
+
 resource "random_password" "krb5_krbtgt" {
   length  = 40
   special = false
@@ -170,7 +212,7 @@ data "aws_secretsmanager_secret_version" "carryover" {
 locals {
   carried_keys = [
     "kek", "admin-api-client-secret", "bootstrap-admin-password",
-    "krb5-service-password",
+    "bootstrap-admin-username", "krb5-service-password",
   ]
   carried_now = var.carryover_secret != "" ? {
     for k, v in jsondecode(data.aws_secretsmanager_secret_version.carryover[0].secret_string) :
@@ -203,6 +245,7 @@ locals {
     global-db-app-password   = random_password.db_app.result
     admin-api-client-secret  = lookup(local.carried, "admin-api-client-secret", random_password.admin_api_client_secret.result)
     bootstrap-admin-password = lookup(local.carried, "bootstrap-admin-password", random_password.bootstrap_admin.result)
+    bootstrap-admin-username = terraform_data.bootstrap_admin_username[0].output
     krb5-krbtgt-password     = random_password.krb5_krbtgt.result
     krb5-service-password    = lookup(local.carried, "krb5-service-password", random_password.krb5_service.result)
     }, local.multi_cloud ? {

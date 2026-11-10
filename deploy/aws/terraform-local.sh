@@ -196,6 +196,11 @@ then
   for v in TF_VAR_db_snapshot_identifier TF_VAR_carryover_secret; do
     [ -z "${!v:-}" ] || TF_VARS+=(-e "${v}=${!v}")
   done
+  # An existing bootstrap administrator's name (environment/secrets.tf), on
+  # the apply that first creates its secret. By NAME only, so docker reads the
+  # value from this environment and it is in no process's argument list.
+  [ -z "${TF_VAR_bootstrap_admin_username:-}" ] ||
+    TF_VARS+=(-e TF_VAR_bootstrap_admin_username)
 fi
 
 if [ "${TF_STACK}" = "spiffe-realm" ];
