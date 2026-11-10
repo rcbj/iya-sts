@@ -734,7 +734,8 @@ class ConsentScreen {
   // would be this file making a protocol decision it has no way to make
   // correctly.
   // -------------------------------------------------------------------------
-  private backToCaller(res: Res, record: Json, error: string | null,
+  private backToCaller(res: IyaApi.AuthnAnswering<'getConsent' |
+                         'answerConsent'>, record: Json, error: string | null,
                        description: string | null): void {
     const { log, authn } = this.deps;
     log.debug("Entering ConsentScreen.backToCaller(). error=" +
@@ -793,7 +794,8 @@ class ConsentScreen {
    * @param body - the act's JSON: `action` and the limit controls
    * @returns nothing
    */
-  consentAct(req: Req, res: Res, id: string, body: Json): void {
+  consentAct(req: Req, res: IyaApi.AuthnAnswering<'answerConsent'>, id: string,
+             body: Json): void {
     const { log, consent, audit, errorCodes, authorizationDetails } =
       this.deps;
     log.debug("Entering ConsentScreen.consentAct().");

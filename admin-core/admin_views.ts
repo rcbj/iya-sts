@@ -1743,7 +1743,7 @@ class AdminViews {
    *
    * @returns a promise of the snapshot and what the page draws from it
    */
-  async metricsJsonAsync() {
+  async metricsJsonAsync(): Promise<IyaApi.AdminAnswer<'getMetrics'>> {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.metricsJsonAsync().");
     const page = typeof authn.liveSessionPageAsync === 'function'
@@ -1825,7 +1825,7 @@ class AdminViews {
    * @param query - the query, whose `id` names the set
    * @returns a promise of what `tokenSetView()` answers
    */
-  async tokenSetViewAsync(query) {
+  async tokenSetViewAsync(query): Promise<IyaApi.AdminView<'getIssuedSet'>> {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.tokenSetViewAsync().");
     const asked = String((query && query.id) || '').trim();
@@ -1916,7 +1916,7 @@ class AdminViews {
    * @param req - the request; only its query and realm are read
    * @returns the report
    */
-  cryptoView(req) {
+  cryptoView(req): IyaApi.AdminAnswer<'getCryptoMetadata'> {
     const { log, baseUrlOf } = this.deps;
     log.debug("Entering AdminViews.cryptoView().");
     if (!cryptoReporter) {
@@ -1938,7 +1938,7 @@ class AdminViews {
    * @param req - the request; only its query and realm are read
    * @returns the inventory
    */
-  keysView(req) {
+  keysView(req): IyaApi.AdminAnswer<'getKeys'> {
     const { log, baseUrlOf } = this.deps;
     log.debug("Entering AdminViews.keysView().");
     if (!cryptoReporter) {
@@ -1981,7 +1981,7 @@ class AdminViews {
    * @param req - the request
    * @returns the view, or the no-XACML answer when the module is not loaded
    */
-  xacmlView(req) {
+  xacmlView(req): IyaApi.AdminAnswer<'getXacml'> {
     const { log, noXacml } = this.deps;
     log.debug('Entering AdminViews.xacmlView().');
     const json = xacmlPages ? xacmlPages.overview(req) : noXacml();
@@ -1995,7 +1995,7 @@ class AdminViews {
    * @param req - the request
    * @returns the view, or the no-XACML answer when the module is not loaded
    */
-  xacmlPoliciesView(req) {
+  xacmlPoliciesView(req): IyaApi.AdminAnswer<'getXacmlPolicies'> {
     const { log, noXacml } = this.deps;
     log.debug('Entering AdminViews.xacmlPoliciesView().');
     const json = xacmlPages ? xacmlPages.policies(req) : noXacml();
@@ -2009,7 +2009,7 @@ class AdminViews {
    * @param req - the request
    * @returns the view, or the no-XACML answer when the module is not loaded
    */
-  xacmlEditorView(req) {
+  xacmlEditorView(req): IyaApi.AdminAnswer<'getXacmlEditor'> {
     const { log, noXacml } = this.deps;
     log.debug('Entering AdminViews.xacmlEditorView().');
     const json = xacmlPages
@@ -2024,7 +2024,7 @@ class AdminViews {
    * @param req - the request
    * @returns the view, or the no-XACML answer when the module is not loaded
    */
-  xacmlPepsView(req) {
+  xacmlPepsView(req): IyaApi.AdminAnswer<'getXacmlPeps'> {
     const { log, noXacml } = this.deps;
     log.debug('Entering AdminViews.xacmlPepsView().');
     const json = xacmlPages ? xacmlPages.peps(req) : noXacml();
@@ -2038,7 +2038,7 @@ class AdminViews {
    * @param req - the request
    * @returns the view, or the no-XACML answer when the module is not loaded
    */
-  xacmlDecideView(req) {
+  xacmlDecideView(req): IyaApi.AdminAnswer<'getXacmlDecision'> {
     const { log, noXacml } = this.deps;
     log.debug('Entering AdminViews.xacmlDecideView().');
     const json = xacmlPages ? xacmlPages.decide(req.query || {}) : noXacml();
@@ -2056,7 +2056,7 @@ class AdminViews {
    * @param req - the request (unused)
    * @returns the view, or the no-XACML answer when the module is not loaded
    */
-  xacmlMonitorView(req) {
+  xacmlMonitorView(req): IyaApi.AdminAnswer<'getXacmlMonitor'> {
     const { log, noXacml } = this.deps;
     log.debug('Entering AdminViews.xacmlMonitorView().');
     const json = xacmlPages ? xacmlPages.monitor() : noXacml();
@@ -2233,7 +2233,7 @@ class AdminViews {
    * @param req - the request
    * @returns a promise of the view, `consentPageView()`'s shape
    */
-  async consentPageViewAsync(req) {
+  async consentPageViewAsync(req): Promise<IyaApi.AdminView<'getConsent'>> {
     const { log, applications, consent: consentStore } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.consentPageViewAsync().");
@@ -2480,7 +2480,7 @@ class AdminViews {
    * @param query - the query: `q` and the roles' paging
    * @returns the view
    */
-  rolesView(query?) {
+  rolesView(query?): IyaApi.AdminAnswer<'getRoles'> {
     const { log, applications } = this.deps;
     log.debug("Entering AdminViews.rolesView().");
     const q0 = query || {};
@@ -2859,7 +2859,7 @@ class AdminViews {
    * @param query - the request's query
    * @returns a promise of the page's JSON
    */
-  async policiesViewAsync(query) {
+  async policiesViewAsync(query): Promise<IyaApi.AdminAnswer<'getPolicies'>> {
     const { log, policyKinds } = this.deps;
     log.debug("Entering AdminViews.policiesViewAsync().");
     const out = this.policiesView(query);
@@ -2894,7 +2894,7 @@ class AdminViews {
    * @param query - the query, naming the application and the subject
    * @returns the decision and what it rested on
    */
-  rolesPreview(query) {
+  rolesPreview(query): IyaApi.AdminAnswer<'previewRoleIssuance'> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.rolesPreview().");
     const asked = query || {};
@@ -3218,7 +3218,7 @@ class AdminViews {
    * @param previewUser - the person to preview
    * @returns the JSON
    */
-  claimsJson(previewUser) {
+  claimsJson(previewUser): IyaApi.AdminAnswer<'getClaims'> {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.claimsJson(). previewUser=" + previewUser);
     const json = Object.assign(
@@ -3243,7 +3243,7 @@ class AdminViews {
    * @param previewUser - the person to preview
    * @returns the JSON
    */
-  samlAttributesJson(previewUser) {
+  samlAttributesJson(previewUser): IyaApi.AdminAnswer<'getSamlAttributes'> {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.samlAttributesJson(). previewUser=" +
               previewUser);
@@ -3278,7 +3278,7 @@ class AdminViews {
    * @param previewUser - the person to preview
    * @returns the JSON
    */
-  kerberosClaimsJson(previewUser) {
+  kerberosClaimsJson(previewUser): IyaApi.AdminAnswer<'getKerberosPacClaims'> {
     const { log, stats, config, claimAttributes } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.kerberosClaimsJson(). previewUser=" +
@@ -3383,7 +3383,7 @@ class AdminViews {
    * @param previewUser - the person to preview
    * @returns the JSON
    */
-  vcJson(previewUser) {
+  vcJson(previewUser): IyaApi.AdminAnswer<'getCredentialClaims'> {
     const { log, vcClaims } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.vcJson(). previewUser=" + previewUser);
@@ -3460,7 +3460,7 @@ class AdminViews {
    *
    * @returns the JSON
    */
-  vpConfigJson() {
+  vpConfigJson(): IyaApi.AdminAnswer<'getVerifierRequest'> {
     const { log, vpConfig } = this.deps;
     log.debug("Entering AdminViews.vpConfigJson().");
     const format = vpConfig.defaultFormatId();
@@ -3531,7 +3531,7 @@ class AdminViews {
    * @returns `{ found, ...outcome }` for a state, or `{ verifications,
    *   total, limit }`
    */
-  presentationVerificationsJson(req) {
+  presentationVerificationsJson(req): IyaApi.AdminAnswer<'getVerifications'> {
     const { log, vcVerifier } = this.deps;
     log.debug("Entering AdminViews.presentationVerificationsJson().");
     const query = (req && req.query) || {};
@@ -3697,7 +3697,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  realmsJson(req) {
+  realmsJson(req): IyaApi.AdminAnswer<'getRealms'> {
     const { log, config, realms } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.realmsJson().");
@@ -3758,7 +3758,7 @@ class AdminViews {
    *
    * @returns the JSON
    */
-  tokenLifetimesJson() {
+  tokenLifetimesJson(): IyaApi.AdminAnswer<'getTokenLifetimes'> {
     const { log, config, stats, configSettingFor, applications } = this.deps;
     log.debug("Entering AdminViews.tokenLifetimesJson().");
     // No user counts are read here (#820).
@@ -3828,7 +3828,7 @@ class AdminViews {
    *
    * @returns the JSON
    */
-  samlAssertionsJson() {
+  samlAssertionsJson(): IyaApi.AdminAnswer<'getSamlAssertions'> {
     const { log, config, stats, configSettingFor } = this.deps;
     log.debug("Entering AdminViews.samlAssertionsJson().");
     // No user counts are read here (#820).
@@ -3970,7 +3970,7 @@ class AdminViews {
    * @param req - the request
    * @returns a promise of the JSON
    */
-  scimJsonAcrossCells(req) {
+  scimJsonAcrossCells(req): Promise<IyaApi.AdminAnswer<'getScim'>> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.scimJsonAcrossCells().");
     const out = this.scimJson(req);
@@ -4107,7 +4107,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  scimMonitorJson(req) {
+  scimMonitorJson(req): IyaApi.AdminAnswer<'getScimMonitor'> {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.scimMonitorJson().");
     const counters = stats.scimMonitorSnapshot();
@@ -4368,7 +4368,7 @@ class AdminViews {
    * @param realmId - the realm's id, or the ambient realm's
    * @returns the history
    */
-  signingHistoryView(query, realmId?) {
+  signingHistoryView(query, realmId?): IyaApi.AdminAnswer<'getKeyHistory'> {
     const { log, realms, signingHistory: history } = this.deps;
     log.debug("Entering AdminViews.signingHistoryView().");
     const q = query || {};
@@ -4655,7 +4655,7 @@ class AdminViews {
    * @param query - the request's query
    * @returns a promise of the view `tokensView()` answers
    */
-  async tokensViewAsync(query) {
+  async tokensViewAsync(query): Promise<IyaApi.AdminView<'getIssued'>> {
     const { log, stats } = this.deps;
     log.debug("Entering AdminViews.tokensViewAsync().");
     if (typeof stats.issuedSetsAsync !== 'function') {
@@ -4885,7 +4885,7 @@ class AdminViews {
    * @param req - the request
    * @returns a promise of the view
    */
-  async sessionsViewAsync(req) {
+  async sessionsViewAsync(req): Promise<IyaApi.AdminView<'getSessions'>> {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.sessionsViewAsync().");
@@ -5010,7 +5010,7 @@ class AdminViews {
    * @param query - the request's query
    * @returns the view
    */
-  usedAssertionsView(query) {
+  usedAssertionsView(query): Promise<IyaApi.AdminView<'getUsedAssertions'>> {
     const { log, usedAssertions } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.usedAssertionsView().");
@@ -5096,7 +5096,7 @@ class AdminViews {
    * @param query - the request's query
    * @returns the view
    */
-  errorCodesView(query) {
+  errorCodesView(query): IyaApi.AdminView<'getErrorCodes'> {
     const { log, auditLog, errorCodes } = this.deps;
     log.debug("Entering AdminViews.errorCodesView().");
     const wantedSubsystem = String(query.subsystem || '').trim().toUpperCase();
@@ -5202,7 +5202,7 @@ class AdminViews {
    * @param query - the request's query
    * @returns the view
    */
-  auditView(query) {
+  auditView(query): IyaApi.AdminView<'getAudit'> {
     const { log, auditLog } = this.deps;
     log.debug("Entering AdminViews.auditView().");
     const wantedCategory = String(query.category || '');
@@ -5763,7 +5763,7 @@ class AdminViews {
    *   with no links in it, as `?format=svg` answers
    * @returns the page's JSON with `summary`, `looks`, `label` and `svg`
    */
-  delegationMapModel(query, options?) {
+  delegationMapModel(query, options?): IyaApi.AdminAnswer<'getDelegationMap'> {
     const { log, delegationMap } = this.deps;
     log.debug("Entering AdminViews.delegationMapModel().");
     const view = this.delegationView(query || {});
@@ -5828,7 +5828,8 @@ class AdminViews {
    *   with no links in it, as `?format=svg` answers
    * @returns the chain, its acts and graph, and the drawing
    */
-  delegationChainModel(query, options?) {
+  delegationChainModel(query, options?):
+    IyaApi.AdminAnswer<'getDelegationChain'> {
     const { log, delegation, delegationMap } = this.deps;
     log.debug("Entering AdminViews.delegationChainModel().");
     const wanted = String((query || {}).chain || '');
@@ -5882,7 +5883,9 @@ class AdminViews {
    *   with no links in it, as `?format=svg` answers
    * @returns the application, its acts and graph, and the drawing
    */
-  delegationApplicationModel(query, options?) {
+  delegationApplicationModel(query, options?):
+    IyaApi.AdminAnswer<'getDelegationApplication' |
+      'getConsoleDelegationApplication'> {
     const { log, delegation, delegationMap, applications } = this.deps;
     log.debug("Entering AdminViews.delegationApplicationModel().");
     const asked = String((query || {}).application || '').trim();
@@ -5969,7 +5972,8 @@ class AdminViews {
    * @returns the person, their credentials, flows, acts and graph, and the
    *   drawing
    */
-  delegationUserModel(query, options?) {
+  delegationUserModel(query, options?):
+    IyaApi.AdminAnswer<'getDelegationUser' | 'getConsoleDelegationUser'> {
     const { log, stats, delegation, delegationMap, userGraph } = this.deps;
     log.debug("Entering AdminViews.delegationUserModel().");
     const asked = String((query || {}).user || '').trim();
@@ -6090,7 +6094,8 @@ class AdminViews {
    *   with no links in it, as `?format=svg` answers
    * @returns the lineage, the graph and the drawing
    */
-  credentialLineageModel(query, options?) {
+  credentialLineageModel(query, options?):
+    IyaApi.AdminAnswer<'getCredentialLineage'> {
     const { log, stats, delegation, delegationMap, userGraph,
             credentialGraph } = this.deps;
     log.debug("Entering AdminViews.credentialLineageModel().");
@@ -6215,7 +6220,7 @@ class AdminViews {
    * @param query - the page's query
    * @returns the register, its list state, the applications and settings
    */
-  delegationSettingsModel(query) {
+  delegationSettingsModel(query): IyaApi.AdminAnswer<'getDelegationSettings'> {
     const { log, applications } = this.deps;
     log.debug("Entering AdminViews.delegationSettingsModel().");
     const permissions = this.permissionsView();
@@ -6260,7 +6265,8 @@ class AdminViews {
    *   with no links in it, as `?format=svg` answers
    * @returns the graph, the groups, the register and the drawing
    */
-  delegationAllowedModel(query, options?) {
+  delegationAllowedModel(query, options?):
+    IyaApi.AdminAnswer<'getDelegationAllowed'> {
     const { log, delegationMap } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.delegationAllowedModel().");
@@ -6323,7 +6329,8 @@ class AdminViews {
    *   with no links in it, as `?format=svg` answers
    * @returns the group, its pages, the chooser's data and the drawing
    */
-  delegationClusterModel(query, options?) {
+  delegationClusterModel(query, options?):
+    IyaApi.AdminAnswer<'getDelegationCluster'> {
     const { log, delegationMap, appPermissions } = this.deps;
     log.debug("Entering AdminViews.delegationClusterModel().");
     const asked = String((query || {}).application || '').trim();
@@ -6387,7 +6394,7 @@ class AdminViews {
    *   and every list's page
    * @returns the acts and everything the page draws beside them
    */
-  delegationPageModel(query) {
+  delegationPageModel(query): IyaApi.AdminAnswer<'getDelegation'> {
     const { log, delegation, userGraph, applications } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.delegationPageModel().");
@@ -6628,7 +6635,7 @@ class AdminViews {
    *   with no links in it, as `?format=svg` answers
    * @returns the realm's relationships, the graph and the drawing
    */
-  federationMapModel(query, options?) {
+  federationMapModel(query, options?): IyaApi.AdminAnswer<'getFederationMap'> {
     const { log, federation, federationGraph, federationDiagram } = this.deps;
     log.debug("Entering AdminViews.federationMapModel().");
     const q = query || {};
@@ -7033,7 +7040,7 @@ class AdminViews {
    * @param query - the request's query
    * @returns the view
    */
-  delegationPolicyView(query) {
+  delegationPolicyView(query): IyaApi.AdminView<'getDelegationPolicy'> {
     const { log, delegationPolicy } = this.deps;
     log.debug("Entering AdminViews.delegationPolicyView().");
     const q = query || {};
@@ -7116,7 +7123,8 @@ class AdminViews {
    * @param view - the register, when already built
    * @returns the clusters, or the one asked for
    */
-  permissionGroupsView(query, view?) {
+  permissionGroupsView(query, view?):
+    IyaApi.AdminAnswer<'getPermissionGroups'> {
     const { log, appPermissions } = this.deps;
     log.debug("Entering AdminViews.permissionGroupsView().");
     const permissions = view || this.permissionsView();
@@ -7359,7 +7367,8 @@ class AdminViews {
    * @param raw - the `claims` parameter to preview
    * @returns the JSON
    */
-  userinfoClaimsJson(previewUser, raw) {
+  userinfoClaimsJson(previewUser, raw):
+    IyaApi.AdminAnswer<'getUserInfoClaims'> {
     const { log, stats, userFor } = this.deps;
     log.debug("Entering AdminViews.userinfoClaimsJson(). previewUser=" +
               previewUser);
@@ -7398,7 +7407,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  signalsJson(req) {
+  signalsJson(req): IyaApi.AdminAnswer<'getSignals'> {
     const { log, signals } = this.deps;
     log.debug("Entering AdminViews.signalsJson().");
     // THE CONSOLE SEES EVERYTHING IN THE REALM IT IS READING, which is the
@@ -7477,7 +7486,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  pkiTrustJson(req) {
+  pkiTrustJson(req): IyaApi.AdminAnswer<'getPkiTrust'> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.pkiTrustJson().");
     // Lazily: libraries, and this module is loaded long before any of them.
@@ -7546,7 +7555,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  truststoreJson(req) {
+  truststoreJson(req): IyaApi.AdminAnswer<'getTruststore'> {
     const { log, adminActions } = this.deps;
     log.debug("Entering AdminViews.truststoreJson().");
     // THE TWO GATED DOORS, AND THE ONLY ONES: the open test controls
@@ -7653,7 +7662,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  kerberosPrincipalsJson(req) {
+  kerberosPrincipalsJson(req): IyaApi.AdminAnswer<'getKerberosPrincipals'> {
     const { log, config, realms, krb5Principals, krb5PersonKeys,
       adminActions, mode } = this.deps;
     log.debug("Entering AdminViews.kerberosPrincipalsJson().");
@@ -7801,7 +7810,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  kerberosTrustsJson(req) {
+  kerberosTrustsJson(req): IyaApi.AdminAnswer<'getKerberosTrusts'> {
     const { log, config, realms, krb5Principals, krb5Trusts, mode,
       adminActions } = this.deps;
     log.debug("Entering AdminViews.kerberosTrustsJson().");
@@ -7894,7 +7903,7 @@ class AdminViews {
    * @param req - the request
    * @returns the report
    */
-  ssfJson(req) {
+  ssfJson(req): IyaApi.AdminAnswer<'getSsf'> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.ssfJson().");
     if (!signalsReporter) {
@@ -8041,7 +8050,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  ssfDeadLettersJson(req) {
+  ssfDeadLettersJson(req): IyaApi.AdminAnswer<'getSsfDeadLetters'> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.ssfDeadLettersJson().");
     if (!signalsReporter || typeof signalsReporter.deadLetters !== 'function') {
@@ -8084,7 +8093,7 @@ class AdminViews {
    * @param req - the request
    * @returns the report
    */
-  caepJson(req) {
+  caepJson(req): IyaApi.AdminAnswer<'getCaep'> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.caepJson().");
     if (!caepReporter) {
@@ -8232,7 +8241,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  caepSessionsJson(req) {
+  caepSessionsJson(req): IyaApi.AdminAnswer<'getCaepSessions'> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.caepSessionsJson().");
     const json = this.caepJson(req);
@@ -8283,7 +8292,7 @@ class AdminViews {
    * @param req - the request
    * @returns the report
    */
-  riscJson(req) {
+  riscJson(req): IyaApi.AdminAnswer<'getRisc'> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.riscJson().");
     if (!riscReporter) {
@@ -8390,7 +8399,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  riscAccountsJson(req) {
+  riscAccountsJson(req): IyaApi.AdminAnswer<'getRiscAccounts'> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.riscAccountsJson().");
     const json = this.riscJson(req);
@@ -8466,7 +8475,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  spiffeJson(req) {
+  spiffeJson(req): IyaApi.AdminAnswer<'getSpiffe'> {
     const { log, config, spiffeRegistry, spiffeCa, spiffeAuth } = this.deps;
     log.debug("Entering AdminViews.spiffeJson().");
     const state = spiffeCa.state();
@@ -8571,7 +8580,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  spiffeEntriesJson(req) {
+  spiffeEntriesJson(req): IyaApi.AdminView<'getSpiffeEntries'> {
     const { log, spiffeRegistry } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.spiffeEntriesJson().");
@@ -8633,7 +8642,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  spiffeBrokersJson(req) {
+  spiffeBrokersJson(req): IyaApi.AdminView<'getSpiffeBrokers'> {
     const { log, config, spiffeAuth } = this.deps;
     log.debug("Entering AdminViews.spiffeBrokersJson().");
     const q = String(req.query.q || '').trim().toLowerCase();
@@ -8674,7 +8683,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  spiffeAgentsJson(req) {
+  spiffeAgentsJson(req): IyaApi.AdminView<'getSpiffeAgents'> {
     const { log, spiffeRegistry } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.spiffeAgentsJson().");
@@ -8844,7 +8853,9 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  newApplicationJson(req) {
+  newApplicationJson(req):
+    IyaApi.AdminAnswer<'getNewApplicationForm' |
+      'getConsoleNewApplicationForm'> {
     const { log, realms, applications, mode } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.newApplicationJson().");
@@ -9059,7 +9070,7 @@ class AdminViews {
    * @param prefill - values to fill the form with
    * @returns the JSON
    */
-  newUserJson(req, prefill?) {
+  newUserJson(req, prefill?): IyaApi.AdminAnswer<'getNewUserForm'> {
     const { log, credentials, mode, realms, vcClaims, applications } =
       this.deps;
     log.debug("Entering AdminViews.newUserJson().");
@@ -9187,7 +9198,9 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  rbacListJson(req) {
+  // A promise while the directory is read, the view itself once it is.
+  rbacListJson(req): IyaApi.AdminView<'getAdminRoles'> |
+    Promise<IyaApi.AdminView<'getAdminRoles'>> {
     const { log, realms, rbac, stats } = this.deps;
     const self = this;
     log.debug("Entering AdminViews.rbacListJson().");
@@ -10189,7 +10202,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  saml2Json(req) {
+  saml2Json(req): IyaApi.AdminAnswer<'getSaml2ServiceProviders'> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.saml2Json().");
     const wanted = String((req.query || {}).sp || '').trim();
@@ -10392,7 +10405,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  saml11Json(req) {
+  saml11Json(req): IyaApi.AdminAnswer<'getSaml11RelyingParties'> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.saml11Json().");
     const wanted = String((req.query || {}).rp || '').trim();
@@ -10503,7 +10516,8 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  samlIdpInitiatedJson(req) {
+  samlIdpInitiatedJson(req):
+    IyaApi.AdminAnswer<'getSamlIdpInitiatedApplications'> {
     const { log, baseUrlOf, applications, config } = this.deps;
     log.debug("Entering AdminViews.samlIdpInitiatedJson().");
     const base = baseUrlOf(req);
@@ -10654,7 +10668,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  authorizationServersJson(req) {
+  authorizationServersJson(req): IyaApi.AdminAnswer<'getAuthorizationServers'> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.authorizationServersJson().");
     const wanted = String((req.query || {}).profile || '').trim();
@@ -10907,7 +10921,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  groupsJson(req) {
+  groupsJson(req): IyaApi.AdminAnswer<'getGroups'> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.groupsJson().");
     if (!groupReader) {
@@ -12959,7 +12973,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  applicationsJson(req) {
+  applicationsJson(req): IyaApi.AdminAnswer<'getApplications'> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.applicationsJson().");
     const wanted = String((req.query || {}).application || '').trim();
@@ -13461,7 +13475,7 @@ class AdminViews {
    * @param req - the request
    * @returns the JSON
    */
-  federationJson(req) {
+  federationJson(req): IyaApi.AdminAnswer<'getFederationRelationships'> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.federationJson().");
     const wanted = String((req.query || {}).relationship || '').trim();
@@ -14757,7 +14771,7 @@ class AdminViews {
    * @param query - the request's query (`page`, `per`, `failing`)
    * @returns the page's JSON
    */
-  serviceAccountsMonitorJson(query) {
+  serviceAccountsMonitorJson(query): IyaApi.AdminAnswer<'getServiceAccounts'> {
     const { log, serviceAccounts, serviceAccountPolicy } = this.deps;
     log.debug("Entering AdminViews.serviceAccountsMonitorJson().");
     const q = query || {};
@@ -15367,7 +15381,7 @@ class AdminViews {
    * @param req - the request
    * @returns a promise of the JSON
    */
-  async mfaRosterJsonAsync(req) {
+  async mfaRosterJsonAsync(req): Promise<IyaApi.AdminAnswer<'getMultiFactor'>> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.mfaRosterJsonAsync().");
     // The population AND its census (#621): the census was 5,000
@@ -15395,7 +15409,8 @@ class AdminViews {
    * @param risk - the person's risk standing, for the drill-down
    * @returns a promise of the JSON
    */
-  async usersJsonAsync(req, risk?: any) {
+  async usersJsonAsync(req, risk?: any):
+    Promise<IyaApi.AdminAnswer<'getUsers'>> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.usersJsonAsync().");
     const wanted = String((req.query || {}).user || '').trim();
@@ -15654,7 +15669,7 @@ class AdminViews {
    * @param query - the request's query
    * @returns the JSON
    */
-  appPasswordsJson(query) {
+  appPasswordsJson(query): IyaApi.AdminAnswer<'getUserAppPasswords'> {
     const { log, credentials, appPasswords } = this.deps;
     log.debug("Entering AdminViews.appPasswordsJson().");
     const who = String((query && (query.user || query.username)) || '').trim();
@@ -15698,7 +15713,7 @@ class AdminViews {
    * @param query - the request's query
    * @returns the JSON
    */
-  verificationsJson(query) {
+  verificationsJson(query): IyaApi.AdminAnswer<'getUserVerifications'> {
     const { log, identityAssurance } = this.deps;
     log.debug("Entering AdminViews.verificationsJson().");
     const who = String((query && (query.user || query.username)) || '').trim();
@@ -15736,7 +15751,8 @@ class AdminViews {
    * @param query - the request's query
    * @returns the JSON
    */
-  selfIssuedSubjectsJson(query) {
+  selfIssuedSubjectsJson(query):
+    IyaApi.AdminAnswer<'getUserSelfIssuedSubjects'> {
     const { log, siop, config } = this.deps;
     log.debug("Entering AdminViews.selfIssuedSubjectsJson().");
     const who = String((query && (query.user || query.username)) || '').trim();
@@ -15765,7 +15781,7 @@ class AdminViews {
    * @param query - the request's query
    * @returns the JSON
    */
-  publishedDidsJson(query) {
+  publishedDidsJson(query): IyaApi.AdminAnswer<'getUserPublishedDids'> {
     const { log } = this.deps;
     log.debug("Entering AdminViews.publishedDidsJson().");
     // LAZILY: `person_did.ts` is built with the verifiable credentials
@@ -15799,7 +15815,7 @@ class AdminViews {
    * @param query - the request's query
    * @returns the JSON
    */
-  devicesJson(query) {
+  devicesJson(query): IyaApi.AdminAnswer<'getUserDevices'> {
     const { log, devices, oauth2, config } = this.deps;
     log.debug("Entering AdminViews.devicesJson().");
     const who = String((query && (query.user || query.username)) || '').trim();
