@@ -31,9 +31,14 @@ extra_environment = {
   LDAP_WORKER_DIRECTORY            = "postgres-lru"
 }
 
+# ONE NODE WITH TWO REQUEST WORKERS AND NO SURFACE WORKER, as AWS's
+# testidp runs since 2026-11-03 (#1293) and was rebuilt on 2026-11-10 (rcbj:
+# "a single cluster node configuration").
+node_count = 1
+
 sts_mode                = "product"
 workers_request_count   = 2
-workers_surface_count   = 1
+workers_surface_count   = 0
 workers_dispatch        = "*"
 workers_read_your_write = true
 
