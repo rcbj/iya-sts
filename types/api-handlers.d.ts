@@ -44,7 +44,8 @@ declare namespace IyaApi {
   // route that validates its query before the handler (the Account API's
   // zod check, which coerces) hands the handler the model's own types
   // instead, as `ValidatedInput`.
-  type RawQuery<Q> = { [K in keyof Q]?: any };
+  // For a handler serving several operations, a name any of them declares.
+  type RawQuery<Q> = { [K in (Q extends unknown ? keyof Q : never)]?: any };
 
   // A request to one operation (or to any of several, for a handler that
   // serves several): its body and query as the model declares them. Every
@@ -96,9 +97,28 @@ declare namespace IyaApi {
   }[keyof Ops];
 
   // ONE ACTION OF A ROW THAT SERVES SEVERAL (`POST …/:action`).
-  interface ActionOf<Ops> {
+  interface ActionOf<Ops, K extends keyof Ops = keyof Ops> {
     action: string;
-    operationId: keyof Ops;
+    operationId: K;
     [member: string]: any;
   }
+
+  // A ROW THAT SERVES SEVERAL OPERATIONS, one per action: its handler is
+  // typed by the union of its actions' operations. `common/api_rows.ts`'s
+  // `ApiRows.actions()` infers `K` from the row's own `actions`.
+  type ActionRowOf<Ops, K extends keyof Ops, Extra extends any[]> = {
+    operationId?: undefined;
+    actions: Array<ActionOf<Ops, K>>;
+    handler?: (req: RequestTo<Ops[K] & Operation>,
+               res: Answering<Ops[K] & Operation>,
+               ...extra: Extra) => unknown;
+    [member: string]: any;
+  };
+
+  // THE MANAGEMENT AND ADMIN CONSOLE APIS' ROUTE TABLE (`mgmt-api/
+  // admin_api.ts` and every module whose `ROUTES` it spreads): a row naming
+  // one operation, or a row of actions.
+  type AdminActionRow<K extends keyof AdminOperations = keyof AdminOperations> =
+    ActionRowOf<AdminOperations, K, [any?]>;
+  type AdminRow = RowOf<AdminOperations, [any?]> | AdminActionRow;
 }

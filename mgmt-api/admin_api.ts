@@ -568,6 +568,57 @@ const NOT_ENFORCED_HERE = ['required'];
 // ---------------------------------------------------------------------------
 const REFUSED_BY_HANDLER = 'x-refused-by-handler';
 
+// ---------------------------------------------------------------------------
+// A ROW OF THE TABLE IS TYPED BY THE MODEL (#1579). A row naming one
+// operationId has its handler typed by that operation in
+// `types/api.generated.d.ts` (`IyaApi.AdminOperations`, the Management and
+// Admin Console APIs together): the body and query names it may read, and
+// what `sendJson()` may answer at a literal 2xx status. A row that serves
+// several (`POST …/:action`) is typed by the union of its actions'
+// operations. `types/api-handlers.d.ts` argues it.
+//
+// THE CONSOLE'S TWINS (#454): a management operation whose console twin
+// answers the same handler's whole answer, where the management one leaves
+// the console's members out (`withConsoleRoutes()`). Declared here, beside
+// the row type, because the twin's handler is the management row's: it is
+// typed by both operations.
+// ---------------------------------------------------------------------------
+
+// What a drawing adds to a delegation answer: the box looks, the SVG,
+// its size and label, and the page's chooser, key and facts.
+const CONSOLE_DRAWING = ['drawing', 'looks', 'label', 'svg', 'chooser',
+                         'mapKey', 'facts'];
+const CONSOLE_TWINS = [
+  { of: 'getStatus', path: '/console/dashboard',
+    operationId: 'getConsoleDashboard',
+    members: ['base', 'persistence', 'testDouble', 'sections'],
+    drawing: false },
+  { of: 'getNewApplicationForm', path: '/console/applications/new',
+    operationId: 'getConsoleNewApplicationForm',
+    members: ['fieldGroups', 'familyChoices', 'longTextAttributes',
+              'persistence', 'resourceMetadataImport'],
+    drawing: false },
+  { of: 'getDelegationUser', path: '/console/delegation/user',
+    operationId: 'getConsoleDelegationUser',
+    members: CONSOLE_DRAWING, drawing: true },
+  { of: 'getDelegationApplication', path: '/console/delegation/application',
+    operationId: 'getConsoleDelegationApplication',
+    members: CONSOLE_DRAWING, drawing: true }
+] as const;
+type AdminOps = IyaApi.AdminOperations;
+type ConsoleTwinOf<K> =
+  Extract<(typeof CONSOLE_TWINS)[number], { of: K }>['operationId'];
+type AdminServed<K extends keyof AdminOps> = AdminOps[K | ConsoleTwinOf<K>];
+type AdminOneRow = {
+  [K in keyof AdminOps]: {
+    operationId: K;
+    handler?: (req: IyaApi.RequestTo<AdminServed<K>>,
+               res: IyaApi.Answering<AdminServed<K>>, next?: any) => unknown;
+    [member: string]: any;
+  }
+}[keyof AdminOps];
+type AdminRow = AdminOneRow | IyaApi.AdminActionRow;
+
 // What `AdminApi` needs from the rest of the service: the modules this file
 // used to reach for itself, passed in so that the composition root can build
 // one and a test can build one with stubs.
@@ -1405,9 +1456,15 @@ class AdminApi {
     return Object.assign({}, result, { relationship: shown });
   }
 
-  sendJson(res, status, body) {
+  // TYPED BY THE OPERATION (#1579): through a handler's response (a row's
+  // `IyaApi.Answering`), `body` is held to the model's answer at a literal
+  // 2xx status. Inside, it is the untyped value it always was.
+  sendJson<R, S extends number>(res: R, status: S,
+                                answer: IyaApi.AnswerOf<R, S>): void;
+  sendJson(res: any, status: number, answer: any): void {
     const { log } = this.deps;
     log.debug("Entering AdminApi.sendJson(). status=" + status);
+    let body = answer;
     // A 500 is by definition something nobody planned to say, so product mode
     // says nothing of it to the caller (ASVS 5.0.0 16.5.1). The sites that send
     // one log it.
@@ -2623,7 +2680,7 @@ class AdminApi {
       log.debug("Leaving withDelegationQuery().");
       return out;
     };
-    const ROUTES: any[] = [
+    const ROUTES: AdminRow[] = [
       { method: 'GET', path: BASE, tag: 'Service',
         operationId: 'getIndex',
         mirrors: 'GET /admin',
@@ -10083,27 +10140,8 @@ class AdminApi {
         return entry.operationId === id;
       })[0];
     };
-    // What a drawing adds to a delegation answer: the box looks, the SVG,
-    // its size and label, and the page's chooser, key and facts.
-    const DRAWING = ['drawing', 'looks', 'label', 'svg', 'chooser',
-                     'mapKey', 'facts'];
-    const TWINS = [
-      { of: 'getStatus', path: '/console/dashboard',
-        operationId: 'getConsoleDashboard',
-        members: ['base', 'persistence', 'testDouble', 'sections'] },
-      { of: 'getNewApplicationForm', path: '/console/applications/new',
-        operationId: 'getConsoleNewApplicationForm',
-        members: ['fieldGroups', 'familyChoices', 'longTextAttributes',
-                  'persistence', 'resourceMetadataImport'] },
-      { of: 'getDelegationUser', path: '/console/delegation/user',
-        operationId: 'getConsoleDelegationUser',
-        members: DRAWING, drawing: true },
-      { of: 'getDelegationApplication', path: '/console/delegation/application',
-        operationId: 'getConsoleDelegationApplication',
-        members: DRAWING, drawing: true }
-    ];
     const out = routes.slice(0);
-    TWINS.forEach(function (twin) {
+    CONSOLE_TWINS.forEach(function (twin) {
       const entry = byId(twin.of);
       // `proseRoute` (#543): the twin answers the management operation's
       // prose, so a prose source names that operation alone.
