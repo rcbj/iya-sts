@@ -40,6 +40,8 @@ import "./domain/registers.tsp";
 import "./scim/scim.tsp";
 import "./oauth/oauth.tsp";
 import "./oauth/oauth_members.tsp";
+import "./authzen/authzen.tsp";
+import "./authzen/authzen_members.tsp";
 import "./persistence/persistence.tsp";
 import "./persistence/persistence_mariadb.tsp";
 import "./api/report.tsp";
