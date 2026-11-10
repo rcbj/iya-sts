@@ -129,9 +129,12 @@ JWT access token is the default.
 * **The service log at debug level.** `global.logLevel=debug` or `trace` writes
   request and response headers and bodies, and every token before it is signed,
   to the service log. Those are Restricted and Bearer data. Product mode leaves
-  out credential headers and request and response bodies, but still writes the
-  tokens and assertions, and does not refuse the setting, so **do not use debug
-  or trace on a deployment that holds real data**.
+  out credential headers and request and response bodies, and writes each
+  token and assertion as its length and the start of its SHA-256 digest
+  rather than its text (ASVS 5.0.0 16.2.5). It does not refuse the setting,
+  and a debug log still names people, applications and addresses, so **use
+  debug or trace on a deployment that holds real data only while diagnosing,
+  and turn it back off**.
 * **The `ldif` store.** It holds entries as the filesystem protects them. Use
   PostgreSQL in product.
 * **A report job while it runs.** Its working file is on local disk in the
