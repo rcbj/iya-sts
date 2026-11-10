@@ -403,8 +403,10 @@ It has no setting of its own.
 
 The `htu` a proof is checked against comes from the request URL.
 `X-Forwarded-Proto` and `X-Forwarded-Host` are believed only while
-`global.trustProxy` is on. Behind a TLS-terminating proxy, turn it on, or every
-proof naming the public URL is refused (the refusal names the setting). With
+`global.trustProxy` is on, and in product mode only from a peer listed in
+`global.trustedProxies`. Behind a TLS-terminating proxy, turn it on and list the
+proxy, or every proof naming the public URL is refused (the refusal names the
+setting). With
 no proxy, leave it off, or a client could choose the `htu` its own proof is
 checked against.
 
@@ -1157,7 +1159,8 @@ another endpoint. With it off, `X-Forwarded-Host: attacker.example` changes
 nothing; with it on, `X-Forwarded-Host: sts.example.com` produces
 `issuer: https://sts.example.com` and every endpoint with it. A DPoP proof
 made against a proxy's URL while it is off is refused, and the refusal names the
-setting.
+setting. In product mode the headers are believed only from a peer listed in
+`global.trustedProxies`, so set that too.
 
 **No client certificate is ever read from a header** (`X-Client-Cert`,
 `X-Forwarded-Client-Cert`, `X-SSL-Client-Cert` or any vendor spelling): a header
