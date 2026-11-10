@@ -75,6 +75,12 @@ Switch user list and Sign out, so the way back is on the page. Switching is
 not the *Sign in again* window that appears when a session ends: that one
 signs the tab's own account in again and refuses anybody else.
 
+**A sign-in that leaves the page keeps a form's choices and nothing typed.**
+When the console sends the browser to sign in and back, as it does when a
+session has ended or an act needs a recent sign-in, the form on the page comes
+back with its ticks, radio buttons and menus as they were. Text typed into it is
+not kept in the browser's storage, so type it again.
+
 **There is no setting that turns the gate off.** What `global.mode` changes is
 whether the password typed at the sign-in screen is *checked*:
 
