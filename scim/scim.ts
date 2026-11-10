@@ -326,7 +326,8 @@ interface ScimDeps {
             { REFUSED_PASSWORD: string };
   scimMap: Record<'toScimUser' | 'prune' | 'fromScimUser' | 'toScimGroup' |
                   'fromScimGroup' | 'describeMapping', Fn> &
-           { ENTERPRISE_SCHEMA: string; IYA_STS_USER_SCHEMA: string };
+           { USER_SCHEMA: string; ENTERPRISE_SCHEMA: string;
+             IYA_STS_USER_SCHEMA: string; SCHEMAS: any[]; COMMON: any[] };
   federation: { peopleLinkedBy: Fn };
   fedLinks: { resolveRequest: Fn; parse: Fn };
   parseBody: Fn;
@@ -384,25 +385,6 @@ const SCIM_QUERY_MAX = 4096;
 // The URN a SearchRequest body must carry (section 3.4.3), written once.
 const SEARCH_REQUEST_URN =
     'urn:ietf:params:scim:api:messages:2.0:SearchRequest';
-
-// THE MEMBERS OF RFC 7643's SCHEMAS THIS DIRECTORY HAS NO PLACE FOR, taken
-// off the published definitions by narrowSchemas() (#206). Each is a member
-// with no row in `scim_map.ts`; adding a row is how one comes back.
-const NOT_PUBLISHED_USER = [
-  'nickName', 'locale', 'timezone', 'ims', 'photos', 'entitlements', 'roles',
-  'x509Certificates', 'name.middleName', 'name.honorificSuffix',
-  'emails.display', 'emails.primary', 'phoneNumbers.display',
-  'phoneNumbers.primary', 'addresses.primary'
-];
-const NOT_PUBLISHED_ENTERPRISE = ['costCenter', 'manager.displayName'];
-
-// The types a multi-valued member may carry: the `type` of each of its rows
-// in `scim_map.ts`, and nothing else. See narrowSchemas().
-const CANONICAL_TYPES: Record<string, string[]> = {
-  'emails.type': ['work'],
-  'phoneNumbers.type': ['work', 'mobile'],
-  'addresses.type': ['work']
-};
 
 // ---------------------------------------------------------------------------
 // REGISTERING A HOBA PUBLIC KEY — RFC 7486 section 7.
@@ -1821,74 +1803,6 @@ class Scim {
     });
   }
 
-  // ---------------------------------------------------------------------------
-  // THIS SERVICE'S USER EXTENSION (#109, 2026-09-22):
-  // `urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User`, whose one
-  // member is `federationLinks` — a multi-valued complex attribute of
-  // `relationship`, `issuer` and `subject`. Built once, when the resources are
-  // declared.
-  // ---------------------------------------------------------------------------
-  private iyaStsUserExtension(): any {
-    const { log, SCIMMY, scimMap } = this.deps;
-    log.debug("Entering Scim.iyaStsUserExtension().");
-    const Attribute = SCIMMY.Types.Attribute;
-    const definition = new SCIMMY.Types.SchemaDefinition('IyaStsUser',
-      scimMap.IYA_STS_USER_SCHEMA,
-      'This service\'s own User extension: which federation partners\' ' +
-      'subjects are linked to the person, and the Identity Assurance ' +
-      'claims no standard schema carries (#128).',
-      [new Attribute('string', 'salutation', {
-        description: 'A formal salutation, e.g. "Ms" (the Claims ' +
-          'Registration\'s salutation).' }),
-      new Attribute('string', 'birthFamilyName', {
-        description: 'The family name at birth.' }),
-      new Attribute('string', 'birthGivenName', {
-        description: 'The given name at birth.' }),
-      new Attribute('string', 'birthMiddleName', {
-        description: 'The middle name at birth.' }),
-      new Attribute('string', 'alsoKnownAs', {
-        description: 'Another name the person is known by, e.g. a stage ' +
-          'name.' }),
-      new Attribute('string', 'placeOfBirthCountry', {
-        description: 'The country of birth, ISO 3166-1 alpha-2.' }),
-      new Attribute('string', 'placeOfBirthRegion', {
-        description: 'The region of birth.' }),
-      new Attribute('string', 'placeOfBirthLocality', {
-        description: 'The locality of birth.' }),
-      // WHERE A NEW PERSON IS HOMED (#98 D1), in a service deployed as cells:
-      // the cell id, on a create only. Write-only and never returned — a
-      // cell is a routing fact nothing a client reads may name — and never
-      // stored on the entry: the entry existing in that cell IS the home.
-      // An update naming another cell is refused (re-homing is an
-      // administrator's act); a single-cell service ignores it.
-      // `scim_cells.ts` reads it.
-      new Attribute('string', 'homeCell', {
-        direction: 'in', returned: 'never', caseExact: true,
-        description: 'On a create in a service deployed as several regions: ' +
-          'the region the person is homed in, whose data stays there. The ' +
-          'realm\'s default when not sent. Never returned, and not ' +
-          'changed by a later write.' }),
-      new Attribute('complex', 'federationLinks', {
-        multiValued: true,
-        description: 'Each a federation partner\'s identifier for the ' +
-          'person, through one service-provider-side relationship. Not ' +
-          'sent: unchanged. Sent: replaced; a link removed ends the ' +
-          'sessions that partner signed the person in to.' }, [
-        new Attribute('string', 'relationship', { required: true,
-          caseExact: true,
-          description: 'The service-provider-side relationship.' }),
-        new Attribute('string', 'issuer', { caseExact: true,
-          description: 'The partner\'s entity ID or iss; the ' +
-            'relationship\'s fedPeer when omitted.' }),
-        new Attribute('string', 'subject', { required: true,
-          caseExact: true,
-          description: 'The partner\'s stable identifier for the person ' +
-            '(an OpenID Connect sub, a SAML persistent NameID).' })
-      ])]);
-    log.debug("Leaving Scim.iyaStsUserExtension().");
-    return definition;
-  }
-
   // The link values a resource asks for, checked, or null where it does not
   // say `federationLinks`. Each goes through the one check the console and
   // /admin-api use (`federation_links.ts`'s resolveRequest()), and a link
@@ -2178,86 +2092,146 @@ class Scim {
   }
 
   // ---------------------------------------------------------------------------
-  // THE PUBLISHED SCHEMAS SAY WHAT THE DIRECTORY HOLDS, AND NOTHING MORE
-  // (#206, 2026-09-26).
+  // THE PUBLISHED SCHEMAS ARE THE MODEL'S (#1579), AND SAY WHAT THE DIRECTORY
+  // HOLDS, AND NOTHING MORE (#206, 2026-09-26).
   //
-  // scimmy's User, EnterpriseUser and Group definitions are RFC 7643's whole
-  // schemas, and until this they were published unchanged at /Schemas. But
-  // this service stores a User in ONE directory entry through `scim_map.ts`,
-  // and a member with no row there — `nickName`, `locale`, `timezone`,
-  // `ims`, `photos`, `entitlements`, `roles`, `x509Certificates`,
-  // `name.middleName`, `name.honorificSuffix`, `costCenter`, every `display`
-  // and `primary` of a multi-valued member — was ACCEPTED, answered 200 or 201,
-  // and gone on the next read. RFC 7643 section 7 makes /Schemas the list of
-  // what a service provider SUPPORTS, and every one of these was a promise
-  // broken silently; scim2-tester reported each as a value that did not come
-  // back (#206). So each is removed from the published definition, and since
-  // scimmy coerces through the same definition, a client that still sends one
-  // is answered with what is really there rather than told it was kept.
+  // Every schema /Schemas lists is written in `models/scim/scim.tsp`, and
+  // this builds scimmy's definitions from what the build generated
+  // (`scim_map.ts`'s SCHEMAS and COMMON). scimmy coerces every body through
+  // those definitions on the way in and every resource on the way out, so
+  // the model is also what refuses a member of the wrong type, a value no
+  // canonical list offers and a missing required attribute.
   //
-  // THREE THINGS ARE NARROWED RATHER THAN REMOVED:
-  //   * `emails.type`, `phoneNumbers.type` and `addresses.type` list ONLY the
-  //     types a row of the mapping stores (`work`; `work` and `mobile`;
-  //     `work`). RFC 7643 section 2.3.1 lets a service provider restrict
-  //     canonical values, and a `home` email was dropped where it is now
-  //     refused 400 invalidValue — the honest answer, since `mail` has no
-  //     type to put `home` in.
-  //   * `roles.type`, `entitlements.type` and `x509Certificates.type` carried
-  //     `canonicalValues: []` in scimmy, which RFC 7643 section 8.7.1 means as
-  //     "none suggested" and scimmy enforces as "nothing allowed" — moot now
-  //     that the three are removed, and the reason not to put them back
-  //     without that fixed.
-  //   * `members.display` is removed from Group: RFC 7643 section 8.7.1's
-  //     Group schema has `value`, `$ref` and `type` and no `display`, and the
-  //     one scimmy added was drawn from the member's DN.
+  // scimmy ships RFC 7643's User, Group and EnterpriseUser whole, and until
+  // #206 they were published unchanged. But this service stores a User in ONE
+  // directory entry through `scim_map.ts`, and a member with no row there was
+  // ACCEPTED, answered 200 or 201, and gone on the next read — a promise RFC
+  // 7643 section 7 makes /Schemas keep, broken silently; scim2-tester reported
+  // each (#206). Until #1579 those members were truncated off scimmy's copies
+  // here; now the model simply does not write them, and a shipped
+  // definition's attributes are REPLACED by the model's. `scim/CLAUDE.md`
+  // lists what was left out and why, and the model's header says the same.
   //
-  // WHAT IS NOT REMOVED IS `password`, and not because it is stored: it is
-  // `writeOnly` and `returned: never`, so nothing reads it back, and a
-  // provisioning client that sends one must not have its create refused for
-  // it. It is not written (the header says why) — the published schema was
-  // never a promise that it is.
+  // A core schema's common attributes (RFC 7643 section 3.1) are the model's
+  // too, which is where `schemas` is returned always: RFC 7643 section 3
+  // makes it REQUIRED on every representation, and scimmy gave it `returned:
+  // default`, so `?attributes=userName` sent resources with no `schemas` at
+  // all (RFC 7644 section 3.9's minimum set; scim2/test-suite). An
+  // extension's are scimmy's, which nothing reads.
   //
-  // Idempotent, because a process that loads this module twice (a test, a
-  // worker) would otherwise throw on the second truncate of something
-  // already gone.
+  // Idempotent on the shipped definitions, which are the process's: a second
+  // run replaces the model's attributes with the model's, and keeps the
+  // extensions already added to them.
   // ---------------------------------------------------------------------------
-  private narrowSchemas(): void {
+
+  // scimmy's configuration of one attribute of the model. RFC 7643's
+  // characteristics are the model's words; scimmy states two of them its own
+  // way — a read-only attribute is `mutable: false`, a write-only one is one
+  // taken only `in` — and leaves a `uniqueness` of false out of /Schemas.
+  private scimmyConfig(attribute: any, shadow: boolean): any {
+    const { log } = this.deps;
+    log.debug("Entering Scim.scimmyConfig(). " + attribute.name);
+    const config: any = {};
+    if (shadow) {
+      config.shadow = true;
+    }
+    if (attribute.multiValued) {
+      config.multiValued = true;
+    }
+    if (attribute.description) {
+      config.description = attribute.description;
+    }
+    if (attribute.required) {
+      config.required = true;
+    }
+    if (attribute.canonicalValues) {
+      config.canonicalValues = attribute.canonicalValues.slice(0);
+    }
+    if (attribute.caseExact) {
+      config.caseExact = true;
+    }
+    if (attribute.mutability === 'readOnly') {
+      config.mutable = false;
+    } else if (attribute.mutability === 'immutable') {
+      config.mutable = 'immutable';
+    }
+    if (attribute.returned !== 'default') {
+      config.returned = attribute.returned;
+    }
+    if (attribute.uniqueness === 'unpublished') {
+      config.uniqueness = false;
+    } else if (attribute.uniqueness !== 'none') {
+      config.uniqueness = attribute.uniqueness;
+    }
+    if (attribute.referenceTypes) {
+      config.referenceTypes = attribute.referenceTypes.slice(0);
+    }
+    if (attribute.direction !== 'both') {
+      config.direction = attribute.direction;
+    }
+    log.debug("Leaving Scim.scimmyConfig().");
+    return config;
+  }
+
+  // One attribute of the model as a scimmy Attribute, with its
+  // sub-attributes. `shadow` is a common attribute's: on the resource, never
+  // listed in /Schemas.
+  private scimmyAttribute(attribute: any, shadow: boolean): any {
     const { log, SCIMMY } = this.deps;
-    log.debug("Entering Scim.narrowSchemas().");
-    const drop = function (definition: any, path: string): void {
-      let present = true;
-      try {
-        definition.attribute(path);
-      } catch (e) {
-        log.debug("Caught in Scim.narrowSchemas(): " +
-                  ((e && e.message) || e));
-        present = false;
+    log.debug("Entering Scim.scimmyAttribute(). " + attribute.name);
+    const built = new SCIMMY.Types.Attribute(attribute.type, attribute.name,
+      this.scimmyConfig(attribute, shadow),
+      (attribute.subAttributes || []).map((one: any) => {
+        return this.scimmyAttribute(one, false);
+      }));
+    log.debug("Leaving Scim.scimmyAttribute().");
+    return built;
+  }
+
+  // Every schema of the model as what scimmy's `extend()` takes, by URN: a
+  // shipped one's class, its attributes replaced; this service's own, a new
+  // definition; the realm's, `scim_realm_schema.ts`'s.
+  private installSchemas(): Record<string, any> {
+    const { log, SCIMMY, scimMap, realmSchema } = this.deps;
+    log.debug("Entering Scim.installSchemas().");
+    const Attribute = SCIMMY.Types.Attribute;
+    const byUrn: Record<string, any> = {};
+    scimMap.SCHEMAS.forEach((schema: any) => {
+      if (schema.realmDefined) {
+        byUrn[schema.id] = realmSchema.extension();
+        return;
       }
-      if (present) {
-        definition.truncate(path);
+      const own = schema.attributes.map((one: any) => {
+        return this.scimmyAttribute(one, false);
+      });
+      if (!schema.resource && !schema.shipped) {
+        byUrn[schema.id] = new SCIMMY.Types.SchemaDefinition(schema.name,
+          schema.id, schema.description, own);
+        return;
       }
-    };
-    const user = SCIMMY.Schemas.User.definition;
-    NOT_PUBLISHED_USER.forEach(function (path) {
-      drop(user, path);
+      // A shipped schema's class, by the name the model gives it; the build
+      // refuses a shipped name scimmy has no class for.
+      const shipped = SCIMMY.Schemas[schema.name];
+      const definition = shipped.definition;
+      const common = schema.resource
+        ? scimMap.COMMON.map((one: any) => {
+          return this.scimmyAttribute(one, true);
+        })
+        : definition.attributes.filter(function (one: any) {
+          return one instanceof Attribute && one.config.shadow === true;
+        });
+      const extensions = definition.attributes.filter(function (one: any) {
+        return !(one instanceof Attribute);
+      });
+      definition.attributes.splice(0, definition.attributes.length,
+        ...common, ...own, ...extensions);
+      definition.name = schema.name;
+      definition.description = schema.description;
+      byUrn[schema.id] = shipped;
     });
-    Object.keys(CANONICAL_TYPES).forEach(function (path) {
-      user.attribute(path).config.canonicalValues =
-        CANONICAL_TYPES[path].slice(0);
-    });
-    const enterprise = SCIMMY.Schemas.EnterpriseUser.definition;
-    NOT_PUBLISHED_ENTERPRISE.forEach(function (path) {
-      drop(enterprise, path);
-    });
-    drop(SCIMMY.Schemas.Group.definition, 'members.display');
-    // `schemas` IS RETURNED ALWAYS. RFC 7643 section 3 makes it REQUIRED on
-    // every representation of a resource, and scimmy gave it `returned:
-    // default`, so `?attributes=userName` sent resources with no `schemas`
-    // at all (RFC 7644 section 3.9's minimum set; scim2/test-suite).
-    [user, SCIMMY.Schemas.Group.definition].forEach(function (definition) {
-      definition.attribute('schemas').config.returned = 'always';
-    });
-    log.debug("Leaving Scim.narrowSchemas().");
+    log.debug("Leaving Scim.installSchemas(). " +
+              Object.keys(byUrn).length + " schema(s).");
+    return byUrn;
   }
 
   // The two scimmy resources, User and Group, declared with the handlers
@@ -2272,32 +2246,33 @@ class Scim {
             realmSchema } = this.deps;
     const { coded } = this;
     log.debug("Entering Scim.declareResources().");
-    this.narrowSchemas();
+    const schemas = this.installSchemas();
     const claimingIngress = this.claimingIngress.bind(this) as Fn;
-    // EXTENDED WITH THE ENTERPRISE USER SCHEMA (RFC 7643 section 4.3), and the
-    // extension has to be DECLARED rather than merely mapped. scim_map.ts has
+    // EXTENDED WITH THE MODEL'S EXTENSIONS OF THE USER RESOURCE TYPE, in its
+    // order (RFC 7643 section 6): the Enterprise User schema (section 4.3),
+    // this service's own (#109) and the realm's custom attributes (#699).
+    // Each has to be DECLARED rather than merely mapped. scim_map.ts has
     // carried employeeNumber, department, organization, division and manager
-    // since SCIM arrived here, but an attribute scimmy's schema definition does
-    // not know about is dropped by its coercion in both directions — so those
-    // five went out of a POST and came back as nothing, and /Schemas listed two
-    // documents while this service claimed three. Declaring it puts the URN in
-    // /Schemas and in the User resource type's schemaExtensions, and makes the
-    // namespaced member on the wire the one the mapping writes.
+    // since SCIM arrived here, but an attribute scimmy's schema definition
+    // does not know about is dropped by its coercion in both directions — so
+    // those five went out of a POST and came back as nothing, and /Schemas
+    // listed two documents while this service claimed three. Declaring it
+    // puts the URN in /Schemas and in the User resource type's
+    // schemaExtensions, and makes the namespaced member on the wire the one
+    // the mapping writes.
     //
-    // `required` is left false: RFC 7643 section 4.3 defines the extension, and
-    // a User carrying none of it is an ordinary User rather than an invalid
-    // one.
-    SCIMMY.Resources.declare(SCIMMY.Resources.User)
-      .extend(SCIMMY.Schemas.EnterpriseUser)
-      // AND THIS SERVICE'S OWN (#109), declared for the enterprise
-      // extension's reason: an attribute scimmy's definition does not know is
-      // dropped by its coercion. One member, `federationLinks`.
-      .extend(this.iyaStsUserExtension())
-      // AND THE REALM'S CUSTOM ATTRIBUTES (#699): one extension for the
-      // process whose members are the ambient realm's. Not required as
-      // declared; /ResourceTypes says it is where the realm requires one of
-      // them (`scim_realm_schema.ts`).
-      .extend(this.deps.realmSchema.extension())
+    // `required` is the model's, and false for all three: a User carrying
+    // none of the enterprise extension is an ordinary User rather than an
+    // invalid one, and /ResourceTypes says the realm's is required where the
+    // realm requires one of its attributes (`scim_realm_schema.ts`).
+    const userResource = SCIMMY.Resources.declare(SCIMMY.Resources.User);
+    const userSchema = scimMap.SCHEMAS.filter(function (one: any) {
+      return one.id === scimMap.USER_SCHEMA;
+    })[0];
+    (userSchema.extensions || []).forEach(function (one: any) {
+      userResource.extend(schemas[one.schema], one.required);
+    });
+    userResource
       .egress((resource, ctx) => {
         log.debug("Entering the SCIM User egress handler. id=" +
                   (resource.id || '(a list)'));

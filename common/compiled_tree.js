@@ -61,7 +61,8 @@ const GENERATED = ['application', 'role', 'device', 'serviceAccount', 'spiffe',
     'models/generated/openapi.authn.json',
     'models/generated/openapi.account.json',
     'models/generated/openapi.management.json',
-    'models/generated/openapi.console.json']);
+    'models/generated/openapi.console.json',
+    'models/generated/scim.json']);
 
 /**
  * The top-level directories that are not the service's own sources, as the

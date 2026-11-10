@@ -220,6 +220,13 @@ namespace IyaSts.Directory;
   // (2026-10-20): `federation:<relationship>`, written once by the federated
   // sign-in that created it and by nothing else. See PROVISIONED_BY.
   "stsProvisionedBy",
+  // SCIM's `externalId` (RFC 7643 section 3.1), on a person and on a group:
+  // the provisioning client's own identifier, stored verbatim by /scim/v2 and
+  // read by nothing else. No standard attribute type carries it, so it is
+  // this service's own, named the way every other invention here is. It was
+  // the SCIM mapping's own list until #1579 (`scim/scim_map.ts`'s
+  // OWN_NAMES), which the directory folded in at start.
+  "scimExternalId",
 
   // WHAT THIS PERSON AGREED AN APPLICATION MAY ASK FOR ON THEIR BEHALF, one
   // value per (application, scope) — `20260901143000Z openid webapp1`. Invented

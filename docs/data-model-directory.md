@@ -31,7 +31,7 @@ Do not edit it by hand.
 | [Claims provider](#claims-provider) | `ClaimProvider` | ou=claimproviders | 2 |
 | [Device](#device) | `Device` | ou=devices | 24 |
 | [Federation relationship](#federation-relationship) | `FederationRelationship` | ou=federations | 89 |
-| [Group](#group) | `Group` | ou=groups | 12 |
+| [Group](#group) | `Group` | ou=groups | 13 |
 | [Kerberos trust](#kerberos-trust) | `KerberosTrust` | ou=kerberosTrusts | 8 |
 | [OpenID Federation entry](#openid-federation-entry) | `Oidfed` | ou=oidfed | 5 |
 | [Operational attributes](#operational-attributes) | `Operational` |  | 6 |
@@ -644,6 +644,7 @@ No SCHEMA export. A group grants nothing by being a group.
 | `federationRelationship` | not stated | this service | `1.3.6.1.4.1.67607.1.1.172` | Named on the Groups section. |
 | `member` | several | RFC | `2.5.4.31` | Named on the Groups section. |
 | `memberUid` | several | RFC | `1.3.6.1.1.1.1.12` | Named on the Groups section. |
+| `scimExternalId` | not stated | this service | `1.3.6.1.4.1.67607.1.1.417` | SCIM's externalId of a Group, which /scim/v2 stores verbatim (models/scim/scim.tsp). The People section names it on people and groups. |
 | `stsAttributePolicy` | not stated | this service | `1.3.6.1.4.1.67607.1.1.495` | Named on the Groups section. |
 | `stsAuthnPolicy` | not stated | this service | `1.3.6.1.4.1.67607.1.1.520` | Named on the Groups section. |
 | `stsLocalePolicy` | not stated | this service | `1.3.6.1.4.1.67607.1.1.573` | Named on the Groups section. |
