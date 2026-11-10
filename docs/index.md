@@ -36,6 +36,8 @@ each.
 
 **Start here** —
 [Getting started](getting-started.md) ·
+[Release notes](release-notes.md) ·
+[Certifications](certifications.md) ·
 [Architecture](architecture.md) ·
 [Where a request waits](request-path.md) ·
 [Configuration](configuration.md) ·

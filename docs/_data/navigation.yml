@@ -12,6 +12,8 @@
   items:
     - { title: Overview, url: / }
     - { title: Getting started, url: /getting-started.html }
+    - { title: Release notes, url: /release-notes.html }
+    - { title: Certifications, url: /certifications.html }
     - { title: Architecture, url: /architecture.html }
     - { title: Where a request waits, url: /request-path.html }
     - { title: Configuration, url: /configuration.html }
