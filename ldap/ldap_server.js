@@ -1948,6 +1948,40 @@ function eachHolderOfAny(attributes, fn) {
   log.debug("Leaving eachHolderOfAny().");
 }
 
+// `eachHolderOfAny()` FOR A CALLER THAT CAN WAIT (#798). `holders()` reads
+// each row back with `getIn()`, a synchronous `byKeys` for a row the window
+// does not hold, and `/admin/users` asked that while it built the list.
+// This asks `holdersAsync()`, which takes the store's row, and walks the
+// same residents. Outside a window it is the synchronous walk.
+async function eachHolderOfAnyAsync(attributes, fn) {
+  log.debug("Entering eachHolderOfAnyAsync(). " + attributes.join(','));
+  if (!directoryWindow) {
+    eachEntryInRealm(fn);
+    log.debug("Leaving eachHolderOfAnyAsync().");
+    return;
+  }
+  const realmId = realms.currentId();
+  directoryWindow.eachResident(realmId, fn);
+  const seen = new Set();
+  const containers = windowedContainersOf(realmId);
+  for (let i = 0; i < containers.length; i++) {
+    const container = containers[i];
+    for (let j = 0; j < attributes.length; j++) {
+      const hits = await directoryWindow.holdersAsync(realmId, container,
+        attributes[j], function () {
+          return true;
+        });
+      hits.forEach(function (hit) {
+        if (!seen.has(hit.key)) {
+          seen.add(hit.key);
+          fn(hit.entry, hit.key);
+        }
+      });
+    }
+  }
+  log.debug("Leaving eachHolderOfAnyAsync().");
+}
+
 // ---------------------------------------------------------------------------
 // THE HOLDERS OF ONE ATTRIBUTE, FOR A BACKGROUND JOB (#615, 2026-10-13).
 //
@@ -10629,6 +10663,7 @@ if (typeof serviceAccounts.setDirectory === 'function') {
     readServiceAccount: readServiceAccount,
     writeServiceAccount: writeServiceAccount,
     serviceAccountNames: serviceAccountNames,
+    serviceAccountNamesAsync: serviceAccountNamesAsync,
     resolveOwner: resolveServiceAccountOwner
   });
 } else {
@@ -16066,6 +16101,7 @@ if (typeof credentials.addDirectoryHooks === 'function') {
     // the first names of them without listing the rest (#610) — the
     // headline and the capped list of `/admin/users`.
     personCount: personCount,
+    personCountAsync: personCountAsync,
     personNamesUpTo: personNamesUpTo,
     personNamesUpToAsync: personNamesUpToAsync,
     // The whole directory's credential tiles, and how many names are
@@ -24211,7 +24247,8 @@ function keepServiceAccountClass(attributes) {
 // of the flag are visited (#349's walk), and only those pay isPersonEntry().
 // KEPT PER REALM BY `serviceAccountsVersion` (#759): the walk asks the store,
 // and a sign-in's scope decision asked it every time. A copy is handed out,
-// so no caller can change the kept list.
+// so no caller can change the kept list. `serviceAccountNamesAsync()` is
+// the same list for a caller that can wait (#798).
 function serviceAccountNames() {
   log.debug('Entering serviceAccountNames().');
   const held = serviceAccountListings();
@@ -24238,6 +24275,53 @@ function serviceAccountNames() {
   held.version = version;
   held.usersDn = users;
   log.debug('Leaving serviceAccountNames(). ' + out.length);
+  return out.slice(0);
+}
+
+// `serviceAccountNames()` FOR A CALLER THAT CAN WAIT (#798). The same cache.
+// A miss in a windowed process walks with `eachHolderOfAnyAsync()`. The kept
+// list is written only when `serviceAccountsVersion` did not move while it
+// was asked, so a write that landed during the walk is not replaced with
+// the older answer. A synchronous rebuild does not move that clock; the
+// two walks of one version answer the same list. Outside a window it is
+// the synchronous walk, which reads memory.
+async function serviceAccountNamesAsync() {
+  log.debug('Entering serviceAccountNamesAsync().');
+  const held = serviceAccountListings();
+  const users = normalizeDn(usersDn());
+  if (held.names && held.version === serviceAccountsVersion &&
+      held.usersDn === users) {
+    serviceAccountsCount.hit();
+    log.debug('Leaving serviceAccountNamesAsync(). Kept, ' +
+              held.names.length);
+    return held.names.slice(0);
+  }
+  if (!directoryWindow) {
+    const out = serviceAccountNames();
+    log.debug('Leaving serviceAccountNamesAsync(). In memory, ' +
+              out.length);
+    return out;
+  }
+  serviceAccountsCount.miss();
+  const version = serviceAccountsVersion;
+  const out = [];
+  const keys = new Set();
+  await eachHolderOfAnyAsync(['stsserviceaccount'], function (entry) {
+    if (serviceAccounts.isServiceAccount(entry.attributes) &&
+        isPersonEntry(entry)) {
+      out.push(usernameOfEntry(entry));
+      keys.add(normalizeDn(entry.dn));
+    }
+  });
+  // No await between the comparison and the write, so nothing else moves
+  // the clock in between.
+  if (version === serviceAccountsVersion) {
+    held.names = out;
+    held.dnKeys = keys;
+    held.version = version;
+    held.usersDn = users;
+  }
+  log.debug('Leaving serviceAccountNamesAsync(). ' + out.length);
   return out.slice(0);
 }
 
@@ -25593,6 +25677,35 @@ function personCount() {
   // keys walked otherwise — see `countUnderContainer()`.
   const n = countUnderContainer(usersDn());
   log.debug("Leaving personCount().");
+  return n;
+}
+
+// `personCount()` FOR A CALLER THAT CAN WAIT (#798). In a windowed process
+// the count is `recentCountUnder()` — one synchronous `count` of `ou=users`,
+// held ten seconds — and `/admin/users` asked it while it built the
+// population, on the worker that serves sign-ins. The reach test is
+// `countUnderContainer()`'s, so the two answer the same question;
+// `recentCountUnderAsync()` asks the store on the read pool and keeps the
+// same reading. Outside a window, or where `ou=users` reaches no windowed
+// container, it is `personCount()`.
+async function personCountAsync() {
+  log.debug("Entering personCountAsync().");
+  if (directoryWindow) {
+    const realmId = realms.currentId();
+    const key = normalizeDn(usersDn());
+    const reaches = windowedContainersOf(realmId).some(function (c) {
+      return c === key || c.endsWith(',' + key) || key.endsWith(',' + c);
+    });
+    if (reaches) {
+      const counted = await directoryWindow.recentCountUnderAsync(realmId,
+                                                                   key);
+      log.debug("Leaving personCountAsync(). " + counted +
+                ", the store's count.");
+      return counted;
+    }
+  }
+  const n = personCount();
+  log.debug("Leaving personCountAsync(). " + n);
   return n;
 }
 

@@ -1134,6 +1134,7 @@ class Credentials {
   //     process), and the first `limit` names with whether there were more,
   //     so the roster neither lists everybody to cap the list nor reports
   //     the length of a capped list as the size of the directory.
+  //     `personCountAsync()` (#798) is that count for a caller that can wait.
   //
   // **THEY ARE REMEMBERED AGAINST THE DIRECTORY THEY CAME WITH.** A test that
   // installs a stub directory with `setDirectory()` and no census must not be
@@ -1147,8 +1148,8 @@ class Credentials {
   /**
    * Adds the population hooks to the directory slot already filled.
    *
-   * @param hooks - `credentialCensus`, `applicationMatcher`, `personCount`
-   *   and `personNamesUpTo`
+   * @param hooks - `credentialCensus`, `applicationMatcher`, `personCount`,
+   *   `personCountAsync` and `personNamesUpTo`
    * @returns true when added, false when no directory is installed
    */
   addDirectoryHooks(hooks) {
@@ -6101,7 +6102,10 @@ class Credentials {
    * @param alsoKnown - names the caller has seen
    * @param opts - `limit`; `credentials.factorScanLimit` when omitted;
    *   `directoryFirst`, the `{ names, more }` a caller already asked for
-   *   (`directoryFirstNames()`, #616), so the directory is not asked again
+   *   (`directoryFirstNames()`, #616), so the directory is not asked again;
+   *   `directoryPeople`, the count already asked (`directoryPeopleCount()`,
+   *   #798) — null where it was asked and failed, and 0 a count, so a
+   *   missing count is omitted rather than passed as `undefined`
    * @returns `{ rows: [{ username, inDirectory, known }], scanned, capped,
    *   limit, directoryPeople, store, isApplication }`
    */
@@ -6167,7 +6171,12 @@ class Credentials {
       scanned = people.length;
       people.forEach((name) => { add(name, 'inDirectory'); });
     }
-    if (counter) {
+    if (options.directoryPeople !== undefined) {
+      // Asked already, asynchronously (#798): `directoryPeopleCount()`.
+      // Null means the count was asked and failed. 0 is a count, so this
+      // is not `options.directoryPeople || counter()`.
+      directoryPeople = options.directoryPeople;
+    } else if (counter) {
       try {
         directoryPeople = Number(counter()) || 0;
       } catch (e) {
@@ -6243,6 +6252,44 @@ class Credentials {
               (first ? (first.names || []).length + ' name(s).'
                 : 'No directory.'));
     return first || null;
+  }
+
+  // THE PEOPLE COUNT, ASKED WITHOUT HOLDING THE EVENT LOOP (#798).
+  // `secondFactorPopulation()` asks `personCount()` synchronously, and in a
+  // windowed process that is one `count` of `ou=users` on the worker that
+  // serves sign-ins. A caller that can wait asks this first and hands the
+  // answer over as `directoryPeople`. No hook means `undefined`, and the
+  // caller omits the option so the synchronous count still runs. A count
+  // of 0 is a count; a throw is null (the page draws no count) under the
+  // code the synchronous count already records.
+  /**
+   * How many people the realm defines, asked of the directory
+   * asynchronously.
+   *
+   * @returns a promise of the count, of null where the count threw, or of
+   *   undefined where the directory offers no asynchronous count
+   */
+  async directoryPeopleCount() {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering Credentials.directoryPeopleCount().');
+    const hook = this.directoryHook('personCountAsync');
+    if (!hook) {
+      log.debug('Leaving Credentials.directoryPeopleCount(). No count.');
+      return undefined;
+    }
+    let n: number | null = null;
+    try {
+      const raw = Number(await hook());
+      // `Number.isFinite` and not `raw || 0`: a count of 0 is a count.
+      n = Number.isFinite(raw) ? raw : 0;
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0334') +
+                'credentials: counting this realm\'s people threw: ' +
+                ((e && e.message) || e));
+      n = null;
+    }
+    log.debug('Leaving Credentials.directoryPeopleCount(). ' + n);
+    return n;
   }
 
   /**
@@ -12675,6 +12722,7 @@ export = {
   // and count everybody in one pass — see `secondFactorPopulation()`.
   secondFactorPopulation: slot.forward('secondFactorPopulation'),
   directoryFirstNames: slot.forward('directoryFirstNames'),
+  directoryPeopleCount: slot.forward('directoryPeopleCount'),
   factorHolderRow: slot.forward('factorHolderRow'),
   factorHolderRowsAsync: slot.forward('factorHolderRowsAsync'),
   personDnsAsync: slot.forward('personDnsAsync'),

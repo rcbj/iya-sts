@@ -721,6 +721,9 @@ ldif or multi-cell service is unchanged.
     `count(*)`, linear in the realm's rows, 13–15 ms for 29,303 on 8081),
     and outside a window the realm's KEYS
     walked with an `endsWith`, no entry read — still a walk, said there.
+    `personCountAsync()` asks the windowed count on the read pool
+    (`recentCountUnderAsync()`, the same ten seconds) for `/admin-api/users`
+    and `/admin-api/mfa` (#798).
     `personNamesUpTo(limit)` reads only the first `limit` + 1 KEYS
     (`keysUnder`: key and DN, no entry read or opened; #616), and
     `personNamesUpToAsync()` asks the same asynchronously for
@@ -1715,6 +1718,12 @@ DN, a DN the kept answer holds (it WAS one), an entry that IS one where this
 process holds it, and a windowed key it does not hold. Every other write —
 a sign-in's consent, a password — leaves it. `ldap.service-accounts` on
 `/admin/caches`; `tests/sign_in_owner_reads.js`.
+`serviceAccountNamesAsync()` is that list for `/admin-api/users` and
+`/admin-api/mfa` (#798): the holders through `holdersAsync()`
+(`withAttribute` on the read pool, the store's row taken with no second
+`byKeys`). The kept list is written only when `serviceAccountsVersion` did
+not move while it was asked, so a write that landed during the walk is not
+replaced with the older answer.
 
 ### AND A FOURTH, WHICH IS THE SAME DOOR AND THE SAME LESSON A THIRD TIME
 

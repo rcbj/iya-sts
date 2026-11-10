@@ -9146,9 +9146,10 @@ class AdminViews {
   }
 
   // WHERE A USER CREATED ON THIS PAGE LANDS, in the realm the page is being
-  // read in. `directoryReader('')` is the same slot the drill-down uses, asked
-  // with no name: it answers about the DIRECTORY rather than about a person,
-  // which is what a note above an empty form has to do.
+  // read in. It is `ou=users` of that realm. It used to ask
+  // `directoryReader('')` — `objectFor('')`, which counts the realm
+  // (`realmEntryCount()`, one synchronous `count` per windowed container)
+  // to answer a note that only needs the DN (#798).
   /**
    * Returns the container a new user lands in, in the ambient realm.
    *
@@ -9162,9 +9163,13 @@ class AdminViews {
                 "loaded.");
       return 'ou=users,' + realms.baseDnOf(realms.current());
     }
-    const info = directoryReader('');
-    log.debug("Leaving AdminViews.newUserContainer(). " + info.usersDn);
-    return info.usersDn;
+    // Required inside the function: `ldap/ldap_server.js` registers its
+    // routes when it is required, and this file loads before it (rule 1).
+    // A request runs after the stack is up, so the require is a cache hit.
+    const ldapMod = require('../ldap/ldap_server');
+    const dn = ldapMod.usersDn();
+    log.debug("Leaving AdminViews.newUserContainer(). " + dn);
+    return dn;
   }
 
   // ---------------------------------------------------------------------------
@@ -13512,7 +13517,9 @@ class AdminViews {
    * @param req - the request
    * @param opts - optional; `directoryFirst`, as `peopleRows()` takes it,
    *   or `population` and `census` asked already (#621,
-   *   `peopleAndCensusAsync()`)
+   *   `peopleAndCensusAsync()`); `serviceNames`, the service-account
+   *   roster asked already (#798) — an empty array is a roster, and is
+   *   not asked again
    * @returns the JSON
    */
   usersListJson(req, opts?) {
@@ -13539,10 +13546,14 @@ class AdminViews {
     // for everybody else. One read of the flag's holders, not one per row.
     const wantedKind = ['service', 'person'].indexOf(
       String(req.query.kind || '')) >= 0 ? String(req.query.kind) : '';
-    const serviceNames = new Set(this.deps.serviceAccounts.names()
-      .map(function (name) {
-        return String(name).toLowerCase();
-      }));
+    // Asked already, asynchronously, by a caller that could wait (#798).
+    // An empty array is a roster: `serviceNames || names()` would ask the
+    // store again for a realm that has no service account.
+    const listed = opts && Array.isArray(opts.serviceNames)
+      ? opts.serviceNames : this.deps.serviceAccounts.names();
+    const serviceNames = new Set(listed.map(function (name) {
+      return String(name).toLowerCase();
+    }));
     all.forEach(function (row) {
       row.serviceAccount = serviceNames.has(String(row.key).toLowerCase());
     });
@@ -14170,7 +14181,9 @@ class AdminViews {
    * one pass for the counts (`peopleCensus()`).
    *
    * @param opts - optional; `directoryFirst`, the directory's first names
-   *   asked already (#616), handed to `secondFactorPopulation()`
+   *   asked already (#616), handed to `secondFactorPopulation()`;
+   *   `directoryPeople`, the count asked already (#798) — present,
+   *   including null, means it was asked
    * @returns the rows, the population's reporting, and `spellings`
    */
   peopleRows(opts?) {
@@ -14192,10 +14205,20 @@ class AdminViews {
       byKey.set(row.key, row);
     });
 
+    const populationOpts: any = {
+      directoryFirst: (opts && opts.directoryFirst) || null
+    };
+    // `hasOwnProperty`, not `opts.directoryPeople`: null means the count
+    // was asked and failed, and omitting it is what lets the synchronous
+    // count still run (#798).
+    if (opts &&
+        Object.prototype.hasOwnProperty.call(opts, 'directoryPeople')) {
+      populationOpts.directoryPeople = opts.directoryPeople;
+    }
     const holders = credentials.secondFactorPopulation(
       seen.map(function (row) {
         return row.key;
-      }), { directoryFirst: (opts && opts.directoryFirst) || null });
+      }), populationOpts);
     // Row key -> the population rows (spellings) folded into it, in the order
     // the fold meets them, which is the order `mergeFactors()` used to be
     // applied in — so decorating later unites them exactly as this did.
@@ -14458,9 +14481,22 @@ class AdminViews {
 
   // The build `peopleAndCensusAsync()` keeps.
   private async buildPeopleAndCensusAsync() {
-    const { log } = this.deps;
+    const { log, credentials } = this.deps;
     log.debug("Entering AdminViews.buildPeopleAndCensusAsync().");
-    const first = await this.directoryFirstNames();
+    // The first names and the people count together (#616, #798): the
+    // count was `personCount()`, one synchronous `count` of `ou=users`,
+    // asked inside `secondFactorPopulation()` on this same build.
+    const askedCount = await Promise.all([
+      this.directoryFirstNames(),
+      credentials && typeof credentials.directoryPeopleCount === 'function'
+        ? credentials.directoryPeopleCount() : undefined
+    ]);
+    const first = askedCount[0];
+    const counted = askedCount[1];
+    const rowOpts: any = { directoryFirst: first };
+    if (counted !== undefined) {
+      rowOpts.directoryPeople = counted;
+    }
     // The register's subjects resolved asynchronously (#790): on 8081 they
     // were ~228,000, asked synchronously, and the request spent its
     // directory budget and answered 503.
@@ -14473,12 +14509,12 @@ class AdminViews {
     // 66,976 on 8081, on the worker that serves sign-ins.
     const stats = this.deps.stats;
     const build = () => {
-      return this.peopleRows({ directoryFirst: first,
-                               seen: stats.userRows() });
+      return this.peopleRows(Object.assign({ seen: stats.userRows() },
+                                            rowOpts));
     };
     const population = typeof stats.withSubjectsResolvedAsync === 'function'
       ? await stats.withSubjectsResolvedAsync(build)
-      : this.peopleRows({ directoryFirst: first });
+      : this.peopleRows(rowOpts);
     const census = await this.peopleCensusAsync(population, population.rows);
     log.debug("Leaving AdminViews.peopleAndCensusAsync().");
     return { population: population, census: census };
@@ -15336,6 +15372,24 @@ class AdminViews {
     return first;
   }
 
+  // THE SERVICE-ACCOUNT ROSTER, ASKED ASYNCHRONOUSLY (#798).
+  // `usersListJson()` reads `serviceAccounts.names()`, which on a cold
+  // cache is a synchronous `withAttribute` per windowed container.
+  /**
+   * The service-account roster, asked asynchronously.
+   *
+   * @returns a promise of the usernames
+   */
+  async serviceAccountNamesAsync() {
+    const { log, serviceAccounts } = this.deps;
+    log.debug("Entering AdminViews.serviceAccountNamesAsync().");
+    const names = typeof serviceAccounts.namesAsync === 'function'
+      ? await serviceAccounts.namesAsync() : serviceAccounts.names();
+    log.debug("Leaving AdminViews.serviceAccountNamesAsync(). " +
+              names.length + ".");
+    return names;
+  }
+
   /**
    * `mfaRosterJson()`, with the directory's first names asked
    * asynchronously.
@@ -15348,14 +15402,21 @@ class AdminViews {
     log.debug("Entering AdminViews.mfaRosterJsonAsync().");
     // The population AND its census (#621): the census was 5,000
     // synchronous store questions here in a windowed process.
-    const asked = await this.peopleAndCensusAsync({
-      mayBeStale: AdminViews.unfiltered(req) });
+    // The population, and the service-account roster beside it (#798):
+    // the roster was a synchronous `withAttribute` inside the view.
+    const prepared = await Promise.all([
+      this.peopleAndCensusAsync({
+        mayBeStale: AdminViews.unfiltered(req) }),
+      this.serviceAccountNamesAsync()
+    ]);
+    const asked = prepared[0];
     // The tiles too (2026-10-21), for `usersJsonAsync()`'s reason, and the
     // shown rows (#820).
     const list = await this.usersListTilesAsync(
       await this.usersListRowsAsync(this.usersListJson(req,
         Object.assign({}, asked, { deferTiles: true,
-                                   deferDecoration: true }))));
+                                   deferDecoration: true,
+                                   serviceNames: prepared[1] }))));
     log.debug("Leaving AdminViews.mfaRosterJsonAsync().");
     return this.mfaRosterJson(req, Object.assign({}, asked, { list: list }));
   }
@@ -15380,14 +15441,20 @@ class AdminViews {
       log.debug("Leaving AdminViews.usersJsonAsync(). One person.");
       return this.usersJson(req, risk, null);
     }
-    const asked = await this.peopleAndCensusAsync({
-      mayBeStale: AdminViews.unfiltered(req) });
+    // The population, and the service-account roster beside it (#798).
+    const prepared = await Promise.all([
+      this.peopleAndCensusAsync({
+        mayBeStale: AdminViews.unfiltered(req) }),
+      this.serviceAccountNamesAsync()
+    ]);
+    const asked = prepared[0];
     // The shown rows decorated together and asynchronously (#820), then
     // the tiles, which fill each shown row's live sessions.
     const view = await this.usersListTilesAsync(
       await this.usersListRowsAsync(this.usersListJson(req,
         Object.assign({}, asked, { deferTiles: true,
-                                   deferDecoration: true }))));
+                                   deferDecoration: true,
+                                   serviceNames: prepared[1] }))));
     log.debug("Leaving AdminViews.usersJsonAsync().");
     return view.json;
   }
