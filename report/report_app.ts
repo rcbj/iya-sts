@@ -423,7 +423,8 @@ class ReportApp {
         self.shellDocument(registered, elsewhere), {
           connect: ShellDocument.originsOf([elsewhere.oauth,
             elsewhere.authn]),
-          csp: { 'style-src': "'self'" }
+          csp: { 'style-src': "'self'" },
+          isolated: true
         });
       log.debug("Leaving shell().");
     };

@@ -967,10 +967,17 @@ class Branding {
       (query ? '&' + query : '')) + '"></head><body>' + header +
       '<div class="card"><h1>Sign in</h1><p class="sub">A preview of this ' +
       'realm\'s sign-in appearance. Nothing here signs anybody in.</p>' +
-      '<form action="#"><label for="pv-user">' +
-      'Username</label><input type="text" id="pv-user" disabled>' +
+      // A PICTURE OF A FORM, NOT ONE (Qualys QIDs 153006 and 150112,
+      // 2026-11-10): `method="post"` and `autocomplete="off"` so that a
+      // scanner reading the markup sees no password that could travel in a
+      // query string or be remembered. Its fields are disabled and its
+      // buttons are not submit buttons, so nothing is ever sent.
+      '<form action="#" method="post" autocomplete="off">' +
+      '<label for="pv-user">Username</label><input type="text" ' +
+      'id="pv-user" autocomplete="off" disabled>' +
       '<label for="pv-pass">Password</label><input type="password" ' +
-      'id="pv-pass" disabled><div class="row"><button type="button" ' +
+      'id="pv-pass" autocomplete="off" disabled><div class="row">' +
+      '<button type="button" ' +
       'class="secondary" disabled>Cancel</button><button type="button" ' +
       'disabled>Sign in</button></div></form><p class="note"><a ' +
       'href="#">A link</a> in the accent colour.</p><div class="meta">' +
