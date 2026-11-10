@@ -813,15 +813,25 @@ function createReplication(label) {
       log.debug("Leaving pullCostText(). No pull.");
       return '';
     }
+    const now = Date.now();
+    const kindMs = pullCost.kindMs || {};
+    const current = pullCost.current;
     const kinds = Object.keys(pullCost.kinds).map(function (kind) {
-      return kind + '=' + pullCost.kinds[kind];
+      const ms = (kindMs[kind] || 0) +
+        (current && current.kind === kind ? now - current.since : 0);
+      return kind + '=' + pullCost.kinds[kind] + '/' + ms + 'ms';
     }).join(',');
+    const applyMs = pullCost.applyMs +
+      (pullCost.applyingSince ? now - pullCost.applyingSince : 0);
     log.debug("Leaving pullCostText().");
     return ' The ' + (runningPull ? 'pull in flight' : 'latest pull') +
-           ' began ' + (Date.now() - pullCost.startedAt) + ' ms ago: ' +
-           pullCost.queryMs + ' ms reading pages, ' + pullCost.applyMs +
+           ' began ' + (now - pullCost.startedAt) + ' ms ago: ' +
+           pullCost.queryMs + ' ms reading pages, ' + applyMs +
            ' ms applying ' + pullCost.rows + ' row(s)' +
-           (kinds ? ' (' + kinds + ')' : '') + '.';
+           (kinds ? ' (rows/time by kind: ' + kinds + ')' : '') +
+           (current ? '; applying a "' + current.kind + '" row (' +
+            current.key.slice(0, 40) + ') for ' + (now - current.since) +
+            ' ms' : '') + '.';
   }
 
   function pull() {
@@ -839,8 +849,12 @@ function createReplication(label) {
     // pull that STARTED after it read its target, because only such a pull's
     // queries could see every row committed before that read.
     const startNo = ++pullsStarted;
+    // `kindMs` and `current` are kept by applyOne() as each row is applied,
+    // so a barrier that gives up while a page is still being applied says
+    // which kind of row the time is going to (2026-11-10): `applyMs` alone
+    // is added only when a page ends, and read "0 ms" for a stuck one.
     const cost = { startedAt: Date.now(), queryMs: 0, applyMs: 0, rows: 0,
-                   kinds: {} };
+                   kinds: {}, kindMs: {}, applyingSince: 0, current: null };
     pullCost = cost;
 
     function page() {
@@ -894,8 +908,10 @@ function createReplication(label) {
         });
         cost.rows += rows.length;
         const applying = Date.now();
+        cost.applyingSince = applying;
         return applyRows(rows).then(function () {
           cost.applyMs += Date.now() - applying;
+          cost.applyingSince = 0;
           // ADVANCED ONLY AFTER THE APPLY, so a failure part-way re-reads the
           // same page rather than skipping it. Applying a row twice is
           // harmless — every applier is idempotent by construction, because it
@@ -1185,6 +1201,22 @@ function createReplication(label) {
     const applyOne = function (row) {
       log.debug("Entering applyOne(). " + row.kind);
       byKind[row.kind] = (byKind[row.kind] || 0) + 1;
+      // TIMED PER KIND for the barrier's line (pullCostText()); the cost of
+      // the pull this row belongs to, held so a later pull's does not get it.
+      const cost = pullCost;
+      const began = Date.now();
+      if (cost && cost.kindMs) {
+        cost.current = { kind: row.kind, key: String(row.key || ''),
+                         since: began };
+      }
+      const timed = function (out) {
+        if (cost && cost.kindMs) {
+          cost.kindMs[row.kind] = (cost.kindMs[row.kind] || 0) +
+            (Date.now() - began);
+          cost.current = null;
+        }
+        return out;
+      };
       const applier = appliers[row.kind];
       if (typeof applier !== 'function') {
         // A kind this build does not know. Ordinary during a rolling upgrade,
@@ -1198,7 +1230,7 @@ function createReplication(label) {
       }
       const realm = realms.get(row.realm) || null;
       log.debug("Leaving applyOne().");
-      return realms.run(realm, function () {
+      return Promise.resolve(realms.run(realm, function () {
         // -----------------------------------------------------------------
         // ONE ROW'S FAILURE IS NOT THE PAGE'S. A single entry that will not
         // apply — a value this build cannot parse, a store that refused it —
@@ -1283,7 +1315,7 @@ function createReplication(label) {
                                                   err));
             return keyedRetries();
           }).catch(failed);
-        });
+        })).then(timed);
     };
     const first = [];
     const rest = [];

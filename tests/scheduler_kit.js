@@ -79,6 +79,8 @@ function world(options) {
     }, o.settings || {}),
     // The store's pool, for the cap (0: no pool, as the memory store).
     storeConnections: Number(o.storeConnections) || 0,
+    // The node's protocol request workers, for the cap's default (0).
+    requestWorkers: Number(o.requestWorkers) || 0,
     realmIds: o.realmIds || ['default', 'acme'],
     claimsDown: false,
     // How many times a scheduler waited for its writes to be written down
@@ -253,6 +255,7 @@ function world(options) {
       cronPrev: Scheduler.cronPrev,
       cronNext: Scheduler.cronNext,
       storeConnections: function () { return w.storeConnections; },
+      requestWorkers: function () { return w.requestWorkers; },
       settle: function () {
         w.settles += 1;
         return Promise.resolve(null);

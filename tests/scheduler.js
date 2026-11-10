@@ -987,6 +987,26 @@ async function run(t) {
     pooled.settings['scheduler.maxConcurrentRuns'] = 2;
     t.equal(small.scheduler.maxConcurrentRuns(), 2,
             'with no pool the setting is the cap');
+    // THE DEFAULT, 0 (rcbj, 2026-11-10): one run, or one fewer than the
+    // node's protocol request workers when that is more, so one worker is
+    // always left with no job body on it.
+    pooled.settings['scheduler.maxConcurrentRuns'] = 0;
+    const byWorkers = [0, 1, 2, 3, 6].map(function (n) {
+      pooled.requestWorkers = n;
+      return small.scheduler.maxConcurrentRuns();
+    });
+    t.equal(JSON.stringify(byWorkers), JSON.stringify([1, 1, 1, 2, 5]),
+            'at 0 the cap is the larger of 1 and the request workers less ' +
+            'one (0, 1, 2, 3 and 6 workers)');
+    pooled.requestWorkers = 6;
+    pooled.storeConnections = 4;
+    t.equal(small.scheduler.maxConcurrentRuns(), 3,
+            'and the pool still bounds it: six workers, a pool of four, 3');
+    pooled.storeConnections = 0;
+    pooled.settings['scheduler.maxConcurrentRuns'] = 2;
+    t.equal(small.scheduler.maxConcurrentRuns(), 2,
+            'a setting of 1 or more is used instead of the worker rule');
+    pooled.requestWorkers = 0;
     // The pool is twice the node's request workers, never under four — the
     // size a node's processes open, and what the cap above is taken from.
     const poolMax = require(ROOT + '/persistence/persistence_postgres')

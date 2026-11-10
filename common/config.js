@@ -20001,18 +20001,20 @@ const SETTINGS = [
 
   { key: 'scheduler.maxConcurrentRuns', group: 'Scheduler',
     label: 'Most runs going at once',
-    env: 'STS_SCHEDULER_MAX_CONCURRENT_RUNS', type: 'int', dflt: 2, min: 1,
+    env: 'STS_SCHEDULER_MAX_CONCURRENT_RUNS', type: 'int', dflt: 0, min: 0,
     max: 1000, runtime: true, perProcess: true,
     description: 'How many scheduled or manual runs the leader has going at ' +
-                 'once, across every job and trust realm. A slot is a ' +
-                 'multiple of its interval, so every hourly job in every ' +
-                 'realm is due on the same second; each run holds a ' +
-                 'connection to the store while it claims and works, and ' +
-                 'the postgres store has four. The rest wait, a person\'s ' +
-                 'Run now first, and start as runs end. It is never more ' +
-                 'than one fewer than the pool holds, whatever it is set ' +
-                 'to, so the scheduler cannot take every connection from ' +
-                 'the requests.' },
+                 'once, across every job and trust realm. 0, the default, ' +
+                 'is one run, or one fewer than the request worker threads ' +
+                 '(workers.requestCount) when that is more, so one worker ' +
+                 'is always left answering requests with no job on it. A ' +
+                 'value of 1 or more is used instead. A slot is a multiple ' +
+                 'of its interval, so every hourly job in every realm is ' +
+                 'due on the same second; the rest wait, a person\'s Run ' +
+                 'now first, and start as runs end. It is never more than ' +
+                 'one fewer than the store\'s connection pool holds, ' +
+                 'whatever it is set to, so the scheduler cannot take every ' +
+                 'connection from the requests.' },
   // HOW LONG A PATIENT CLUSTER RUN WAITS FOR A BUSY WORKER (#408, rcbj): the
   // leader hands a cluster job's body to the least-loaded request worker,
   // and a scheduled run of a job whose `nice` is above 0 waits before its
