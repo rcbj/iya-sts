@@ -657,7 +657,13 @@ async function theScreenRefusesWhatItShould() {
   const anon = await authnSignin.answerConsent(
     Object.assign({}, theirs.opened, { id: decodeURIComponent(id),
                                        cookie: "" }), "allow");
-  assert.strictEqual(anon.status, 403,
+  // IN PRODUCT A STEP IS TIED TO THE BROWSER THAT FIRST ASKED ABOUT IT
+  // (#1454, ASVS 5.0.0 14.2.1, `mode.bindsSignInSteps()`), and that check
+  // comes first: a request with no cookie is not that browser, so it is
+  // refused 400 (STS-AUTHN-0552) before the session door's 403. Either way
+  // nothing is recorded, which is asserted next.
+  const anonExpected = (await facts.isProduct(api)) ? 400 : 403;
+  assert.strictEqual(anon.status, anonExpected,
     "an answer from a browser with no session belongs to nobody; got " +
     anon.status);
   assert.strictEqual((await recordedFor(who)).length, 0,
