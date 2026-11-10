@@ -8775,7 +8775,8 @@ class AdminConsole {
                           self.shellDocument(registered, elsewhere), {
         connect: ShellDocument.originsOf([elsewhere.oauth, elsewhere.api]),
         compress: true,
-        prefix: realms.currentPrefix()
+        prefix: realms.currentPrefix(),
+        isolated: true
       });
       log.debug("Leaving the static console shell.");
     };
