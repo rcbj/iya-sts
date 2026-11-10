@@ -435,6 +435,23 @@ class RiskAdmin {
     if (!dataset) {
       return refuse('Name the dataset.');
     }
+    // An import is checked by the datasets module's own admission. The
+    // other four went to the store with whatever they were given, and the
+    // fuzz run on d96b74093 sent a realm holding a NUL: PostgreSQL refused
+    // the query and the action was answered 500. A dataset nobody declared
+    // or a realm that does not exist is a refusal here, before the store is
+    // asked, and the value is not repeated back.
+    if (action !== 'import') {
+      if (!Object.prototype.hasOwnProperty.call(datasets.CATALOGUE,
+                                                dataset)) {
+        return refuse('There is no dataset by that name. The ' +
+                      Object.keys(datasets.CATALOGUE).length + ' are: ' +
+                      Object.keys(datasets.CATALOGUE).join(', ') + '.');
+      }
+      if (realm && realm !== 'default' && !this.deps.realms.get(realm)) {
+        return refuse('There is no realm by that name.');
+      }
+    }
     let result: Json;
     if (action === 'import') {
       if (!String(b.format || '').trim() || typeof b.content !== 'string' ||
