@@ -3436,6 +3436,50 @@ function create(options) {
   });
 
   // -------------------------------------------------------------------------
+  // KEY-ROW WRITES NEVER HOLD THE WHOLE POOL (2026-11-10, #1590).
+  //
+  // `mergeKeys()` is a transaction that holds its `sts_keys` row FOR UPDATE
+  // while the caller's merge runs, and a certificate-authority rebuild saves
+  // several rows that every thread then adopts. In the fuzz run on 39c8248c8
+  // several such writes queued on one hot row's lock, each keeping its pooled
+  // connection while it waited, until a flush could not get one within the
+  // pool's 5 s (STS-STORE-0002) and its requests were answered 503
+  // (STS-STORE-0066). So at most `pool size - 2` key-row transactions run at
+  // once in a process (never fewer than one): the rest wait HERE, holding no
+  // connection, and at least two are always left for the flushes and the
+  // change-log pull. The wait is in memory and bounded by the transactions
+  // ahead of it; nothing is dropped. Whether a request's writes should share
+  // one transaction instead is #1590.
+  // -------------------------------------------------------------------------
+  const poolSize = Number(options.poolMax) > 0 ? Number(options.poolMax)
+    : POOL_FLOOR;
+  const keyWriteSlots = Math.max(1, poolSize - 2);
+  let keyWritesRunning = 0;
+  const keyWritesWaiting = [];
+  // A key-row transaction holds a slot from its start to its end. Hot path
+  // under a rebuild: no Entering/Leaving pair, which would add two lines
+  // for every key row every thread writes.
+  function withKeyWriteSlot(work) {
+    return new Promise(function (resolve) {
+      if (keyWritesRunning < keyWriteSlots) {
+        keyWritesRunning += 1;
+        resolve(null);
+      } else {
+        keyWritesWaiting.push(resolve);
+      }
+    }).then(function () {
+      return Promise.resolve().then(work);
+    }).finally(function () {
+      const next = keyWritesWaiting.shift();
+      if (next) {
+        next(null);
+      } else {
+        keyWritesRunning -= 1;
+      }
+    });
+  }
+
+  // -------------------------------------------------------------------------
   // THE READ POOL (#98, 2026-09-28). The global tier of a service deployed as
   // cells has ONE writer and a read replica in every cell; `options.readUrl`
   // is this cell's replica, and every statement that only reads — the
@@ -9564,6 +9608,9 @@ function create(options) {
       }
       const id = String(realmId);
       log.debug("Leaving mergeKeys().");
+      // IN A KEY-WRITE SLOT (withKeyWriteSlot()), so this process's key-row
+      // transactions never hold every pooled connection (#1590).
+      return withKeyWriteSlot(function () {
       return withTransaction(function (client) {
         function lockAndMerge() {
           log.debug("Entering lockAndMerge().");
@@ -9616,6 +9663,7 @@ function create(options) {
           }
           return second;
         });
+      });
       });
     },
 
