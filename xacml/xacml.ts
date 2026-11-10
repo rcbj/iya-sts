@@ -2351,8 +2351,11 @@ class XacmlSurface {
         // way. A plain-HTTP listener cannot carry a certificate at all, however
         // good the client's; an https one can, and a client that sent none
         // simply did not.
+        // A TLS socket has the method and a plain one does not: the question
+        // asked of the socket is which of the two it is.
         const plain = !(req.socket &&
-                        typeof req.socket.getPeerCertificate === 'function');
+                        typeof (req.socket as import('tls').TLSSocket)
+                          .getPeerCertificate === 'function');
         log.debug('Leaving POST /xacml/pep/register. No client certificate.');
         errorCodes.mark(res, plain ? 'STS-XACML-0017' : 'STS-XACML-0018');
         self.fail(res, 401, 'invalid_client', plain
