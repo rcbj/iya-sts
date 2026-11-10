@@ -108,15 +108,6 @@ extra_environment = {
   # the rest from PostgreSQL; the front process still holds all of it. Off
   # (`memory`) by default; this is what lets testidp run the surface worker.
   LDAP_WORKER_DIRECTORY = "postgres-lru"
-  # PARANOID PKI MODE FORCED OFF (rcbj, 2026-11-10). `auto` is on in product
-  # (#1360), and every AWS environment sets STS_PKI_REVOCATION_CHECK=off
-  # (#371, environment/ecs.tf), so the door refused Secrets Manager's own
-  # certificate with "revocation was not consulted" (STS-KEYS-0044) and the
-  # node did not start (STS-CORE-0036). Off, each use case behaves as it did
-  # before #1360; the service logs STS-PKI-0239 once and /admin/pki/trust
-  # draws it red. This overrides #1360's product default here and nowhere
-  # else; #371 stands.
-  STS_PKI_PARANOID = "off"
 }
 
 # ONE NODE WITH TWO WORKER THREADS (rcbj, 2026-11-03, #1293): the OpenID

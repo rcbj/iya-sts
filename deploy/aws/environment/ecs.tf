@@ -105,6 +105,16 @@ locals {
     STS_PKI_REVOCATION_CHECK                      = "off"
     STS_PKI_REVOCATION_REQUIRE_DISTRIBUTION_POINT = "off"
 
+    # AND SO PARANOID PKI MODE IS FORCED OFF (rcbj, 2026-11-10). Its `auto`
+    # is on in product (#1360), where it counts a revocation check that never
+    # ran as a refusal — so with the two rows above a product node refused
+    # Secrets Manager's own certificate (STS-KEYS-0044) and did not start
+    # (STS-CORE-0036). Off, every use case behaves as it did before #1360;
+    # the node logs STS-PKI-0239 once and /admin/pki/trust draws it red. An
+    # environment's `extra_environment` can set it back, together with a
+    # revocation check.
+    STS_PKI_PARANOID = "off"
+
     # The directory's ceiling, as the ENVIRONMENT's value rather than an
     # override, so resetting the override the bulk loads leave lands here
     # (variables.tf, reset-environment.js).

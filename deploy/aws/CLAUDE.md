@@ -138,6 +138,16 @@ OUTRANKS the environment, so after applying this to a running cluster, check
 Configuration → PKI for an override. The service's own defaults (`auto`) and
 the local stacks are unchanged.
 
+**And so paranoid PKI mode is forced off there too (rcbj, 2026-11-10):**
+`STS_PKI_PARANOID=off` in the same `node_environment`. `pki.paranoid=auto` is
+on in product (#1360) and counts a revocation check that never ran as a
+refusal, so with the two rows above the first product node built after #1360
+(`testidp`, develop 39c8248c8) refused Secrets Manager's own certificate
+(`STS-KEYS-0044`) and never started (`STS-CORE-0036`). Off, every use case
+behaves as before #1360; the node logs `STS-PKI-0239` once and
+`/admin/pki/trust` draws it red. Setting it back in `extra_environment` needs
+a revocation check set back with it.
+
 **636 PRESENTS WHATEVER 443 DOES, AND NO TERRAFORM MAKES THAT SO.**
 `ldap/ldap_server.js` builds its LDAPS listener from
 `tlsServer.serverCertificate()` — the one record every socket in the process
