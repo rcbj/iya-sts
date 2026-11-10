@@ -138,8 +138,11 @@ const LIST_PARAMS = {
                    'requiringPage'],
   '/admin/policies': ['per', 'page'],
   '/admin/applications': ['q', 'kind', 'per', 'page'],
-  '/admin/saml2': ['q', 'per', 'page'],
-  '/admin/saml11': ['q', 'per', 'page'],
+  // `idpInitiatedPage` is the IdP-Initiated SSO tab's list on the combined
+  // SAML page (#749). A drill-down from either identity-provider table
+  // carries it, so the way back is still that page of the tab.
+  '/admin/saml2': ['q', 'per', 'page', 'idpInitiatedPage'],
+  '/admin/saml11': ['q', 'per', 'page', 'idpInitiatedPage'],
   '/admin/authorization-servers': ['per', 'page'],
   // GNAP's two lists and the grant state filter (gnap/gnap_admin.ts).
   '/admin/gnap': ['state', 'per', 'grantsPage', 'resourcesPage',

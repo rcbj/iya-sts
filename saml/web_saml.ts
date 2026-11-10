@@ -51,6 +51,25 @@ class SamlPage {
   static readonly SAML11_PROFILE_ARTIFACT =
     'urn:oasis:names:tc:SAML:1.0:profiles:artifact-01';
 
+  // The IdP-Initiated SSO tab's page (#749), carried by the two
+  // identity-provider tables so paging or filtering one of them does not
+  // send that list back to its first page. Empty when the reader has not
+  // moved it.
+  /**
+   * Returns the IdP-Initiated SSO list's page, when the query names one.
+   *
+   * @param query - the page's query
+   * @returns `{ idpInitiatedPage }`, or `{}`
+   */
+  static idpPageCarry(query) {
+    const raw = query && query.idpInitiatedPage;
+    const value = Array.isArray(raw) ? raw[0] : raw;
+    if (value === undefined || value === null || String(value) === '') {
+      return {};
+    }
+    return { idpInitiatedPage: String(value) };
+  }
+
   /**
    * Draws the page's body from its view.
    *
@@ -64,8 +83,11 @@ class SamlPage {
     const includeSettings = !options || options.includeSettings !== false;
     const needle = String(ctx.query.q || '').trim();
     const paging = json.paging;
-    const filterParams = { q: String(ctx.query.q || ''),
-                           per: ctx.query.per ? paging.perPage : '' };
+    const idpCarry = SamlPage.idpPageCarry(ctx.query);
+    const filterParams = Object.assign({
+      q: String(ctx.query.q || ''),
+      per: ctx.query.per ? paging.perPage : ''
+    }, idpCarry);
     const nav = kit.pageNavPair('/admin/saml2', filterParams, paging);
     // The refused-lookup list's own pager (#112), carrying every other
     // parameter so the service-provider table stays where it was.
@@ -136,9 +158,14 @@ class SamlPage {
        '<input type="hidden" name="per" value="' + kit.esc(paging.perPage) +
        '">' :
        '') +
+      (idpCarry.idpInitiatedPage
+        ? '<input type="hidden" name="idpInitiatedPage" value="' +
+          kit.esc(idpCarry.idpInitiatedPage) + '">'
+        : '') +
       '<button class="secondary">' + t.html('consoleSaml.common.filter') +
       '</button>' +
-      (String(ctx.query.q || '') ? ' <a href="/admin/saml2">' +
+      (String(ctx.query.q || '') ? ' <a href="' +
+        kit.esc('/admin/saml2' + kit.queryWith(idpCarry, {})) + '">' +
         t.html('consoleSaml.common.clear') + '</a>' : '') +
       '</div></form>' +
       nav.head +
@@ -607,8 +634,11 @@ class SamlPage {
     const includeSettings = !options || options.includeSettings !== false;
     const needle = String(ctx.query.q || '').trim();
     const paging = json.paging;
-    const filterParams = { q: String(ctx.query.q || ''),
-                           per: ctx.query.per ? paging.perPage : '' };
+    const idpCarry = SamlPage.idpPageCarry(ctx.query);
+    const filterParams = Object.assign({
+      q: String(ctx.query.q || ''),
+      per: ctx.query.per ? paging.perPage : ''
+    }, idpCarry);
     const nav = kit.pageNavPair('/admin/saml11', filterParams, paging);
     const listView = kit.listViewOf('/admin/saml11', ctx.query);
 
@@ -670,9 +700,14 @@ class SamlPage {
        '<input type="hidden" name="per" value="' + kit.esc(paging.perPage) +
        '">' :
        '') +
+      (idpCarry.idpInitiatedPage
+        ? '<input type="hidden" name="idpInitiatedPage" value="' +
+          kit.esc(idpCarry.idpInitiatedPage) + '">'
+        : '') +
       '<button class="secondary">' + t.html('consoleSaml.common.filter') +
       '</button>' +
-      (String(ctx.query.q || '') ? ' <a href="/admin/saml11">' +
+      (String(ctx.query.q || '') ? ' <a href="' +
+        kit.esc('/admin/saml11' + kit.queryWith(idpCarry, {})) + '">' +
         t.html('consoleSaml.common.clear') + '</a>' : '') +
       '</div></form>' +
       nav.head +
@@ -723,7 +758,9 @@ class SamlPage {
   // empty list says WHY — the realm's two switches are drawn above the table
   // every time, and with nothing listed and both off the tab says how to
   // turn it on, rather than drawing an empty table that reads as "none
-  // registered".
+  // registered". The pager's fragment is its own list anchor. The combined
+  // page's link rewrite keeps that anchor, and the tab stylesheet opens the
+  // panel that holds it, so a page turn stays on this tab.
   /**
    * Draws the IdP-Initiated SSO tab from its view.
    *
