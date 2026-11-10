@@ -29,6 +29,9 @@ import { checkAuthzen, readAuthzen } from '../lib/authzen_lib.mjs';
 import { checkSsf, readSsf } from '../lib/ssf_lib.mjs';
 import { checkEnrollment, readEnrollment }
   from '../lib/enrollment_lib.mjs';
+import { checkSpiffe, describeProtos, readSpiffe }
+  from '../lib/spiffe_lib.mjs';
+import { createRequire } from 'module';
 import { checkFacts, factsOf, fieldsOf, linksIn, readDirectory, readPersistence,
   readSpellings, renderScript, schemaOf } from '../lib/model_lib.mjs';
 
@@ -39,6 +42,30 @@ const log = bunyan.createLogger({
 
 const ROOT = path.join(path.dirname(url.fileURLToPath(import.meta.url)),
   '..', '..');
+
+// The vendored protos the SPIFFE model is held to: the files
+// `spiffe/spiffe_grpc.ts` loads, read by the protobufjs it loads them with.
+const SPIFFE_PROTOS = ['workloadapi.proto', 'brokerapi.proto',
+  'spire/api/server/entry/v1/entry.proto',
+  'spire/api/server/agent/v1/agent.proto',
+  'spire/api/server/bundle/v1/bundle.proto',
+  'spire/api/server/svid/v1/svid.proto',
+  'spire/api/server/trustdomain/v1/trustdomain.proto',
+  'spire/api/server/debug/v1/debug.proto'];
+
+/**
+ * The vendored SPIFFE protos, described.
+ *
+ * @returns from `describeProtos()`
+ */
+function vendoredProtos() {
+  log.debug("Entering vendoredProtos().");
+  const require = createRequire(path.join(ROOT, 'package.json'));
+  const protobuf = require('protobufjs');
+  log.debug("Leaving vendoredProtos().");
+  return describeProtos(protobuf, path, path.join(ROOT, 'spiffe', 'protos'),
+                        SPIFFE_PROTOS);
+}
 
 /**
  * Compiles the model and writes each authored object's table.
@@ -142,6 +169,14 @@ async function generate() {
   }
   fs.writeFileSync(path.join(out, 'enrollment.json'),
     JSON.stringify(enrollment));
+  const spiffe = readSpiffe(program);
+  const spiffeProblems = checkSpiffe(spiffe, vendoredProtos());
+  if (spiffeProblems.length > 0) {
+    log.debug("Leaving generate(). The SPIFFE model is wrong.");
+    throw new Error('The SPIFFE model is wrong: ' +
+                    spiffeProblems.join('; '));
+  }
+  fs.writeFileSync(path.join(out, 'spiffe.json'), JSON.stringify(spiffe));
   const persistence = readPersistence(program);
   fs.writeFileSync(path.join(out, 'persistence.postgres.json'),
     JSON.stringify({ objects: persistence.objects,

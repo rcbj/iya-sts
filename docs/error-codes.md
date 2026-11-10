@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5421** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5423** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -76,7 +76,7 @@ is an ordinary outcome.
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 85
-* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 153
+* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 155
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 60
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 164
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 141
@@ -3863,6 +3863,8 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0151` | The workload agent could not obtain an SVID or a bundle from the SPIRE Server API (#324). | — |
 | `STS-SPIFFE-0152` | The workload agent attested and bound its Unix socket but could not write the file named by --ready-file, so it stopped rather than serve a socket its workload waits on and cannot find (#695). | — |
 | `STS-SPIFFE-0153` | The SPIRE Server API could not be given a TLS identity under paranoid PKI mode, so its address was not bound plain (#1360). | none: the address does not answer, and GET /spiffe says so |
+| `STS-SPIFFE-0154` | A SPIFFE answer — a Workload API, SPIRE Server API or Broker API message a handler handed grpc-js, a bundle, a minted JWT-SVID's header or claims — carried a member its model in models/spiffe/*.tsp does not name (protobufjs drops it without a word), a value of a type the field does not take, or lacked one the model requires (#1579). The answer is sent as it was built: the model describes the wire and does not reshape it, so this is a model gap or a defect to close. | none (recorded only; the answer is unchanged) |
+| `STS-SPIFFE-0155` | A SPIFFE gRPC call ended with a status its service and method in models/spiffe/*.tsp do not declare (#1579). The status is sent as it was: this is a model gap to close. | none (recorded only; the status is unchanged) |
 
 ## STS-TLS
 

@@ -48,6 +48,7 @@ import "./ssf/ssf_events.tsp";
 import "./enrollment/acme.tsp";
 import "./enrollment/est.tsp";
 import "./enrollment/scep.tsp";
+import "./spiffe/spiffe.tsp";
 import "./persistence/persistence.tsp";
 import "./persistence/persistence_mariadb.tsp";
 import "./api/report.tsp";

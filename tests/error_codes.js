@@ -134,9 +134,10 @@ function sourceFiles() {
         return;
       }
       // Source only: a `.ts`, or a `.js` that is not its compiled twin (#50),
-      // or the Rust conversion's `.rs` (#444), or the model's TypeSpec
-      // (#1579): a request the model declares refuses with the code it
-      // names there, and no service file writes that code again.
+      // or the Rust conversion's `.rs` (#444), or the model's `.tsp` (#1579):
+      // a refusal the model declares (AuthZEN's request fields, SPIFFE's
+      // `@refuse`) is raised with the code it names there, by the code that
+      // asks the model for it, so no service file writes that code again.
       const rust = rel.indexOf('rust/') === 0 && /\.rs$/.test(entry.name);
       const model = rel.indexOf('models/') === 0 &&
         /\.tsp$/.test(entry.name);

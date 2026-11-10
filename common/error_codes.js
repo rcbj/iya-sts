@@ -17506,6 +17506,21 @@ const CODES = [
     summary: 'The SPIRE Server API could not be given a TLS identity under ' +
       'paranoid PKI mode, so its address was not bound plain (#1360).',
     spec: 'none: the address does not answer, and GET /spiffe says so' },
+  { code: 'STS-SPIFFE-0154',
+    summary: 'A SPIFFE answer — a Workload API, SPIRE Server API or Broker ' +
+      'API message a handler handed grpc-js, a bundle, a minted ' +
+      'JWT-SVID\'s header or claims — carried a member its model in ' +
+      'models/spiffe/*.tsp does not name (protobufjs drops it without a ' +
+      'word), a value of a type the field does not take, or lacked one the ' +
+      'model requires (#1579). The answer is sent as it was built: the ' +
+      'model describes the wire and does not reshape it, so this is a ' +
+      'model gap or a defect to close.',
+    spec: 'none (recorded only; the answer is unchanged)' },
+  { code: 'STS-SPIFFE-0155',
+    summary: 'A SPIFFE gRPC call ended with a status its service and method ' +
+      'in models/spiffe/*.tsp do not declare (#1579). The status is sent ' +
+      'as it was: this is a model gap to close.',
+    spec: 'none (recorded only; the status is unchanged)' },
   { code: 'STS-TLS-0001',
     summary: 'The service did not start: tls.minVersion, tls.ciphers, ' +
       'tls.groups or tls.signatureAlgorithms cannot build a TLS context.',
