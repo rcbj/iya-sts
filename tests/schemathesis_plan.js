@@ -674,7 +674,6 @@ function strictRequestSection(t) {
     [base + "policies/save-authn-policy", body({ profile: "default",
       name: "anything" })],
     [base + "policies/reset-passkey-policy", body({ profile: " Default " })],
-    [base + "policies/delete-authn-policy", body({})],
     [base + "xacml/edit-match", body({ policy: "role-issuance" })],
     [base + "xacml/create-from-template", body({ template: "x",
       name: "access-control" })],
@@ -686,21 +685,27 @@ function strictRequestSection(t) {
   const forwarded = [
     [base + "policies/save-authn-policy", body({ profile: "fuzz-named" })],
     [base + "policies/delete-authn-policy", body({ name: "fuzz-named" })],
+    [base + "policies/clear-passkey-client", body({})],
     [base + "xacml/edit-match", body({ policy: "seeded-rbac" })],
     [base + "config/set", body({ key: "saml.clockSkewS", value: "30" })],
     [base + "users/clear-totp", body({ user: "alice" })]
   ];
   t.check(refused.every(function (one) {
-    return !!guard.touchesSignInPolicy(one[0], one[1]);
+    return !!guard.touchesSignInPolicy(one[0], one[1], "POST");
   }), "the proxy refuses a write to a default policy profile, an edit of " +
     "either built-in XACML policy and a change to the settings that point " +
     "at them", JSON.stringify(refused.map(function (one) {
       return guard.touchesSignInPolicy(one[0], one[1]);
     })));
   t.check(forwarded.every(function (one) {
-    return guard.touchesSignInPolicy(one[0], one[1]) === null;
-  }), "and forwards a named profile, another policy, another setting and " +
-    "another door", JSON.stringify(forwarded.map(function (one) {
+    return guard.touchesSignInPolicy(one[0], one[1], "POST") === null;
+  }) &&
+    guard.touchesSignInPolicy(base + "policies?x=1", null, "GET") === null &&
+    guard.touchesSignInPolicy(base + "xacml/policies?name=role-issuance", null,
+      "GET") === null,
+  "and forwards a named profile, an act that is not a save, another " +
+    "policy, another setting, another door and every read (the strict " +
+    "probes are reads)", JSON.stringify(forwarded.map(function (one) {
       return guard.touchesSignInPolicy(one[0], one[1]);
     })));
   t.log.debug("Leaving strictRequestSection().");
