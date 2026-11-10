@@ -95,7 +95,7 @@ async function run(t) {
           /noSuchAttribute, which no directory object declares/, broken);
 
   broken = copy();
-  broken.mapping.group[0].ldap = 'mail';
+  broken.mapping.group[0].ldap = 'givenName';
   refused('a Group row kept in a person\'s attribute',
           /group row 1 .* is kept in mail/, broken);
 

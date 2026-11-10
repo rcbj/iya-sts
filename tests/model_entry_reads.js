@@ -97,10 +97,6 @@ const EXCEPTIONS = {
     why: 'every address an index found the entry by, and the classes the ' +
       'model states by @entry rather than as an attribute'
   },
-  'scim/scim_map.ts': {
-    names: ['scimExternalId'],
-    why: 'written onto a group, which no group object declares'
-  },
   'common/certificate_pins.ts': {
     names: '*',
     why: 'the audit reports each pin as <application> <attribute>, so the ' +
