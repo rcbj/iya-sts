@@ -461,7 +461,7 @@ export function renderApiTypes(served) {
   const lines = ['// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, ' +
     'LLC', '// SPDX-License-Identifier: BUSL-1.1', '//',
   '// GENERATED from models/api/ (#1390). Do not edit: change the model and',
-  '// run tests/tools/regenerate-model-docs.sh. tests/model_openapi.js fails',
+  '// run tests/tools/regenerate-model-docs.sh. tests/model_domain.js fails',
   '// when this differs. The handlers are typed by it (#1579): see',
   '// types/api-handlers.d.ts.', ''];
   Object.keys(served).sort().forEach(function (name) {
