@@ -971,7 +971,9 @@ more, and still refuses a certificate naming nothing.
 **An administrator's act names a certificate.** Registering a certificate on the entry it is used for makes it that entry's trust anchor, so it needs no chain to anything. That covers an application's signing and encryption certificates, a partner's on a federation relationship, and one stored on exactly one person's entry for WS-Security. A JWK's `x5c` needs no chain either, since the same key with none needs none. In every case the certificate's validity, usage and revocation still count, and a certificate that arrives without an administrator's act is never named this way. [SAML 2.0 Web Browser SSO](saml2-sso.md) says what that means for metadata.
 
 The rows are per realm and change at runtime, through
-[`/admin/pki/trust`](signer-truststore.md) or `POST /admin-api/config/set`. **The
+[`/admin/pki/trust`](signer-truststore.md), `POST /admin-api/pki/trust/set-row`
+(`{"setting": "pki.paranoidSamlSigner", "value": false}`, the master or any
+row) or `POST /admin-api/config/set`. **The
 exception is a client certificate at a TLS handshake**, which has no realm in it: on
 the main port, custom listeners, LDAPS and the debugger, the default realm's rows
 decide, and another realm's page shows a row that has no effect there. See
@@ -1004,7 +1006,7 @@ Protocols → PKI trust has four tabs:
   the realm's federated SPIFFE bundles and GNAP clients' keys. The default
   realm's tab also lists the cloud providers' certificates the image ships and
   the client-certificate truststore, which are the same for every realm. The daily `pki.pins.audit` job writes it, and
-  **Recheck now** does so on demand. The job logs what changed (`STS-PKI-0263`,
+  **Recheck now** (`POST /admin-api/pki/trust/recheck`) does so on demand. The job logs what changed (`STS-PKI-0263`,
   `STS-PKI-0264`) and mails the realm's Admin Write holders on a change, never per
   run. `pki.pinnedCertificateWarningDays` is the horizon of `expiring`.
 * **Client-certificate truststore**: a link to the page that one has.
