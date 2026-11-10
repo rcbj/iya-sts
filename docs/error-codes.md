@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5393** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5395** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -68,7 +68,7 @@ is an ordinary outcome.
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 118
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 70
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
-* [Federation (`STS-FED`)](#sts-fed) — 216
+* [Federation (`STS-FED`)](#sts-fed) — 217
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 257
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 165
@@ -91,7 +91,7 @@ is an ordinary outcome.
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 92
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 265
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 266
 * [Management API (`STS-API`)](#sts-api) — 95
 * [User portal (`STS-PORTAL`)](#sts-portal) — 121
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 23
@@ -2983,6 +2983,7 @@ Raised from: federation/.
 | `STS-FED-0239` | An unsolicited SAML assertion was presented a second time (ASVS 5.0.0 6.8.3). | HTTP 401 |
 | `STS-FED-0240` | A federated sign-in was refused because the partner authenticated the person too long ago. | HTTP 401 |
 | `STS-FED-0241` | A federated assertion was refused because it names no audience. | HTTP 401 |
+| `STS-FED-0242` | A partner was asked for a fresh sign-in and answered with an earlier authentication. | HTTP 401 |
 
 ## STS-OIDFED
 
@@ -5523,6 +5524,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0914` | set-row was refused by the settings write path, or a use case an add named is not one this service has (#1360). | HTTP 400 with {ok:false, errors} |
 | `STS-ADMIN-0915` | A software statement was asked for with a lifetimeSeconds that puts its expiry past the last date this service can write (#1470). | a refusal naming the field |
 | `STS-ADMIN-0916` | A second factor was not cleared because the administrator did not say how the person was verified. | HTTP 400 |
+| `STS-ADMIN-0917` | An application was not created because the metadata document given with it was refused. | HTTP 400 |
 
 ## STS-API
 

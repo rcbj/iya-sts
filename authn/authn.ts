@@ -7569,6 +7569,29 @@ class Authn {
    * @param detail - the request, credential, application and risk
    * @returns the session, or null when refused
    */
+  /**
+   * Records when a session's latest authentication really happened, for a
+   * federated sign-in whose partner says (#1554). Never moves it forward.
+   *
+   * @param session - the session
+   * @param seconds - the partner's authentication time, 0 if it gave none
+   * @returns nothing
+   */
+  backdateAuthentication(session, seconds) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.backdateAuthentication().");
+    const at = Number(seconds) || 0;
+    if (session && at > 0 && at < Number(session.authTime || 0)) {
+      session.authTime = at;
+      const events = Array.isArray(session.events) ? session.events : [];
+      if (events.length) {
+        events[events.length - 1].at = at;
+      }
+      sessions.set(session.id, session);
+    }
+    log.debug("Leaving Authn.backdateAuthentication().");
+  }
+
   startSession(res, username, amr, acr, via, detail) {
     const { log } = this.deps;
     log.debug("Entering Authn.startSession().");
@@ -20190,6 +20213,7 @@ export = {
   // module keeps calling sessionOf() and keeps seeing its own realm only.
   consoleSession: slot.forward('consoleSession'),
   startSession: slot.forward('startSession'),
+  backdateAuthentication: slot.forward('backdateAuthentication'),
   // THE RELYING-PARTY HALF (2026-09-06), for `common/oidc_rp.ts` and for the
   // two surfaces that read what it makes. Three functions and no more: a
   // caller that wanted to create one of these without going through the code

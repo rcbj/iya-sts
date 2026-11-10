@@ -188,6 +188,21 @@ async function run(t) {
           'a row rewritten afterwards is reported');
   held.summary = honest;
   keystore.keyedDigest = realKeyed;
+  // A partner's sign-in time counts (#1554).
+  const authn = require(ROOT + '/authn/authn');
+  const fedProto = fedSp.FederationSp.prototype;
+  const quiet = require('bunyan').createLogger({ name: 'q', level: 60 });
+  const asked = Math.floor(Date.now() / 1000);
+  const ignored = function (askedAt, partnerAt) {
+    return fedProto.partnerIgnoredFreshSignIn.call({ deps: { log: quiet } },
+      { locals: { fedReauthAskedAt: askedAt, fedPartnerAuthAt: partnerAt } });
+  };
+  t.equal(ignored(asked, asked - 3600), true,
+          'a partner answering a fresh sign-in with an old one is refused');
+  t.equal(ignored(asked, asked + 2), false, 'a fresh answer is not');
+  t.equal(ignored(asked, 0), false, 'nor one that gives no time');
+  t.equal(ignored(0, asked - 3600), false,
+          'and an old time is fine when nothing fresh was asked');
   const budget = require(ROOT + '/common/request_budget');
   const at = Date.now();
   t.equal(budget.allowed('198.51.100.7', 2, at), true, 'a first request passes');

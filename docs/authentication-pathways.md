@@ -50,8 +50,10 @@ product mode, how strong each is, and the rules that hold for all of them.
 > application request `acr_values` of `mfa`.
 >
 > A partner that states no authentication strength is treated as the weakest: it
-> never satisfies an application that demands `acr_values`. A partner's
-> authentication age is checked only where `federation.maxPartnerAuthAgeS` is set.
+> never satisfies an application that demands `acr_values`. An application's
+> `max_age` is judged on when the partner says it authenticated the person, and a
+> fresh sign-in is asked of the partner when one is needed. A partner that gives no
+> time counts from the moment the person arrives here.
 >
 > A WS-Trust exchange also records a session for the person, like every sign-in.
 > With an app password that is one factor, by design.

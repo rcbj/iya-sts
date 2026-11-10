@@ -13751,6 +13751,9 @@ const CODES = [
   { code: 'STS-FED-0241',
     summary: 'A federated assertion was refused because it names no audience.',
     spec: 'HTTP 401' },
+  { code: 'STS-FED-0242',
+    summary: 'A partner was asked for a fresh sign-in and answered with an earlier authentication.',
+    spec: 'HTTP 401' },
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +
       'section 6.1.2 describes, or an operator\'s value is of a type ' +
@@ -25044,6 +25047,9 @@ const CODES = [
     spec: 'a refusal naming the field' },
   { code: 'STS-ADMIN-0916',
     summary: 'A second factor was not cleared because the administrator did not say how the person was verified.',
+    spec: 'HTTP 400' },
+  { code: 'STS-ADMIN-0917',
+    summary: 'An application was not created because the metadata document given with it was refused.',
     spec: 'HTTP 400' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
