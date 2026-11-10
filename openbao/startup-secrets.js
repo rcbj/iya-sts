@@ -62,11 +62,14 @@ const OUT_DIR = process.env.STS_STARTUP_SECRETS_DIR || '/run/sts-startup';
 const SERVICE_UID = Number(process.env.STS_BAO_SERVICE_UID || 10001);
 const SERVICE_GID = Number(process.env.STS_BAO_SERVICE_GID || 10001);
 // THE FIELDS `openbao/seed.js` WRITES, and the setting's variable each one is
-// delivered as. `common/delivered_secrets.ts` lists the same three settings.
+// delivered as. `common/delivered_secrets.ts` lists the same six settings.
 const FIELDS = [
   { field: 'adminApiClientSecret', env: 'ADMIN_API_CLIENT_SECRET' },
   { field: 'krb5KrbtgtPassword', env: 'KRB5_KRBTGT_PASSWORD' },
-  { field: 'krb5ServicePassword', env: 'KRB5_SERVICE_PASSWORD' }
+  { field: 'krb5ServicePassword', env: 'KRB5_SERVICE_PASSWORD' },
+  { field: 'edgeSecret', env: 'STS_EDGE_SECRET' },
+  { field: 'adminBootstrapPassword', env: 'STS_ADMIN_BOOTSTRAP_PASSWORD' },
+  { field: 'scimDigestPassword', env: 'SCIM_DIGEST_PASSWORD' }
 ];
 
 let ca = null;

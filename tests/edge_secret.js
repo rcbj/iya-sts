@@ -59,6 +59,14 @@ function run(t) {
         '9.' + i + ' the header is off the request, parsed and raw alike, ' +
         'whatever the answer');
     });
+
+    // 13.3.1: the service may hold only the secret's digest.
+    config.setOverride('global.edgeSecret', 'sha256:' +
+      require('crypto').createHash('sha256').update('s3cret').digest('hex'));
+    t.ok(!clientAddress.edgeRefused(fromPeer(EDGE, 's3cret')) &&
+         clientAddress.edgeRefused(fromPeer(EDGE, 'wrong')),
+      '10. given as sha256:<digest>, the secret still passes and a wrong ' +
+      'one is still refused');
   } finally {
     config.clearOverride('global.edgeSecret');
     config.clearOverride('global.edgeProxies');

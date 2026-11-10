@@ -2056,8 +2056,8 @@
     "text": "RFC 7616，依序提供 SHA-256 與 SHA-512-256（若 scim.digestMd5 開啟則最後提供 MD5，僅限開發模式），並接受 -sess 變體。「在產品模式下絕不提供」：RFC 7616 需要密碼或其雜湊，而儲存的 scrypt 雜湊兩者都無法檢查。在開發模式下，它是唯一真正檢查密碼的機制，因為回應「就是」對密碼的雜湊——因此它基於相同理由做了 Kerberos 所做的事：任何用戶名稱，一個共用密碼。它提供三種原本無法觸及的負面情境：錯誤的密碼、過期的 nonce，以及重送的 nonce 計數。"
   },
   "scim.digestPassword|description": {
-    "en": "1d3e730c6b9a469e",
-    "text": "HTTP Digest 中每個用戶名稱共用的密碼——與 KRB5_USER_PASSWORD 的預設值相同，讓人只需記住一件事而非兩件。它不能像繫結或 Basic 認證那樣「什麼都行」：Digest 回應是對密碼的雜湊，因此沒有密碼的伺服器根本不算在執行這項交換，客戶端的 Digest 程式碼也就無從演練。"
+    "en": "6819fb3962f9f205",
+    "text": "HTTP Digest 中每個用戶名稱共用的密碼——與 KRB5_USER_PASSWORD 的預設值相同，讓人只需記住一件事而非兩件。它不能像繫結或 Basic 認證那樣「什麼都行」：Digest 回應是對密碼的雜湊，因此沒有密碼的伺服器根本不算在執行這項交換，客戶端的 Digest 程式碼也就無從演練。它可以作為 SCIM_DIGEST_PASSWORD_FILE 指定的檔案交付。"
   },
   "scim.digestNonceSeconds|description": {
     "en": "946b58f8ac9967e6",

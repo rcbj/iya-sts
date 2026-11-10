@@ -108,8 +108,8 @@
     "text": "Secreto de origen de la CDN"
   },
   "global.edgeSecret|description": {
-    "en": "eb67106afc0cc7f0",
-    "text": "Lo que la distribución de CDN de este despliegue envía en X-Origin-Verify, y que la distingue de la distribución de otro cliente en los mismos nodos. La cabecera se elimina una vez leída. Vacío con global.edgeProxies definido, rechaza toda solicitud desde esos rangos."
+    "en": "150b63080ee2d16b",
+    "text": "Lo que la distribución de CDN de este despliegue envía en X-Origin-Verify, y que la distingue de la distribución de otro cliente en los mismos nodos. La cabecera se elimina una vez leída. Vacío con global.edgeProxies definido, rechaza toda solicitud desde esos rangos. Puede darse como `sha256:<hex digest>`, para que este servicio solo guarde la huella, y entregarse como un archivo nombrado por STS_EDGE_SECRET_FILE."
   },
   "global.edgeSecret|restartReason": {
     "en": "d51b3caaa6125e92",
@@ -448,8 +448,8 @@
     "text": "Contraseña del administrador inicial"
   },
   "admin.bootstrapPassword|description": {
-    "en": "c90454b252735521",
-    "text": "La contraseña que se da al administrador inicial en lugar de una generada, en MODO PRODUCTO y solo cuando nadie en el dominio tiene una credencial — el mismo momento único que describe admin.bootstrapUsername, exactamente en las mismas condiciones. No puede sobrescribir la contraseña de nadie y no hace nada en modo de desarrollo.\n\n**POR QUÉ EXISTE: PARA QUE LA ÚNICA FORMA DE ENTRAR NO ESTÉ EN UN REGISTRO.** Una contraseña generada se anuncia una vez y nunca más, así que el registro es sensible, y la credencial desaparece en cuanto esa línea se ha rotado. Un operador con un almacén de secretos puede poner el valor allí antes de que arranque el servicio y leerlo cuando lo necesite — que es lo que hace el despliegue en AWS, mediante Secrets Manager (deploy/aws/CLAUDE.md).\n\n**ESTÁ SUJETA A LA POLÍTICA DE CONTRASEÑAS, y un valor que la política rechaza SE RECHAZA en lugar de reemplazarse en silencio.** Generar una en su lugar pondría una credencial válida en el registro de un despliegue cuyo operador pidió que no estuviera allí, y dejaría el valor de su almacén de secretos sin funcionar sin que nada lo indicara. El rechazo nombra las reglas que incumplió (STS-AUTHN-0205).\n\n**NUNCA SE REGISTRA** — ni al arrancar, ni en /admin/config, ni mediante /admin-api. Ya está dondequiera que el operador la haya puesto, y que este servicio la imprimiera anularía el sentido de definirla."
+    "en": "2dc1b16eebe63526",
+    "text": "La contraseña que se da al administrador inicial en lugar de una generada, en MODO PRODUCTO y solo cuando nadie en el dominio tiene una credencial — el mismo momento único que describe admin.bootstrapUsername, exactamente en las mismas condiciones. No puede sobrescribir la contraseña de nadie y no hace nada en modo de desarrollo.\n\n**POR QUÉ EXISTE: PARA QUE LA ÚNICA FORMA DE ENTRAR NO ESTÉ EN UN REGISTRO.** Una contraseña generada se anuncia una vez y nunca más, así que el registro es sensible, y la credencial desaparece en cuanto esa línea se ha rotado. Un operador con un almacén de secretos puede poner el valor allí antes de que arranque el servicio y leerlo cuando lo necesite — que es lo que hace el despliegue en AWS, mediante Secrets Manager (deploy/aws/CLAUDE.md). Puede entregarse como un archivo nombrado por STS_ADMIN_BOOTSTRAP_PASSWORD_FILE, y darse como un hash `$scrypt$` o argon2id en lugar de la contraseña; ese hash se guarda tal cual, de modo que la contraseña en claro nunca se configura.\n\n**ESTÁ SUJETA A LA POLÍTICA DE CONTRASEÑAS, y un valor que la política rechaza SE RECHAZA en lugar de reemplazarse en silencio.** Generar una en su lugar pondría una credencial válida en el registro de un despliegue cuyo operador pidió que no estuviera allí, y dejaría el valor de su almacén de secretos sin funcionar sin que nada lo indicara. El rechazo nombra las reglas que incumplió (STS-AUTHN-0205).\n\n**NUNCA SE REGISTRA** — ni al arrancar, ni en /admin/config, ni mediante /admin-api. Ya está dondequiera que el operador la haya puesto, y que este servicio la imprimiera anularía el sentido de definirla."
   },
   "admin.bootstrapPassword|restartReason": {
     "en": "25fddde63c972817",
@@ -7464,8 +7464,8 @@
     "text": "La contraseña Digest compartida"
   },
   "scim.digestPassword|description": {
-    "en": "1d3e730c6b9a469e",
-    "text": "La contraseña que comparten todos los nombres de usuario para HTTP Digest — el mismo valor que tiene por defecto KRB5_USER_PASSWORD, para que haya un dato que recordar en lugar de dos. No puede ser «vale cualquier cosa» como puede serlo un bind o una credencial Basic: una respuesta digest es un hash sobre la contraseña, así que un servidor sin contraseña no estaría realizando el intercambio en absoluto y el código digest de un cliente quedaría sin ejercitar."
+    "en": "6819fb3962f9f205",
+    "text": "La contraseña que comparten todos los nombres de usuario para HTTP Digest — el mismo valor que tiene por defecto KRB5_USER_PASSWORD, para que haya un dato que recordar en lugar de dos. No puede ser «vale cualquier cosa» como puede serlo un bind o una credencial Basic: una respuesta digest es un hash sobre la contraseña, así que un servidor sin contraseña no estaría realizando el intercambio en absoluto y el código digest de un cliente quedaría sin ejercitar. Puede entregarse como un archivo nombrado por SCIM_DIGEST_PASSWORD_FILE."
   },
   "scim.digestNonceSeconds|label": {
     "en": "1fa6981a1aebea0d",

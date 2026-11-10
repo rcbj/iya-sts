@@ -160,6 +160,30 @@ function childMain() {
     }
 
     // ======================================================================
+    // 8e. A HASH IN PLACE OF THE PASSWORD (ASVS 5.0.0 13.3.1): the setting
+    // holds a `$scrypt$` value, the account gets exactly that hash, and the
+    // password it was made from signs in.
+    // ======================================================================
+    if (process.env.AB_PART === 'hashed') {
+      config.setOverride('global.mode', 'product');
+      config.setOverride('authn.allowOptionalSecondFactor', 'true');
+      const ran = inDefault(function () {
+        return credentials.bootstrap({ username: 'admin' });
+      });
+      const verified = inDefault(function () {
+        return credentials.verify('admin', process.env.AB_PLAIN,
+                                  { via: 'the sign-in screen',
+                                    allowPasswordReset: true });
+      });
+      note(ran.ran === true && ran.supplied === true && verified.ok === true,
+           '8e. a password hash in admin.bootstrapPassword is stored as it ' +
+           'stands, and the password it was made from signs in',
+           JSON.stringify([ran, verified.ok, verified.reason]));
+      require('fs').writeFileSync(OUT, JSON.stringify(findings));
+      process.exit(0);
+    }
+
+    // ======================================================================
     // 9. A CONFIGURED PASSWORD THE POLICY REFUSES (2026-09-17) — a child of
     // its own because the setting is RESTART-ONLY: it is read once, at the
     // one moment the bootstrap acts, so an override set while running is a
@@ -576,6 +600,12 @@ async function run(t) {
   // pass it without testing anything.
   inAChild(t, 'configured', { STS_LOG_LEVEL: 'info',
                               STS_ADMIN_BOOTSTRAP_PASSWORD: SUPPLIED });
+  // The hash is made here, at the default policy's cost, from SUPPLIED.
+  const stsCrypto = require(ROOT + '/common/crypto');
+  inAChild(t, 'hashed', { AB_PLAIN: SUPPLIED,
+                          STS_ADMIN_BOOTSTRAP_PASSWORD:
+                            stsCrypto.hashPassword(SUPPLIED,
+                              stsCrypto.passwordHashSpec()) });
   // `short` breaks three of the four default rules at once (length, an
   // uppercase letter, a digit) and is the shape of the mistake somebody makes
   // when they put a placeholder in a secret store.

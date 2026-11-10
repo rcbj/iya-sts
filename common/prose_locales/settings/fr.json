@@ -108,8 +108,8 @@
     "text": "Secret d'origine du CDN"
   },
   "global.edgeSecret|description": {
-    "en": "eb67106afc0cc7f0",
-    "text": "Ce que la distribution CDN de ce déploiement envoie dans X-Origin-Verify, et qui la distingue de la distribution d'un autre client sur les mêmes nœuds. L'en-tête est supprimé une fois lu. Vide alors que global.edgeProxies est défini, il refuse toute requête provenant de ces plages."
+    "en": "150b63080ee2d16b",
+    "text": "Ce que la distribution CDN de ce déploiement envoie dans X-Origin-Verify, et qui la distingue de la distribution d'un autre client sur les mêmes nœuds. L'en-tête est supprimé une fois lu. Vide alors que global.edgeProxies est défini, il refuse toute requête provenant de ces plages. Il peut être donné sous la forme `sha256:<hex digest>`, pour que ce service n’en détienne que l’empreinte, et livré comme un fichier nommé par STS_EDGE_SECRET_FILE."
   },
   "global.edgeSecret|restartReason": {
     "en": "d51b3caaa6125e92",
@@ -448,8 +448,8 @@
     "text": "Mot de passe de l’administrateur d’amorçage"
   },
   "admin.bootstrapPassword|description": {
-    "en": "c90454b252735521",
-    "text": "Le mot de passe donné à l’administrateur d’amorçage au lieu d’un mot de passe généré, en MODE PRODUIT et uniquement lorsque personne dans le domaine ne détient d’identifiant — le même moment unique que décrit admin.bootstrapUsername, exactement dans les mêmes conditions. Il ne peut écraser le mot de passe de personne et ne fait rien en mode développement.\n\n**POURQUOI IL EXISTE : POUR QUE LE SEUL MOYEN D’ENTRER NE SE TROUVE PAS DANS UN JOURNAL.** Un mot de passe généré est annoncé une fois et plus jamais ; le journal est donc sensible, et l’identifiant est perdu dès que cette ligne a disparu. Un opérateur disposant d’un magasin de secrets peut y placer la valeur avant le démarrage du service et la relire quand il en a besoin — c’est ce que fait le déploiement AWS, via Secrets Manager (deploy/aws/CLAUDE.md).\n\n**IL EST SOUMIS À LA POLITIQUE DE MOTS DE PASSE, et une valeur que la politique refuse est REFUSÉE plutôt que remplacée en silence.** En générer une à la place mettrait un identifiant valide dans le journal d’un déploiement dont l’opérateur a demandé qu’il n’y soit pas, et laisserait dans son magasin de secrets une valeur qui ne fonctionne pas, sans que rien ne le signale. Le refus nomme les règles enfreintes (STS-AUTHN-0205).\n\n**IL N’EST JAMAIS JOURNALISÉ** — ni au démarrage, ni sur /admin/config, ni via /admin-api. Il se trouve déjà là où l’opérateur l’a placé, et l’afficher annulerait l’intérêt de le définir."
+    "en": "2dc1b16eebe63526",
+    "text": "Le mot de passe donné à l’administrateur d’amorçage au lieu d’un mot de passe généré, en MODE PRODUIT et uniquement lorsque personne dans le domaine ne détient d’identifiant — le même moment unique que décrit admin.bootstrapUsername, exactement dans les mêmes conditions. Il ne peut écraser le mot de passe de personne et ne fait rien en mode développement.\n\n**POURQUOI IL EXISTE : POUR QUE LE SEUL MOYEN D’ENTRER NE SE TROUVE PAS DANS UN JOURNAL.** Un mot de passe généré est annoncé une fois et plus jamais ; le journal est donc sensible, et l’identifiant est perdu dès que cette ligne a disparu. Un opérateur disposant d’un magasin de secrets peut y placer la valeur avant le démarrage du service et la relire quand il en a besoin — c’est ce que fait le déploiement AWS, via Secrets Manager (deploy/aws/CLAUDE.md). Il peut être livré comme un fichier nommé par STS_ADMIN_BOOTSTRAP_PASSWORD_FILE, et donné sous la forme d’un hachage `$scrypt$` ou argon2id au lieu du mot de passe ; ce hachage est enregistré tel quel, si bien que le mot de passe en clair n’est jamais configuré.\n\n**IL EST SOUMIS À LA POLITIQUE DE MOTS DE PASSE, et une valeur que la politique refuse est REFUSÉE plutôt que remplacée en silence.** En générer une à la place mettrait un identifiant valide dans le journal d’un déploiement dont l’opérateur a demandé qu’il n’y soit pas, et laisserait dans son magasin de secrets une valeur qui ne fonctionne pas, sans que rien ne le signale. Le refus nomme les règles enfreintes (STS-AUTHN-0205).\n\n**IL N’EST JAMAIS JOURNALISÉ** — ni au démarrage, ni sur /admin/config, ni via /admin-api. Il se trouve déjà là où l’opérateur l’a placé, et l’afficher annulerait l’intérêt de le définir."
   },
   "admin.bootstrapPassword|restartReason": {
     "en": "25fddde63c972817",
@@ -7464,8 +7464,8 @@
     "text": "Mot de passe Digest partagé"
   },
   "scim.digestPassword|description": {
-    "en": "1d3e730c6b9a469e",
-    "text": "Le mot de passe que partagent tous les noms d’utilisateur pour HTTP Digest — la même valeur que celle par défaut de KRB5_USER_PASSWORD, afin qu’il n’y ait qu’un fait à retenir au lieu de deux. Il ne peut pas s’agir de « n’importe quoi » comme pour un bind ou un identifiant Basic : une réponse digest est un hachage sur le mot de passe, si bien qu’un serveur sans mot de passe n’effectuerait pas du tout l’échange et le code digest d’un client ne serait pas exercé."
+    "en": "6819fb3962f9f205",
+    "text": "Le mot de passe que partagent tous les noms d’utilisateur pour HTTP Digest — la même valeur que celle par défaut de KRB5_USER_PASSWORD, afin qu’il n’y ait qu’un fait à retenir au lieu de deux. Il ne peut pas s’agir de « n’importe quoi » comme pour un bind ou un identifiant Basic : une réponse digest est un hachage sur le mot de passe, si bien qu’un serveur sans mot de passe n’effectuerait pas du tout l’échange et le code digest d’un client ne serait pas exercé. Il peut être livré comme un fichier nommé par SCIM_DIGEST_PASSWORD_FILE."
   },
   "scim.digestNonceSeconds|label": {
     "en": "1fa6981a1aebea0d",

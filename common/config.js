@@ -1120,7 +1120,10 @@ const SETTINGS = [
                  'X-Origin-Verify, which tells it from another customer\'s ' +
                  'distribution at the same edges. The header is removed ' +
                  'once read. Empty with global.edgeProxies set refuses ' +
-                 'every request from those ranges.' },
+                 'every request from those ranges. It may be given as ' +
+                 '`sha256:<hex digest>`, so this service holds only the ' +
+                 'digest, and delivered as a file named by ' +
+                 'STS_EDGE_SECRET_FILE.' },
 
   // Added 2026-09-14 (#46 section 8). `global.trustProxy` alone believed a
   // forwarded header from anybody who could reach a node, including past the
@@ -1692,7 +1695,12 @@ const SETTINGS = [
                  'rolled off. An operator with a secret store can put the ' +
                  'value there before the service starts and read it back ' +
                  'whenever they need it — which is what the AWS deployment ' +
-                 'does, through Secrets Manager (deploy/aws/CLAUDE.md).\n\n' +
+                 'does, through Secrets Manager (deploy/aws/CLAUDE.md). It ' +
+                 'may be delivered as a file named by ' +
+                 'STS_ADMIN_BOOTSTRAP_PASSWORD_FILE, and given as a ' +
+                 '`$scrypt$` or argon2id hash instead of the password, which ' +
+                 'is stored as it stands so the plaintext is never ' +
+                 'configured.\n\n' +
                  '**IT IS HELD TO THE PASSWORD POLICY, and a value the ' +
                  'policy refuses is REFUSED rather than quietly replaced.** ' +
                  'Generating one instead would put a working credential in ' +
@@ -14453,7 +14461,9 @@ const SETTINGS = [
                  '"anything goes" the way a bind or a Basic credential can: ' +
                  'a digest response is a hash over the password, so a server ' +
                  'with no password would not be performing the exchange at ' +
-                 'all and a client\'s digest code would go unexercised.' },
+                 'all and a client\'s digest code would go unexercised. It ' +
+                 'may be delivered as a file named by ' +
+                 'SCIM_DIGEST_PASSWORD_FILE.' },
 
   { key: 'scim.digestNonceSeconds', group: 'SCIM', label: 'Digest nonce ' +
       'lifetime',

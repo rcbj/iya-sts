@@ -299,6 +299,23 @@ async function run(t) {
   t.equal(inProduct(function () {
     return config.value('oauth2.consentAlwaysForPublicClients');
   }), true, 'product always asks consent for a public client');
+  // Only this service's own clients are exempt, by exact name (10.7.1): a
+  // registered client's `sts-client-` id is a third party like any other.
+  const ConsentClass = require(ROOT + '/common/consent').Consent;
+  const asks = function (clientId) {
+    return inProduct(function () {
+      return ConsentClass.prototype.alwaysAsks.call({ deps: {
+        log: { debug: function () {} },
+        applications: { HOSTED_SURFACE_CLIENT_IDS: ['sts-user-portal'],
+                        clientConfigOf: function () {
+                          return { token_endpoint_auth_method: 'none' };
+                        } } } }, clientId);
+    });
+  };
+  t.equal(asks('sts-client-3f9a'), true,
+          'a dynamically registered public client is always asked');
+  t.equal(asks('sts-user-portal'), false,
+          'and this service\'s own portal is not');
   if (address.peerIsTrustedProxy) {
     const req = { socket: { remoteAddress: '203.0.113.9' } };
     t.equal(address.peerIsTrustedProxy(req), true,

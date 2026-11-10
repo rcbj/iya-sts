@@ -108,8 +108,8 @@
     "text": "CDN 源站密钥"
   },
   "global.edgeSecret|description": {
-    "en": "eb67106afc0cc7f0",
-    "text": "本部署自身的 CDN 分发在 X-Origin-Verify 中发送的内容，用于将其与同一边缘节点上其他客户的分发区分开来。该标头在读取后即被移除。设置了 global.edgeProxies 而此项为空时，来自这些范围的所有请求都会被拒绝。"
+    "en": "150b63080ee2d16b",
+    "text": "本部署自身的 CDN 分发在 X-Origin-Verify 中发送的内容，用于将其与同一边缘节点上其他客户的分发区分开来。该标头在读取后即被移除。设置了 global.edgeProxies 而此项为空时，来自这些范围的所有请求都会被拒绝。它可以写成 `sha256:<hex digest>`，这样本服务只保存摘要；也可以作为 STS_EDGE_SECRET_FILE 指定的文件交付。"
   },
   "global.edgeSecret|restartReason": {
     "en": "d51b3caaa6125e92",
@@ -448,8 +448,8 @@
     "text": "引导管理员密码"
   },
   "admin.bootstrapPassword|description": {
-    "en": "c90454b252735521",
-    "text": "在产品模式下、且仅当领域中没有任何人持有凭据时，代替生成密码而赋予引导管理员的密码——即 admin.bootstrapUsername 所描述的那个唯一时刻，条件完全相同。它不能覆盖任何人的密码，在开发模式下也不起任何作用。\n\n**它存在的原因：让唯一的入口不必出现在日志中。** 生成的密码只公布一次、此后不再出现，因此日志是敏感的，而一旦那一行日志被滚动清除，凭据也就没了。拥有密钥存储的运维人员可以在服务启动前把值放在那里，需要时随时读回——AWS 部署正是通过 Secrets Manager 这样做的（deploy/aws/CLAUDE.md）。\n\n**它受密码策略约束，策略拒绝的值会被拒绝，而不是被悄悄替换。** 改为生成一个，会在运维人员明确要求不出现凭据的部署日志中放入一个可用的凭据，同时让其密钥存储中的值失效，而且没有任何提示。拒绝信息会列出它违反的规则（STS-AUTHN-0205）。\n\n**它从不被记录**——启动时不会，/admin/config 上不会，通过 /admin-api 也不会。它已经在运维人员放置的地方了，本服务若将其打印出来，就违背了设置它的初衷。"
+    "en": "2dc1b16eebe63526",
+    "text": "在产品模式下、且仅当领域中没有任何人持有凭据时，代替生成密码而赋予引导管理员的密码——即 admin.bootstrapUsername 所描述的那个唯一时刻，条件完全相同。它不能覆盖任何人的密码，在开发模式下也不起任何作用。\n\n**它存在的原因：让唯一的入口不必出现在日志中。** 生成的密码只公布一次、此后不再出现，因此日志是敏感的，而一旦那一行日志被滚动清除，凭据也就没了。拥有密钥存储的运维人员可以在服务启动前把值放在那里，需要时随时读回——AWS 部署正是通过 Secrets Manager 这样做的（deploy/aws/CLAUDE.md）。它可以作为 STS_ADMIN_BOOTSTRAP_PASSWORD_FILE 指定的文件交付，也可以用 `$scrypt$` 或 argon2id 哈希代替密码；该哈希按原样存储，因此明文从不出现在配置中。\n\n**它受密码策略约束，策略拒绝的值会被拒绝，而不是被悄悄替换。** 改为生成一个，会在运维人员明确要求不出现凭据的部署日志中放入一个可用的凭据，同时让其密钥存储中的值失效，而且没有任何提示。拒绝信息会列出它违反的规则（STS-AUTHN-0205）。\n\n**它从不被记录**——启动时不会，/admin/config 上不会，通过 /admin-api 也不会。它已经在运维人员放置的地方了，本服务若将其打印出来，就违背了设置它的初衷。"
   },
   "admin.bootstrapPassword|restartReason": {
     "en": "25fddde63c972817",
@@ -7464,8 +7464,8 @@
     "text": "共享的 Digest 密码"
   },
   "scim.digestPassword|description": {
-    "en": "1d3e730c6b9a469e",
-    "text": "所有用户名在 HTTP Digest 中共享的密码——与 KRB5_USER_PASSWORD 的默认值相同，这样只需记住一个事实而不是两个。它不能像绑定或 Basic 凭据那样“任意皆可”：digest 响应是基于密码的哈希，因此没有密码的服务器根本不会执行这一交换，客户端的 digest 代码也就得不到演练。"
+    "en": "6819fb3962f9f205",
+    "text": "所有用户名在 HTTP Digest 中共享的密码——与 KRB5_USER_PASSWORD 的默认值相同，这样只需记住一个事实而不是两个。它不能像绑定或 Basic 凭据那样“任意皆可”：digest 响应是基于密码的哈希，因此没有密码的服务器根本不会执行这一交换，客户端的 digest 代码也就得不到演练。它可以作为 SCIM_DIGEST_PASSWORD_FILE 指定的文件交付。"
   },
   "scim.digestNonceSeconds|label": {
     "en": "1fa6981a1aebea0d",
