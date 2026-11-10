@@ -621,18 +621,26 @@ class FederationHttp {
   // -------------------------------------------------------------------------
   // RESOLVE ONCE, AND SAY WHICH ADDRESS THE CONNECTION MAY USE.
   //
-  // In development (`mode.dialsInternalAddresses()`) the name is resolved by
-  // the connection itself and nothing is pinned. In product every address
-  // the name resolves to is checked and the first is what the request
-  // connects to — resolving twice is how a name that answered a public
-  // address to the check answers a private one to the connection. Never
-  // rejects.
+  // `security.outboundAllowedHosts`, where it is set, is asked FIRST AND IN
+  // BOTH MODES (#1526, #1550; #1577): the setting says an influenced request
+  // may reach only those hosts, and `revocation_status.js`'s `hostAllowed()`
+  // has always applied it in both. Until #1577 the development return below
+  // came first, so a list an operator set was ignored there.
+  //
+  // Then, in development (`mode.dialsInternalAddresses()`), the name is
+  // resolved by the connection itself and nothing is pinned, so a listed
+  // internal host is still dialled. In product every address the name
+  // resolves to is checked and the first is what the request connects to —
+  // resolving twice is how a name that answered a public address to the
+  // check answers a private one to the connection. Never rejects.
   // -------------------------------------------------------------------------
   /**
    * Resolves a host once and says which address the connection may use.
    *
-   * In development nothing is checked or pinned; in product every address the
-   * name resolves to is checked and the first is pinned. Never rejects.
+   * A host `security.outboundAllowedHosts` leaves out is refused in either
+   * mode. Otherwise, in development nothing is checked or pinned; in product
+   * every address the name resolves to is checked and the first is pinned.
+   * Never rejects.
    *
    * @param hostname - the host name or IP literal
    * @returns a promise of `{ ok, address, family }`, or `{ ok: false, kind, why
@@ -646,12 +654,9 @@ class FederationHttp {
     const modeModule = this.deps.mode || mode;
     log.debug("Entering FederationHttp.vetHost(). hostname=" + hostname);
     const host = String(hostname || '').replace(/^\[|\]$/g, '');
-    if (modeModule.dialsInternalAddresses()) {
-      log.debug("Leaving FederationHttp.vetHost(). Development: not pinned.");
-      return Promise.resolve({ ok: true, address: '', family: 0 });
-    }
     // THE HOSTS THIS SERVICE MAY DIAL, where the operator names them (#1526,
-    // ASVS 5.0.0 13.2.4). Empty allows any public host, as before.
+    // ASVS 5.0.0 13.2.4), in either mode. Empty allows any host the mode
+    // otherwise allows, as before.
     const allowed: string[] = [].concat(
       this.deps.config.value('security.outboundAllowedHosts') || [])
       .join(',').split(',').map(function (one: string) {
@@ -665,6 +670,10 @@ class FederationHttp {
       return Promise.resolve({ ok: false, address: '', family: 0,
         kind: 'internal',
         why: '"' + host + '" is not in security.outboundAllowedHosts.' });
+    }
+    if (modeModule.dialsInternalAddresses()) {
+      log.debug("Leaving FederationHttp.vetHost(). Development: not pinned.");
+      return Promise.resolve({ ok: true, address: '', family: 0 });
     }
     const judge = function (addresses): VettedHost {
       log.debug("Entering judge().");

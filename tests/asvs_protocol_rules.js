@@ -76,7 +76,23 @@ async function run(t) {
   t.equal(/outboundAllowedHosts/.test(
     (await vet('a.partner.example')).why || ''), false,
           'a host under a listed domain passes the list');
+  // #1577: the list holds in development too, as revocation_status.js's
+  // hostAllowed() always did; development still dials an internal address.
+  const devOff = await http.vetHost('elsewhere.example');
+  t.equal(devOff.ok, false, 'development refuses a host off the list too');
+  t.equal(/outboundAllowedHosts/.test(devOff.why || ''), true,
+          'naming the setting');
+  t.equal((await http.vetHost('a.partner.example')).ok, true,
+          'and passes a listed one');
+  config.setOverride('security.outboundAllowedHosts', '127.0.0.1');
+  const devInternal = await http.vetHost('127.0.0.1');
+  t.equal(devInternal.ok && devInternal.address === '', true,
+          'development still dials a listed internal address, unpinned');
+  t.equal((await vet('127.0.0.1')).ok, false,
+          'which product still refuses, listed or not');
   config.clearOverride('security.outboundAllowedHosts');
+  t.equal((await http.vetHost('elsewhere.example')).ok, true,
+          'and with no list development dials any host, as before');
   t.equal(inProduct(function () {
     return mode.refusesPlainSyslog();
   }), true, 'product refuses plain syslog');
