@@ -108,8 +108,8 @@
     "text": "CDN 來源站密鑰"
   },
   "global.edgeSecret|description": {
-    "en": "eb67106afc0cc7f0",
-    "text": "本部署自身的 CDN 發佈在 X-Origin-Verify 中傳送的內容，用於將其與同一邊緣節點上其他客戶的發佈區分開來。該標頭在讀取後即被移除。設定了 global.edgeProxies 而此項為空時，來自這些範圍的所有請求都會被拒絕。"
+    "en": "150b63080ee2d16b",
+    "text": "本部署自身的 CDN 發佈在 X-Origin-Verify 中傳送的內容，用於將其與同一邊緣節點上其他客戶的發佈區分開來。該標頭在讀取後即被移除。設定了 global.edgeProxies 而此項為空時，來自這些範圍的所有請求都會被拒絕。它可以寫成 `sha256:<hex digest>`，這樣本服務只保存摘要；也可以作為 STS_EDGE_SECRET_FILE 指定的檔案交付。"
   },
   "global.edgeSecret|restartReason": {
     "en": "d51b3caaa6125e92",
@@ -448,8 +448,8 @@
     "text": "初始管理員密碼"
   },
   "admin.bootstrapPassword|description": {
-    "en": "c90454b252735521",
-    "text": "在產品模式下、且僅在領域中沒有人持有認證時，給予初始管理員的密碼，用以取代產生的密碼——與 admin.bootstrapUsername 所描述的同一個時刻，條件完全相同。它無法覆寫任何人的密碼，在開發模式下也不起任何作用。\n\n**它存在的理由：讓唯一的進入途徑不在日誌中。**產生的密碼只公告一次、之後不再出現，因此日誌具敏感性，而一旦那一行被輪替掉，認證就消失了。擁有秘密存放區的營運者可以在服務啟動前將值放在那裡，並在需要時隨時讀回——這正是 AWS 部署透過 Secrets Manager 所做的（deploy/aws/CLAUDE.md）。\n\n**它受密碼原則約束，原則拒絕的值會被「拒絕」，而不是悄悄被取代。**改為產生一個密碼，會在營運者明確要求不要出現在日誌中的部署裡，把可用的認證寫入日誌，並讓其秘密存放區中的值無法使用卻沒有任何提示。拒絕訊息會指名它違反的規則（STS-AUTHN-0205）。\n\n**它絕不會被記錄**——不在啟動時、不在 /admin/config、也不透過 /admin-api。它已經存在於營運者放置的地方，本服務若將它印出，就違背了設定它的用意。"
+    "en": "2dc1b16eebe63526",
+    "text": "在產品模式下、且僅在領域中沒有人持有認證時，給予初始管理員的密碼，用以取代產生的密碼——與 admin.bootstrapUsername 所描述的同一個時刻，條件完全相同。它無法覆寫任何人的密碼，在開發模式下也不起任何作用。\n\n**它存在的理由：讓唯一的進入途徑不在日誌中。**產生的密碼只公告一次、之後不再出現，因此日誌具敏感性，而一旦那一行被輪替掉，認證就消失了。擁有秘密存放區的營運者可以在服務啟動前將值放在那裡，並在需要時隨時讀回——這正是 AWS 部署透過 Secrets Manager 所做的（deploy/aws/CLAUDE.md）。它可以作為 STS_ADMIN_BOOTSTRAP_PASSWORD_FILE 指定的檔案交付，也可以用 `$scrypt$` 或 argon2id 雜湊代替密碼；該雜湊按原樣儲存，因此明文從不出現在設定中。\n\n**它受密碼原則約束，原則拒絕的值會被「拒絕」，而不是悄悄被取代。**改為產生一個密碼，會在營運者明確要求不要出現在日誌中的部署裡，把可用的認證寫入日誌，並讓其秘密存放區中的值無法使用卻沒有任何提示。拒絕訊息會指名它違反的規則（STS-AUTHN-0205）。\n\n**它絕不會被記錄**——不在啟動時、不在 /admin/config、也不透過 /admin-api。它已經存在於營運者放置的地方，本服務若將它印出，就違背了設定它的用意。"
   },
   "admin.bootstrapPassword|restartReason": {
     "en": "25fddde63c972817",
@@ -7464,8 +7464,8 @@
     "text": "共用的 Digest 密碼"
   },
   "scim.digestPassword|description": {
-    "en": "1d3e730c6b9a469e",
-    "text": "HTTP Digest 中每個使用者名稱共用的密碼——與 KRB5_USER_PASSWORD 的預設值相同，讓人只需記住一件事而非兩件。它不能像繫結或 Basic 認證那樣「什麼都行」：Digest 回應是對密碼的雜湊，因此沒有密碼的伺服器根本不算在執行這項交換，用戶端的 Digest 程式碼也就無從演練。"
+    "en": "6819fb3962f9f205",
+    "text": "HTTP Digest 中每個使用者名稱共用的密碼——與 KRB5_USER_PASSWORD 的預設值相同，讓人只需記住一件事而非兩件。它不能像繫結或 Basic 認證那樣「什麼都行」：Digest 回應是對密碼的雜湊，因此沒有密碼的伺服器根本不算在執行這項交換，用戶端的 Digest 程式碼也就無從演練。它可以作為 SCIM_DIGEST_PASSWORD_FILE 指定的檔案交付。"
   },
   "scim.digestNonceSeconds|label": {
     "en": "1fa6981a1aebea0d",

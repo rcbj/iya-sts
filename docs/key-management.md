@@ -50,7 +50,9 @@ key-encryption key, and [PKI](pki.md) for certificates and signing generations.
 * **Do not copy a key to a third party.** Export exists for migration and
   recovery. Exporting a key makes you responsible for every copy.
 
-Where the service departs from the first rule, you can see it here:
+Where the service departs from the first rule, you can see it here. Each is an
+accepted condition of this policy (ASVS 5.0.0 11.1.1), kept because the key has
+to be retrievable after issue:
 
 * The realm's signing keys and the listener certificate key can be exported by a
   caller holding Admin Write, from `/admin/keys` and `/admin/pki`. Every export is
@@ -61,6 +63,25 @@ Where the service departs from the first rule, you can see it here:
   and registers only the public half.
 * A person's assertion key pair and a TLS client certificate's key are given
   once and not kept, so they have one holder.
+
+## Approved algorithms
+
+These are the signature algorithms this policy approves (ASVS 5.0.0 11.6.1).
+In product mode the service signs and accepts only these, and
+`/admin/crypto-metadata` lists which the running realm uses.
+
+| Family | Approved | Notes |
+|---|---|---|
+| RSA | RSASSA-PKCS1-v1_5 and RSASSA-PSS with SHA-256, SHA-384 or SHA-512 | 3072-bit keys are generated in product. Peers' keys are accepted from 2048 bits in JOSE, and with no floor in XML signatures, for partners that still sign with older keys |
+| ECDSA | P-256, P-384 and P-521; brainpool curves of 256 bits and more for XML | secp256k1 (ES256K) only where `keys.signingAlgorithms` or `keys.acceptedSigningAlgorithms` lists it |
+| EdDSA | Ed25519 and Ed448 | Off by default (`keys.eddsaSigning`) |
+| Post-quantum | ML-DSA-44, -65 and -87 (FIPS 204); SLH-DSA (FIPS 205); the ML-DSA composites | |
+| HMAC | HMAC-SHA-256, -384 and -512 | For `client_secret_jwt` and shared-secret JWS |
+| BBS | `bbs-2023`, on BLS12-381 (W3C Data Integrity BBS Cryptosuites v1.0) | Approved for verifiable credentials only, for selective disclosure and unlinkable presentations, which no algorithm above provides. It is not a NIST algorithm. Each realm generates its own BBS key |
+
+Algorithms outside this table are refused in product mode, or used only where a
+specification requires them and the setting that allows them is named on
+`/admin/mode`.
 
 ## Inventory of keys
 

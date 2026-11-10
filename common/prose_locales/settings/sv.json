@@ -108,8 +108,8 @@
     "text": "CDN:ets ursprungshemlighet"
   },
   "global.edgeSecret|description": {
-    "en": "eb67106afc0cc7f0",
-    "text": "Det som den här driftsättningens egen CDN-distribution skickar i X-Origin-Verify, vilket skiljer den från en annan kunds distribution på samma noder. Huvudet tas bort när det har lästs. Tomt med global.edgeProxies angivet nekas varje begäran från de intervallen."
+    "en": "150b63080ee2d16b",
+    "text": "Det som den här driftsättningens egen CDN-distribution skickar i X-Origin-Verify, vilket skiljer den från en annan kunds distribution på samma noder. Huvudet tas bort när det har lästs. Tomt med global.edgeProxies angivet nekas varje begäran från de intervallen. Det kan anges som `sha256:<hex digest>`, så att den här tjänsten bara har kontrollvärdet, och levereras som en fil som STS_EDGE_SECRET_FILE namnger."
   },
   "global.edgeSecret|restartReason": {
     "en": "d51b3caaa6125e92",
@@ -448,8 +448,8 @@
     "text": "Lösenord för initial administratör"
   },
   "admin.bootstrapPassword|description": {
-    "en": "c90454b252735521",
-    "text": "Lösenordet som den initiala administratören får i stället för ett genererat, i PRODUKTIONSLÄGE och bara där ingen i sfären har några inloggningsuppgifter — samma enda ögonblick som admin.bootstrapUsername beskriver, under exakt samma villkor. Det kan inte skriva över någons lösenord och gör ingenting i utvecklingsläge.\n\n**VARFÖR DET FINNS: SÅ ATT DEN ENDA VÄGEN IN INTE STÅR I EN LOGG.** Ett genererat lösenord meddelas en gång och aldrig igen, så loggen är känslig, och inloggningsuppgiften är borta när den raden har roterats bort. En operatör med ett hemlighetslager kan lägga värdet där innan tjänsten startar och läsa tillbaka det när som helst — vilket är vad AWS-driftsättningen gör, genom Secrets Manager (deploy/aws/CLAUDE.md).\n\n**DET OMFATTAS AV LÖSENORDSPOLICYN, och ett värde som policyn vägrar VÄGRAS i stället för att tyst ersättas.** Att generera ett i stället skulle lägga en fungerande inloggningsuppgift i loggen för en driftsättning vars operatör bad om att den inte skulle finnas där, och lämna värdet i deras hemlighetslager icke fungerande utan att något säger det. Vägran namnger de regler som bröts (STS-AUTHN-0205).\n\n**DET LOGGAS ALDRIG** — inte vid start, inte på /admin/config, inte genom /admin-api. Det finns redan där operatören lade det, och om tjänsten skrev ut det skulle syftet med att sätta det gå förlorat."
+    "en": "2dc1b16eebe63526",
+    "text": "Lösenordet som den initiala administratören får i stället för ett genererat, i PRODUKTIONSLÄGE och bara där ingen i sfären har några inloggningsuppgifter — samma enda ögonblick som admin.bootstrapUsername beskriver, under exakt samma villkor. Det kan inte skriva över någons lösenord och gör ingenting i utvecklingsläge.\n\n**VARFÖR DET FINNS: SÅ ATT DEN ENDA VÄGEN IN INTE STÅR I EN LOGG.** Ett genererat lösenord meddelas en gång och aldrig igen, så loggen är känslig, och inloggningsuppgiften är borta när den raden har roterats bort. En operatör med ett hemlighetslager kan lägga värdet där innan tjänsten startar och läsa tillbaka det när som helst — vilket är vad AWS-driftsättningen gör, genom Secrets Manager (deploy/aws/CLAUDE.md). Det kan levereras som en fil som STS_ADMIN_BOOTSTRAP_PASSWORD_FILE namnger, och anges som en `$scrypt$`- eller argon2id-hash i stället för lösenordet; hashen lagras som den är, så att klartexten aldrig konfigureras.\n\n**DET OMFATTAS AV LÖSENORDSPOLICYN, och ett värde som policyn vägrar VÄGRAS i stället för att tyst ersättas.** Att generera ett i stället skulle lägga en fungerande inloggningsuppgift i loggen för en driftsättning vars operatör bad om att den inte skulle finnas där, och lämna värdet i deras hemlighetslager icke fungerande utan att något säger det. Vägran namnger de regler som bröts (STS-AUTHN-0205).\n\n**DET LOGGAS ALDRIG** — inte vid start, inte på /admin/config, inte genom /admin-api. Det finns redan där operatören lade det, och om tjänsten skrev ut det skulle syftet med att sätta det gå förlorat."
   },
   "admin.bootstrapPassword|restartReason": {
     "en": "25fddde63c972817",
@@ -7464,8 +7464,8 @@
     "text": "Det delade Digest-lösenordet"
   },
   "scim.digestPassword|description": {
-    "en": "1d3e730c6b9a469e",
-    "text": "Lösenordet som varje användarnamn delar för HTTP Digest — samma värde som KRB5_USER_PASSWORD har som standard, så att det finns ett faktum att komma ihåg i stället för två. Det kan inte vara \"vad som helst duger\" så som en bindning eller en Basic-uppgift kan: ett digest-svar är en hash över lösenordet, så en server utan lösenord skulle inte utföra utbytet alls och en klients digest-kod skulle inte provas."
+    "en": "6819fb3962f9f205",
+    "text": "Lösenordet som varje användarnamn delar för HTTP Digest — samma värde som KRB5_USER_PASSWORD har som standard, så att det finns ett faktum att komma ihåg i stället för två. Det kan inte vara \"vad som helst duger\" så som en bindning eller en Basic-uppgift kan: ett digest-svar är en hash över lösenordet, så en server utan lösenord skulle inte utföra utbytet alls och en klients digest-kod skulle inte provas. Det kan levereras som en fil som SCIM_DIGEST_PASSWORD_FILE namnger."
   },
   "scim.digestNonceSeconds|label": {
     "en": "1fa6981a1aebea0d",

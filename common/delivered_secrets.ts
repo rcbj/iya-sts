@@ -77,10 +77,16 @@ if (logLevelProblem) {
 // marked secret": the two Kerberos passwords are not drawn as secrets (in
 // development the krbtgt one is published on purpose, so a reader can open a
 // ticket), and they are still secrets a product launcher hands over.
+// The edge secret, the bootstrap password and the Digest password since ASVS
+// 5.0.0 13.3.1: a deployment's own secrets, each of which can otherwise only
+// be an environment variable or an appconfig value.
 const KEYS: string[] = [
   'adminApi.clientSecret',
   'krb5.krbtgtPassword',
-  'krb5.servicePassword'
+  'krb5.servicePassword',
+  'global.edgeSecret',
+  'admin.bootstrapPassword',
+  'scim.digestPassword'
 ];
 
 // What load() delivered, by environment variable: the workers' share.

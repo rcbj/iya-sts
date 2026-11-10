@@ -209,6 +209,9 @@ function childMain() {
             'a join token was minted, and its agent id is not the token',
             minted && minted.ok ? minted.agentSpiffeId : minted &&
             minted.message);
+      check(!!(minted && /^[A-Za-z0-9_-]{43}$/.test(String(minted.token))),
+            'and it is 256 random bits, base64url, not a 122-bit UUID ' +
+            '(ASVS 5.0.0 11.5.1)', minted && minted.token);
       agentDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sts-agent-'));
       const socketPath = path.join(agentDir, 'api.sock');
       agent = new WorkloadAgent({

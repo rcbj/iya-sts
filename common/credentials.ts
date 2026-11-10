@@ -2794,6 +2794,35 @@ class Credentials {
   // account with a password that changes nothing and a log line that alarms
   // people.
   /**
+   * Stores a password hash an operator supplied in `admin.bootstrapPassword`
+   * as the bootstrap administrator's password, as it stands.
+   *
+   * @param username - the account
+   * @param hash - a `$scrypt$` or argon2id hash
+   * @returns `{ ok: true, username }`, or a refusal
+   */
+  writeSuppliedHash(username: string, hash: string): any {
+    const { log, errorCodes } = this.deps;
+    const directory = this.directory;
+    log.debug("Entering Credentials.writeSuppliedHash().");
+    let written = false;
+    try {
+      written = directory.writePassword(username, hash, { history: [] });
+    } catch (e) {
+      log.debug("Caught in Credentials.writeSuppliedHash(): " +
+                ((e && e.message) || e));
+    }
+    if (!written) {
+      log.debug("Leaving Credentials.writeSuppliedHash(). Not written.");
+      return errorCodes.mark({ ok: false, errors: ['The bootstrap ' +
+        'password hash could not be stored for ' + username + '.'] },
+        'STS-AUTHN-0060');
+    }
+    log.debug("Leaving Credentials.writeSuppliedHash().");
+    return { ok: true, username: username };
+  }
+
+  /**
    * Writes a generated bootstrap password to a file only this user can read.
    *
    * @param username - the account
@@ -2897,13 +2926,21 @@ class Credentials {
     // decides only what the password is.
     const supplied = String(config.value('admin.bootstrapPassword') || '');
     const password = supplied || this.generatePassword(username);
+    // A HASH IN PLACE OF THE PASSWORD (ASVS 5.0.0 13.3.1): a `$scrypt$` or
+    // argon2id value is stored as it stands, so the plaintext need never be
+    // in this service's configuration or its secret store. It is the
+    // operator's to have made at the policy's strength; nothing derived from
+    // the plaintext (a Kerberos key) exists for it until the password is
+    // changed, which the bootstrap banner asks for anyway.
+    const hashed = !!supplied && this.deps.crypto.isHashedSecret(supplied);
     // `generated` is TRUE only for one this service made up: it is what tells
     // `preparePassword()` to skip the checks that are about a person choosing
     // a password. A SUPPLIED one is somebody's choice and is held to the
     // policy, so that a value the policy refuses is found here rather than at
     // the first sign-in that cannot happen.
-    const written = this.setPassword(username, password,
-                                     { generated: !supplied });
+    const written = hashed
+      ? this.writeSuppliedHash(username, supplied)
+      : this.setPassword(username, password, { generated: !supplied });
     if (!written.ok && supplied) {
       // NOT REPLACED WITH A GENERATED ONE. Falling back would put a working
       // credential in the log of a deployment whose operator set this setting

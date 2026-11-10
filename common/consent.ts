@@ -1057,11 +1057,14 @@ class Consent {
    */
   // A public client's identity cannot be assured, so a person's earlier answer
   // does not speak for it (ASVS 5.0.0 10.7.1). This service's own applications
-  // are the exception: they are not third parties asking for anything.
+  // are the exception: they are not third parties asking for anything. They
+  // are named EXACTLY: a prefix test (`sts-`) also matched every dynamically
+  // registered client, whose ids begin `sts-client-` by default.
   private alwaysAsks(clientId: string): boolean {
     const { log, applications } = this.deps;
     log.debug("Entering Consent.alwaysAsks().");
-    if (/^sts-/.test(clientId) ||
+    const own: string[] = (applications as any).HOSTED_SURFACE_CLIENT_IDS || [];
+    if (own.indexOf(clientId) >= 0 ||
         !require('./config').value('oauth2.consentAlwaysForPublicClients')) {
       log.debug("Leaving Consent.alwaysAsks(). Not asked.");
       return false;

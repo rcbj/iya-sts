@@ -108,8 +108,8 @@
     "text": "Origin secret ng CDN"
   },
   "global.edgeSecret|description": {
-    "en": "eb67106afc0cc7f0",
-    "text": "Ang ipinapadala ng sariling CDN distribution ng deployment na ito sa X-Origin-Verify, na siyang nagpapakilala rito mula sa distribution ng ibang customer sa parehong mga edge. Inaalis ang header kapag nabasa na. Kapag walang laman habang nakatakda ang global.edgeProxies, tinatanggihan ang bawat request mula sa mga range na iyon."
+    "en": "150b63080ee2d16b",
+    "text": "Ang ipinapadala ng sariling CDN distribution ng deployment na ito sa X-Origin-Verify, na siyang nagpapakilala rito mula sa distribution ng ibang customer sa parehong mga edge. Inaalis ang header kapag nabasa na. Kapag walang laman habang nakatakda ang global.edgeProxies, tinatanggihan ang bawat request mula sa mga range na iyon. Maaari itong ibigay bilang `sha256:<hex digest>`, para ang digest lang ang hawak ng serbisyong ito, at ihatid bilang file na pinangangalanan ng STS_EDGE_SECRET_FILE."
   },
   "global.edgeSecret|restartReason": {
     "en": "d51b3caaa6125e92",
@@ -448,8 +448,8 @@
     "text": "Password ng bootstrap administrator"
   },
   "admin.bootstrapPassword|description": {
-    "en": "c90454b252735521",
-    "text": "Ang password na ibinibigay sa bootstrap administrator sa halip na ginawang password, SA PRODUCT MODE at kung saan lang walang sinuman sa realm ang may hawak na credential — ang parehong iisang sandaling inilalarawan ng admin.bootstrapUsername, sa eksaktong parehong mga kondisyon. Hindi nito mao-overwrite ang password ng sinuman at wala itong ginagawa sa development mode.\n\n**BAKIT ITO UMIIRAL: PARA ANG TANGING DAAN PAPASOK AY HINDI NASA ISANG LOG.** Ang ginawang password ay inaanunsyo nang isang beses at hindi na kailanman, kaya sensitibo ang log, at nawawala ang credential kapag lumipas na ang linyang iyon. Ang operator na may secret store ay puwedeng maglagay ng value roon bago mag-start ang serbisyo at basahin ito muli kahit kailan kailanganin — na siyang ginagawa ng AWS deployment, sa pamamagitan ng Secrets Manager (deploy/aws/CLAUDE.md).\n\n**SAKOP ITO NG PASSWORD POLICY, at ang value na tinatanggihan ng policy ay TINATANGGIHAN sa halip na tahimik na palitan.** Kung gagawa na lang ng isa, maglalagay ito ng gumaganang credential sa log ng deployment na ang operator ay humiling na huwag itong naroon, at iiwang hindi gumagana ang value sa kanilang secret store nang walang nagsasabi. Pinangangalanan ng pagtanggi ang mga patakarang nilabag nito (STS-AUTHN-0205).\n\n**HINDI ITO KAILANMAN NILO-LOG** — hindi sa startup, hindi sa /admin/config, hindi sa pamamagitan ng /admin-api. Naroon na ito kung saan man ito inilagay ng operator, at ang pag-print nito ng serbisyong ito ay sisira sa layunin ng pagtatakda nito."
+    "en": "2dc1b16eebe63526",
+    "text": "Ang password na ibinibigay sa bootstrap administrator sa halip na ginawang password, SA PRODUCT MODE at kung saan lang walang sinuman sa realm ang may hawak na credential — ang parehong iisang sandaling inilalarawan ng admin.bootstrapUsername, sa eksaktong parehong mga kondisyon. Hindi nito mao-overwrite ang password ng sinuman at wala itong ginagawa sa development mode.\n\n**BAKIT ITO UMIIRAL: PARA ANG TANGING DAAN PAPASOK AY HINDI NASA ISANG LOG.** Ang ginawang password ay inaanunsyo nang isang beses at hindi na kailanman, kaya sensitibo ang log, at nawawala ang credential kapag lumipas na ang linyang iyon. Ang operator na may secret store ay puwedeng maglagay ng value roon bago mag-start ang serbisyo at basahin ito muli kahit kailan kailanganin — na siyang ginagawa ng AWS deployment, sa pamamagitan ng Secrets Manager (deploy/aws/CLAUDE.md). Maaari itong ihatid bilang file na pinangangalanan ng STS_ADMIN_BOOTSTRAP_PASSWORD_FILE, at ibigay bilang `$scrypt$` o argon2id hash sa halip na ang password; iniimbak ang hash nang ganoon, kaya hindi kailanman naka-configure ang plaintext.\n\n**SAKOP ITO NG PASSWORD POLICY, at ang value na tinatanggihan ng policy ay TINATANGGIHAN sa halip na tahimik na palitan.** Kung gagawa na lang ng isa, maglalagay ito ng gumaganang credential sa log ng deployment na ang operator ay humiling na huwag itong naroon, at iiwang hindi gumagana ang value sa kanilang secret store nang walang nagsasabi. Pinangangalanan ng pagtanggi ang mga patakarang nilabag nito (STS-AUTHN-0205).\n\n**HINDI ITO KAILANMAN NILO-LOG** — hindi sa startup, hindi sa /admin/config, hindi sa pamamagitan ng /admin-api. Naroon na ito kung saan man ito inilagay ng operator, at ang pag-print nito ng serbisyong ito ay sisira sa layunin ng pagtatakda nito."
   },
   "admin.bootstrapPassword|restartReason": {
     "en": "25fddde63c972817",
@@ -7464,8 +7464,8 @@
     "text": "Ang shared na Digest password"
   },
   "scim.digestPassword|description": {
-    "en": "1d3e730c6b9a469e",
-    "text": "Ang password na pinagsasaluhan ng bawat username para sa HTTP Digest — ang parehong value na default ng KRB5_USER_PASSWORD, para iisang bagay lang ang tatandaan sa halip na dalawa. Hindi ito maaaring \"kahit ano\" gaya ng bind o Basic credential: ang digest response ay hash ng password, kaya ang server na walang password ay hindi talaga gumagawa ng palitan at hindi masusubok ang digest code ng client."
+    "en": "6819fb3962f9f205",
+    "text": "Ang password na pinagsasaluhan ng bawat username para sa HTTP Digest — ang parehong value na default ng KRB5_USER_PASSWORD, para iisang bagay lang ang tatandaan sa halip na dalawa. Hindi ito maaaring \"kahit ano\" gaya ng bind o Basic credential: ang digest response ay hash ng password, kaya ang server na walang password ay hindi talaga gumagawa ng palitan at hindi masusubok ang digest code ng client. Maaari itong ihatid bilang file na pinangangalanan ng SCIM_DIGEST_PASSWORD_FILE."
   },
   "scim.digestNonceSeconds|label": {
     "en": "1fa6981a1aebea0d",

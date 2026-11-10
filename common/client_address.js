@@ -500,8 +500,15 @@ function edgeRefused(req) {
     return false;
   }
   const secret = String(config.value('global.edgeSecret') || '');
+  // `sha256:<hex>` IN PLACE OF THE SECRET (ASVS 5.0.0 13.3.1): the CDN holds
+  // the secret, and this service need hold only its digest. A random secret
+  // needs no stretching, and SHA-256 costs nothing on the hot path.
+  const digestForm = /^sha256:([0-9a-f]{64})$/i.exec(secret);
   const held = secret !== '' && given !== '' &&
-    crypto.constantTimeEquals(given, secret);
+    (digestForm
+      ? crypto.constantTimeEquals(crypto.digest('sha256', given, 'hex'),
+                                  digestForm[1].toLowerCase())
+      : crypto.constantTimeEquals(given, secret));
   log.debug("Leaving edgeRefused().");
   return !held;
 }
