@@ -264,9 +264,6 @@ function childMain() {
 
     MODES.forEach(function (mode) {
       realms.run(realms.get(mode.id), function () {
-        if (mode.product) {
-          config.setOverride('global.mode', 'product');
-        }
         ['azalice', 'azbob', 'azpep', 'azother'].forEach(function (name) {
           ldap.createUser(name, { invent: false });
         });
@@ -307,6 +304,14 @@ function childMain() {
         store.write(mode.id + '-root',
                     xml.writePolicy(alfa.parse(POLICY(mode.id))),
                     { enabled: true, isRoot: true });
+        // The realm's mode is set once its people exist: product mode
+        // decides how a person is created, which is not what is recorded.
+        if (mode.product) {
+          const moded = config.setOverride('global.mode', 'product');
+          if (moded && moded.ok === false) {
+            record.problems.push('product: ' + JSON.stringify(moded));
+          }
+        }
       });
     });
 
@@ -933,6 +938,8 @@ function normalise(record) {
     ['arq', /\barq_[A-Za-z0-9_-]+/g],
     ['apr', /\bapr_(?!forged)[A-Za-z0-9_-]+/g],
     ['eval', /\beval_[A-Za-z0-9_-]+/g],
+    // A certificate's digest, which names its chain in an x5u.
+    ['digest', /\b[0-9a-f]{64}\b/g],
     ['random', /(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]*[A-Z])(?=[A-Za-z0-9_-]*[0-9])[A-Za-z0-9_-]{32,}/g]
   ];
   const text = JSON.stringify(scrub(record), null, 1);
