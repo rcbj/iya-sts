@@ -716,8 +716,8 @@
     "text": "Tinatanggap ang request object na signed gamit ang `none` (OpenID Connect Core 6.1) maliban kung kailangan ang signed — ng oauth2.requireSignedRequestObject, ng entry ng client o ng profile ng authorization server. Puwedeng plain http ang naka-register na request_uri at puwede itong sumagot ng anumang media type; parehong nilo-log ang mga ito."
   },
   "mode.requirements.request-objects.product": {
-    "en": "b2ec3d6648490690",
-    "text": "Dapat signed ang request object (RFC 9101 section 4) at tinatanggihan ng invalid_request_object kung hindi. Dapat https ang naka-register na request_uri at dapat itong sumagot ng application/oauth-authz-req+jwt o application/jwt, o tatanggihan ang request ng invalid_request_uri. Sa parehong mode, kinukuha lang ang request_uri kapag in-register ito ng client."
+    "en": "247799ea9e0595ef",
+    "text": "Dapat signed ang request object (RFC 9101 section 4) at tinatanggihan ng invalid_request_object kung hindi. Dapat https ang naka-register na request_uri at dapat itong sumagot ng application/oauth-authz-req+jwt o application/jwt, o tatanggihan ang request ng invalid_request_uri, gaya ng kapag ang host nito ay nagre-resolve sa isang loopback, private, link-local o reserved na address. Sa parehong mode, kinukuha lang ang request_uri kapag in-register ito ng client."
   },
   "mode.requirements.management-api.what": {
     "en": "7e9bb52b567f5c3c",

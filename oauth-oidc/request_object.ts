@@ -523,12 +523,58 @@ class RequestObject {
   // THE FETCH (section 5.2). Resolves `{ ok, jwt }` or a refusal and NEVER
   // rejects. Only ever called with a URI already matched against the client's
   // registration — see `resolve()`.
+  //
+  // UNDER THE OUTBOUND POLICY'S ADDRESS RULES TOO (ASVS 5.0.0 1.3.6). A
+  // registered request_uri is not the administrator's kind of URL: dynamic
+  // registration takes one from whoever registers, so matching the
+  // registration says the REQUEST cannot choose it, not that nobody did.
+  // So it is dialled the way the RFC 9728 import and back-channel logout
+  // are (`federation/federation_http.ts`): nothing at all with
+  // `federation.outbound` off, a host `security.outboundAllowedHosts` leaves
+  // out refused, and in product every address the name resolves to checked
+  // against the internal ranges and the connection PINNED to the one that
+  // was checked, so a name cannot answer a public address to the check and a
+  // private one to the connection. The certificate is still checked against
+  // the name the client registered.
   // ---------------------------------------------------------------------------
   private fetchRequestUri(uri: Json): Json {
-    const { http, https, config, mode, version, log } = this.deps;
+    const { log } = this.deps;
     const self = this;
     log.debug("Entering RequestObject.fetchRequestUri().");
     const target = new URL(self.withoutFragment(uri));
+    // Required lazily: a library, and this file is required from oauth2.ts.
+    const fedHttp = require('../federation/federation_http');
+    if (!fedHttp.outboundAllowed()) {
+      log.debug("Leaving RequestObject.fetchRequestUri(). " +
+                "federation.outbound is off.");
+      return Promise.resolve(self.refusal('STS-OAUTH-1004',
+        'invalid_request_uri', 'the request_uri "' + target.href + '" was ' +
+        'not fetched: federation.outbound is off, so this service makes no ' +
+        'outbound request. Send the request object by value instead.'));
+    }
+    log.debug("Leaving RequestObject.fetchRequestUri(). Vetting the host.");
+    return fedHttp.vetHost(target.hostname).then(function (vetted) {
+      if (!vetted || !vetted.ok) {
+        return self.refusal('STS-OAUTH-1004', 'invalid_request_uri',
+          'the request_uri "' + target.href + '" was not fetched: ' +
+          String((vetted && vetted.why) || 'its host was refused')
+            .replace(/\.+$/, '') + '.');
+      }
+      return self.dialRequestUri(target, vetted, fedHttp);
+    }, function (e) {
+      log.debug("Caught in RequestObject.fetchRequestUri(): " +
+                ((e && e.message) || e));
+      return self.refusal('STS-OAUTH-1004', 'invalid_request_uri',
+        'the request_uri "' + target.href + '" was not fetched: its host ' +
+        'could not be vetted.');
+    });
+  }
+
+  // The connection itself, to the address `vetHost()` answered.
+  private dialRequestUri(target: Json, vetted: Json, fedHttp: Json): Json {
+    const { http, https, config, mode, version, log } = this.deps;
+    const self = this;
+    log.debug("Entering RequestObject.dialRequestUri().");
     const secure = target.protocol === 'https:';
     const cap = Number(config.value('oauth2.requestUriMaxBytes')) || 65536;
     const timeout = Number(config.value('oauth2.requestUriTimeoutMs')) || 5000;
@@ -537,7 +583,7 @@ class RequestObject {
                target.href + ' over plain http, which development mode ' +
                'allows and product mode refuses.');
     }
-    log.debug("Leaving RequestObject.fetchRequestUri(). Dialling " +
+    log.debug("Leaving RequestObject.dialRequestUri(). Dialling " +
               "" + target.origin + ".");
     return new Promise<Json>(function (resolve) {
       let settled = false;
@@ -554,8 +600,7 @@ class RequestObject {
       // names a private CA the host may chain to and development's
       // `federation.outboundSkipTlsVerification` is honoured here too. It
       // dialled with node's store alone until the OpenID conformance suite
-      // registered a request_uri on a host a private CA certifies. Required
-      // lazily: a library, and this file is required from oauth2.ts.
+      // registered a request_uri on a host a private CA certifies.
       const requestOptions: Json = {
         protocol: target.protocol, hostname: target.hostname,
         port: target.port || (secure ? 443 : 80),
@@ -564,9 +609,13 @@ class RequestObject {
                    'User-Agent': version.userAgent('request-uri') },
         timeout: timeout
       };
+      if (vetted.address) {
+        // PINNED: the Host header and the TLS server name still come from
+        // the URL, so the certificate is checked against the registered name.
+        requestOptions.lookup = fedHttp.pinnedLookup(vetted);
+      }
       if (secure) {
-        const policy = require('../federation/federation_http')
-          .tlsFor(target.origin);
+        const policy = fedHttp.tlsFor(target.origin);
         if (!policy.ok) {
           done(self.refusal(policy.errorCode || 'STS-CORE-0104',
             'invalid_request_uri', 'the request_uri "' + target.href +
@@ -576,6 +625,10 @@ class RequestObject {
         requestOptions.rejectUnauthorized = policy.rejectUnauthorized;
         if (policy.ca) {
           requestOptions.ca = policy.ca;
+        }
+        // The host check, and the verified chain held to the path rules.
+        if (policy.checkServerIdentity) {
+          requestOptions.checkServerIdentity = policy.checkServerIdentity;
         }
       }
       let request = null;
@@ -629,7 +682,7 @@ class RequestObject {
                    jwt: Buffer.concat(chunks).toString('utf8').trim() });
           });
           response.on('error', function (e) {
-            log.debug("Caught in RequestObject.fetchRequestUri(): " +
+            log.debug("Caught in RequestObject.dialRequestUri(): " +
                       "" + ((e && e.message) || e));
             // Here and below, a cause's own trailing full stop is dropped
             // before ours is added, so the page a client's developer (or a
@@ -640,7 +693,7 @@ class RequestObject {
           });
         });
       } catch (e) {
-        log.debug("Caught in RequestObject.fetchRequestUri(): " +
+        log.debug("Caught in RequestObject.dialRequestUri(): " +
                   "" + ((e && e.message) || e));
         done(self.refusal('STS-OAUTH-0347', 'invalid_request_uri',
           'the request_uri "' + target.href + '" could not be dialled: ' +
@@ -652,7 +705,7 @@ class RequestObject {
                                   '(oauth2.requestUriTimeoutMs)'));
       });
       request.on('error', function (e) {
-        log.debug("Caught in RequestObject.fetchRequestUri(): " +
+        log.debug("Caught in RequestObject.dialRequestUri(): " +
                   "" + ((e && e.message) || e));
         done(self.refusal('STS-OAUTH-0347', 'invalid_request_uri',
           'the request_uri "' + target.href + '" could not be fetched: ' +

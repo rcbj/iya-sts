@@ -716,8 +716,8 @@
     "text": "Un objet de requête signé avec `none` (OpenID Connect Core 6.1) est accepté sauf si un objet signé est exigé — par oauth2.requireSignedRequestObject, l’entrée du client ou le profil du serveur d’autorisation. Une request_uri enregistrée peut être en http simple et répondre avec n’importe quel type de média ; les deux cas sont journalisés."
   },
   "mode.requirements.request-objects.product": {
-    "en": "b2ec3d6648490690",
-    "text": "Un objet de requête doit être signé (RFC 9101 section 4), faute de quoi il est refusé avec invalid_request_object. Une request_uri enregistrée doit être en https et répondre en application/oauth-authz-req+jwt ou application/jwt, faute de quoi la requête est refusée avec invalid_request_uri. Dans les deux modes, une request_uri n’est récupérée que si le client l’a enregistrée."
+    "en": "247799ea9e0595ef",
+    "text": "Un objet de requête doit être signé (RFC 9101 section 4), faute de quoi il est refusé avec invalid_request_object. Une request_uri enregistrée doit être en https et répondre en application/oauth-authz-req+jwt ou application/jwt, faute de quoi la requête est refusée avec invalid_request_uri, comme elle l’est quand son hôte se résout en une adresse de bouclage, privée, lien-local ou réservée. Dans les deux modes, une request_uri n’est récupérée que si le client l’a enregistrée."
   },
   "mode.requirements.management-api.what": {
     "en": "7e9bb52b567f5c3c",

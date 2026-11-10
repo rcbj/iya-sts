@@ -3627,8 +3627,10 @@ const REQUIREMENTS = [
              'refused invalid_request_object otherwise. A registered ' +
              'request_uri must be https and must answer ' +
              'application/oauth-authz-req+jwt or application/jwt, or the ' +
-             'request is refused invalid_request_uri. In both modes a ' +
-             'request_uri is fetched only when the client registered it.',
+             'request is refused invalid_request_uri, as it is when its ' +
+             'host resolves to a loopback, private, link-local or ' +
+             'reserved address. In both modes a request_uri is fetched ' +
+             'only when the client registered it.',
     where: 'oauth-oidc/request_object.ts' },
   // 2026-09-09: `adminApi.authRequired` (on by default, both modes) put an
   // access token in front of this surface. Since #446 (2026-10-05) product

@@ -716,8 +716,8 @@
     "text": "Ett begäranobjekt signerat med `none` (OpenID Connect Core 6.1) accepteras om inte ett signerat krävs — av oauth2.requireSignedRequestObject, klientens post eller auktoriseringsserverns profil. En registrerad request_uri får vara vanlig http och får svara med vilken medietyp som helst; båda loggas."
   },
   "mode.requirements.request-objects.product": {
-    "en": "b2ec3d6648490690",
-    "text": "Ett begäranobjekt måste vara signerat (RFC 9101 avsnitt 4) och vägras annars med invalid_request_object. En registrerad request_uri måste vara https och måste svara med application/oauth-authz-req+jwt eller application/jwt, annars vägras begäran med invalid_request_uri. I båda lägena hämtas en request_uri endast när klienten har registrerat den."
+    "en": "247799ea9e0595ef",
+    "text": "Ett begäranobjekt måste vara signerat (RFC 9101 avsnitt 4) och vägras annars med invalid_request_object. En registrerad request_uri måste vara https och måste svara med application/oauth-authz-req+jwt eller application/jwt, annars vägras begäran med invalid_request_uri, liksom när dess värd slås upp till en loopback-, privat, länklokal eller reserverad adress. I båda lägena hämtas en request_uri endast när klienten har registrerat den."
   },
   "mode.requirements.management-api.what": {
     "en": "7e9bb52b567f5c3c",

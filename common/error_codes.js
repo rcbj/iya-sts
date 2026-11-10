@@ -11533,6 +11533,13 @@ const CODES = [
     summary: 'A dynamic client registration was refused because the ' +
       'register did not store it (ASVS 5.0.0 2.3.3).',
     spec: 'invalid_client_metadata' },
+  { code: 'STS-OAUTH-1004',
+    summary: 'A registered request_uri was not fetched under the outbound ' +
+      'policy: federation.outbound is off, its host is not in ' +
+      'security.outboundAllowedHosts, or (in product mode) the name ' +
+      'resolves to a loopback, private, link-local or reserved address ' +
+      '(ASVS 5.0.0 1.3.6).',
+    spec: 'invalid_request_uri (HTTP 400)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +

@@ -716,8 +716,8 @@
     "text": "Un objeto de solicitud firmado con `none` (OpenID Connect Core 6.1) se acepta salvo que se exija uno firmado — mediante oauth2.requireSignedRequestObject, la entrada del cliente o el perfil del servidor de autorización. Un request_uri registrado puede ser http simple y puede responder con cualquier tipo de medio; ambas cosas se registran en el log."
   },
   "mode.requirements.request-objects.product": {
-    "en": "b2ec3d6648490690",
-    "text": "Un objeto de solicitud debe estar firmado (sección 4 de RFC 9101) y de lo contrario se rechaza con invalid_request_object. Un request_uri registrado debe ser https y debe responder application/oauth-authz-req+jwt o application/jwt, o la solicitud se rechaza con invalid_request_uri. En ambos modos un request_uri solo se obtiene cuando el cliente lo registró."
+    "en": "247799ea9e0595ef",
+    "text": "Un objeto de solicitud debe estar firmado (sección 4 de RFC 9101) y de lo contrario se rechaza con invalid_request_object. Un request_uri registrado debe ser https y debe responder application/oauth-authz-req+jwt o application/jwt, o la solicitud se rechaza con invalid_request_uri, como cuando su host se resuelve en una dirección de bucle invertido, privada, de enlace local o reservada. En ambos modos un request_uri solo se obtiene cuando el cliente lo registró."
   },
   "mode.requirements.management-api.what": {
     "en": "7e9bb52b567f5c3c",

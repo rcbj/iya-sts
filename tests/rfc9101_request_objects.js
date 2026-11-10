@@ -830,7 +830,27 @@ function childMain() {
     config.setOverride('federation.outboundCaFile', roCaFile);
     config.setOverride('global.mode', 'product');
     config.setOverride('oauth2.allowConfidentialWithoutPkce', 'true');
+    // ASVS 5.0.0 1.3.6: product dials no loopback, private, link-local or
+    // reserved address for a request_uri, as for every outbound fetch
+    // (federation_http.vetHost()). This listener is on 127.0.0.1, so it is
+    // refused first, with nothing fetched; then vetHost() is made to answer
+    // as a public name would, pinned to the listener, so 3bb-ii and 3bb-iii
+    // say something about the signature rather than the address.
+    const fedHttp = require(ROOT + '/federation/federation_http');
+    const realVetHost = fedHttp.vetHost;
     try {
+      r = await byRef(SRO + '/ro/signed');
+      note(refusedWith(r, 'invalid_request_uri',
+                       /loopback, private, link-local or reserved/) &&
+           !secureHits['/ro/signed'],
+           '3bb-0. product: a request_uri at a loopback address is not ' +
+           'dialled, and is refused invalid_request_uri (STS-OAUTH-1004)',
+           r.status + ' hits=' + secureHits['/ro/signed'] + ' ' +
+           r.text.slice(0, 240));
+      fedHttp.vetHost = function () {
+        return Promise.resolve({ ok: true, address: '127.0.0.1',
+                                 family: 4 });
+      };
       r = await byRef(SRO + '/ro/signed');
       note(toSignIn(r) && secureHits['/ro/signed'] === 1,
            '3bb-ii. product: a SIGNED request object by reference over ' +
@@ -848,6 +868,7 @@ function childMain() {
            r.status + ' hits=' + secureHits['/ro/unsigned'] + ' ' +
            r.text.slice(0, 240));
     } finally {
+      fedHttp.vetHost = realVetHost;
       config.clearOverride('oauth2.allowConfidentialWithoutPkce');
       config.clearOverride('global.mode');
       config.clearOverride('pki.paranoidOutboundTls');
