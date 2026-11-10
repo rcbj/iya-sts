@@ -264,8 +264,10 @@ async function startSignIn(who) {
       redirect_uri: REDIRECT_URI, scope: "openid", state: "s-" + STAMP,
       nonce: "n-" + STAMP, code_challenge: pair.challenge,
       code_challenge_method: "S256" }).toString());
-  const authnId = new URL(authorized.location || base, base).searchParams
-    .get("authn") || "";
+  // The step id is in the query in development and in the fragment in
+  // product (`mode.hidesStepIds()`, `#authn=`), so it is read from either.
+  const authnId = decodeURIComponent((/[?&#]authn=([^&#]+)/
+    .exec(String(authorized.location || "")) || [])[1] || "");
   const screen = await hop(who, "GET", authorized.location);
   const screenView = authnId ? await hop(who, "GET", base +
     "/authn-api/pending/" + encodeURIComponent(authnId)) : null;

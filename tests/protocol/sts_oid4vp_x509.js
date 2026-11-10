@@ -208,7 +208,8 @@ async function walletCheck(jwt, clientId) {
 // the Request Object at its request_uri. The demonstration page becomes
 // development-only (#585) and this realm is in the process's mode; the
 // operation builds the request with the page's function and refuses as it
-// does, 500 for a request that cannot be built.
+// does: 500 for a request that cannot be built, and 400 where the prefix
+// this start named needs a name that is refused (STS-VC-0110, 0111).
 async function start(query) {
   log.debug("Entering start().");
   const r = await hop("POST", api + "/verifications/start", query);
@@ -375,7 +376,9 @@ async function test() {
   const stillHash = await start({ client_id_prefix: "x509_hash" });
   check("a name that is not the Response URI's host builds no x509_san_dns " +
         "request, and says so; x509_hash still answers", function () {
-    assert.strictEqual(refused.status, 500, refused.text.slice(0, 300));
+    // 400, a refusal of the prefix this start NAMED (STS-VC-0111), in both
+    // modes; it was a 500, whose detail product mode hides.
+    assert.strictEqual(refused.status, 400, refused.text.slice(0, 300));
     assert.ok(/not the host of the Response URI/.test(refused.text),
               refused.text.slice(0, 300));
     assert.strictEqual(refusedDoc.json.x509_san_dns, null);

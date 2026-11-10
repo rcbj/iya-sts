@@ -89,6 +89,14 @@ var base = process.env.OID4VCI_ISSUER_URL || stsUrl.replace(/\/sts\/?$/, "");
 base = String(base).replace(/\/+$/, "");
 var api = base + "/admin-api";
 
+// WHAT THE OPERATOR SAYS THEY DID TO VERIFY THE PERSON, sent with every clear
+// of a second factor. Product mode refuses a clear without it (#1504, ASVS
+// 5.0.0 6.4.4: STS-ADMIN-0916, at least eight characters, recorded in the
+// audit log), and before it looks for the enrolment, so without it this
+// job's refusal would be about the evidence rather than the enrolment.
+const CLEAR_EVIDENCE = "Protocol job: identity checked against the " +
+  "fixture this job created";
+
 // A person of this run's own, so two runs against one long-lived mock never
 // meet. The directory is append-only in practice and nothing here removes an
 // entry — see `tests/CLAUDE.md` on why a job leaves its work behind.
@@ -608,7 +616,8 @@ async function bothSpellingsOfTheClearActionsRoute() {
   log.info("=== both spellings of the two clears reach the same switch ===");
 
   for (const path of ["/mfa/clear-totp", "/users/clear-totp"]) {
-    const r = await post(path, { username: PERSON, user: PERSON });
+    const r = await post(path, { username: PERSON, user: PERSON,
+                                 evidence: CLEAR_EVIDENCE });
     check("POST " + path + " reaches a handler and refuses, because there is " +
           "nothing enrolled — a 404 here would be an operation the document " +
           "declares and the router does not have", function () {
@@ -625,7 +634,8 @@ async function bothSpellingsOfTheClearActionsRoute() {
 
   for (const path of ["/mfa/clear-key", "/users/clear-key"]) {
     const r = await post(path, { username: PERSON, user: PERSON,
-                                 credentialId: "no-such-credential" });
+                                 credentialId: "no-such-credential",
+                                 evidence: CLEAR_EVIDENCE });
     check("POST " + path + " does the same for a security key", function () {
       assert.strictEqual(r.status, 400,
         path + " answered " + r.status + " " + String(r.raw).slice(0, 200));

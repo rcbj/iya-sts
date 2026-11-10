@@ -18304,8 +18304,9 @@ const CODES = [
       'Host a request arrived with is not certified there — whoever sent ' +
       'it would choose the host a signed, trusted request sends ' +
       'presentations to (#230).',
-    spec: 'HTTP 500 JSON `errors` at POST ' +
-      '/admin-api/verifications/start; the sign-in door\'s 500 ' +
+    spec: 'HTTP 400 JSON `errors` at POST ' +
+      '/admin-api/verifications/start when the start named the prefix ' +
+      '(500 when it is the realm\'s own default); the sign-in door\'s 500 ' +
       'page; 409 JSON at /oid4vp/verifier-certificate' },
   { code: 'STS-VC-0111',
     summary: 'The x509_san_dns name is not the host of the Response URI, or ' +
@@ -18313,8 +18314,9 @@ const CODES = [
       'wallet that does not otherwise trust the Client Identifier require ' +
       'the response_uri\'s FQDN to be it, so such a request would be ' +
       'refused by every such wallet (#230).',
-    spec: 'HTTP 500 JSON `errors` at POST ' +
-      '/admin-api/verifications/start; 409 JSON at ' +
+    spec: 'HTTP 400 JSON `errors` at POST ' +
+      '/admin-api/verifications/start when the start named the prefix ' +
+      '(500 when it is the realm\'s own default); 409 JSON at ' +
       '/oid4vp/verifier-certificate' },
   { code: 'STS-VC-0112',
     summary: 'The OpenID4VP Verifier\'s certificate could not be issued, or ' +

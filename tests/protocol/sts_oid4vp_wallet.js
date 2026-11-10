@@ -610,8 +610,10 @@ async function startSignIn(who) {
   const state = "w-" + crypto.randomBytes(6).toString("hex");
   const authorized = await hop(who, "GET",
                                authorizeUrl("openid", pair, state));
-  const authnId = new URL(authorized.location || base, base).searchParams
-    .get("authn") || "";
+  // The step id is in the query in development and in the fragment in
+  // product (`mode.hidesStepIds()`, `#authn=`), so it is read from either.
+  const authnId = decodeURIComponent((/[?&#]authn=([^&#]+)/
+    .exec(String(authorized.location || "")) || [])[1] || "");
   // THE SCREEN IS A STATIC SURFACE (#571): its shell, then its view, whose
   // `wallet` member is the button.
   const screen = await hop(who, "GET", authorized.location || base);
@@ -941,7 +943,11 @@ async function signInSections(formats, sdKey, sd, jwtKey, jwtVc,
         "transaction to it with an HttpOnly cookie", function () {
           assert.strictEqual(s.door.status, 303, s.door.text.slice(0, 300));
           assert.ok(/\/authn\/wallet\/wait\?/.test(s.waitUrl), s.waitUrl);
-          assert.ok(browser.cookies.sts_wallet_binding, "no binding cookie");
+          // Prefixed on the wire in product (common/cookie_wire.ts).
+          assert.ok(browser.cookies.sts_wallet_binding ||
+                    browser.cookies["__Host-sts_wallet_binding"] ||
+                    browser.cookies["__Secure-sts_wallet_binding"],
+                    "no binding cookie");
           assert.ok(/HttpOnly/i.test(s.door.setCookie.join(" ")),
                     s.door.setCookie.join(" "));
           assert.strictEqual(s.waiting.status, 200);

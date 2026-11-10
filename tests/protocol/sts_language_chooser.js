@@ -191,8 +191,14 @@ async function test() {
   });
   r = await send(base + r.location,
                  { headers: { Cookie: cookie.split(";")[0] } });
+  // THE SAME BROWSER: the first screen's cookies with the chooser's beside
+  // them. Product mode binds a sign-in step to the browser that first opened
+  // it (`mode.bindsSignInSteps()`, STS-AUTHN-0552), so a view asked with
+  // `sts_lang` alone is another browser's and is refused there.
+  const sameBrowser = [opened.cookie, cookie.split(";")[0]]
+    .filter(Boolean).join("; ");
   const back = await authnSignin.screen(base + R, login,
-                                        { cookie: cookie.split(";")[0] });
+                                        { cookie: sameBrowser });
   check("the sign-in it returns to still honours its ui_locales, which " +
         "outranks the chooser", function () {
     assert.strictEqual(r.status, 200);

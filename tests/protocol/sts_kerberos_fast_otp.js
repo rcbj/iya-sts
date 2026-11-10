@@ -175,14 +175,17 @@ function stepNow() {
   return Math.floor(Date.now() / 30000);
 }
 
-// A code for a step AFTER `used`: the next one if it is inside the verifier's
-// window already, else waiting for the clock to reach it.
+// A code for a step AFTER `used`, always the CURRENT step's: wait for the
+// clock to pass `used` rather than computing a future step's code. Product
+// mode's `totp.window` is 0 (strongerInProduct(0, 1) in common/config.js), so
+// a future step's code is refused there; the wait is at most thirty seconds
+// and is right in both modes.
 async function codeAfter(secret, used) {
   log.debug("Entering codeAfter(). used=" + used);
-  while (stepNow() + 1 <= used) {
+  while (stepNow() <= used) {
     await pause(1000);
   }
-  const step = Math.max(used + 1, stepNow());
+  const step = stepNow();
   log.debug("Leaving codeAfter(). step=" + step);
   return { step: step, code: codeAtStep(secret, step) };
 }

@@ -1300,11 +1300,15 @@ async function oidc(world) {
   const jwk = world.selfJwks.keys[0];
   // A sign-in begun here and finished by this file: the state and the nonce
   // this service minted, and an ID Token for them signed with this file's
-  // key.
+  // key. ONE JAR PER FLOW: product mode binds a federated sign-in to the
+  // browser that began it (an `sts_fed_flow_*` cookie, `bindFlowToBrowser()`
+  // in federation/federation_sp.ts, STS-FED-0237), so the answer is posted
+  // with the cookies the beginning set.
   const begin = async function () {
     log.debug("Entering begin().");
-    const begun = await hop(jar(), realmBase(SP) + "/federation/login/" +
-                                   REL.oidcSelf);
+    const cookies = jar();
+    const begun = await hop(cookies, realmBase(SP) + "/federation/login/" +
+                                     REL.oidcSelf);
     const asked = new URL(begun.location);
     const now = Math.floor(Date.now() / 1000);
     const claims = { iss: SELF_ISSUER, aud: SELF_CLIENT, sub: SELF_SUBJECT,
@@ -1316,12 +1320,14 @@ async function oidc(world) {
     const signed = input + "." + nodeCrypto.sign("sha256",
       Buffer.from(input), world.signer.privateKeyPem).toString("base64url");
     log.debug("Leaving begin().");
-    return { state: asked.searchParams.get("state"), signed: signed };
+    return { state: asked.searchParams.get("state"), signed: signed,
+             cookies: cookies };
   };
   const answer = function (begun, idToken) {
     log.debug("Entering answer().");
     log.debug("Leaving answer().");
-    return postForm(jar(), acs, { id_token: idToken, state: begun.state });
+    return postForm(begun.cookies, acs, { id_token: idToken,
+                                          state: begun.state });
   };
   let begun = await begin();
   await signedIn("an ID Token signed and then encrypted (ECDH-ES, A256GCM) " +

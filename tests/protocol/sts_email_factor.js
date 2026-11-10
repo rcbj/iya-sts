@@ -624,7 +624,10 @@ async function aLink() {
     assert.strictEqual(r.status, 200);
     assert.ok(r.view.state === "wait" && r.view.seconds > 0,
               r.text.slice(0, 300));
-    assert.ok(b.jar.sts_email_binding, "no binding cookie");
+    // Product mode prefixes every `sts_` cookie on the wire
+    // (common/cookie_wire.ts, ASVS 5.0.0 3.3.1).
+    assert.ok(b.jar.sts_email_binding || b.jar["__Host-sts_email_binding"] ||
+              b.jar["__Secure-sts_email_binding"], "no binding cookie");
   });
   const got = await arrived(address, /sign-in link/, seen);
   const link = (String(got.message.Text).match(

@@ -27,7 +27,6 @@ const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const credentials = require("../tools/pep-credential.js");
 const kit = require("../tools/trust_kit.js");
-const facts = require("./service_facts.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -245,7 +244,23 @@ async function theMainPortHolds() {
                             { certificates: root.pem });
   assert.strictEqual(posted.status, 200, posted.raw.slice(0, 300));
   credentials.confirmAnchor(root.pem);
-  const product = await facts.isProduct(base + "/admin-api");
+  // WHETHER THE HOLD IS IN FORCE BEFORE THIS JOB TOUCHES IT is read off the
+  // API, not assumed from the mode (2026-11-10, as sts_main_port_pooling.js
+  // does): `pki.paranoid=auto` is in force in product, but every appconfig
+  // file this repository packages forces it off (#1582), so a product stack
+  // answers `off`. The default realm's `tls-client` row says whether a
+  // handshake is held: the master in force and the row on.
+  const trust = await send("GET", "/admin-api/pki/trust");
+  assert.strictEqual(trust.status, 200, trust.raw.slice(0, 300));
+  const tlsRow = (trust.json.rows || []).filter(function (one) {
+    return one.purpose === "tls-client";
+  })[0];
+  assert.ok(tlsRow, "no tls-client row on /admin-api/pki/trust: " +
+            trust.raw.slice(0, 300));
+  const heldBefore = tlsRow.inForce === true;
+  log.info("  paranoid PKI mode: " + trust.json.master.inForce + " (" +
+           trust.json.master.decidedBy + "); tls-client row in force: " +
+           tlsRow.inForce);
   try {
     const before = await seen(caLeaf);
     await send("POST", "/admin-api/config/set",
@@ -262,9 +277,10 @@ async function theMainPortHolds() {
       log.debug("Leaving verified().");
       return view.clientCertificate && view.clientCertificate.verified;
     };
-    check("by default, a CA presented as a client is unverified in product " +
-          "and verifies in development", function () {
-      assert.strictEqual(verified(before), !product,
+    check("before the master is set here, a CA presented as a client is " +
+          "unverified exactly when the tls-client row is in force (" +
+          heldBefore + ")", function () {
+      assert.strictEqual(verified(before), !heldBefore,
                          JSON.stringify(before).slice(0, 400));
     });
     check("master on, a good client verifies", function () {

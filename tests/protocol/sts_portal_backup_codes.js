@@ -80,6 +80,13 @@ var base = process.env.OID4VCI_ISSUER_URL || stsUrl.replace(/\/sts\/?$/, "");
 base = String(base).replace(/\/+$/, "");
 var api = base + "/admin-api";
 
+// WHAT THE OPERATOR SAYS THEY DID TO VERIFY THE PERSON, sent with every clear
+// of a second factor. Product mode refuses a clear without it (#1504, ASVS
+// 5.0.0 6.4.4: STS-ADMIN-0916, at least eight characters, recorded in the
+// audit log); development mode accepts and records it, so it is sent in both.
+const CLEAR_EVIDENCE = "Protocol job: identity checked against the " +
+  "fixture this job created";
+
 // Suffixed per run, because the directory is append-only in practice and two
 // runs against one long-lived mock must not see each other's people.
 var OWNER = usernameFor("backup-owner");
@@ -904,7 +911,8 @@ async function aCodeSignsThemIn(state) {
 async function anOperatorCanClearIt(state) {
   log.debug("Entering anOperatorCanClearIt().");
   log.info("=== 6. clearing a set through /admin-api ===");
-  const cleared = await apiPost("/users/clear-backup-codes", { user: OWNER });
+  const cleared = await apiPost("/users/clear-backup-codes",
+    { user: OWNER, evidence: CLEAR_EVIDENCE });
   check("POST /admin-api/users/clear-backup-codes accepts it", function () {
     assert.strictEqual(cleared.status, 200,
       "it answered " + cleared.status + " " +
@@ -913,7 +921,8 @@ async function anOperatorCanClearIt(state) {
                        String(cleared.raw).slice(0, 200));
   });
 
-  const again = await apiPost("/users/clear-backup-codes", { user: OWNER });
+  const again = await apiPost("/users/clear-backup-codes",
+    { user: OWNER, evidence: CLEAR_EVIDENCE });
   check("and clearing a set nobody holds is a 400 rather than a silent 200 — " +
         "the caller asked to clear a specific thing and it was not there",
         function () {
