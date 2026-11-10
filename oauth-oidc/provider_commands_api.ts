@@ -14,6 +14,8 @@
 // route: `mgmt-api/admin_api.ts` spreads ROUTES into its table.
 // ===========================================================================
 
+// Types a row of actions by its own actions' operations (#1579).
+import ApiRows = require('../common/api_rows');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
@@ -104,7 +106,12 @@ class ProviderCommandsApi {
    * @param status - the HTTP status
    * @param body - the body, serialised with indentation
    */
-  sendJson(res: Res, status: number, body: Json): void {
+  // TYPED BY THE OPERATION (#1579): through a handler's response, the
+  // answer is held to the model's at a literal 2xx status
+  // (`types/api-handlers.d.ts`).
+  sendJson<R, S extends number>(res: R, status: S,
+           body: IyaApi.AnswerOf<R, S>): void;
+  sendJson(res: any, status: number, body: any): void {
     const { log } = this.deps;
     log.debug("Entering ProviderCommandsApi.sendJson(). status=" + status);
     // Not only at the top: a delivery's row carries one too (#1355).
@@ -228,7 +235,7 @@ class ProviderCommandsApi {
       // error-code: none — marked above: the act's own code, or `code`.
       self.sendJson(res, result.ok ? 200 : 400, result);
     };
-    const ROUTES = [
+    const ROUTES: IyaApi.AdminRow[] = [
       { method: 'GET', path: BASE + '/commands',
         tag: 'OAuth 2.0 / OIDC', operationId: 'getProviderCommands',
         mirrors: 'GET /admin/commands',
@@ -249,15 +256,15 @@ class ProviderCommandsApi {
             { name: 'per', in: 'query', required: false,
               schema: { type: 'integer', minimum: 1, examples: [10] },
               description: 'Rows per page of each list, capped.' }]),
-        handler: function (req: Req, res: Res): void {
+        handler: function (req, res): void {
           log.debug("Entering the management API commands endpoint.");
           self.sendJson(res, 200, self.commandsView(req.query || {}));
           log.debug("Leaving the management API commands endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/commands/:action',
+      ApiRows.actions({ method: 'POST', route: BASE + '/commands/:action',
         tag: 'OAuth 2.0 / OIDC', mirrors: 'POST /admin/commands',
-        handler: function (req: Req, res: Res): void {
+        handler: function (req, res): void {
           log.debug("Entering the management API commands action.");
           let result: Json;
           try {
@@ -280,7 +287,7 @@ class ProviderCommandsApi {
           { action: 'send-account', operationId: 'sendAccountCommand' },
           { action: 'send-tenant', operationId: 'sendTenantCommand' },
           { action: 'retry-delivery', operationId: 'retryCommandDelivery' }
-        ] },
+        ] }),
 
       { method: 'GET', path: BASE + '/deliveries',
         tag: 'Monitoring', operationId: 'getOutboundDeliveries',
@@ -307,15 +314,15 @@ class ProviderCommandsApi {
                      description: 'Which page of one kind\'s rows; each ' +
                        'kind moves on its own parameter, its `paging.param`.' };
           })),
-        handler: function (req: Req, res: Res): void {
+        handler: function (req, res): void {
           log.debug("Entering the management API deliveries endpoint.");
           self.sendJson(res, 200, self.deliveriesView(req.query || {}));
           log.debug("Leaving the management API deliveries endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/deliveries/:action',
+      ApiRows.actions({ method: 'POST', route: BASE + '/deliveries/:action',
         tag: 'Monitoring', mirrors: 'POST /admin/deliveries',
-        handler: function (req: Req, res: Res): void {
+        handler: function (req, res): void {
           log.debug("Entering the management API deliveries action.");
           const body = parseBody(req) || {};
           const result = String(req.params.action || '') === 'retry'
@@ -330,7 +337,7 @@ class ProviderCommandsApi {
         },
         actions: [
           { action: 'retry', operationId: 'retryOutboundDelivery' }
-        ] }
+        ] })
     ];
     log.debug("Leaving ProviderCommandsApi.buildRoutes().");
     return ROUTES;

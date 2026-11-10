@@ -22,6 +22,8 @@
 // table, as it does the passkey report's.
 // ---------------------------------------------------------------------------
 
+// Types a row of actions by its own actions' operations (#1579).
+import ApiRows = require('../common/api_rows');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
@@ -94,7 +96,12 @@ class PostLoginActivitiesApi {
    * @param status - the HTTP status
    * @param body - the body, serialised with indentation
    */
-  sendJson(res: Res, status: number, body: Json): void {
+  // TYPED BY THE OPERATION (#1579): through a handler's response, the
+  // answer is held to the model's at a literal 2xx status
+  // (`types/api-handlers.d.ts`).
+  sendJson<R, S extends number>(res: R, status: S,
+           body: IyaApi.AnswerOf<R, S>): void;
+  sendJson(res: any, status: number, body: any): void {
     const { log } = this.deps;
     log.debug("Entering PostLoginActivitiesApi.sendJson(). status=" + status);
     res.status(status).type('application/json')
@@ -124,7 +131,7 @@ class PostLoginActivitiesApi {
         additionalProperties: false
       };
     };
-    const ROUTES = [
+    const ROUTES: IyaApi.AdminRow[] = [
       { method: 'GET', path: BASE + '/post-login-activities',
         tag: 'Directory', operationId: 'getPostLoginActivities',
         mirrors: 'GET /admin/post-login-activities',
@@ -148,7 +155,7 @@ class PostLoginActivitiesApi {
                          'is as much as one request line can carry; fifty ' +
                          'ordinary group names fit.' }
         ],
-        handler: function (req: Req, res: Res): void {
+        handler: function (req, res): void {
           log.debug("Entering the management API post-login activities " +
                     "endpoint.");
           const problem = activities.groupsQueryProblem(req.query || {});
@@ -173,9 +180,10 @@ class PostLoginActivitiesApi {
                     "endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/post-login-activities/:action',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/post-login-activities/:action',
         tag: 'Directory', mirrors: 'POST /admin/post-login-activities',
-        handler: function (req: Req, res: Res): void {
+        handler: function (req, res): void {
           log.debug("Entering the management API post-login activities " +
                     "action.");
           const body = Object.assign({}, parseBody(req),
@@ -210,7 +218,7 @@ class PostLoginActivitiesApi {
           { action: 'pause', operationId: 'pausePostLoginActivity' },
           { action: 'resume', operationId: 'resumePostLoginActivity' },
           { action: 'end', operationId: 'endPostLoginActivity' }
-        ] }
+        ] })
     ];
     log.debug("Leaving PostLoginActivitiesApi.buildRoutes().");
     return ROUTES;

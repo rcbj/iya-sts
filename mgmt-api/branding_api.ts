@@ -41,6 +41,8 @@
 // It registers no route. `mgmt-api/admin_api.ts` spreads `ROUTES`.
 // ---------------------------------------------------------------------------
 
+// Types a row of actions by its own actions' operations (#1579).
+import ApiRows = require('../common/api_rows');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
@@ -138,7 +140,12 @@ class BrandingApi {
    * @param status - the HTTP status
    * @param body - the body
    */
-  sendJson(res: Res, status: number, body: Json): void {
+  // TYPED BY THE OPERATION (#1579): through a handler's response, the
+  // answer is held to the model's at a literal 2xx status
+  // (`types/api-handlers.d.ts`).
+  sendJson<R, S extends number>(res: R, status: S,
+           body: IyaApi.AnswerOf<R, S>): void;
+  sendJson(res: any, status: number, body: any): void {
     const { log } = this.deps;
     log.debug("Entering BrandingApi.sendJson(). status=" + status);
     res.status(status).type('application/json')
@@ -307,11 +314,11 @@ class BrandingApi {
         ['The sign-in appearance could not be changed.'] });
       log.debug("Leaving failed().");
     };
-    const ROUTES = [
+    const ROUTES: IyaApi.AdminRow[] = [
       { method: 'GET', path: BASE + '/branding',
         tag: 'Configuration', operationId: 'getBranding',
         mirrors: 'GET ' + PAGE,
-        handler: function (req: Req, res: Res): void {
+        handler: function (req, res): void {
           log.debug("Entering the management API branding endpoint.");
           try {
             self.sendJson(res, 200, self.view());
@@ -342,7 +349,7 @@ class BrandingApi {
           '413': 'Larger than branding.logoMaxBytes.',
           '415': 'Not a PNG, a JPEG or a WebP, by its bytes.'
         },
-        handler: function (req: Req, res: Res): void {
+        handler: function (req, res): void {
           log.debug("Entering the management API branding logo upload.");
           const bytes = BrandingApi.uploadedBytes(req);
           const scanner = require('../common/malware_scan');
@@ -385,9 +392,9 @@ class BrandingApi {
           log.debug("Leaving the management API branding logo upload.");
         } },
 
-      { method: 'POST', route: BASE + '/branding/:action',
+      ApiRows.actions({ method: 'POST', route: BASE + '/branding/:action',
         tag: 'Configuration', mirrors: 'POST ' + PAGE,
-        handler: function (req: Req, res: Res): void {
+        handler: function (req, res): void {
           log.debug("Entering the management API branding action.");
           try {
             const body = Object.assign({}, parseBody(req),
@@ -409,7 +416,7 @@ class BrandingApi {
         actions: [
           { action: 'save', operationId: 'saveBranding' },
           { action: 'remove-logo', operationId: 'removeBrandingLogo' }
-        ] }
+        ] })
     ];
     log.debug("Leaving BrandingApi.buildRoutes().");
     return ROUTES;

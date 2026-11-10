@@ -18,6 +18,8 @@
 // table, as it does the secret destinations' operations.
 // ---------------------------------------------------------------------------
 
+// Types a row of actions by its own actions' operations (#1579).
+import ApiRows = require('../common/api_rows');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
@@ -203,7 +205,12 @@ class ScimClientsApi {
    * @param status - the HTTP status
    * @param body - the body, serialised with indentation
    */
-  sendJson(res: Res, status: number, body: Json): void {
+  // TYPED BY THE OPERATION (#1579): through a handler's response, the
+  // answer is held to the model's at a literal 2xx status
+  // (`types/api-handlers.d.ts`).
+  sendJson<R, S extends number>(res: R, status: S,
+           body: IyaApi.AnswerOf<R, S>): void;
+  sendJson(res: any, status: number, body: any): void {
     const { log } = this.deps;
     log.debug("Entering ScimClientsApi.sendJson(). status=" + status);
     // A client's row carries its last delivery's code (#1355).
@@ -255,7 +262,7 @@ class ScimClientsApi {
                required: ['id'], examples: [{ id: 'partner-idp' }],
                additionalProperties: false };
     };
-    const ROUTES = [
+    const ROUTES: IyaApi.AdminRow[] = [
       { method: 'GET', path: BASE + '/scim/clients',
         tag: 'SCIM', operationId: 'getScimClients',
         mirrors: 'GET /admin/scim',
@@ -265,7 +272,7 @@ class ScimClientsApi {
                       examples: ['no-such-client'] },
             description: 'One client\'s identifier, for its page.' }
         ],
-        handler: function (req: Req, res: Res): void {
+        handler: function (req, res): void {
           log.debug("Entering the management API SCIM clients endpoint.");
           // EVERY CELL'S QUEUES (#553): asked of the other cells, each
           // bounded by the channel's timeout; one that does not answer is
@@ -286,9 +293,9 @@ class ScimClientsApi {
           });
         } },
 
-      { method: 'POST', route: BASE + '/scim/clients/:action',
+      ApiRows.actions({ method: 'POST', route: BASE + '/scim/clients/:action',
         tag: 'SCIM', mirrors: 'POST /admin/scim',
-        handler: function (req: Req, res: Res): void {
+        handler: function (req, res): void {
           log.debug("Entering the management API SCIM clients action.");
           const body = Object.assign({}, parseBody(req),
                                      { action: String(req.params.action ||
@@ -331,7 +338,7 @@ class ScimClientsApi {
           { action: 'retry-delivery', operationId: 'retryScimDelivery' },
           { action: 'retry-dead', operationId: 'retryScimDeadLetters' },
           { action: 'purge-dead', operationId: 'purgeScimDeadLetters' }
-        ] }
+        ] })
     ];
     log.debug("Leaving ScimClientsApi.buildRoutes().");
     return ROUTES;
