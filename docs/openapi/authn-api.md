@@ -39,6 +39,8 @@ Each operation, its method and path, and the sign-in page or control it is the d
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **200**: The answer.
 
@@ -79,6 +81,8 @@ Each signed-in and remembered account of the browser's account set — key, subj
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **200**: The answer.
 
@@ -127,6 +131,8 @@ The door of the sign-in surface's `GET /oauth2/consent`.
 |---|---|---|---|---|
 | `id` | path | string | yes | The pending consent's id: a bearer capability, as the `consent` the consent screen was opened with, answered only to the browser whose session is the person asked. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **200**: The answer.
 
@@ -219,6 +225,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `id` | path | string | yes | The pending consent's id: a bearer capability, as the `consent` the consent screen was opened with, answered only to the browser whose session is the person asked. |
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 
@@ -369,6 +377,8 @@ The door of the sign-in surface's `GET /logout`.
 | `account` | query | string |  | With authn.multipleAccounts on (#561): one of this browser's signed-in accounts, by its key. |
 | `login_hint` | query | string |  | With authn.multipleAccounts on (#561): the account the sign-out's account step preselects. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **200**: The answer.
 
@@ -616,6 +626,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|---|
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 
@@ -953,6 +965,8 @@ The door of the sign-in surface's `GET /logout/accounts`.
 | `account` | query | string |  | With authn.multipleAccounts on (#561): one of this browser's signed-in accounts, by its key. |
 | `login_hint` | query | string |  | With authn.multipleAccounts on (#561): the account the sign-out's account step preselects. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **200**: The answer.
 
@@ -1020,6 +1034,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|---|
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 
@@ -1353,6 +1369,8 @@ The door of the sign-in surface's `GET /authn/totp, /authn/webauthn, /authn/back
 | `page` | query |  |  | Which of the step's pages; the step's own where left out. |
 | `key` | query |  |  | The passkey a person chose, where the passkey policy offers them one by one (#534). |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **200**: The answer.
 
@@ -1617,6 +1635,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 
@@ -1768,6 +1788,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 
@@ -1919,6 +1941,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 
@@ -2070,6 +2094,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 
@@ -2221,6 +2247,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 
@@ -2372,6 +2400,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 
@@ -2521,6 +2551,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 
@@ -2670,6 +2702,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 
@@ -2821,6 +2855,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 
@@ -2970,6 +3006,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 
@@ -3119,6 +3157,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 
@@ -3268,6 +3308,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 
@@ -3417,6 +3459,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 
@@ -3568,6 +3612,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 
@@ -3719,6 +3765,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 
@@ -3971,6 +4019,8 @@ Generated from the operation table and its body schemas.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **200**: The answer.
 
@@ -4015,6 +4065,8 @@ The door of the sign-in surface's `GET /authn/password-change`.
 |---|---|---|---|---|
 | `id` | path | string | yes | The password change step's id. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **200**: The answer.
 
@@ -4061,6 +4113,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `id` | path | string | yes | The password change step's id. |
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 
@@ -4213,6 +4267,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `id` | path | string | yes | The password change step's id. |
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 
@@ -4359,6 +4415,8 @@ The door of the sign-in surface's `GET /authn/login`.
 |---|---|---|---|---|
 | `id` | path | string | yes | The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **200**: The answer.
 
@@ -4461,6 +4519,8 @@ The door of the sign-in surface's `GET /authn/accounts`.
 |---|---|---|---|---|
 | `id` | path | string | yes | The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **200**: The answer.
 
@@ -4537,6 +4597,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `id` | path | string | yes | The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with. |
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 
@@ -4736,6 +4798,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `id` | path | string | yes | The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with. |
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 
@@ -4937,6 +5001,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `id` | path | string | yes | The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with. |
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 
@@ -5138,6 +5204,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `id` | path | string | yes | The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with. |
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 
@@ -5294,6 +5362,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `id` | path | string | yes | The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with. |
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 
@@ -5447,6 +5517,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `id` | path | string | yes | The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with. |
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 
@@ -5603,6 +5675,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `id` | path | string | yes | The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with. |
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 
@@ -5758,6 +5832,8 @@ The door of the sign-in surface's `GET /authn/select-idp`.
 |---|---|---|---|---|
 | `id` | path | string | yes | The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **200**: The answer.
 
@@ -5820,6 +5896,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `id` | path | string | yes | The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with. |
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 
@@ -5977,6 +6055,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `id` | path | string | yes | The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with. |
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 
@@ -6096,6 +6176,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `id` | path | string | yes | The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with. |
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 
@@ -6258,6 +6340,8 @@ The door of the sign-in surface's `GET /authn/wallet`.
 | `login_hint` | query |  |  | Which of this browser's accounts an enrolment is for. |
 | `did_act` | query |  |  | A published DID's wallet act, on an enrolment (#1291). |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **200**: The answer.
 
@@ -6547,6 +6631,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|---|
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 
@@ -7016,6 +7102,8 @@ The door of the sign-in surface's `GET /authn/wallet/wait`.
 |---|---|---|---|---|
 | `state` | path | string | yes | The wallet sign-in's transaction: a bearer capability, answered to this browser only (its `sts_wallet_binding` cookie). |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **200**: The answer.
 
@@ -7441,6 +7529,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `state` | path | string | yes | The wallet sign-in's transaction: a bearer capability, answered to this browser only (its `sts_wallet_binding` cookie). |
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 
@@ -7912,6 +8002,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `state` | path | string | yes | The wallet sign-in's transaction: a bearer capability, answered to this browser only (its `sts_wallet_binding` cookie). |
 | `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
 | `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+| `X-Step-Id` | header | string |  | A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths. |
+| `X-Step-Query` | header | string |  | The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query. |
 
 **Request body**
 

@@ -168,6 +168,14 @@ function childMain() {
     R.authnWebView = callAuthn('GET /authn-api/pending/:id', {},
       { 'x-requested-with': 'com.vendor.app', 'sec-fetch-mode': 'cors',
         cookie: 'sts_session=x', origin: 'https://sts' });
+    // THE SIGN-IN PAGES' OWN HEADERS (#1454): every product sign-in sends the
+    // step's id in X-Step-Id, and #1483 refused it until it was declared, so
+    // nobody could sign in to a product deployment (2026-11-10).
+    R.authnStepHeaders = callAuthn('GET /authn-api/pending/:id', {},
+      { 'x-step-id': 'abc', 'x-step-query': 'authn=abc' });
+    R.authnStepHeadersPost = callAuthn('POST /authn-api/mfa/:id/totp', {},
+      { 'x-step-id': 'abc', 'x-csrf-token': 't',
+        'content-type': 'application/json' });
     R.authnCsrfGet = callAuthn('GET /authn-api/pending/:id', {},
       { 'x-csrf-token': 't' });
     R.authnCsrfPost = callAuthn('POST /authn-api/pending/:id/password', {},
@@ -482,6 +490,10 @@ async function run(t) {
   t.check(R.authnWebView.status === 200,
           'a WebView\'s X-Requested-With and a browser\'s headers do not ' +
           'break a sign-in', JSON.stringify(R.authnWebView));
+  t.check(R.authnStepHeaders.status === 200 &&
+          R.authnStepHeadersPost.status === 200,
+          'the sign-in pages\' X-Step-Id and X-Step-Query are declared',
+          JSON.stringify([R.authnStepHeaders, R.authnStepHeadersPost]));
   t.check(refusedRow(R.authnCsrfGet, 'x-csrf-token', 'STS-AUTHN-0555'),
           'a GET does not take X-CSRF-Token', JSON.stringify(R.authnCsrfGet));
   t.check(R.authnCsrfPost.status === 200, 'a POST does',

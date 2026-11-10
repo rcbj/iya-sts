@@ -193,7 +193,7 @@ using IyaSts.ApiLib;
 using IyaSts.Api.Common;
 
 @apiDocument(#{
-  `x-iya-every-operation`:#[#{`name`:"X-Requested-With",`in`:"header",`required`:false,`description`:"Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it.",`schema`:#{`type`:"string"}}],
+  `x-iya-every-operation`:#[#{`name`:"X-Requested-With",`in`:"header",`required`:false,`description`:"Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it.",`schema`:#{`type`:"string"}},#{`name`:"X-Step-Id",`in`:"header",`required`:false,`description`:"A sign-in step's id (#1454), kept out of every address: a page sends `-` in place of the id in a `/mfa/`, `/pending/`, `/password-change/` or `/consent/` path and the id here. Read only on those paths.",`schema`:#{`type`:"string"}},#{`name`:"X-Step-Query",`in`:"header",`required`:false,`description`:"The `authn`, `mfa` and `enrol` query values a page took off the address (#1454), as a query string. Read as if they were in the query.",`schema`:#{`type`:"string"}}],
   `openapi`:"3.1.0",
   `info`:#{
     `title`:"IYA STS Sign-in API",
