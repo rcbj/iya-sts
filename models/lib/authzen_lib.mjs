@@ -246,6 +246,12 @@ export function readAuthzen(program) {
       if (one.own === true) {
         member.own = true;
       }
+      // A member whose type is another member set is held to it too.
+      const held = kindOf(property.type) === 'array'
+        ? property.type.indexer.value : property.type;
+      if (held.kind === 'Model' && program.stateMap(MEMBERS).has(held)) {
+        member.set = program.stateMap(MEMBERS).get(held).id;
+      }
       if (kindOf(property.type) === 'values') {
         member.values = Array.from(property.type.variants.values())
           .map(function (variant) {

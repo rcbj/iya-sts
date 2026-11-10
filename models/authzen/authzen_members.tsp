@@ -78,7 +78,7 @@ model EvaluationResponse {
   decision: boolean;
 
   @member(#{ cite: "AuthZEN Authorization API 1.0 section 6.2.1" })
-  context?: Record<unknown>;
+  context?: DecisionContext;
 }
 
 /**
@@ -101,11 +101,11 @@ model DecisionContext {
   advice?: Record<unknown>[];
 
   @member(#{ cite: "AuthZEN Obligations Profile section 2" })
-  obligations?: Record<unknown>[];
+  obligations?: Obligation[];
 
   /** A batch item that could not be evaluated (section 7.2's example). */
   @member(#{ cite: "AuthZEN Authorization API 1.0 section 7.2" })
-  error?: Record<unknown>;
+  error?: ErrorDetail;
 
   /** A search answer that is partial (#1175). */
   @member(#{ cite: "this service's own (#1175)", own: true })
@@ -138,7 +138,7 @@ model DecisionContext {
 @members(#{ id: "evaluations-response", cite: "AuthZEN Authorization API 1.0 section 7.2", members: "closed" })
 model EvaluationsResponse {
   @member(#{ cite: "AuthZEN Authorization API 1.0 section 7.2" })
-  evaluations: Record<unknown>[];
+  evaluations: EvaluationResponse[];
 }
 
 /** One obligation handed to the PEP (the Obligations Profile, section 2). */
@@ -194,13 +194,13 @@ model SessionTerminationObligation {
 @members(#{ id: "search-response", cite: "AuthZEN Authorization API 1.0 section 8.3", members: "closed" })
 model SearchResponse {
   @member(#{ cite: "AuthZEN Authorization API 1.0 section 8.3" })
-  page: Record<unknown>;
+  page: SearchPage;
 
   @member(#{ cite: "AuthZEN Authorization API 1.0 section 8.3" })
   results: Record<unknown>[];
 
   @member(#{ cite: "AuthZEN Authorization API 1.0 section 8.3" })
-  context?: Record<unknown>;
+  context?: DecisionContext;
 }
 
 /** Section 8.2. */
@@ -225,7 +225,7 @@ model SearchPage {
 @members(#{ id: "error", cite: "AuthZEN Authorization API 1.0 section 7.2", members: "closed" })
 model ErrorResponse {
   @member(#{ cite: "AuthZEN Authorization API 1.0 section 7.2" })
-  error: Record<unknown>;
+  error: ErrorDetail;
 }
 
 /** The error object, as a batch item's `context.error` carries it too. */
@@ -290,7 +290,7 @@ model ProblemTypes {
 @members(#{ id: "task-response", cite: "AuthZEN Access Request and Approval Profile, the task", members: "closed" })
 model TaskResponse {
   @member(#{ cite: "AuthZEN Access Request and Approval Profile, the task" })
-  task: Record<unknown>;
+  task: TaskHandle;
 
   /** REQUIRED once the task is approved: `mode: reevaluate`. */
   @member(#{ cite: "AuthZEN Access Request and Approval Profile, the result" })
@@ -328,7 +328,7 @@ model TaskHandle {
 @members(#{ id: "callback-notification", cite: "AuthZEN Access Request Callback companion profile", members: "closed" })
 model CallbackNotification {
   @member(#{ cite: "AuthZEN Access Request Callback companion profile" })
-  task: Record<unknown>;
+  task: TaskHandle;
 
   @member(#{ cite: "AuthZEN Access Request Callback companion profile" })
   state?: string;

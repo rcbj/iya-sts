@@ -23405,6 +23405,13 @@ const CODES = [
       'no-broadening rule held at the last moment, which is a defect ' +
       '(#1181).',
     spec: 'none — logged; the envelope is sent without it' },
+  { code: 'STS-AUTHZEN-0116',
+    summary: 'An AuthZEN answer carried a member its model in ' +
+      'models/authzen/authzen_members.tsp does not name, one of a type or ' +
+      'value the model does not allow, or lacked a member it requires ' +
+      '(#1579). The answer is sent as it was built: the model describes ' +
+      'the wire and does not reshape it, so this is a model gap to close.',
+    spec: 'none (recorded only; the answer is unchanged)' },
   // ===== FGA ===============================================================
   { code: 'STS-FGA-0001',
     summary: 'A policy that belongs to an application (it carries ' +
