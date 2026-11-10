@@ -42,6 +42,7 @@ Level 1. Turn one on only for the clients that need it.
 | `security.allowUnscopedPeople` | Any authenticated person at SCIM and Shared Signals, by a scheme with no scope | Test stacks; use OAuth scopes for real provisioning clients |
 | `authn.allowOptionalSecondFactor` | Signing in without a second factor where the authentication policy allows it | A deployment that accepts ASVS 6.3.3 not being met |
 | `oauth2.allowConfidentialWithoutPkce` | A confidential client omitting PKCE | A client that cannot send it |
+| `federation.allowUntypedLogoutToken` | A partner's Logout Token typed `jwt` or carrying no type | A partner that does not send `logout+jwt` |
 | `admin.logBootstrapPassword` | The generated first administrator password in the service log | Never outside a test stack |
 | `crypto.allowCbcJwe` | JWE's CBC-HMAC content encryption | A partner that cannot read AES-GCM |
 | `crypto.allowLegacyHashes` | OAEP over SHA-1 in XML encryption and JWE, the SHA-1 PKINIT key derivation, and S4U2Self's HMAC-MD5 checksum | Partners and Kerberos clients that support nothing newer |
@@ -57,6 +58,11 @@ one when it is off:
 Use them only to get back in after a policy has locked you out, and turn them
 back on afterwards.
 
+Three more have a stricter default in product mode, and setting them back to the
+development value weakens it: `oauth2.refreshTokenMaxChainS` (30 days; `0` is no
+limit), `oauth2.consentAlwaysForPublicClients` (on) and
+`security.requestsPerAddressPerMinute` (6000; `0` is no ceiling).
+
 ## Connections and browsers
 
 * **HTTPS.** The main port is HTTPS, and a process with `global.https` off does
@@ -71,6 +77,10 @@ back on afterwards.
   unprefixed cookie of the same name is ignored, so a client that reads or
   sends a cookie by name must use the prefixed one.
 * **Character sets.** Text and XML responses name `charset=utf-8`.
+* **Forwarded headers.** With `global.trustedProxies` empty, no caller's
+  `X-Forwarded-*` headers are believed, even with `global.trustProxy` on: any
+  caller can write them. Behind a proxy, list its addresses in
+  `global.trustedProxies`. See [TLS](tls.md#reverse-proxies-and-load-balancers).
 
 ## Passwords
 
@@ -137,6 +147,11 @@ screens is drawn through one renderer. It removes scripts, event handlers and
 unsafe addresses from the markup before it reaches the page, on top of each
 page's Content Security Policy.
 
+An unexpected failure is answered without its internal error text: at the
+management API, the OAuth and OpenID Connect endpoints (the sign-out page
+included), WS-Trust and the wallet sign-in. The text is in the log, under the
+failure's error code.
+
 ## Secrets in addresses
 
 * The admin console, portal and report application receive their authorization
@@ -158,23 +173,48 @@ A decision the policy engine cannot make is a refusal: an error in the engine,
 an empty answer, or a check that names no resource or action. In development
 mode the same faults allow the request and are logged.
 
+Issuing is held to the same rule. When the issuance decision cannot be made (the
+engine throws or answers nothing), or the application register cannot be read
+to judge a sign-in, no token is issued (`STS-XACML-0183`).
+
 An administrator's `admin:read` is permission to read every object in that
-realm: a realm is the boundary between tenants. A token of one realm is refused
-at any other realm's `/admin-api`.
+realm: a realm is the boundary between tenants. A realm's own token is refused
+at any other realm's `/admin-api`; a default-realm token is the service's and
+reaches every realm. See [Management API](management-api.md).
 
 At SCIM and Shared Signals, a scheme that carries no scope (HTTP Basic, the
 session cookie) needs Admin Read to read and Admin Write to write.
 
 ## Clients and grants
 
-A client that declares no grant types may use `authorization_code` and
-`refresh_token` alone. List every other grant it needs in `oauthGrantType`. See
-[Configuring OpenID Connect flows](configure-oidc-flows.md).
+* **A client gets only the code flow unless it declares more.** One that declares
+  no grant types may use `authorization_code` and `refresh_token` alone, and one
+  that declares no response types (and not the `implicit` grant) may use
+  `response_type=code` alone (`unauthorized_client`). List what else it needs in
+  `oauthGrantType` and `oauthResponseType`. See
+  [Configuring OpenID Connect flows](configure-oidc-flows.md).
+* **PKCE is required of every client**, confidential ones included. An
+  authorization request with no `code_challenge` is refused `invalid_request`.
+* **A repeated parameter is refused** at the authorization and token endpoints
+  (RFC 6749 section 3.2), rather than the last value being taken.
+* **A public client is asked consent every time.** Nothing proves which program
+  holds a public client's `client_id`, so an earlier answer does not cover it.
+  This service's own applications are not asked. See
+  [Consent](oauth-oidc.md#consent).
 
 ## Tokens
 
-A GNAP user assertion that has expired is refused unless an operator sets
-`gnap.assertionMaxAgeS`.
+* **A chain of refresh tokens ends 30 days after its first token**, however
+  often it was renewed; the person then signs in again.
+* **A token whose `sub` no longer names a person is refused** at `/account-api`
+  and `/report-api` (`invalid_token`), and holds no role at `/admin-api`, SCIM
+  or any other door that asks a token's roles. It is not matched by its
+  username, which may now belong to somebody else. In every mode these doors
+  find the person by `sub` first.
+* **A partner's Logout Token must be typed `logout+jwt`** unless
+  `federation.allowUntypedLogoutToken` is on.
+* **A GNAP user assertion that has expired is refused** unless an operator sets
+  `gnap.assertionMaxAgeS`.
 
 ## Algorithms
 

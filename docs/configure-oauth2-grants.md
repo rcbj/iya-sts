@@ -131,23 +131,27 @@ The same registration behaves differently in the two modes (`global.mode`):
   endpoint refuses any grant the list does not name with `unauthorized_client`,
   whether the list came from a dynamic registration (RFC 7591 `grant_types`) or
   an administrator. A client whose list omits `refresh_token` is issued no
-  refresh token. An empty list restricts nothing. The console offers one
+  refresh token. An empty list restricts nothing in development mode; in
+  product mode it allows `authorization_code` and `refresh_token` alone, unless
+  `oauth2.allowUndeclaredGrants` is on, so a `client_credentials` or token
+  exchange client must list its grant. The console offers one
   checkbox per grant this service implements, and a console or API write of
   any other value is refused. What a client has actually used is recorded
   separately, in `oauthGrantTypeObserved`, shown read-only beside
   `oauthGrantType` on the application's **OAuth 2.0 / OpenID Connect**
   sub-tab.
 * **Consent is on by default** (`oauth2.consentRequired`). A person approves
-  each client on `/oauth2/consent` the first time. Test realms often turn it
+  each client on `/oauth2/consent` the first time, and a public client every
+  time in product mode (`oauth2.consentAlwaysForPublicClients`). Test realms often turn it
   off with `"oauth2.consentRequired": false`. In production, leave it on.
 
 ## Which grants are available
 
 | Grant (`grant_type`) | Available | Recipe |
 |---|---|---|
-| `authorization_code` | always; PKCE is required of public clients in RFC 9700, OAuth 2.1 and product mode | [below](#authorization-code-with-pkce) |
+| `authorization_code` | always; PKCE is required of public clients in RFC 9700 and OAuth 2.1 mode, and of every client in product mode | [below](#authorization-code-with-pkce) |
 | `client_credentials` | always; refused for a public client in product mode | [below](#client-credentials) |
-| `refresh_token` | always | [below](#refresh-token) |
+| `refresh_token` | always; in product mode a chain of refreshes ends 30 days after its first token (`oauth2.refreshTokenMaxChainS`) | [below](#refresh-token) |
 | `password` | **development mode only**, and not while `oauth2.rfc9700` is on | [below](#password-development-only) |
 | `urn:ietf:params:oauth:grant-type:device_code` | while `oauth2.deviceAuthorization` is on (off by default) | [below](#device-authorization-rfc-8628) |
 | `urn:ietf:params:oauth:grant-type:jwt-bearer` | while `oauth2.jwtBearerGrant` is on (on by default) | [below](#jwt-bearer-rfc-7523) |
@@ -421,6 +425,7 @@ comes back still carries the whole grant.
 | Setting | Default | What it does |
 |---|---|---|
 | `oauth2.refreshTokenTtlS` | `86400` | The refresh token's absolute lifetime. |
+| `oauth2.refreshTokenMaxChainS` | `0` (`2592000` in product) | The absolute limit on a chain of refreshes, counted from its first refresh token. Past it the person signs in again. `0` is no limit. |
 | `oauth2.refreshIdleSeconds` | `86400` | How long an unused refresh token stays valid, in RFC 9700 mode only. |
 | `oauth2.revokeRefreshOnLogout` | `true` | Signing out ends the person's refresh tokens. |
 | `oauth2.refreshTokenRotation` | `false` | Issues a new refresh token on each use. Rotation is already on in RFC 9700, OAuth 2.1, FAPI and product mode. A replayed refresh token revokes the whole family. |

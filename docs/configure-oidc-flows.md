@@ -58,15 +58,19 @@ client may be issued are `oauthAllowedScope`.
 
 **A client is held to the response types and grant types it declares.**
 In product mode, a client with no `oauthGrantType` may use `authorization_code`
-and `refresh_token` alone, unless `oauth2.allowUndeclaredGrants` is on. List
-every other grant a client needs.
+and `refresh_token` alone, and one with no `oauthResponseType` (and no
+`implicit` grant) may use `response_type=code` alone, unless
+`oauth2.allowUndeclaredGrants` is on. Anything else is `unauthorized_client`.
+List every other grant and response type a client needs.
 
 `oauthResponseType` and `oauthGrantType` are the lists, whether a dynamic
 registration wrote them (`POST /oauth2/register`, RFC 7591 `response_types`
 and `grant_types`) or an administrator set them in the console or through
 `/admin-api`. A response type or grant not on a list is refused with
-`unauthorized_client`, in both modes. An empty list restricts nothing, so a
-client with neither list may use every response type the server advertises.
+`unauthorized_client`, in both modes. In development mode an empty list
+restricts nothing, so a client with neither list may use every response type
+and grant the server advertises; in product mode it means the code flow, as
+above.
 The console offers one checkbox per value: the eight response types and
 every grant this service implements. A console or API write of any other value
 is refused. Through the API, write each response type as one value, its words

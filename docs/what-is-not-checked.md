@@ -25,8 +25,9 @@ depends almost entirely on which.
   federated sign-in follows the relationship's `fedAutocreateUsers` instead,
   off when that relationship is created — invents
   no claim value, delivers a response only to an address somebody registered,
-  closes the test controls, and **implies RFC 9700 mode** — PKCE with S256,
-  exactly matched redirect URIs, rotating refresh tokens, no token-issuing
+  closes the test controls, and **implies RFC 9700 mode** — PKCE with S256
+  (of every client, confidential ones too, in product), exactly matched
+  redirect URIs, rotating refresh tokens, no token-issuing
   response types at the authorization endpoint, unknown `client_id`s refused,
   and no password grant at all.
 

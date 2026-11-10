@@ -45,6 +45,12 @@ client was `sts-management-api` itself; a script that still authenticates as
 | `admin:read` | make any `GET` request |
 | `admin:write` | make anything else, meaning every `POST` that changes state |
 
+A scope covers every object of the realm the call is made in: `admin:read`
+reads any of them, by id or in a list, and an object of another realm is never
+found. A realm is the boundary between tenants, so a realm's own token is
+refused at any other realm's `/admin-api`. A default-realm token is the
+service's, and reaches every realm under its prefix (`/realm/{id}/admin-api`).
+
 To get a token, call the token endpoint with the client-credentials grant, the
 scopes you need, and `resource=<base>/admin-api`. The `resource` value sets
 the token's audience, and the API refuses a token audienced to anything else.

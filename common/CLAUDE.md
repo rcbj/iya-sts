@@ -1142,7 +1142,8 @@ asked one RFC 9396 detail at a time, by `oauth-oidc/authorization_details.ts`'s
 `fineGrainedRefusal()`, and ONLY for a detail whose type's application has
 `appFgaEnforced` TRUE — `fgaStateOf()` above answers that without the XACML
 family. **An empty slot REFUSES (`STS-FGA-0016`), the opposite of
-`issuance_gate.js` and `access_gate.ts`**, because here somebody asked for a
+`issuance_gate.js`, and of `access_gate.ts` in development** (in product an
+empty access gate refuses too, `STS-XACML-0181`, #1450), because here somebody asked for a
 restriction: issuing an enforcing application's detail undecided would be
 the switch silently not applying. A decider that throws or answers nothing
 is a failure too (`STS-FGA-0015`). Rule 3e both ways round, as for the

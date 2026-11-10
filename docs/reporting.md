@@ -56,7 +56,9 @@ realm's prefix, and they sign in to that realm instead.
 A token is issued only the report scopes its subject's roles authorize,
 and every call to `/report-api` asks again, so a person taken out of the
 group, or off the console roster, is refused at once, before their token
-expires.
+expires. The person is found by the token's `sub` first, never only by a
+username that may since belong to somebody else; in product mode a token whose
+`sub` names nobody is refused `invalid_token`.
 
 What a holder may reach is the access-control policy's decision
 ([XACML](xacml.md#the-embedded-peps-this-services-own-issuance-and-access)),

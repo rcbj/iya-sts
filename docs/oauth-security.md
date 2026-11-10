@@ -470,6 +470,14 @@ required to sign their request objects, because a public client in a browser
 holds no registered key; an explicit `oauth2.requireSignedRequestObject`
 still applies to them.
 
+**The browser applications check what comes back**, the report application
+included. The discovery document they read must name, as its `issuer`, the
+server it was fetched from (RFC 8414 section 3.3), or it is ignored as if none
+had answered. An authorization response's `iss` (RFC 9207), where one is sent,
+must be that issuer. The ID Token must carry the application's own `client_id`
+in `aud`, the `nonce` it asked for and, where the document was read, that issuer
+in `iss`. A sign-in that fails one of these does not complete.
+
 ### Requiring a sender constraint — five settings
 
 Neither mode requires DPoP or mutual TLS. OAuth 2.1 section 4.3.1 lets a public
@@ -713,8 +721,12 @@ confidential.** A client is confidential only when its entry declares a
 member is confidential, since RFC 7591 section 2 makes `client_secret_basic` the
 default. Everything else, including a `client_id` never registered, is public
 and must send a `code_challenge`. For a confidential client PKCE is a *SHOULD*:
-the request is answered and the omission logged, because a server a client is
-calibrated against should not be stricter than the specification.
+in development mode the request is answered and the omission logged, because a
+server a client is calibrated against should not be stricter than the
+specification. **In product mode a confidential client is refused too**
+(`invalid_request`, ASVS 5.0.0 10.4.6), unless
+`oauth2.allowConfidentialWithoutPkce` is on. OAuth 2.1 mode keeps its own rule,
+below.
 
 `code_challenge_method=plain` is refused and `code_challenge_methods_supported`
 drops to `S256` alone, so the document and the endpoint agree. An `S256`
@@ -817,15 +829,19 @@ section points at.
 
 ### Authorization code protection (section 4.5)
 
-Outside the compliance modes an **identical** repeat of a token request gets back
-the tokens it already got (see
-[Grants](oauth-oidc.md#grants-at-the-token-endpoint)). RFC 6749 section 4.1.2
-says a real server refuses that, so **in this mode it does**, and does the
-SHOULD beside it (section 10.5): the access, refresh and ID Tokens the code bought
-are revoked through the same set `/oauth2/revoke` writes to, so they report
-`active: false` at introspection at once. A code presented twice means two
-holders, and nothing can tell which is the client. The refusal says how long
-ago the code was redeemed, by which client, and how many tokens went with it.
+A repeated redemption is refused **in every mode** (RFC 6749 section 4.1.2).
+Outside the compliance modes, `oauth2.codeReplayIdempotent`, off by default,
+answers an **identical** repeat with the tokens it already got instead (see
+[Grants](oauth-oidc.md#grants-at-the-token-endpoint)); this mode ignores it. The
+refusal does the SHOULD beside it (section 10.5): the access, refresh and ID
+Tokens the code bought are revoked through the same set `/oauth2/revoke` writes
+to, so they report `active: false` at introspection at once, and so is the
+refresh family the code began, with every access token refreshed from it since.
+Each revocation is reported as a replay, so a Shared Signals stream for the grant
+is sent CAEP `session-revoked` and `risk-level-change`. A code presented twice
+means two holders, and nothing can tell which is the client. The refusal says
+how long ago the code was redeemed, by which client, and how many tokens went
+with it.
 
 Two more specific refusals stay ahead of it in every mode: a repeat that
 **differs** names the field that differed, and an expired code says so and
@@ -986,6 +1002,12 @@ a **subset** of what was granted. The refresh token also carries its
 **resources**, so a token narrowed with RFC 8707 cannot be refreshed into one
 with the default audience; asking for a resource the grant does not carry is
 `invalid_target`.
+
+**A chain has an absolute limit**, `oauth2.refreshTokenMaxChainS`, counted
+from its first refresh token: a renewed token never expires past it, so the
+person signs in again however often the client refreshed. It is 30 days in
+product mode and `0` (no limit) in development, and it applies whether or not
+this mode is on.
 
 **An idle chain expires** after `oauth2.refreshIdleSeconds`, measured from the
 last redemption anywhere in the chain, so a client that refreshes regularly
@@ -1385,6 +1407,12 @@ curl -k -X POST https://localhost:8081/admin-api/realms/create \
   a realm cannot turn it off. A public client is allowed in return. It is held
   to PKCE with `S256`, an exactly matched registered redirect URI, rotating
   refresh tokens, and the authorization code and refresh grants only.
+* **Product mode adds three things of its own**: PKCE of confidential clients
+  too (`oauth2.allowConfidentialWithoutPkce` opts out), a refusal of a repeated
+  parameter at the authorization and token endpoints, as OAuth 2.1 mode refuses
+  one, and a 30-day limit on a chain of refresh tokens
+  (`oauth2.refreshTokenMaxChainS`). See
+  [Security in product mode](product-security.md#clients-and-grants).
 * OAuth 2.1 mode, FAPI and the five sender-constraint settings are **not**
   implied by product mode. Turn them on explicitly.
 * `oauth2.dpopNonceRequired` is changed only through `/admin/oauth2` or
@@ -1416,6 +1444,7 @@ headers) are described on [Configuration](configuration.md) and
 | `oauth2.revokeRefreshOnLogout` | `STS_OAUTH2_REVOKE_REFRESH_ON_LOGOUT` | `true` | yes | In every mode, revoke the refresh tokens issued on a browser session without `offline_access` when that session ends (Back-Channel Logout section 2.7). |
 | `oauth2.maxPendingTransactions` | `STS_OAUTH2_MAX_PENDING_TRANSACTIONS` | `500` | yes | How many authorization transactions RFC 9700 mode remembers to refuse a reused PKCE challenge or nonce. |
 | `oauth2.maxRefreshTokenFamilies` | `STS_OAUTH2_MAX_REFRESH_TOKEN_FAMILIES` | `2000` | yes | How many refresh tokens are tracked for rotation and replay detection. |
+| `oauth2.allowConfidentialWithoutPkce` | `STS_OAUTH2_ALLOW_CONFIDENTIAL_WITHOUT_PKCE` | `false` | yes | Product mode only. On, a confidential client may omit `code_challenge` and the request is only logged, as in development. Off, every client must send it. ASVS 5.0.0 10.4.6 is then not met. |
 | `oauth2.breakIdTokenNonce` | `STS_OAUTH2_BREAK_ID_TOKEN_NONCE` | `false` | yes | Put a deliberately wrong `nonce` in every ID Token, to find out whether a client checks it. Development mode only. |
 
 ### DPoP
