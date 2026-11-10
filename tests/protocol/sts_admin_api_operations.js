@@ -5784,6 +5784,26 @@ function onePng(side) {
   return out;
 }
 
+// THE TWO ACTS ASVS LEVEL 2 ADDED (#1490, #1517-#1525). The malware check is
+// refused here because no ICAP service is set in this realm. Ending every
+// sign-on session is a call to make only in this run's own throwaway realm;
+// this job's token came from the client-credentials grant, so it survives.
+async function theMalwareCheckAndSessionEndAnswer() {
+  log.debug("Entering theMalwareCheckAndSessionEndAnswer().");
+  log.info("=== The malware check is refused, every session can be ended ===");
+  await refused("/malware-scanning/test", {}, /ICAP|malware|scan/i,
+                "a check with no ICAP service set");
+  const ended = await ok("/sessions/end-all", {},
+                         "ended every session of the realm");
+  assert.ok(/ended/.test(String(ended.message)),
+            "POST /sessions/end-all should say so: " + JSON.stringify(ended));
+  const read = await get("/sessions");
+  assert.strictEqual(read.status, 200,
+    "GET /sessions should answer after every session has ended: " +
+    String(read.raw).slice(0, 300));
+  log.debug("Leaving theMalwareCheckAndSessionEndAnswer().");
+}
+
 async function theSignInLogoRoundTrips() {
   log.debug("Entering theSignInLogoRoundTrips().");
   log.info("=== The sign-in logo: upload, read back, refuse, remove ===");
@@ -5876,6 +5896,7 @@ async function test() {
     await theKerberosPrincipalsRoundTrip();
     const candidate = await theConfigurationDoorsRoundTrip(doc);
     await theConfigurationChangeReachesTheStore(candidate);
+    await theMalwareCheckAndSessionEndAnswer();
     await theRootIsReplacedLast(doc);
     everyDocumentedOperationWasDriven(doc);
     everyAcceptedWriteWasReadBack();

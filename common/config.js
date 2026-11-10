@@ -1336,6 +1336,8 @@ const SETTINGS = [
           '/usr/local/share/ca-certificates,/run/secrets,/var/run/secrets,' +
           '/etc/sts',
     runtime: false,
+    restartReason: 'it bounds what an administrator\'s request may name, so ' +
+                   'no such request may widen it',
     description: 'Product mode only. A comma-separated list of absolute ' +
                  'directories. A file an administrator names in a setting or ' +
                  'a request (a CA file, a SPIFFE token or key file, a ' +
