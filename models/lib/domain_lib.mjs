@@ -78,6 +78,13 @@ function shapeOf(program, type) {
     log.debug("Leaving shapeOf(). A scalar.");
     return { type: scalar ? SCALARS[scalar.name] : 'unknown' };
   }
+  // `Record<unknown>`: members nobody can list ahead, such as an audit
+  // row's `detail`. Only a record may hold one: an entry's attributes are
+  // all named, so a map read from one would be an attribute nobody declared.
+  if (type.kind === 'Model' && type.name === 'Record' && type.indexer) {
+    log.debug("Leaving shapeOf(). A map.");
+    return { type: 'map' };
+  }
   if (type.kind === 'Model' && type.name === 'Array' && type.indexer) {
     const element = shapeOf(program, type.indexer.value);
     log.debug("Leaving shapeOf(). An array.");
@@ -191,6 +198,10 @@ function fieldProblems(concept, field, objects, withheld) {
   if (field.type === 'unknown') {
     log.debug("Leaving fieldProblems(). An unknown type.");
     return [where + ' has a type a concept may not have'];
+  }
+  if (field.type === 'map' && !field.held) {
+    log.debug("Leaving fieldProblems(). A map not held on a record.");
+    return [where + ' is a map and only a record may hold one'];
   }
   if (field.embedded && field.type !== 'concept') {
     log.debug("Leaving fieldProblems(). Embedded, not a concept.");
@@ -330,7 +341,8 @@ function commentLines(text, indent) {
 function fieldType(field) {
   log.debug("Entering fieldType().");
   let type = { string: 'string', boolean: 'boolean', integer: 'number',
-    dateTime: 'string', url: 'string' }[field.type] || field.concept;
+    dateTime: 'string', url: 'string', map: 'Record<string, unknown>'
+  }[field.type] || field.concept;
   if (field.values) {
     type = field.values.map(function (one) {
       return JSON.stringify(one);

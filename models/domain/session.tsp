@@ -85,6 +85,46 @@ model Session {
 
   @fromRecord(#{key: "events"})
   events: AuthenticationEvent[];
+
+  /** Events the session dropped, oldest first: `events` is capped. */
+  @fromRecord(#{key: "eventsDropped"})
+  eventsDropped?: integer;
+
+  /** The person's `sub` (`urn:uuid:<entryUUID>`), or none. */
+  @fromRecord(#{key: "user.sub"})
+  sub?: string;
+
+  /** The sign-on session a relying-party session was derived from. */
+  @fromRecord(#{key: "derivedFrom"})
+  derivedFrom?: string;
+
+  /** The application of this service's own that holds it, if any. */
+  @fromRecord(#{key: "rpSurface"})
+  relyingPartySurface?: string;
+
+  /** That application's name as a page draws it. */
+  @fromRecord(#{key: "rpLabel"})
+  relyingPartyLabel?: string;
+
+  /** That application's client. */
+  @fromRecord(#{key: "rpClientId"})
+  relyingPartyClientId?: string;
+
+  /** How often that application has renewed its tokens. */
+  @fromRecord(#{key: "rpRenewals"})
+  relyingPartyRenewals?: integer;
+
+  /** When it last did, in milliseconds. */
+  @fromRecord(#{key: "rpRenewedAt"})
+  relyingPartyRenewedAt?: integer;
+
+  /** How many requests an API session's credential was accepted for. */
+  @fromRecord(#{key: "calls"})
+  apiCalls?: integer;
+
+  /** The browser's account set, where the session is in one (#561). */
+  @fromRecord(#{key: "accountSetId"})
+  accountSetId?: string;
 }
 
 @domain(#{
@@ -125,6 +165,26 @@ model IssuedToken {
 
   @fromRecord(#{key: "revoked"})
   revoked: boolean;
+
+  /** The person or client it was issued for, as the register files it. */
+  @fromRecord(#{key: "username"})
+  username?: string;
+
+  /** When it was issued, in milliseconds. */
+  @fromRecord(#{key: "issuedAt"})
+  issuedAt: integer;
+
+  /** Whether it has a jti and is of a kind that can be revoked. */
+  @fromRecord(#{key: "revocable"})
+  revocable: boolean;
+
+  /** The RFC 9449 thumbprint of the key it is bound to, or none. */
+  @fromRecord(#{key: "jkt"})
+  dpopThumbprint?: string;
+
+  /** `valid`, `expired`, `revoked` or `no expiry stated`: `tokenList()`'s. */
+  @fromRecord(#{key: "state"})
+  state?: string;
 }
 
 @domain(#{
@@ -163,4 +223,28 @@ model AuditEvent {
 
   @fromRecord(#{key: "summary"})
   summary: string;
+
+  /** Which process recorded it, or none with no shared store (#465). */
+  @fromRecord(#{key: "origin"})
+  origin?: string;
+
+  /** The identity exactly as presented, where that differs from `actor`. */
+  @fromRecord(#{key: "actorForm"})
+  actorForm?: string;
+
+  /** Which family, where one applies. */
+  @fromRecord(#{key: "protocol"})
+  protocol?: string;
+
+  /** How it came in: `http`, `ldap`, `kerberos` and the others. */
+  @fromRecord(#{key: "channel"})
+  channel?: string;
+
+  /** The client's IP address, or none for something nobody sent. */
+  @fromRecord(#{key: "address"})
+  address?: string;
+
+  /** What else the recording site said. Its members are the site's own. */
+  @fromRecord(#{key: "detail"})
+  detail?: Record<unknown>;
 }

@@ -198,6 +198,9 @@ class DomainMap {
     const out: any = {};
     const fits = function (field: any, value: unknown): boolean {
       const wanted = field.type === 'integer' ? 'number' : field.type;
+      if (field.type === 'map') {
+        return !!value && typeof value === 'object' && !Array.isArray(value);
+      }
       return field.type === 'concept' ?
         !!value && typeof value === 'object' : typeof value === wanted;
     };
