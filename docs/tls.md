@@ -581,7 +581,10 @@ the recorded identity and the request are what get refused. See [PKI](pki.md).
 
 * **L7 (TLS-terminating) proxy**: `global.trustProxy` believes
   `X-Forwarded-Proto` and `X-Forwarded-Host`, and `global.trustedProxies`
-  narrows that to the proxy's own addresses. Monitoring → TLS connection
+  narrows that to the proxy's own addresses. In product mode, with
+  `global.trustedProxies` empty, no caller's `X-Forwarded-*` headers are
+  believed: the client's address is the connection's, and the scheme and host
+  are the request's own. Set it to your proxy's addresses. Monitoring → TLS connection
   shows what a request carried and what was believed. A client certificate cannot cross such
   a proxy.
 * **L4 load balancer with TLS passthrough** — the supported front for client
