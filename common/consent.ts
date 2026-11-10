@@ -1051,7 +1051,8 @@ class Consent {
    * Under a FAPI profile a global consent does not count. `all: true` is
    * `prompt=consent`, which makes every requested scope outstanding without
    * deleting anything already agreed.
-   * @param request - `username`, `clientId`, `scope` and `all`
+   * @param request - `username`, `clientId`, `scope`, `all`, `answered`
+   *   (this request's own answer, spent) and `recorded` (what is on file)
    * @returns `{ clientId, scopes, outstanding, names }`, `names` being the
    *   outstanding scopes
    */
@@ -1060,7 +1061,15 @@ class Consent {
   // are the exception: they are not third parties asking for anything. They
   // are named EXACTLY: a prefix test (`sts-`) also matched every dynamically
   // registered client, whose ids begin `sts-client-` by default.
-  private alwaysAsks(clientId: string): boolean {
+  //
+  // WHAT 10.7.1 DOES NOT MEAN IS THAT THE ANSWER JUST GIVEN IS IGNORED. An
+  // EARLIER answer does not speak for a public client; the one the person
+  // gave on the screen this authorization request sent them to does, once,
+  // for that request. The authorization endpoint spends it (`answered`,
+  // below) the way it spends an RFC 9396 Allow; without it the second pass
+  // asked again, and again, for ever. And a caller asking what is RECORDED
+  // rather than whether to ask (`recorded`) is not forced either.
+  alwaysAsks(clientId: string): boolean {
     const { log, applications } = this.deps;
     log.debug("Entering Consent.alwaysAsks().");
     const own: string[] = (applications as any).HOSTED_SURFACE_CLIENT_IDS || [];
@@ -1081,7 +1090,12 @@ class Consent {
     const asked = request || {};
     const clientId = String(asked.clientId || '').trim();
     const wanted = self.scopesOf(asked.scope);
-    const all = !!asked.all || self.alwaysAsks(clientId);
+    // `answered`: the person agreed to exactly these scopes on the screen
+    // THIS request sent them to, and the caller has spent that answer.
+    // `recorded`: the caller asks what is on file, not whether to ask.
+    const answered = !!asked.answered;
+    const all = !!asked.all ||
+      (!answered && !asked.recorded && self.alwaysAsks(clientId));
     // AN ADMINISTRATOR'S GLOBAL CONSENT IS NOT THE USER'S APPROVAL under a
     // FAPI profile (#138, section 5.2.2 item 12) — this service's own console
     // and portal included, by rcbj's decision: the person approves each
@@ -1136,7 +1150,8 @@ class Consent {
       facts: rows.map(function (one) {
         return { scope: one.scope, attributes: [
           self.deps.scopeVerdicts.resourceFact(A.SCOPE_CONSENTED,
-                                               one.consented || one.global)] };
+                                               one.consented || one.global ||
+                                               answered)] };
       })
     }) : { verdicts: [] };
     const needed: Record<string, boolean> = {};
@@ -2282,6 +2297,7 @@ export = {
   revokeGlobal: slot.forward('revokeGlobal'),
   consentsOf: slot.forward('consentsOf'),
   outstanding: slot.forward('outstanding'),
+  alwaysAsks: slot.forward('alwaysAsks'),
   record: slot.forward('record'),
   revoke: slot.forward('revoke'),
   forget: slot.forward('forget'),

@@ -350,6 +350,10 @@ class ConsentScreen {
       authorizationDetails: Array.isArray(info.authorizationDetails)
         ? info.authorizationDetails : [],
       detailsDigest: String(info.detailsDigest || ''),
+      // A PUBLIC CLIENT'S SCOPES (ASVS 5.0.0 10.7.1): asked every time, so
+      // Allow is recorded under this digest for the authorization endpoint's
+      // next pass to spend, as `detailsDigest` is. '' for any other client.
+      scopeAnswerDigest: String(info.scopeAnswerDigest || ''),
       // The details THEMSELVES (#432 phase 5), so a detail's limits can be
       // drawn as controls and read back lowered; `authorizationDetails`
       // above is how each is described.
@@ -846,6 +850,13 @@ class ConsentScreen {
     if (record.detailsDigest) {
       authorizationDetails.noteConsented(record.username, record.clientId,
                                          record.detailsDigest, lowered);
+    }
+    // And a public client's scopes, which the endpoint asks about every
+    // time (`consent.alwaysAsks()`): this Allow answers THIS request once.
+    // It is recorded whether or not the write below stores anything.
+    if (record.scopeAnswerDigest) {
+      authorizationDetails.noteConsented(record.username, record.clientId,
+                                         record.scopeAnswerDigest, null);
     }
     const written = consent.record(record.username, record.clientId,
       record.scopes.map(function (one) {

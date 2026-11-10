@@ -6368,6 +6368,18 @@ behaviour; this is why each is shaped as it is. Every product-only rule is a
   this service's own applications are not third parties. The screen's duration
   (#1519, #1565) is the client's refresh token lifetime, because a recorded
   consent never expires and what IS bounded is one grant of it.
+  **The answer given for THIS request counts for this request, once**
+  (`fix/product-consent-loop`). 10.7.1 says an EARLIER answer does not speak
+  for a public client; it does not say the one just given is ignored, and
+  nothing recorded it, so the second pass asked again and the browser looped
+  on `/oauth2/consent` for ever. The consent screen now records Allow in RFC
+  9396's one-time store under `scopeAnswerDigestOf()` (`scope:` and the
+  sorted scopes), and the next pass spends it with `consumeConsented()`
+  before `outstanding({ answered })`, exactly as a details Allow is spent. A
+  later request finds nothing and is asked again. Callers asking what is ON
+  FILE (`offlineAccessScope()`, Grant Management's `stillConsented`) pass
+  `recorded: true`, which the rule never forces.
+  `tests/consent_public_client_once.js`.
 * **A person is found by `sub` first** (#1514, #1536) at `/account-api`,
   `/report-api` and in `common/role_permissions.ts`, and in product a `sub`
   that resolves to nobody is refused rather than matched by username (#1543,

@@ -1623,6 +1623,33 @@ class AuthorizationDetails {
       JSON.stringify(this.canonical(details || [])), 'base64url');
   }
 
+  // THE SAME ONE-TIME ANSWER FOR A PUBLIC CLIENT'S SCOPES (ASVS 5.0.0
+  // 10.7.1, `common/consent.ts`'s `alwaysAsks()`). A public client is asked
+  // every time, and the Allow the person gives is spent by the second pass
+  // exactly as an Allow on details is: recorded under this digest by the
+  // consent screen, consumed by the authorization endpoint. The scopes are
+  // sorted and deduplicated, and the `scope:` prefix keeps the digest apart
+  // from a details digest (base64url has no colon). No store of its own.
+  /**
+   * Returns the digest a person's one-time Allow on a public client's scopes
+   * is recorded and spent under.
+   *
+   * @param scope - the space-delimited scope, or the scopes as a list
+   * @returns the digest
+   */
+  scopeAnswerDigestOf(scope: unknown): string {
+    const { log, crypto } = this.deps;
+    log.debug("Entering AuthorizationDetails.scopeAnswerDigestOf().");
+    const list = (Array.isArray(scope) ? scope.map(String)
+      : String(scope == null ? '' : scope).split(/\s+/))
+      .filter(function (one: string, at: number, all: string[]) {
+        return !!one && all.indexOf(one) === at;
+      }).sort();
+    log.debug("Leaving AuthorizationDetails.scopeAnswerDigestOf().");
+    return 'scope:' + crypto.digest('sha256', JSON.stringify(list),
+                                    'base64url');
+  }
+
   private consentKey(username: unknown, clientId: unknown,
                      digest: unknown): string {
     const { log } = this.deps;
@@ -1780,6 +1807,7 @@ export = {
   needsConsent: slot.forward('needsConsent'),
   describe: slot.forward('describe'),
   digestOf: slot.forward('digestOf'),
+  scopeAnswerDigestOf: slot.forward('scopeAnswerDigestOf'),
   noteConsented: slot.forward('noteConsented'),
   consumeConsent: slot.forward('consumeConsent'),
   consumeConsented: slot.forward('consumeConsented')
