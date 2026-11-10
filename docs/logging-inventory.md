@@ -60,9 +60,10 @@ run time.
 > response, and every token and assertion before and after it is signed. That is
 > Restricted and Bearer data. In development mode nothing is removed. Product mode
 > leaves out the `Authorization`, `Cookie`, `Set-Cookie`, `DPoP` and `X-API-Key`
-> headers and withholds bodies, but the tokens and assertions are still written.
-> Product mode does not refuse the setting, so use it only on a deployment with
-> no real data.
+> headers, withholds bodies, and writes a token or assertion only as its size and
+> the start of its SHA-256 digest (ASVS 5.0.0 16.2.5), enough to match a line to a
+> request and not enough to replay it. The function entry and exit lines remain,
+> so keep `debug` for diagnosing a fault.
 
 The generated password of the first administrator is written to the file
 `bootstrap-admin-password` in `persistence.dataDir`, not to the log, unless

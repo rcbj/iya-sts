@@ -1203,6 +1203,7 @@ function verifyXmlSignature(xml, opts) {
   try {
     result = xmldsig.verifyXml(signatureXml, found ? {
       referencedXml: referencedXml,
+      allowedTransforms: XML_ACCEPTED_TRANSFORMS,
       verifier: function (octets, signatureBytes) {
         return verifyXmlSignatureValue(signatureMethod, found.key,
           Buffer.from(String(octets), 'binary'),
@@ -1211,7 +1212,8 @@ function verifyXmlSignature(xml, opts) {
     } : {
       // NO KEY ANYWHERE BUT, PERHAPS, AN RSAKeyValue — the engine's own RSA
       // path, which is what it always was.
-      referencedXml: referencedXml
+      referencedXml: referencedXml,
+      allowedTransforms: XML_ACCEPTED_TRANSFORMS
     });
     if (found) {
       result.signerSubject = found.subject;
@@ -1325,6 +1327,21 @@ const WSSE_NS = 'http://docs.oasis-open.org/wss/2004/01/' +
 const WSU_NS = 'http://docs.oasis-open.org/wss/2004/01/' +
   'oasis-200401-wss-wssecurity-utility-1.0.xsd';
 const EXC_C14N = 'http://www.w3.org/2001/10/xml-exc-c14n#';
+
+// THE TRANSFORMS A SIGNATURE FROM OUTSIDE MAY NAME (ASVS 5.0.0 1.2.7, 5.0.0
+// 15.3): enveloped-signature and the four canonicalizations this engine
+// performs. The SAML and WS-Federation profiles use no others, and an XPath,
+// XPath Filter 2.0 or XSLT transform is work this service would do on the
+// sender's terms. Every verification of an inbound XML signature passes this
+// list to `xmldsig.verifyXml()`; WS-Security's own reader is narrower still
+// (exclusive canonicalization only, `readWsSecuritySignature()`).
+const XML_ACCEPTED_TRANSFORMS = Object.freeze([
+  xmldsig.TRANSFORM_ENVELOPED,
+  'http://www.w3.org/2001/10/xml-exc-c14n#',
+  'http://www.w3.org/2001/10/xml-exc-c14n#WithComments',
+  'http://www.w3.org/TR/2001/REC-xml-c14n-20010315',
+  'http://www.w3.org/TR/2001/REC-xml-c14n-20010315#WithComments'
+]);
 
 // The id of an element, in every spelling this document could give one —
 // `wsu:Id` first, which is the WS-Security spelling.
@@ -1706,6 +1723,7 @@ function verifyWsSecuritySignature(xml, opts) {
   try {
     result = xmldsig.verifyXml(signatureXml, {
       referencedXml: String(xml),
+      allowedTransforms: XML_ACCEPTED_TRANSFORMS,
       verifier: function (octets, signatureBytes) {
         return verifyXmlSignatureValue(reading.signatureMethod, found.key,
           Buffer.from(String(octets), 'binary'),
@@ -1805,6 +1823,7 @@ function verifyWsSecurityHmac(xml, opts) {
     result = xmldsig.verifyXml(new xmldom.XMLSerializer()
       .serializeToString(sigEl), {
       referencedXml: String(xml),
+      allowedTransforms: XML_ACCEPTED_TRANSFORMS,
       verifier: function (octets, signatureBytes) {
         const expected = nodeCrypto.createHmac(row.hash, key)
           .update(Buffer.from(String(octets), 'binary')).digest();

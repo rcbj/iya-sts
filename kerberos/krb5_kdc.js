@@ -6574,9 +6574,13 @@ app.post('/KdcProxy', function (req, res) {
     log.error('krb5: KdcProxy failed: ' + (e.stack || e.message));
     log.debug('Leaving POST /KdcProxy. Failed.');
     errorCodes.mark(res, 'STS-KRB-0051');
+    // THE ERROR'S OWN TEXT STAYS IN THE LOG IN PRODUCT (ASVS 5.0.0 16.5.1),
+    // as every other handler's does: it can name a file, a key or a row.
     res.status(500)
        .type('text/plain')
-       .send('the KDC could not answer: ' + e.message);
+       .send(mode.hidesFailureDetail()
+         ? 'the KDC could not answer.'
+         : 'the KDC could not answer: ' + e.message);
   });
 });
 

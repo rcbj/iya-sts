@@ -154,7 +154,8 @@ log.info("Log initialized. logLevel=" + log.level());
 //   stage  'before signing' / 'after signing' / 'before encryption' / ...
 //   value  the object or string itself, recorded in full
 /**
- * Logs a security artifact in full, before or after it was protected.
+ * Logs a security artifact before or after it was protected: in full in
+ * development mode, and by size and digest only in product mode.
  *
  * @param what - what it is, such as `SAML assertion` or `JWT`
  * @param stage - such as `before signing` or `after encryption`
@@ -162,10 +163,31 @@ log.info("Log initialized. logLevel=" + log.level());
  */
 function logArtifact(what, stage, value) {
   log.debug("Entering logArtifact().");
+  // Nothing to do below debug, and the artifact is not serialised for a line
+  // nobody writes.
+  if (!log.debug()) {
+    log.debug("Leaving logArtifact(). Below the level.");
+    return;
+  }
+  const text = (typeof value === 'string') ? value : JSON.stringify(value);
+  // PRODUCT MODE NEVER WRITES THE ARTIFACT (ASVS 5.0.0 16.2.5): a signed
+  // token or assertion in a log is a bearer credential anybody who reads the
+  // log can replay, whatever the level. What it says instead is enough to
+  // match the line to a request: the artifact's size and the start of its
+  // SHA-256 digest. `mode.redactsRequestLog()` is the rule the request log
+  // beside this already follows.
+  if (require('./mode').redactsRequestLog()) {
+    log.debug({ artifact: what, stage: stage,
+                length: String(text || '').length,
+                sha256: stsCrypto.digest('sha256', String(text || ''), 'hex')
+                  .slice(0, 16) },
+              what + ' ' + stage + ' (not written: product mode).');
+    log.debug("Leaving logArtifact(). Redacted.");
+    return;
+  }
   log.debug({ artifact: what,
               stage: stage,
-              value: (typeof value === 'string') ? value :
-                      JSON.stringify(value) },
+              value: text },
             what + ' ' + stage + '.');
   log.debug("Leaving logArtifact().");
 }

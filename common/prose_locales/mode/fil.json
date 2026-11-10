@@ -1368,8 +1368,8 @@
     "text": "Sa debug level, buong request at response ang nasa log, at maaaring gumamit ng demo password ang database."
   },
   "mode.requirements.no-known-secrets.product": {
-    "en": "a037c255a759deb1",
-    "text": "Inaalis ng mga request log ang mga credential at body sa bawat level, at pinapahinto ng default na database password ang service maliban kung naka-on ang persistence.allowDefaultDatabasePassword."
+    "en": "9dc455e8deb093a6",
+    "text": "Inaalis ng mga request log ang mga credential at body sa bawat level, ang isang naka-sign na token o assertion ay nilo-log lang ayon sa laki at digest nito, at pinahihinto ng isang default na password ng database ang serbisyo maliban kung naka-on ang persistence.allowDefaultDatabasePassword."
   },
   "mode.requirements.secrets-from-store.what": {
     "en": "51a0285e7263826e",

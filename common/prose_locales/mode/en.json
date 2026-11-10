@@ -136,7 +136,7 @@
   "mode.requirements.strict-protocol-input.product": "A repeated token parameter is refused, a partner's Logout Token must be typed logout+jwt unless federation.allowUntypedLogoutToken is on, forwarded addresses need global.trustedProxies, and an internal error's text stays in the log.",
   "mode.requirements.no-known-secrets.what": "Logs and the database hold no well-known secrets",
   "mode.requirements.no-known-secrets.development": "At debug level the log carries whole requests and responses, and the database may use a demonstration password.",
-  "mode.requirements.no-known-secrets.product": "Request logs leave out credentials and bodies at every level, and a default database password stops the service unless persistence.allowDefaultDatabasePassword is on.",
+  "mode.requirements.no-known-secrets.product": "Request logs leave out credentials and bodies at every level, a signed token or assertion is logged by its size and digest only, and a default database password stops the service unless persistence.allowDefaultDatabasePassword is on.",
   "mode.requirements.secrets-from-store.what": "Backend secrets come from a secret store",
   "mode.requirements.secrets-from-store.development": "The key-encryption key may be a file, and the database password may be in a file or in the connection string.",
   "mode.requirements.secrets-from-store.product": "The key-encryption keys come from a secret store or a key management service, and a database password from a secret store. A file or a password in the connection string stops the service unless secrets.allowLocalSecrets is on. A previous key-encryption key may still be a file, so that a deployment can move off one.",

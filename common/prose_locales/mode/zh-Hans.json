@@ -1368,8 +1368,8 @@
     "text": "调试级别下，日志包含完整的请求和响应，数据库可以使用演示密码。"
   },
   "mode.requirements.no-known-secrets.product": {
-    "en": "a037c255a759deb1",
-    "text": "请求日志在任何级别都不包含凭据和正文；默认数据库密码会使服务停止，除非开启 persistence.allowDefaultDatabasePassword。"
+    "en": "9dc455e8deb093a6",
+    "text": "请求日志在任何级别都不包含凭据和正文；已签名的令牌或断言只按其大小和摘要记录；默认的数据库密码会使服务停止，除非开启 persistence.allowDefaultDatabasePassword。"
   },
   "mode.requirements.secrets-from-store.what": {
     "en": "51a0285e7263826e",

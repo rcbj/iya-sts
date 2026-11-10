@@ -1368,8 +1368,8 @@
     "text": "En el nivel debug, el registro incluye solicitudes y respuestas completas, y la base de datos puede usar una contraseña de demostración."
   },
   "mode.requirements.no-known-secrets.product": {
-    "en": "a037c255a759deb1",
-    "text": "Los registros de solicitudes omiten credenciales y cuerpos en todos los niveles, y una contraseña predeterminada de la base de datos detiene el servicio salvo que persistence.allowDefaultDatabasePassword esté activo."
+    "en": "9dc455e8deb093a6",
+    "text": "Los registros de solicitudes omiten credenciales y cuerpos en todos los niveles, un token o una aserción firmados se registran solo por su tamaño y su huella, y una contraseña de base de datos predeterminada detiene el servicio salvo que persistence.allowDefaultDatabasePassword esté activado."
   },
   "mode.requirements.secrets-from-store.what": {
     "en": "51a0285e7263826e",
