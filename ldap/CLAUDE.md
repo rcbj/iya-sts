@@ -368,7 +368,8 @@ from `listen()`* is the rule this is an instance of.
    answers for one of those and silently loses the other, so each row says which
    rule caught it. The three disagreements it reports are the point of the page and
    none of them is a defect to fix: a **dangling** member (this directory does not
-   do referential integrity, so a delete leaves the DN behind), a member that is
+   do referential integrity on a write, so a member may name nothing; a delete
+   takes its DN out of every group since 2026-11-10), a member that is
    itself a **group** (nesting is shown, never expanded — nothing here walks it),
    and an entry whose own `memberOf` names a group that does not list it back
    (nothing here maintains `memberOf`; it is not even a standard attribute). Note
@@ -2324,8 +2325,14 @@ mode.
   `ou=users` whose username is already here is 68, because one person is one
   entry however they got in — LDAP has no notion of a username and a real
   directory would get this from the schema subsystem this mock does not have),
-  and one is deliberately NOT: deleting a user leaves its DN in every group that lists
-  it, because referential integrity is a directory feature and not a protocol rule.
+  and one was deliberately NOT until 2026-11-10: deleting a user left its DN in every
+  group that listed it. **A delete now takes a person's, group's or application's DN
+  out of every group and its name out of every role (#1612, rcbj: "deleting any
+  person, group, or application object that is then recreated should not
+  automatically inherit any roles. It all has to be readded")** —
+  `forgetGroupMemberships()` through the group index, and `roles.forgetMember()`.
+  A member ADDED that names nothing is still accepted, and a rename (modifyDN)
+  still leaves the old DN in the groups that listed it.
 
 ---
 

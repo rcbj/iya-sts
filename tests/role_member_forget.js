@@ -22,6 +22,11 @@
 //      somebody made again under the username does not hold it.
 //   D. A GROUP deleted (`deleteGroupEntry()`) leaves the role.
 //   E. The failure has its code in the table.
+//   F. GROUPS TOO (rcbj, 2026-11-10: "It all has to be readded"): a deleted
+//      person leaves every group that listed them, and somebody made again
+//      under the username is in none of them (so holds no role through one);
+//      a deleted group leaves the group it was nested in; a deleted
+//      application leaves a group that listed its entry.
 //
 // IN A THROWAWAY REALM, removed at the end (app_roles.js's arrangement).
 // ===========================================================================
@@ -45,6 +50,10 @@ const OTHER = 'rmf-other-' + RUN;
 const DIRECT = 'rmf-direct-' + RUN;
 const PERSON = 'rmf-person-' + RUN;
 const GROUP = 'rmf-group-' + RUN;
+const OUTER = 'rmf-outer-' + RUN;
+const INNER = 'rmf-inner-' + RUN;
+const MEMBER = 'rmf-member-' + RUN;
+const GROUPED_APP = 'rmf-grouped-app-' + RUN;
 
 function rolesAction(body) {
   log.debug("Entering rolesAction(). " + body.action);
@@ -166,6 +175,61 @@ function aGroup(t, made) {
   log.debug("Leaving aGroup().");
 }
 
+// The DNs a group lists, normalised for comparison.
+function listedBy(group) {
+  log.debug("Entering listedBy(). " + group);
+  const found = ldap.readGroupEntry(ldap.groupDnFor(group));
+  log.debug("Leaving listedBy().");
+  return ((found && found.members) || []).map(function (one) {
+    return String(one.dn || one.value || '').toLowerCase();
+  });
+}
+
+function groups(t) {
+  log.debug("Entering groups().");
+  t.log.info('=== F. groups too ===');
+  const outer = ldap.createGroup(OUTER, { members: [] });
+  const inner = ldap.createGroup(INNER, { members: [] });
+  const person = ldap.createUser(MEMBER, { invent: false, attributes: {} });
+  const app = makeApplication(GROUPED_APP);
+  const appDn = 'cn=' + GROUPED_APP + ',' + ldap.applicationsDn();
+  const personDn = typeof person === 'string' ? person
+                                              : (person && person.dn);
+  const adds = [ldap.addGroupMember(OUTER, MEMBER),
+                ldap.addGroupMember(OUTER, ldap.groupDnFor(INNER)),
+                ldap.addGroupMember(OUTER, appDn)];
+  const before = listedBy(OUTER);
+  t.check(outer.ok && inner.ok && !!personDn && app.ok &&
+          adds.every(function (one) {
+            return one.ok;
+          }) && before.length === 3,
+          'precondition: the outer group lists a person, a group and an ' +
+          'application', JSON.stringify([adds, before]));
+  const gonePerson = ldap.deletePerson(personDn, { door: 'the test' });
+  t.check(gonePerson.ok &&
+          listedBy(OUTER).indexOf(personDn.toLowerCase()) < 0 &&
+          listedBy(OUTER).length === 2,
+          'F1. a deleted person is out of the group that listed them',
+          JSON.stringify(listedBy(OUTER)));
+  ldap.createUser(MEMBER, { invent: false, attributes: {} });
+  const theirs = ldap.groupsOfUser(MEMBER).groups.map(function (one) {
+    return one.cn;
+  });
+  t.check(theirs.indexOf(OUTER) < 0,
+          'F2. somebody made again under the username is in no group',
+          JSON.stringify(theirs));
+  const goneInner = ldap.deleteGroupEntry(ldap.groupDnFor(INNER));
+  t.check(goneInner.ok && listedBy(OUTER).length === 1,
+          'F3. a deleted group is out of the group it was nested in',
+          JSON.stringify(listedBy(OUTER)));
+  const goneApp = applications.deleteApplication(GROUPED_APP,
+                                                 { actor: 'test' });
+  t.check(goneApp.ok && listedBy(OUTER).length === 0,
+          'F4. a deleted application is out of the group that listed it',
+          JSON.stringify(listedBy(OUTER)));
+  log.debug("Leaving groups().");
+}
+
 function theCode(t) {
   log.debug("Entering theCode().");
   t.check(!!errorCodes.lookup ? !!errorCodes.lookup('STS-ADMIN-0919')
@@ -186,6 +250,7 @@ async function run(t) {
       theOtherDoor(t);
       aPerson(t, made);
       aGroup(t, made);
+      groups(t);
       theCode(t);
     });
   } finally {
@@ -197,7 +262,7 @@ async function run(t) {
 module.exports = {
   name: 'role_member_forget',
   describe: 'a deleted application, person or group is taken out of every ' +
-            'role that named it, so nothing made again under its name ' +
-            'inherits the role (2026-11-10)',
+            'role and every group that named it, so nothing made again ' +
+            'under its name inherits either (2026-11-10, #1612)',
   run: run
 };
