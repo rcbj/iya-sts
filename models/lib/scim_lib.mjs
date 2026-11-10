@@ -360,6 +360,47 @@ function attributeAt(scim, row) {
 }
 
 /**
+ * The attributes of a schema the directory has no place for (#206): a leaf
+ * with no mapping row on itself, on a sibling or on an ancestor, which a
+ * client would be told is supported and lose on the next read. A write-only
+ * attribute is taken and kept nowhere on purpose, and is not one.
+ *
+ * @param schema - the schema
+ * @param rows - every mapping row
+ * @returns the dotted paths
+ */
+function unheld(schema, rows) {
+  log.debug("Entering unheld().");
+  const mapped = new Set(rows.map(function (row) {
+    return row.scim;
+  }));
+  const prefix = schema.extension ? schema.id + ':' : '';
+  const out = [];
+  const walk = function walk(list, path, held) {
+    // A sibling holds a sub-attribute only: two top-level attributes of a
+    // schema are not one member.
+    const here = path.length > 0 && list.some(function (one) {
+      return mapped.has(prefix + path.concat([one.name]).join('.'));
+    });
+    list.forEach(function (one) {
+      const at = path.concat([one.name]);
+      const mine = held || here || mapped.has(prefix + at.join('.'));
+      if (one.subAttributes) {
+        walk(one.subAttributes, at, mapped.has(prefix + at.join('.')) ||
+          held);
+        return;
+      }
+      if (!mine && one.mutability !== 'writeOnly') {
+        out.push(schema.name + '.' + at.join('.'));
+      }
+    });
+  };
+  walk(schema.attributes, [], false);
+  log.debug("Leaving unheld(). " + out.length);
+  return out;
+}
+
+/**
  * What is wrong with the SCIM model, held to the directory objects it maps
  * onto.
  *
@@ -401,6 +442,11 @@ export function checkScim(scim, objects) {
     schema.attributes.forEach(function (attribute) {
       attributeProblems(schema.name + '.', attribute, problems);
     });
+    unheld(schema, scim.mapping.user.concat(scim.mapping.group))
+      .forEach(function (one) {
+        problems.push(one + ' is published and the directory has no place ' +
+          'for it: give it a row, or leave it out (#206)');
+      });
   });
   scim.common.forEach(function (attribute) {
     attributeProblems('common.', attribute, problems);
