@@ -101,8 +101,9 @@ already written the code that assumed it.
 That is cheap rather than a matter of discipline: every API operation calls the
 *same* action function the console's form posts to, every API GET calls the same
 JSON view the page's `?format=json` answers, and the OpenAPI document is
-generated from the operation table — so an operation cannot exist and be
-undocumented, nor be documented and not exist.
+written in the model and served for the routes that exist — so an operation
+cannot be documented and not exist, and an answer it does not describe is
+not sent.
 
 What no code here can check is a new console control with **no** row. Nothing in
 this service can see a form appear on a page, so the parity is asserted from

@@ -855,9 +855,12 @@ them on the console or with `POST /admin-api/config/set`.
   The way to see it is not to read the code: revoke a token through the API
   and RFC 7662 introspection calls it inactive, because there is one set of
   revoked jtis in the service and `/oauth2/revoke` writes to the same one.
-* **The OpenAPI document is generated, not written.** It is built from the
-  route table, so it cannot describe an operation that does not exist or
-  omit one that does. The explorer's copy is built by the same function.
+* **The OpenAPI document is written once, in the model.** Each operation is
+  TypeSpec under `models/api/` ([Abstract data model](data-model.md#api)), and
+  the service serves the operations its routes answer, so the document cannot
+  describe an operation that does not exist. The same declaration validates
+  each request and every answer. The explorer's copy is built by the same
+  function.
 * **A token, not a console session.** `/admin-api` is a machine surface with
   no browser and no sign-in screen, so it is reached the way a machine
   reaches any resource server. A console session is not an API credential,
