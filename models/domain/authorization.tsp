@@ -38,6 +38,21 @@ model Role {
 
   @derived(#{how: "The trust realm whose directory holds the entry."})
   realm: string;
+
+  @fromAttr(#{attr: "roleConferredBy"})
+  `roleConferredBy`?: string[];
+
+  @fromAttr(#{attr: "roleApplication"})
+  `roleApplication`?: string;
+
+  @fromAttr(#{attr: "roleAllowedMemberType"})
+  `roleAllowedMemberType`?: string[];
+
+  @fromAttr(#{attr: "owner"})
+  `owner`?: string[];
+
+  @fromAttr(#{attr: "stsOwnerProtected"})
+  `stsOwnerProtected`?: boolean;
 }
 
 @domain(#{
@@ -69,4 +84,13 @@ model XacmlPolicy {
 
   @derived(#{how: "The trust realm whose directory holds the entry."})
   realm: string;
+
+  @fromAttr(#{attr: "description"})
+  `description`?: string[];
+
+  @fromAttr(#{attr: "xacmlApplication"})
+  `application`?: string;
+
+  @fromAttr(#{attr: "xacmlOrphanedAt"})
+  `orphanedAt`?: string;
 }

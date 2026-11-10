@@ -168,7 +168,7 @@ function mapping(t) {
     userPassword: 'x' }, { on: { operational: { entryUUID: 'u-1' } },
     derived: { realm: '' } });
   t.equal(JSON.stringify(user),
-    '{"entryUuid":"u-1","username":"alice","realm":""}',
+    '{"entryUuid":"u-1","username":"alice","realm":"","cn":["A"]}',
     'a User is its fields and no password, read across two objects');
   let threw = false;
   try {

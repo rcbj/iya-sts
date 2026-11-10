@@ -272,6 +272,27 @@ export function checkDomains(concepts, directory, secretNames) {
         fieldProblems(concept, field, objects, withheld));
     });
   });
+  // EVERY ATTRIBUTE MEANS SOMETHING, OR THE MODEL IS NOT THE SOURCE.
+  const read = new Set();
+  concepts.forEach(function (concept) {
+    concept.fields.forEach(function (field) {
+      if (field.from) {
+        read.add((field.from.on || concept.entry) + '.' + field.from.attr);
+      }
+    });
+  });
+  directory.filter(function (object) {
+    return !object.projectionOf;
+  }).forEach(function (object) {
+    object.attributes.concat(object.personAttributes)
+      .forEach(function (attribute) {
+        if (!read.has(object.id + '.' + attribute.name) &&
+            !read.has('person.' + attribute.name)) {
+          problems.push(object.id + '.' + attribute.name +
+            ' is read by no concept');
+        }
+      });
+  });
   log.debug("Leaving checkDomains(). " + problems.length);
   return problems;
 }
