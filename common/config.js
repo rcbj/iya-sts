@@ -1131,10 +1131,12 @@ const SETTINGS = [
     description: 'The addresses or CIDR ranges this deployment\'s own ' +
                  'proxies and load balancers connect from, comma-separated ' +
                  '(10.0.0.0/8, fd00::/8). Read only when global.trustProxy ' +
-                 'is on. EMPTY, the default, keeps the old rule: forwarded ' +
-                 'headers are believed from any caller, and the rate ' +
-                 'limiter takes the left-most X-Forwarded-For entry, which ' +
-                 'the client writes itself. SET, X-Forwarded-For, ' +
+                 'is on. EMPTY, the default, keeps the old rule in ' +
+                 'development mode: forwarded headers are believed from any ' +
+                 'caller, and the rate limiter takes the left-most ' +
+                 'X-Forwarded-For entry, which the client writes itself. In ' +
+                 'product mode EMPTY believes them from nobody, so the ' +
+                 'client is the connection\'s peer. SET, X-Forwarded-For, ' +
                  'X-Forwarded-Proto and X-Forwarded-Host are believed only ' +
                  'from a connection whose peer is in one of these ranges, ' +
                  'and the client is the right-most X-Forwarded-For entry ' +
@@ -1417,15 +1419,22 @@ const SETTINGS = [
                  'recommends it.' },
 
   { key: 'account.recentAuthMinutes', group: 'Web security',
-    label: 'How recent a sign-in must be to change a second factor (min)',
+    label: 'How recent a sign-in must be for a sensitive change (min)',
     env: 'STS_ACCOUNT_RECENT_AUTH_MINUTES', type: 'int', dflt: strongerInProduct(15, 0), derived: true,
     min: 0, max: 1440,
     runtime: true,
-    description: 'A person changing their second factors, recovery codes, ' +
-                 'passkeys or email address on the portal must have signed in ' +
-                 'within this many minutes, or they are sent to sign in again ' +
-                 'first. 0 means it is not asked, which is the development ' +
-                 'default. Product mode defaults to 15.' },
+    description: 'How recently somebody must have signed in, in minutes, to ' +
+                 'change how a person signs in. On the portal: their second ' +
+                 'factors, recovery codes, passkeys, app passwords, ' +
+                 'certificates, signing keys, self-issued IDs, email address ' +
+                 'or a wallet credential offer, and ending their other ' +
+                 'sessions; they are sent to sign in again first. For an ' +
+                 'administrator: changing a person\'s password, second ' +
+                 'factor, passkey, recovery codes, email address or app ' +
+                 'passwords through the console or /admin-api, which ' +
+                 'answers RFC 9470\'s insufficient_user_authentication. 0 ' +
+                 'means it is not asked, which is the development default. ' +
+                 'Product mode defaults to 15.' },
 
   { key: 'persistence.allowDefaultDatabasePassword', group: 'Persistence',
     label: 'Allow a default database password in product mode',
@@ -1598,7 +1607,9 @@ const SETTINGS = [
     description: 'Product mode only. Off, the default, a bootstrap ' +
                  'administrator named admin, root, sa or administrator, or ' +
                  'with no name at all, is given an unpredictable generated ' +
-                 'name, printed with its password at first start. On, the ' +
+                 'name, written with its password to the file ' +
+                 'bootstrap-admin-password in persistence.dataDir at first ' +
+                 'start (see admin.logBootstrapPassword). On, the ' +
                  'configured name is used as it is. WARNING: ASVS 5.0.0 ' +
                  'requirement 6.3.2 forbids a default account name, so leave ' +
                  'this off outside a test stack.' },
@@ -1623,9 +1634,13 @@ const SETTINGS = [
                  '(admin.openWhenEmpty). In development any password signs ' +
                  'it in, as for everybody. IN PRODUCT MODE it is also who ' +
                  'gets a generated password when this service starts and ' +
-                 'NOBODY in the realm holds a credential; that password is ' +
-                 'logged once and never again, and is the only way into a ' +
-                 'fresh product deployment. The generated password is never ' +
+                 'NOBODY in the realm holds a credential; the name and that ' +
+                 'password are written once to the file ' +
+                 'bootstrap-admin-password in persistence.dataDir, readable ' +
+                 'only by this service (the log says where, and carries them ' +
+                 'itself only with admin.logBootstrapPassword on), and are ' +
+                 'the only way into a fresh product deployment. The ' +
+                 'generated password is never ' +
                  'written where somebody already holds a credential, so it ' +
                  'cannot overwrite a password. The forced change applies ' +
                  'only to an account this step CREATED — an existing ' +
@@ -2342,8 +2357,9 @@ const SETTINGS = [
     type: 'int', dflt: strongerInProduct(1800, 0), derived: true, runtime: true,
     min: 0, max: 2592000,
     description: 'How long a session may go UNUSED before it ends, on top of ' +
-                 'the absolute lifetime above. **Zero, the default, means no ' +
-                 'idle timeout**, which is what this service has always done. ' +
+                 'the absolute lifetime above. **Zero means no idle ' +
+                 'timeout**, the development default and what this service ' +
+                 'has always done there. ' +
                  'Set, a session somebody stops using ends that many seconds ' +
                  'after its last request, whichever of the two limits comes ' +
                  'first — and a request to the admin console or the user ' +
@@ -2352,8 +2368,7 @@ const SETTINGS = [
                  'by an idle clock on a session they are not presenting. It ' +
                  'is live: it applies to sessions that already exist, because ' +
                  'it is checked where a session is read rather than stamped ' +
-                 'where one is made. In product mode, where this is left ' +
-                 'unset, the default is 1800.' },
+                 'where one is made. Product mode defaults to 1800.' },
 
   // DEVICE BOUND SESSION CREDENTIALS (#725): the sign-on session bound to a
   // key the browser holds. Off by default, as every new enforcement here is;
@@ -6803,9 +6818,12 @@ const SETTINGS = [
     env: 'STS_OAUTH2_ALLOW_UNDECLARED_GRANTS', type: 'bool', dflt: false, runtime: true,
     description: 'Product mode only. Off, the default, a client that declares ' +
                  'no grant types may use authorization_code and refresh_token ' +
-                 'alone. On, it may use any grant this service offers. ' +
-                 'WARNING: ASVS 5.0.0 requirement 10.4.4 limits a client to ' +
-                 'the grants it needs, so leave this off outside a test stack.' },
+                 'alone, and one that declares no response types (and not ' +
+                 'the implicit grant) may use response_type=code alone. On, ' +
+                 'it may use any grant and response type this service ' +
+                 'offers. WARNING: ASVS 5.0.0 requirement 10.4.4 limits a ' +
+                 'client to the grants it needs, so leave this off outside a ' +
+                 'test stack.' },
 
   { key: 'oauth2.signedMetadataAlgorithm', group: 'OAuth 2.0 / OIDC',
     label: 'Algorithm signed_metadata is signed with',
@@ -7625,11 +7643,12 @@ const SETTINGS = [
                  'rsa-4096, ec-p256, ec-p384, ec-p521 or ed25519, or one of ' +
                  'the post-quantum ids (ML-DSA, SLH-DSA, the composites and ' +
                  'ML-KEM — which cannot sign, so it is a subject key and ' +
-                 'never an authority\'s). RSA 2048 ' +
-                 'is the default because the LEAF this hierarchy exists to ' +
-                 'issue signs a client assertion that somebody else\'s OAuth ' +
-                 'library has to verify, and RS256 is the one algorithm ' +
-                 'every such library has. The list is read from ' +
+                 'never an authority\'s). RSA is the default because the ' +
+                 'LEAF this hierarchy exists to issue signs a client ' +
+                 'assertion that somebody else\'s OAuth library has to ' +
+                 'verify, and RS256 is the one algorithm every such library ' +
+                 'has: rsa-2048 in development mode, rsa-3072 in product ' +
+                 'mode (ASVS 5.0.0 11.2.3). The list is read from ' +
                  'common/crypto_impl/key_material.js — the module that ' +
                  'generates the key — so a value it does not know is refused ' +
                  'at the build with the list beside it.' },
@@ -14124,13 +14143,13 @@ const SETTINGS = [
     runtime: false,
     restartReason: 'the socket is bound when the process starts',
     description: 'Whether the unencrypted listener on ldap.port is started at ' +
-                 'all. On by default, which is what this service always did. ' +
+                 'all. On by default in development mode, which is what this ' +
+                 'service always did, and off by default in product mode. ' +
                  'Off leaves LDAPS on ldap.tlsPort as the only way in — which ' +
                  'is what a deployment whose binds are VERIFIED (product ' +
                  'mode) wants, since a simple bind on 389 sends the password ' +
-                 'in the clear. Product mode with it on logs a warning at ' +
-                 'startup saying exactly that. In product mode, where this is ' +
-                 'left unset, it is off.' },
+                 'in the clear. Product mode with it turned on logs a ' +
+                 'warning at startup saying exactly that.' },
 
   // WHAT A PERSON MAY CHANGE ON THEIR OWN ENTRY OVER THE SOCKET, in product
   // mode (2026-09-12). An ALLOWLIST because the directory is schemaless and the

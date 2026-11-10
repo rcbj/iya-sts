@@ -4542,7 +4542,8 @@ const CODES = [
       'other it could use — a plain ldap: CRL under pki.revocationLdap=' +
       'ldaps, any ldap with it off, a name relative to the CRL issuer ' +
       'without pki.revocationLdapDirectory, a scheme that is never ' +
-      'dialled, or an OCSP responder that is not http(s) — so its status ' +
+      'dialled, an OCSP responder that is not http(s), or a host outside ' +
+      'security.outboundAllowedHosts where that list is set — so its status ' +
       'could not be established. Distinct from STS-PKI-0119 so that a ' +
       'policy refusal is not read as an unreachable server; also logged, ' +
       'once per address per process, naming the setting that would dial it.',
@@ -13744,8 +13745,9 @@ const CODES = [
       'another relationship than its state (ASVS 5.0.0 10.2.2).',
     spec: 'HTTP 401' },
   { code: 'STS-FED-0239',
-    summary: 'An unsolicited SAML assertion was presented a second time ' +
-      '(ASVS 5.0.0 6.8.3).',
+    summary: 'An inbound SAML or WS-Federation assertion was presented a ' +
+      'second time: every assertion a partner sends is claimed once, ' +
+      'solicited or not (ASVS 5.0.0 6.8.3).',
     spec: 'HTTP 401' },
   // ===== OIDFED ============================================================
   { code: 'STS-FED-0240',
