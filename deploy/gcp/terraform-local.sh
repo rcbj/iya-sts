@@ -113,6 +113,11 @@ then
     awk -F, '{ for (i = 1; i <= NF; i++) if ($i != "") printf "%s\"%s\"", (n++ ? "," : ""), $i }')"
   echo "==> The firewall will admit ${ALLOWED_CIDR}" >&2
   TF_VARS=(-e "TF_VAR_image_tag=${IMAGE_TAG}" -e "TF_VAR_allowed_cidrs=[${ALLOWED_JSON}]")
+  # An existing bootstrap administrator's name (environment/secrets.tf), on
+  # the apply that first creates its secret. By NAME only, so docker reads the
+  # value from this environment and it is in no process's argument list.
+  [ -z "${TF_VAR_bootstrap_admin_username:-}" ] ||
+    TF_VARS+=(-e TF_VAR_bootstrap_admin_username)
 fi
 
 for v in TF_CLI_ARGS TF_CLI_ARGS_plan TF_CLI_ARGS_apply TF_CLI_ARGS_destroy TF_IMPORT_ADDRESS TF_IMPORT_ID IYA_STS_DEPLOYER; do

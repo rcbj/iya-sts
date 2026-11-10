@@ -4,7 +4,7 @@
 # ---------------------------------------------------------------------------
 # THE NETWORK SECURITY GROUPS: AWS'S THREE SECURITY GROUPS, ON TWO SUBNETS.
 #
-#   allowed_cidrs ──443,389,636,80,88,8092,8181──▶ LB ──▶ nodes (8081, …)
+#   allowed_cidrs ──443,636,80,88,8092,8181──▶ LB ──▶ nodes (8081, …)
 #   the LB's own outbound address ──same──▶ nodes      (the service calling
 #                                                       its own public name)
 #   Azure's load balancer probes ──any──▶ nodes
