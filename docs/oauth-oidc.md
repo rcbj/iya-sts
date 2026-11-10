@@ -1848,7 +1848,7 @@ schema:
   is written (`STS-REG-0112`), as are an unknown category or datatype, a row
   for `type` or a common field, two rows for one member and a member both
   mapped and listed in `notForPolicy`. These are the rules
-  [AuthZEN's catalogue](authzen.md#the-attribute-catalogue) follows.
+  [AuthZEN's catalogue](authzen.md#3-the-realms-conversion-rules-the-attribute-catalogue) follows.
 * **Values are typed by the row**: a string is parsed as the row's datatype,
   a JSON number reaches only an `integer` or `double` row, `null` is refused,
   an array only for a `bag` row, and a nested object only through dotted
