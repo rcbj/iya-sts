@@ -11540,6 +11540,19 @@ const CODES = [
       'resolves to a loopback, private, link-local or reserved address ' +
       '(ASVS 5.0.0 1.3.6).',
     spec: 'invalid_request_uri (HTTP 400)' },
+  { code: 'STS-OAUTH-1005',
+    summary: 'An OAuth 2.0 or OpenID Connect answer carried a member its ' +
+      'model in models/oauth/oauth_members.tsp does not name, or one of ' +
+      'a type the model does not allow (#1579). The answer is sent as it ' +
+      'was built: the model describes the wire and does not reshape it, ' +
+      'so this is a model gap to close.',
+    spec: 'none (recorded only; the answer is unchanged)' },
+  { code: 'STS-OAUTH-1006',
+    summary: 'An OAuth 2.0 or OpenID Connect error response carried an ' +
+      'error code models/oauth/oauth_members.tsp does not declare (#1579). ' +
+      'The response is sent as it was built; the code is to be declared, ' +
+      'with the document that defines it.',
+    spec: 'none (recorded only; the response is unchanged)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +

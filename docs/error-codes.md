@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5409** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5411** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -64,7 +64,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 434
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 752
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 754
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 120
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 70
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 31
@@ -2519,6 +2519,8 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-1002` | A confidential client sent no code_challenge, in product (ASVS 5.0.0 10.4.6). | invalid_request |
 | `STS-OAUTH-1003` | A dynamic client registration was refused because the register did not store it (ASVS 5.0.0 2.3.3). | invalid_client_metadata |
 | `STS-OAUTH-1004` | A registered request_uri was not fetched under the outbound policy: federation.outbound is off, its host is not in security.outboundAllowedHosts, or (in product mode) the name resolves to a loopback, private, link-local or reserved address (ASVS 5.0.0 1.3.6). | invalid_request_uri (HTTP 400) |
+| `STS-OAUTH-1005` | An OAuth 2.0 or OpenID Connect answer carried a member its model in models/oauth/oauth_members.tsp does not name, or one of a type the model does not allow (#1579). The answer is sent as it was built: the model describes the wire and does not reshape it, so this is a model gap to close. | none (recorded only; the answer is unchanged) |
+| `STS-OAUTH-1006` | An OAuth 2.0 or OpenID Connect error response carried an error code models/oauth/oauth_members.tsp does not declare (#1579). The response is sent as it was built; the code is to be declared, with the document that defines it. | none (recorded only; the response is unchanged) |
 
 ## STS-SAML
 
