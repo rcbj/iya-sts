@@ -72,8 +72,8 @@
     "text": "小於 2048 位元的 RSA 金鑰（RFC 7518 第 3.3 節，COSE 為 RFC 8230 第 5 節），以及短於其雜湊輸出的 HMAC 金鑰（RFC 7518 第 3.2 節）——即 client_secret_jwt 下過短的 client_secret——仍可通過驗證，因此可以測試持有此類金鑰的客戶端。「比規格寬鬆」：兩者都是 MUST。"
   },
   "mode.requirements.xml-ecdsa-curves.product": {
-    "en": "cdb3f7be9fda1083",
-    "text": "只有 P-256、P-384、P-521、secp256k1 以及 brainpoolP256r1 或更大的曲線能通過驗證；其他任何曲線都會被拒絕（STS-KEYS-0077），使用此類曲線的證書不會被註冊。"
+    "en": "83ca2ed6f0591c63",
+    "text": "只有 P-256、P-384、P-521 以及 brainpoolP256r1 及更大的曲線可以驗證，secp256k1 僅在 keys.acceptedSigningAlgorithms 或 keys.signingAlgorithms 列出 ES256K 時可以；其他任何曲線都會被拒絕（STS-KEYS-0077），使用這類曲線的憑證不會被登記。"
   },
   "mode.requirements.kerberos-deprecated-enctypes.development": {
     "en": "05d8e71722ffc76a",

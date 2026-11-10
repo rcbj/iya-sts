@@ -4183,7 +4183,11 @@ const SETTINGS = [
     description: 'The JWS algorithms this realm accepts from anybody: client ' +
                  'assertions, DPoP proofs, request objects, wallet proofs, ' +
                  'federation statements, its own tokens. **Empty, the default, ' +
-                 'accepts everything each use case otherwise does.** A ' +
+                 'accepts everything each use case otherwise does**, except ' +
+                 'ES256K in product mode: secp256k1 is not an approved ' +
+                 'curve, so it is accepted there only where this list or ' +
+                 '`keys.signingAlgorithms` names it, and an XML signature ' +
+                 'on that curve follows the same rule. A ' +
                  'signature in an unlisted algorithm is refused before any key ' +
                  'operation. A list must include everything ' +
                  '`keys.signingAlgorithms` lists, and RS256 where that is ' +
@@ -4210,7 +4214,9 @@ const SETTINGS = [
                  'IssuerAuth and DeviceAuth, a status-list CWT and a `vc+cose` ' +
                  'credential. **Empty, the default, accepts what each already ' +
                  'does**, which a specification may narrow further: an mdoc ' +
-                 'never takes RSA. Passkeys are not governed here.' },
+                 'never takes RSA. In product mode ES256K (-47) is accepted ' +
+                 'only where this list names it, because secp256k1 is not an ' +
+                 'approved curve. Passkeys are not governed here.' },
   { key: 'saml.signatureAlgorithms', group: 'Signing algorithms',
     label: 'XML algorithms signed with',
     path: 'saml.signatureAlgorithms', env: 'STS_SAML_SIGNATURE_ALGORITHMS',

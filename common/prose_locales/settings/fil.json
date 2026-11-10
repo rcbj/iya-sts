@@ -1772,8 +1772,8 @@
     "text": "Mga tinatanggap na JWS algorithm"
   },
   "keys.acceptedSigningAlgorithms|description": {
-    "en": "c09dd7c2c5ff488b",
-    "text": "Ang mga JWS algorithm na tinatanggap ng realm na ito mula kaninuman: client assertion, DPoP proof, request object, wallet proof, federation statement, sarili nitong mga token. **Ang walang laman, ang default, ay tumatanggap ng lahat ng tinatanggap ng bawat use case.** Tinatanggihan ang signature sa algorithm na wala sa listahan bago ang anumang key operation. Dapat isama ng listahan ang lahat ng nasa `keys.signingAlgorithms`, at RS256 kung walang laman iyon, o tatanggihan ng realm ang sarili nitong mga token. Ang mga HS row ang ginagamit ng `client_secret_jwt`; alisin lang ang mga ito kung walang client na gumagamit."
+    "en": "861a2aba4650fdfa",
+    "text": "Ang mga JWS algorithm na tinatanggap ng realm na ito mula kaninuman: client assertion, DPoP proof, request object, wallet proof, federation statement, sarili nitong mga token. **Ang walang laman, ang default, ay tumatanggap ng lahat ng tinatanggap ng bawat use case.** Eksepsiyon: sa product mode, tinatanggap lang ang ES256K kung saan ito pinangangalanan ng listahang ito o ng `keys.signingAlgorithms`, dahil hindi aprubadong curve ang secp256k1; ganoon din ang isang XML signature sa curve na iyon. Tinatanggihan ang signature sa algorithm na wala sa listahan bago ang anumang key operation. Dapat isama ng listahan ang lahat ng nasa `keys.signingAlgorithms`, at RS256 kung walang laman iyon, o tatanggihan ng realm ang sarili nitong mga token. Ang mga HS row ang ginagamit ng `client_secret_jwt`; alisin lang ang mga ito kung walang client na gumagamit."
   },
   "cose.algorithms|label": {
     "en": "fe94cc0994dab40b",
@@ -1788,8 +1788,8 @@
     "text": "Mga tinatanggap na COSE algorithm"
   },
   "cose.acceptedAlgorithms|description": {
-    "en": "3c809e701d0ecee5",
-    "text": "Ang mga COSE algorithm na tinatanggap ng realm na ito sa IssuerAuth at DeviceAuth ng mdoc, status-list CWT at `vc+cose` credential. **Ang walang laman, ang default, ay tumatanggap ng tinatanggap na ng bawat isa**, na maaari pang paliitin ng isang specification: hindi kailanman tumatanggap ng RSA ang mdoc. Hindi saklaw dito ang mga passkey."
+    "en": "74f312f7ccddc9ff",
+    "text": "Ang mga COSE algorithm na tinatanggap ng realm na ito sa IssuerAuth at DeviceAuth ng mdoc, status-list CWT at `vc+cose` credential. **Ang walang laman, ang default, ay tumatanggap ng tinatanggap na ng bawat isa**, na maaari pang paliitin ng isang specification: hindi kailanman tumatanggap ng RSA ang mdoc. Sa product mode, tinatanggap lang ang ES256K (-47) kung saan ito pinangangalanan ng listahang ito, dahil hindi aprubadong curve ang secp256k1. Hindi saklaw dito ang mga passkey."
   },
   "saml.signatureAlgorithms|label": {
     "en": "fd4f436bdda0de4a",

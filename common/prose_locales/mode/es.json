@@ -383,6 +383,18 @@
     "en": "d1fb3763f55efbde",
     "text": "Ambas se rechazan en la comprobación de firma, en el verificador compartido, en verifyJws() y (RSA) para una clave WebAuthn. Un client_secret generado tiene 48 bytes aleatorios de forma predeterminada (oauth2.registeredSecretBytes), lo bastante para HS512. En AMBOS modos se rechazan una clave HMAC vacía, un exponente RSA inferior a 3 o par (una falsificación, no una clave débil), un módulo RSA con la huella ROCA (CVE-2017-15361), un JWK cuyo use no es \"sig\" o cuyos key_ops no incluyen \"verify\", y un segmento que no es base64url canónico."
   },
+  "mode.requirements.unapproved-curves.what": {
+    "en": "3103323f7fdc6789",
+    "text": "secp256k1 solo se usa donde una lista lo nombra"
+  },
+  "mode.requirements.unapproved-curves.development": {
+    "en": "f33b22ffc3de7a2c",
+    "text": "ES256K se usa para firmar, se ofrece y se acepta como cualquier otro algoritmo."
+  },
+  "mode.requirements.unapproved-curves.product": {
+    "en": "0334054d89fd0997",
+    "text": "ES256K no se usa para firmar ni se ofrece salvo que keys.signingAlgorithms lo incluya, y una firma en él se rechaza salvo que keys.acceptedSigningAlgorithms o keys.signingAlgorithms lo incluya (cose.acceptedAlgorithms para COSE). Las listas de algoritmos publicadas, entre ellas la de DPoP, lo omiten."
+  },
   "mode.requirements.xml-ecdsa-curves.what": {
     "en": "858a80a68d7c0582",
     "text": "Una firma ECDSA de XML solo se verifica en una curva de al menos 256 bits"
@@ -392,8 +404,8 @@
     "text": "Se verifica una clave en cualquier curva que lea node — secp160, secp192, secp224 entre ellas —, de modo que puede ejercitarse un socio que use una. MÁS DÉBIL QUE el mínimo de 112 bits de NIST SP 800-57 para la menor de ellas."
   },
   "mode.requirements.xml-ecdsa-curves.product": {
-    "en": "cdb3f7be9fda1083",
-    "text": "Solo se verifican P-256, P-384, P-521, secp256k1 y brainpoolP256r1 y mayores; cualquier otra curva se rechaza (STS-KEYS-0077) y un certificado en una de ellas no se registra."
+    "en": "83ca2ed6f0591c63",
+    "text": "Solo verifican P-256, P-384, P-521, brainpoolP256r1 y mayores, y secp256k1 donde keys.acceptedSigningAlgorithms o keys.signingAlgorithms nombra ES256K; cualquier otra curva se rechaza (STS-KEYS-0077) y un certificado sobre una de ellas no se registra."
   },
   "mode.requirements.kerberos-deprecated-enctypes.what": {
     "en": "d0088e020fb9a13e",

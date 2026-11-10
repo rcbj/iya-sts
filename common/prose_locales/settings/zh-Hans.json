@@ -1772,8 +1772,8 @@
     "text": "接受的 JWS 算法"
   },
   "keys.acceptedSigningAlgorithms|description": {
-    "en": "c09dd7c2c5ff488b",
-    "text": "此领域接受来自任何一方的 JWS 算法：客户端断言、DPoP 证明、请求对象、钱包证明、联合声明及其自身的令牌。**留空（默认）时接受每个用例原本接受的全部算法。**未列出算法的签名会在任何密钥操作之前被拒绝。列表必须包含 `keys.signingAlgorithms` 列出的全部算法，该设置为空时必须包含 RS256，否则此领域会拒绝自己的令牌。HS 行是 `client_secret_jwt` 使用的；只有没有客户端使用时才可省略。"
+    "en": "861a2aba4650fdfa",
+    "text": "此领域接受来自任何一方的 JWS 算法：客户端断言、DPoP 证明、请求对象、钱包证明、联合声明及其自身的令牌。**留空（默认）时接受每个用例原本接受的全部算法。**例外：在产品模式下，只有此列表或 `keys.signingAlgorithms` 列出 ES256K 时才接受它，因为 secp256k1 不是经批准的曲线；该曲线上的 XML 签名遵循同一规则。未列出算法的签名会在任何密钥操作之前被拒绝。列表必须包含 `keys.signingAlgorithms` 列出的全部算法，该设置为空时必须包含 RS256，否则此领域会拒绝自己的令牌。HS 行是 `client_secret_jwt` 使用的；只有没有客户端使用时才可省略。"
   },
   "cose.algorithms|label": {
     "en": "fe94cc0994dab40b",
@@ -1788,8 +1788,8 @@
     "text": "接受的 COSE 算法"
   },
   "cose.acceptedAlgorithms|description": {
-    "en": "3c809e701d0ecee5",
-    "text": "此领域在 mdoc 的 IssuerAuth 和 DeviceAuth、状态列表 CWT 及 `vc+cose` 凭证中接受的 COSE 算法。**留空（默认）时接受各自已接受的算法**，规范可能进一步缩小范围：mdoc 从不接受 RSA。通行密钥不在此管理。"
+    "en": "74f312f7ccddc9ff",
+    "text": "此领域在 mdoc 的 IssuerAuth 和 DeviceAuth、状态列表 CWT 及 `vc+cose` 凭证中接受的 COSE 算法。**留空（默认）时接受各自已接受的算法**，规范可能进一步缩小范围：mdoc 从不接受 RSA。在产品模式下，只有此列表列出 ES256K（-47）时才接受它，因为 secp256k1 不是经批准的曲线。通行密钥不在此管理。"
   },
   "saml.signatureAlgorithms|label": {
     "en": "fd4f436bdda0de4a",

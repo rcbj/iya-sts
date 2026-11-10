@@ -383,6 +383,18 @@
     "en": "d1fb3763f55efbde",
     "text": "Pareho silang tinatanggihan sa pagsuri ng signature, sa shared verifier, sa verifyJws() at (RSA) para sa WebAuthn key. Ang ginawang client_secret ay 48 random byte bilang default (oauth2.registeredSecretBytes), sapat ang haba para sa HS512. Sa PAREHONG mode, tinatanggihan ang walang lamang HMAC key, ang RSA exponent na mas mababa sa 3 o even (isang forgery, hindi mahinang key), ang RSA modulus na may ROCA fingerprint (CVE-2017-15361), ang JWK na ang use ay hindi \"sig\" o ang key_ops ay walang \"verify\", at ang segment na hindi canonical na base64url."
   },
+  "mode.requirements.unapproved-curves.what": {
+    "en": "3103323f7fdc6789",
+    "text": "Ginagamit lang ang secp256k1 kung saan ito pinangangalanan ng isang listahan"
+  },
+  "mode.requirements.unapproved-curves.development": {
+    "en": "f33b22ffc3de7a2c",
+    "text": "Ginagamit sa pag-sign, iniaalok at tinatanggap ang ES256K tulad ng ibang algorithm."
+  },
+  "mode.requirements.unapproved-curves.product": {
+    "en": "0334054d89fd0997",
+    "text": "Hindi ginagamit sa pag-sign o iniaalok ang ES256K maliban kung inililista ito ng keys.signingAlgorithms, at tinatanggihan ang isang signature dito maliban kung inililista ito ng keys.acceptedSigningAlgorithms o ng keys.signingAlgorithms (cose.acceptedAlgorithms para sa COSE). Hindi ito kasama sa mga inilathalang listahan ng algorithm, kabilang ang sa DPoP."
+  },
   "mode.requirements.xml-ecdsa-curves.what": {
     "en": "858a80a68d7c0582",
     "text": "Vine-verify lang ang XML ECDSA signature sa curve na hindi bababa sa 256 bit"
@@ -392,8 +404,8 @@
     "text": "Nagve-verify ang key sa anumang curve na nababasa ng node — kasama ang secp160, secp192, secp224 — kaya masusubok ang partner na gumagamit ng isa. MAS MAHINA KAYSA SA 112-bit na minimum ng NIST SP 800-57 para sa pinakamaliit sa mga ito."
   },
   "mode.requirements.xml-ecdsa-curves.product": {
-    "en": "cdb3f7be9fda1083",
-    "text": "Ang P-256, P-384, P-521, secp256k1 at brainpoolP256r1 at mas malaki lang ang nagve-verify; tinatanggihan ang anumang ibang curve (STS-KEYS-0077) at hindi nire-register ang certificate sa isa."
+    "en": "83ca2ed6f0591c63",
+    "text": "P-256, P-384, P-521 at brainpoolP256r1 at mas malaki lang ang nagbe-verify, at ang secp256k1 kung saan pinangangalanan ng keys.acceptedSigningAlgorithms o ng keys.signingAlgorithms ang ES256K; tinatanggihan ang anumang ibang curve (STS-KEYS-0077) at hindi inirerehistro ang isang certificate na nasa isa sa mga ito."
   },
   "mode.requirements.kerberos-deprecated-enctypes.what": {
     "en": "d0088e020fb9a13e",

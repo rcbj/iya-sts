@@ -289,11 +289,18 @@ session cookie) needs Admin Read to read and Admin Write to write.
 * **XML encryption** selects and accepts AES-GCM only. AES-CBC is refused when
   decrypting, and cannot be chosen in `saml2.encryptionAlgorithm`.
 * **secp256k1.** ES256K is not offered in discovery, its key is not in
-  `/oauth2/jwks`, and a signature with it is refused (`STS-KEYS-0166`), unless
-  `keys.signingAlgorithms` lists it. See
+  `/oauth2/jwks`, and signing with it is refused (`STS-KEYS-0166`), unless
+  `keys.signingAlgorithms` lists it. A signature in it from anybody else, a DPoP
+  proof among them, is refused (`STS-KEYS-0179`) unless
+  `keys.acceptedSigningAlgorithms` or `keys.signingAlgorithms` lists it, and the
+  published `*_alg_values_supported` lists leave it out. An XML signature on
+  secp256k1 follows the same rule (`STS-KEYS-0077`), and a COSE one is accepted
+  only where `cose.acceptedAlgorithms` lists ES256K. See
   [OAuth and OpenID Connect](oauth-oidc.md#limiting-a-realm-to-named-signing-algorithms).
-* **PBES2.** A JWE whose `p2c` is under 1000, RFC 7518's recommended minimum, is
-  refused, in either mode. A PKCS#12 export uses PBKDF2 with SHA-256 at 600,000
+* **PBES2.** A JWE whose `p2c` is under `security.pbes2MinIterations` is refused
+  before anything is derived: 600,000 in product mode, RFC 7518's recommended
+  1000 in development. The key is derived on libuv's thread pool, never on the
+  event loop. A PKCS#12 export uses PBKDF2 with SHA-256 at 600,000
   iterations, and so does a password-protected JWK export (a PBES2 JWE with
   `p2c` 600,000), in either mode.
 * **SCEP** answers 503 until `scep.allowInProduct` is on. See [SCEP](scep.md).

@@ -1772,8 +1772,8 @@
     "text": "Algoritmos JWS aceptados"
   },
   "keys.acceptedSigningAlgorithms|description": {
-    "en": "c09dd7c2c5ff488b",
-    "text": "Los algoritmos JWS que este dominio acepta de cualquiera: aserciones de cliente, pruebas DPoP, objetos de solicitud, pruebas de billetera, declaraciones de federación, sus propios tokens. **Vacío, el valor por defecto, acepta todo lo que cada caso de uso acepta de otro modo.** Una firma con un algoritmo no incluido se rechaza antes de cualquier operación con claves. Una lista debe incluir todo lo que enumera `keys.signingAlgorithms`, y RS256 si esa está vacía, o el dominio rechazará sus propios tokens. Las filas HS son las que usa `client_secret_jwt`; omítalas solo si ningún cliente lo usa."
+    "en": "861a2aba4650fdfa",
+    "text": "Los algoritmos JWS que este dominio acepta de cualquiera: aserciones de cliente, pruebas DPoP, objetos de solicitud, pruebas de billetera, declaraciones de federación, sus propios tokens. **Vacío, el valor por defecto, acepta todo lo que cada caso de uso acepta de otro modo.** Excepción: en modo producto, ES256K solo se acepta donde esta lista o `keys.signingAlgorithms` lo nombra, porque secp256k1 no es una curva aprobada; una firma XML sobre esa curva sigue la misma regla. Una firma con un algoritmo no incluido se rechaza antes de cualquier operación con claves. Una lista debe incluir todo lo que enumera `keys.signingAlgorithms`, y RS256 si esa está vacía, o el dominio rechazará sus propios tokens. Las filas HS son las que usa `client_secret_jwt`; omítalas solo si ningún cliente lo usa."
   },
   "cose.algorithms|label": {
     "en": "fe94cc0994dab40b",
@@ -1788,8 +1788,8 @@
     "text": "Algoritmos COSE aceptados"
   },
   "cose.acceptedAlgorithms|description": {
-    "en": "3c809e701d0ecee5",
-    "text": "Los algoritmos COSE que este dominio acepta en IssuerAuth y DeviceAuth de un mdoc, un CWT de lista de estado y una credencial `vc+cose`. **Vacío, el valor por defecto, acepta lo que cada uno ya acepta**, que una especificación puede reducir más: un mdoc nunca admite RSA. Las claves de acceso no se rigen aquí."
+    "en": "74f312f7ccddc9ff",
+    "text": "Los algoritmos COSE que este dominio acepta en IssuerAuth y DeviceAuth de un mdoc, un CWT de lista de estado y una credencial `vc+cose`. **Vacío, el valor por defecto, acepta lo que cada uno ya acepta**, que una especificación puede reducir más: un mdoc nunca admite RSA. En modo producto, ES256K (-47) solo se acepta donde esta lista lo nombra, porque secp256k1 no es una curva aprobada. Las claves de acceso no se rigen aquí."
   },
   "saml.signatureAlgorithms|label": {
     "en": "fd4f436bdda0de4a",

@@ -3195,6 +3195,18 @@ const REQUIREMENTS = [
              'or whose key_ops lack "verify", and a segment that is not ' +
              'canonical base64url are refused.',
     where: 'common/crypto.js' },
+  // #1533, #1577 (signing), ASVS 5.0.0 11.6.1 (verifying).
+  { id: 'unapproved-curves',
+    what: 'secp256k1 is used only where a list names it',
+    development: 'ES256K is signed with, offered and accepted like any ' +
+                 'other algorithm.',
+    product: 'ES256K is not signed with or offered unless ' +
+             'keys.signingAlgorithms lists it, and a signature in it is ' +
+             'refused unless keys.acceptedSigningAlgorithms or ' +
+             'keys.signingAlgorithms lists it (cose.acceptedAlgorithms for ' +
+             'COSE). The published algorithm lists, DPoP\'s among them, ' +
+             'leave it out.',
+    where: 'common/signature_policy.ts' },
   { id: 'xml-ecdsa-curves',
     what: 'An XML ECDSA signature is verified only on a curve of at least ' +
           '256 bits',
@@ -3202,9 +3214,11 @@ const REQUIREMENTS = [
                  'secp192, secp224 among them — so a partner on one can be ' +
                  'exercised. WEAKER THAN NIST SP 800-57\'s 112-bit floor for ' +
                  'the smallest of them.',
-    product: 'Only P-256, P-384, P-521, secp256k1 and brainpoolP256r1 and ' +
-             'larger verify; any other curve is refused (STS-KEYS-0077) and ' +
-             'a certificate on one is not registered.',
+    product: 'Only P-256, P-384, P-521 and brainpoolP256r1 and larger ' +
+             'verify, and secp256k1 where keys.acceptedSigningAlgorithms or ' +
+             'keys.signingAlgorithms names ES256K; any other curve is ' +
+             'refused (STS-KEYS-0077) and a certificate on one is not ' +
+             'registered.',
     where: 'common/crypto.js' },
   // #182 (2026-09-23).
   { id: 'kerberos-deprecated-enctypes',
