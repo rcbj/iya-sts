@@ -1743,18 +1743,29 @@ function publishScopeSoon(scopeId) {
     // current certificate, fresh for over half its lifetime — is left alone;
     // a branch just built or rebuilt does not verify under its old list, and
     // a revocation changes the list, so both are still published at once.
+    //
+    // A CALL MADE WHILE THIS RUNS IS ONE MORE PASS OF THIS LOOP, not a new
+    // timer: a publication that armed the next one would be a timer chain,
+    // which the root CLAUDE.md refuses outside the scheduler
+    // (tests/no_periodic_timers.js). The loop ends when a pass finishes with
+    // no call made during it.
     const state = { again: false };
     scopesPublishing.set(id, state);
-    publishAll(id === pki.SERVICE_SCOPE ? [] : [id],
-               { unlessCurrent: true }).catch(function (e) {
-      log.error(errorCodes.tag('STS-PKI-0064') + 'pki_revocation: the CRLs ' +
-                'of the "' + (id || 'default') + '" scope could not be ' +
-                'published into the directory: ' + ((e && e.message) || e));
-    }).then(function () {
+    const scopes = id === pki.SERVICE_SCOPE ? [] : [id];
+    (async function () {
+      do {
+        state.again = false;
+        try {
+          await publishAll(scopes, { unlessCurrent: true });
+        } catch (e) {
+          log.error(errorCodes.tag('STS-PKI-0064') + 'pki_revocation: the ' +
+                    'CRLs of the "' + (id || 'default') + '" scope could ' +
+                    'not be published into the directory: ' +
+                    ((e && e.message) || e));
+        }
+      } while (state.again);
+    })().then(function () {
       scopesPublishing.delete(id);
-      if (state.again) {
-        publishScopeSoon(id);
-      }
     });
   }, 50);
   if (typeof timer.unref === 'function') {
