@@ -110,6 +110,7 @@
 
 import config = require('../common/config');
 import helpers = require('../common/helpers');
+import DomainMap = require('../common/domain_map');
 // The one random-value section (#65): user codes, drawn uniformly.
 import stsCrypto = require('../common/crypto');
 import InstanceSlot = require('../common/instance_slot');
@@ -396,20 +397,23 @@ class GnapGrants {
   }
 
   /**
-   * Returns every value of a field on an application entry, as strings.
+   * Returns every value of one of an application's GNAP settings, as
+   * strings. The setting is named by its field in the GnapClient concept,
+   * not by the attribute it is stored in (#1579), so the model says which
+   * attribute it is.
    *
    * @param app - the application entry
-   * @param name - the field's name
+   * @param name - the GnapClient field
    * @returns the values, empty when there are none
    */
-  fieldValues(app, name) {
+  fieldValues(app: any, name: keyof IyaDomain.GnapClient & string): string[] {
     const { log } = this.deps;
     log.debug("Entering GnapGrants.fieldValues().");
     if (!app || !app.fields) {
       log.debug("Leaving GnapGrants.fieldValues().");
       return [];
     }
-    const value = app.fields[name];
+    const value: unknown = DomainMap.fieldOf('GnapClient', name, app.fields);
     if (value === undefined || value === null || value === '') {
       log.debug("Leaving GnapGrants.fieldValues().");
       return [];
@@ -419,13 +423,14 @@ class GnapGrants {
   }
 
   /**
-   * Returns the first value of a field on an application entry.
+   * Returns the first value of one of an application's GNAP settings, named
+   * as `fieldValues()` names it.
    *
    * @param app - the application entry
-   * @param name - the field's name
+   * @param name - the GnapClient field
    * @returns the value, or null
    */
-  field(app, name) {
+  field(app: any, name: keyof IyaDomain.GnapClient & string): string | null {
     const { log } = this.deps;
     log.debug("Entering GnapGrants.field().");
     log.debug("Leaving GnapGrants.field().");
@@ -609,14 +614,14 @@ class GnapGrants {
       return (app.kinds || []).some(function (kind) {
         return kind === KIND_CLIENT || kind === KIND_RS;
       }) || (app.allowedProtocols || []).indexOf('gnap') >= 0 ||
-        !!this.field(app, 'gnapKey') || !!this.field(app, 'gnapInstanceId');
+        !!this.field(app, 'key') || !!this.field(app, 'instanceId');
     });
   }
 
   private registeredKeyIdentity(app) {
     const { log, errorCodes, keys } = this.deps;
     log.debug("Entering GnapGrants.registeredKeyIdentity().");
-    const raw = this.field(app, 'gnapKey');
+    const raw = this.field(app, 'key');
     if (!raw) {
       log.debug("Leaving GnapGrants.registeredKeyIdentity().");
       return null;
@@ -644,7 +649,7 @@ class GnapGrants {
     log.debug("Leaving GnapGrants.appByKeyIdentity().");
     return this.gnapApplications().filter((app) => {
       return this.registeredKeyIdentity(app) === identity ||
-             this.field(app, 'gnapKeyIdentity') === identity;
+             this.field(app, 'keyIdentity') === identity;
     })[0] || null;
   }
 
@@ -692,13 +697,13 @@ class GnapGrants {
                              classInstance: classInstance } : null;
     }
     const app = this.gnapApplications().filter((one) => {
-      return this.field(one, 'gnapInstanceId') === instanceId;
+      return this.field(one, 'instanceId') === instanceId;
     })[0];
     log.debug("Leaving GnapGrants.appByInstanceId().");
     return app ?
            { app: app,
-                   key: this.field(app, 'gnapKey') ?
-                        JSON.parse(this.field(app, 'gnapKey')) : null,
+                   key: this.field(app, 'key') ?
+                        JSON.parse(this.field(app, 'key')) : null,
                    dynamic: false, classInstance: false } : null;
   }
 
@@ -717,13 +722,13 @@ class GnapGrants {
     const { log, errorCodes, keystore } = this.deps;
     log.debug("Entering GnapGrants.resolveKeyReference().");
     const app = this.gnapApplications().filter((one) => {
-      return this.field(one, 'gnapKeyReference') === reference;
+      return this.field(one, 'keyReference') === reference;
     })[0];
     if (!app) {
       log.debug("Leaving GnapGrants.resolveKeyReference(). Unknown.");
       return null;
     }
-    const secret = this.field(app, 'gnapSymmetricKey');
+    const secret = this.field(app, 'symmetricKey');
     if (secret) {
       let bytes = Buffer.from(secret, 'base64url');
       if (keystore.persists() && stsCrypto.isEncryptedWithKek(secret)) {
@@ -744,11 +749,11 @@ class GnapGrants {
         bytes = null;
       }
       log.debug("Leaving GnapGrants.resolveKeyReference(). Shared secret.");
-      return bytes ? { secret: bytes, proof: this.field(app, 'gnapKeyProof') ||
-                       'httpsig', alg: this.field(app, 'gnapSymmetricAlg') ||
+      return bytes ? { secret: bytes, proof: this.field(app, 'keyProof') ||
+                       'httpsig', alg: this.field(app, 'symmetricAlg') ||
                        'HS256', app: app } : null;
     }
-    const raw = this.field(app, 'gnapKey');
+    const raw = this.field(app, 'key');
     log.debug("Leaving GnapGrants.resolveKeyReference(). Registered public " +
               "key.");
     return raw ? { key: JSON.parse(raw), app: app } : null;
@@ -882,7 +887,7 @@ class GnapGrants {
     }
     if (app && descriptor.identity &&
         this.registeredKeyIdentity(app) !== descriptor.identity &&
-        this.field(app, 'gnapKeyIdentity') !== descriptor.identity) {
+        this.field(app, 'keyIdentity') !== descriptor.identity) {
       applications.seen({ identifier: app.identifier, protocol: PROTOCOL,
                           counts: false,
                           fields: { gnapKeyIdentity: descriptor.identity } });
@@ -952,8 +957,8 @@ class GnapGrants {
       if (found.key) {
         descriptor = keys.describe(found.key,
                                    this.referenceResolver);
-      } else if (this.field(app, 'gnapKeyReference')) {
-        descriptor = keys.describe(this.field(app, 'gnapKeyReference'),
+      } else if (this.field(app, 'keyReference')) {
+        descriptor = keys.describe(this.field(app, 'keyReference'),
                                    this.referenceResolver);
       } else {
         descriptor = this.refusal('STS-GNAP-0081', 'the application "' +
@@ -1100,8 +1105,8 @@ class GnapGrants {
              instanceId: instanceId,
              created: created,
              display: this.displayOf(app, member),
-             classId: this.field(app, 'gnapClassId') || member.classId || null,
-             classIdDeclared: !this.field(app, 'gnapClassId') &&
+             classId: this.field(app, 'classId') || member.classId || null,
+             classIdDeclared: !this.field(app, 'classId') &&
                               !!member.classId,
              classInstance: classInstance };
   }
@@ -1210,12 +1215,12 @@ class GnapGrants {
       name = String(asked.name);
       declared.push('name');
     }
-    let uri = this.field(app, 'gnapDisplayUri');
+    let uri = this.field(app, 'displayUri');
     if (!uri && asked.uri) {
       uri = String(asked.uri);
       declared.push('uri');
     }
-    let logoUri = this.field(app, 'gnapLogoUri');
+    let logoUri = this.field(app, 'logoUri');
     if (!logoUri && asked.logoUri && String(asked.logoUri).length < 2048) {
       logoUri = String(asked.logoUri);
       declared.push('logoUri');
@@ -1364,7 +1369,7 @@ class GnapGrants {
         const strangers = RegisteredTargets.unregistered(right.locations, req)
           .filter((location) => {
             return !servers.some((app) => {
-              return this.fieldValues(app, 'gnapResourceServerUri').some(
+              return this.fieldValues(app, 'resourceServerUri').some(
                 function (uri) {
                   return !!uri && (location === uri ||
                                    location.indexOf(uri) === 0);
@@ -1575,7 +1580,7 @@ class GnapGrants {
       }
       (right.locations || []).forEach((location) => {
         this.gnapApplications().forEach((app) => {
-          if (this.fieldValues(app, 'gnapResourceServerUri').some(
+          if (this.fieldValues(app, 'resourceServerUri').some(
               function (uri) {
             return location === uri || location.indexOf(uri) === 0;
           })) {
@@ -1624,13 +1629,13 @@ class GnapGrants {
     const preferences = [];
     if (rsIds.length === 1) {
       const rs = applications.get(rsIds[0]);
-      if (this.field(rs, 'gnapAccessTokenFormat')) {
-        preferences.push(this.field(rs, 'gnapAccessTokenFormat'));
+      if (this.field(rs, 'accessTokenFormat')) {
+        preferences.push(this.field(rs, 'accessTokenFormat'));
       }
     }
     const client = applications.get(grant.client.identifier);
-    if (this.field(client, 'gnapAccessTokenFormat')) {
-      preferences.push(this.field(client, 'gnapAccessTokenFormat'));
+    if (this.field(client, 'accessTokenFormat')) {
+      preferences.push(this.field(client, 'accessTokenFormat'));
     }
     preferences.push(String(config.value('gnap.accessTokenFormat') ||
                             'jwt-signed'));
@@ -1759,9 +1764,9 @@ class GnapGrants {
       };
       const rs = rsIds.length === 1 ? applications.get(rsIds[0]) : null;
       let jweKey = null;
-      if (rs && this.field(rs, 'gnapJweKey')) {
+      if (rs && this.field(rs, 'jweKey')) {
         try {
-          jweKey = JSON.parse(this.field(rs, 'gnapJweKey'));
+          jweKey = JSON.parse(this.field(rs, 'jweKey'));
         } catch (e) {
           log.debug("Caught in GnapGrants.issueTokens(): " +
                     ((e && e.message) || e));
@@ -2037,7 +2042,7 @@ class GnapGrants {
     log.debug("Entering GnapGrants.startInteraction(). grant=" + grant.id);
     const supportedStarts = this.capabilityList(req, grant.as,
         'interaction_start_modes_supported');
-    const appModes = this.fieldValues(app, 'gnapInteractionStartModes');
+    const appModes = this.fieldValues(app, 'interactionStartModes');
     const usable = interact.start.filter((mode) => {
       return request.START_MODES.indexOf(mode) >= 0 &&
              this.allows(supportedStarts, mode) &&
@@ -2330,7 +2335,8 @@ class GnapGrants {
       client: identifier,
       // And an assertion only for the client it was issued to (#497, RFC
       // 9635 section 11.13): every name the presenting client goes by.
-      clientNames: [identifier].concat(this.fieldValues(app, 'oauthClientId'))
+      clientNames: [identifier].concat(DomainMap.fieldOf('OAuthClient',
+        'clientIds', (app && app.fields) || {}) || [])
     });
     if (!resolved.ok) {
       log.debug("Leaving GnapGrants.createGrant(). User refused.");
@@ -2445,7 +2451,7 @@ class GnapGrants {
     // phrh (#738), cannot be issued with no session to meet it.
     // An unregistered key acting as an instance of the application (#1216)
     // is not the key the application was trusted with: it never skips.
-    const trusted = this.field(app, 'gnapSkipInteraction') === 'TRUE' &&
+    const trusted = this.field(app, 'skipInteraction') === 'TRUE' &&
                     !caller.created && !caller.classInstance;
     const skip = this.skipVerdict(trusted, asked, resolved, requirement);
     if (skip.skip) {
@@ -2702,7 +2708,7 @@ class GnapGrants {
           'section 4).', 'invalid_request');
     }
     const rsNames = [app.identifier].concat(this.fieldValues(app,
-        'gnapResourceServerUri'));
+        'resourceServerUri'));
     const forThisRs = !existing.aud.length || existing.aud.some(function (aud) {
       return rsNames.indexOf(aud) >= 0;
     });
@@ -4033,9 +4039,9 @@ class GnapGrants {
         ? applications.get(record.rsIdentifiers[0]) : null;
       minted = await tokens.mint(record.format, model, { base:
           this.realmBase(req), rs: rs ? { identity: rs.identifier, jweKey:
-                                          this.field(rs, 'gnapJweKey') ?
+                                          this.field(rs, 'jweKey') ?
                                           JSON.parse(this.field(rs,
-          'gnapJweKey')) : null } : null, setId: record.grantId,
+          'jweKey')) : null } : null, setId: record.grantId,
           application: record.instanceId,
           username: record.username || '' });
     } catch (e) {

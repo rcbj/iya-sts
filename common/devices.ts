@@ -200,6 +200,7 @@
 
 import ModelTables = require('./model_tables');
 import Classes = require('./domain_classes');
+import DomainMap = require('./domain_map');
 import helpers = require('./helpers');
 import InstanceSlot = require('./instance_slot');
 import config = require('./config');
@@ -719,9 +720,11 @@ class Devices {
       secretHash: d.secretHash || '',
       session: d.session || '',
       lastUsed: d.lastUsed || '',
-      // The directory's own operational attribute, which this concept does
-      // not carry (#1390).
-      created: String((a.createtimestamp || [])[0] || ''),
+      // The directory's own operational attribute, DirectoryEntry's, read
+      // as one field so that a register read costs no second concept
+      // (#1579).
+      created: String(DomainMap.fieldOf('DirectoryEntry', 'createTimestamp',
+        a) || ''),
       browser: Devices.parsed(d.browser)
     };
   }

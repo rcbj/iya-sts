@@ -119,6 +119,7 @@ import realms = require('../common/realms');
 import mode = require('../common/mode');
 import audit = require('../common/audit');
 import errorCodes = require('../common/error_codes');
+import DomainMap = require('../common/domain_map');
 // #221: the one predicate every door asks (a leaf).
 import serviceAccounts = require('../common/service_accounts');
 import events = require('./ssf_events');
@@ -1659,7 +1660,8 @@ class RiscRegister {
     // entry's subject is what says it is the row already held under the old
     // name. Its counts and state move with it, and the old name is kept among
     // its former identifiers so an event naming it is still matched.
-    const renamedUuid = ((deleted ? before : after).entryuuid || [])[0];
+    const renamedUuid = DomainMap.fieldOf('DirectoryEntry', 'entryUuid',
+      (deleted ? before : after) || {});
     if (!row && renamedUuid) {
       const wantedSubject = 'urn:uuid:' + String(renamedUuid).toLowerCase();
       let formerId = '';
@@ -1708,7 +1710,8 @@ class RiscRegister {
     // (2026-09-14). It is kept on the row because the one event where it
     // matters most — an account PURGED — is about an entry that is gone, and
     // the directory can no longer be asked whose `urn:uuid:` it was.
-    const snapshotUuid = ((deleted ? before : after).entryuuid || [])[0];
+    const snapshotUuid = DomainMap.fieldOf('DirectoryEntry', 'entryUuid',
+      (deleted ? before : after) || {});
     if (snapshotUuid) {
       row.subject = 'urn:uuid:' + String(snapshotUuid).toLowerCase();
     }

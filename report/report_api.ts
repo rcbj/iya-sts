@@ -40,6 +40,7 @@ import responseChecks = require('../common/response_models');
 // What a request may name and hold (#1483): a leaf that registers nothing.
 import RequestHeaders = require('../common/request_headers');
 import version = require('../common/version');
+import Classes = require('../common/domain_classes');
 
 const log = bunyan.createLogger({ name: 'sts-report-api' });
 
@@ -904,18 +905,9 @@ function reportOwnerName(owner: string, ownerRealm?: string): string {
   const ldap = require('../ldap/ldap_server');
   const entry = typeof ldap.existingUserEntry === 'function' ?
     ldap.existingUserEntry(username) : null;
-  const attrs = (entry && entry.attributes) || {};
-  const first = function (name: string): string {
-    const keys = Object.keys(attrs);
-    for (let i = 0; i < keys.length; i++) {
-      if (keys[i].toLowerCase() === name) {
-        const value = attrs[keys[i]];
-        return String((Array.isArray(value) ? value[0] : value) || '');
-      }
-    }
-    return '';
-  };
-  shown = first('displayname') || first('cn') || username;
+  // The name a person is shown by is the User's (#1579).
+  const user = Classes.User.fromEntry((entry && entry.attributes) || {});
+  shown = user.displayName || (user.cn || [])[0] || username;
   log.debug("Leaving reportOwnerName().");
   return shown;
 }

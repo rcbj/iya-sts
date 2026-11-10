@@ -170,7 +170,7 @@ class GnapRs {
     log.debug("Entering GnapRs.rsNamesOf().");
     log.debug("Leaving GnapRs.rsNamesOf().");
     return [app.identifier].concat(grants.fieldValues(app,
-                                                      'gnapResourceServerUri'),
+                                                      'resourceServerUri'),
                                    extra || []);
   }
 
@@ -382,7 +382,7 @@ class GnapRs {
                           'not offer it (RFC 9767 section 3.4).',
                           'invalid_request');
     }
-    const allowed = grants.fieldValues(rs, 'gnapAllowedAccess');
+    const allowed = grants.fieldValues(rs, 'allowedAccess');
     const denied = asked.access.filter(function (right) {
       const name = typeof right === 'string' ? right : right.type;
       return allowed.length && allowed.indexOf(name) < 0;
@@ -468,7 +468,7 @@ class GnapRs {
     const { log, grants, tokens, applications, errorCodes,
             keystore } = this.deps;
     log.debug("Entering GnapRs.ensureMacaroonKey().");
-    if (grants.field(rs, 'gnapMacaroonKey')) {
+    if (grants.field(rs, 'macaroonKey')) {
       log.debug("Leaving GnapRs.ensureMacaroonKey(). Present.");
       return;
     }
@@ -491,7 +491,7 @@ class GnapRs {
                'key could not be written onto "' + rs.identifier + '": ' +
                e.message);
     }
-    if (!grants.field(applications.get(rs.identifier), 'gnapMacaroonKey')) {
+    if (!grants.field(applications.get(rs.identifier), 'macaroonKey')) {
       log.warn(errorCodes.tag('STS-GNAP-0655') + 'gnap: the macaroon root ' +
                'key was not recorded on "' +
                rs.identifier + '"; a resource server verifying macaroons ' +

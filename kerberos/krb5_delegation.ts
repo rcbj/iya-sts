@@ -50,6 +50,7 @@ import msgs = require('./krb5_messages');
 import kcrypto = require('./krb5_crypto');
 import kpac = require('./krb5_pac');
 import prim = require('./krb5_primitives');
+import Classes = require('../common/domain_classes');
 
 const { log } = helpers;
 
@@ -86,10 +87,20 @@ class Krb5Delegation {
   }
 
   // The values of one attribute on an application row.
+  // BY NAME FOR THE SEEDS ONLY (#1579): a seed is a table of the attributes
+  // it writes, and this asks whether the entry already holds each one
+  // before writing it. Every other read is a concept's, through `listOf()`.
   private static valuesOf(row: Json, attribute: string): string[] {
     log.debug("Entering Krb5Delegation.valuesOf().");
     const raw = row && row.fields ? row.fields[attribute] : undefined;
     log.debug("Leaving Krb5Delegation.valuesOf().");
+    return Krb5Delegation.listOf(raw);
+  }
+
+  // A concept's value as a list, the empty ones gone.
+  private static listOf(raw: unknown): string[] {
+    log.debug("Entering Krb5Delegation.listOf().");
+    log.debug("Leaving Krb5Delegation.listOf().");
     return (Array.isArray(raw) ? raw : (raw === undefined || raw === null ||
       raw === '' ? [] : [raw])).map(String).filter(Boolean);
   }
@@ -204,7 +215,8 @@ class Krb5Delegation {
     log.debug("Entering Krb5Delegation.trustedForDelegation().");
     this.ensureSeeded();
     const row = applications.get(Krb5Delegation.identifierOf(name, realm));
-    const out = (Krb5Delegation.valuesOf(row, 'krb5TrustedForDelegation')[0] ||
+    const kdc = Classes.KerberosService.fromEntry((row && row.fields) || {});
+    const out = (Krb5Delegation.listOf(kdc.trustedForDelegation)[0] ||
                  '').toUpperCase() === 'TRUE';
     log.debug("Leaving Krb5Delegation.trustedForDelegation(). " + out);
     return out;
@@ -236,10 +248,10 @@ class Krb5Delegation {
     const out = {
       classic: delegatesTo.indexOf(backId) >= 0,
       rbcd: accepts.indexOf(frontId) >= 0,
-      delegatesTo: Krb5Delegation.valuesOf(applications.get(frontId),
-                                           'appAllowedToDelegateTo'),
-      accepts: Krb5Delegation.valuesOf(applications.get(backId),
-                                       'appAllowedToActOnBehalfOf')
+      delegatesTo: Krb5Delegation.listOf(Classes.Application.fromEntry(
+        (applications.get(frontId) || {}).fields || {}).allowedToDelegateTo),
+      accepts: Krb5Delegation.listOf(Classes.Application.fromEntry(
+        (applications.get(backId) || {}).fields || {}).allowedToActOnBehalfOf)
     };
     log.debug("Leaving Krb5Delegation.relationship(). classic=" +
               out.classic + " rbcd=" + out.rbcd);

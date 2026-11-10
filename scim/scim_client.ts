@@ -131,6 +131,7 @@ import https = require('https');
 import fs = require('fs');
 import helpers = require('../common/helpers');
 import Classes = require('../common/domain_classes');
+import DomainMap = require('../common/domain_map');
 import config = require('../common/config');
 import realms = require('../common/realms');
 import mode = require('../common/mode');
@@ -713,13 +714,22 @@ class ScimClients {
     const fields = view.fields || {};
     const row: Json = { id: view.identifier, identifier: view.identifier,
                         dn: view.dn || '', name: view.name || view.identifier };
+    // THE TWO TABLES ARE READ BY NAME ON PURPOSE (#1579): MEMBERS and
+    // LIST_MEMBERS map a row's member to the attribute it is written to as
+    // well as read from (`writeDefinition()` below), so the two directions are
+    // one table and cannot disagree. The fixed reads after them are the
+    // ScimProvisioningTarget concept's; its three secrets are named only to
+    // say whether each is set, and none leaves this function.
+    const target = Classes.ScimProvisioningTarget.fromEntry(fields,
+      { secrets: ['clientPassword', 'clientOAuthClientSecret',
+                  'clientTlsPrivateKey'] });
     MEMBERS.forEach((pair) => {
       row[pair[0]] = this.one(fields, pair[1]);
     });
     LIST_MEMBERS.forEach((pair) => {
       row[pair[0]] = this.many(fields, pair[1]);
     });
-    row.enabled = /^true$/i.test(this.one(fields, 'scimClientEnabled'));
+    row.enabled = /^true$/i.test(String(target.clientEnabled || '').trim());
     row.authMethod = row.authMethod || 'basic';
     row.oauthClientAuth = row.oauthClientAuth || 'client_secret_basic';
     row.tlsSource = row.tlsSource || 'none';
@@ -728,10 +738,10 @@ class ScimClients {
     row.deprovision = row.deprovision || 'deactivate';
     row.reconcileMinutes = row.reconcileMinutes || '0';
     row.jurisdiction = String(row.jurisdiction || '').toLowerCase();
-    row.passwordSet = !!this.one(fields, 'scimClientPassword');
-    row.oauthClientSecretSet = !!this.one(fields,
-                                          'scimClientOAuthClientSecret');
-    row.tlsPrivateKeySet = !!this.one(fields, 'scimClientTlsPrivateKey');
+    row.passwordSet = !!String(target.clientPassword || '').trim();
+    row.oauthClientSecretSet =
+      !!String(target.clientOAuthClientSecret || '').trim();
+    row.tlsPrivateKeySet = !!String(target.clientTlsPrivateKey || '').trim();
     row.certificate = this.certificateFacts(row.tlsCertificate);
     row.problems = this.problemsOf(row);
     row.usable = row.problems.length === 0;
@@ -1174,8 +1184,7 @@ class ScimClients {
   }
 
   // A group's name, as the domain model says it is (#1390); '' when the entry
-  // holds none. firstOf() below stays for entryUUID, which is read from a
-  // person or a group and which the Group concept does not carry.
+  // holds none.
   private groupNameOf(group: Json): string {
     const { log } = this.deps;
     log.debug("Entering ScimClients.groupNameOf().");
@@ -1184,24 +1193,13 @@ class ScimClients {
     return name;
   }
 
-  // The first value of an attribute, by any spelling of its name.
-  private firstOf(attributes: Json, name: string): string {
-    const { log } = this.deps;
-    log.debug("Entering ScimClients.firstOf(). " + name);
-    const key = Object.keys(attributes || {}).filter(function (one) {
-      return one.toLowerCase() === name.toLowerCase();
-    })[0];
-    const value = key ? [].concat(attributes[key])[0] : '';
-    log.debug("Leaving ScimClients.firstOf().");
-    return value == null ? '' : String(value);
-  }
-
   // The entry's UUID, from an entry object.
   private uuidOf(entry: Json): string {
     const { log } = this.deps;
     log.debug("Entering ScimClients.uuidOf().");
-    const value = this.firstOf((entry && entry.attributes) || {},
-                               'entryUUID').toLowerCase();
+    // A person's or a group's: DirectoryEntry's (#1579).
+    const value = String(DomainMap.fieldOf('DirectoryEntry', 'entryUuid',
+      (entry && entry.attributes) || {}) || '').toLowerCase();
     log.debug("Leaving ScimClients.uuidOf().");
     return UUID_SHAPED.test(value) ? value : '';
   }
@@ -1612,9 +1610,9 @@ class ScimClients {
     const dir = directory();
     const kind = String(event.kind || '');
     const pick = function (snapshot: Json): string {
-      const value = snapshot && (snapshot.entryuuid || snapshot.entryUUID);
-      return String((Array.isArray(value) ? value[0] : value) || '')
-        .toLowerCase();
+      const value = snapshot && DomainMap.fieldOf('DirectoryEntry',
+        'entryUuid', snapshot);
+      return String(value || '').toLowerCase();
     };
     let uuid = pick(event.after) || pick(event.before);
     if (!uuid && kind.indexOf('deleted') !== 0) {

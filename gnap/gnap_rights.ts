@@ -82,6 +82,7 @@
 // ===========================================================================
 
 import helpers = require('../common/helpers');
+import DomainMap = require('../common/domain_map');
 import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
 import mode = require('../common/mode');
@@ -182,11 +183,14 @@ class GnapRights {
              stepUp: stepUp };
   }
 
-  // The values of one attribute of an application entry, as strings.
-  private fieldValues(app: Json, name: string): string[] {
+  // The values of one of an application's GNAP settings, as strings, named
+  // by its GnapClient field rather than its attribute (#1579).
+  private fieldValues(app: Json,
+      name: keyof IyaDomain.GnapClient & string): string[] {
     const { log } = this.deps;
     log.debug("Entering GnapRights.fieldValues(). " + name);
-    const value = app && app.fields ? app.fields[name] : undefined;
+    const value: unknown = app && app.fields ?
+      DomainMap.fieldOf('GnapClient', name, app.fields) : undefined;
     log.debug("Leaving GnapRights.fieldValues().");
     if (value === undefined || value === null || value === '') {
       return [];
@@ -312,7 +316,7 @@ class GnapRights {
     const { log, store } = this.deps;
     log.debug("Entering GnapRights.factsOf().");
     const app = ctx.app;
-    const allowed = this.fieldValues(app, 'gnapAllowedAccess');
+    const allowed = this.fieldValues(app, 'allowedAccess');
     const isRef = typeof right === 'string';
     const name = isRef ? right : String(right.type || '');
     const entry = this.entryOf(right);
@@ -352,10 +356,10 @@ class GnapRights {
       client: { id: String((app && app.identifier) || ''),
                 // The REGISTERED class only: a declared class_id never
                 // raises trust (#432 phase 7).
-                class: this.fieldValues(app, 'gnapClassId')[0] || '',
+                class: this.fieldValues(app, 'classId')[0] || '',
                 hasAllowedAccess: allowed.length > 0,
                 bearerRefused:
-                  this.fieldValues(app, 'gnapBearerTokens')[0] === 'FALSE' },
+                  this.fieldValues(app, 'bearerTokens')[0] === 'FALSE' },
       approver: ctx.approver || '',
       approval: ctx.approval || 'pending',
       session: session ? { acr: session.acr || '',
@@ -562,8 +566,8 @@ class GnapRights {
         break;
       case 'STS-GNAP-0112':
         out = typeof right === 'string' &&
-              this.fieldValues(app, 'gnapAllowedAccess').indexOf(right) < 0 &&
-              !this.fieldValues(app, 'gnapAllowedAccess').length
+              this.fieldValues(app, 'allowedAccess').indexOf(right) < 0 &&
+              !this.fieldValues(app, 'allowedAccess').length
           ? 'the access reference "' + right + '" names nothing ' +
             'registered with this authorization server.'
           : 'the right "' + name + '" is not one this client instance may ' +
