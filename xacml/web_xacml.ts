@@ -126,7 +126,7 @@ class XacmlPage {
       // second is the one somebody needs to see.
       let source;
       if (!row.ok) {
-        source = '<strong style="color:#b00">' +
+        source = '<strong class="xacml-alert">' +
           t.html('consoleXacml.own.nothingEvaluated') + '</strong>';
       } else if (!row.builtIn) {
         source = t.html('consoleXacml.own.repositoryEntry') +
@@ -413,7 +413,7 @@ class XacmlPage {
       t.text('consoleXacml.authzen.problemsLabel')) : '';
     const rows = cat.rows.map(function (row) {
       const remove = writable
-        ? '<form method="post" action="' + PAGE + '" style="display:inline">' +
+        ? '<form method="post" action="' + PAGE + '" class="inline">' +
           self.hidden('action', 'remove-attribute') +
           self.hidden('object', row.object) +
           self.hidden('property', row.property) +
@@ -495,7 +495,7 @@ class XacmlPage {
     const ar = view.accessRequests || { enabled: false, rows: [] };
     const actForm = function (action, id, label, danger) {
       return '<form method="post" action="' + PAGE + '" ' +
-        'style="display:inline">' + self.hidden('action', action) +
+        'class="inline">' + self.hidden('action', action) +
         self.hidden('request', id) + '<button type="submit"' +
         (danger ? ' class="danger"' : '') + '>' + label +
         '</button></form> ';
@@ -597,11 +597,11 @@ class XacmlPage {
       return !row.application;
     }).map(function (row) {
       const problems = row.problems.length
-        ? '<div class="sub" style="color:#b00">' +
+        ? '<div class="sub xacml-alert">' +
           row.problems.map(esc).join('<br>') + '</div>'
         : '';
       const actions = writable ? '<form method="post" ' +
-        'action="/admin/xacml/policies" style="display:inline">' +
+        'action="/admin/xacml/policies" class="inline">' +
         self.hidden('action', row.enabled ? 'disable' : 'enable') +
         self.hidden('name', row.name) +
         '<button type="submit">' + (row.enabled
@@ -610,12 +610,12 @@ class XacmlPage {
         '</button></form> ' +
         // An application's own policy (#564) is never offered as the root.
         (row.isRoot || row.application ? '' : '<form method="post" ' +
-          'action="/admin/xacml/policies" style="display:inline">' +
+          'action="/admin/xacml/policies" class="inline">' +
           self.hidden('action', 'set-root') + self.hidden('name', row.name) +
           '<button type="submit">' + t.html('consoleXacml.policies.makeRoot') +
           '</button></form> ') +
         '<form method="post" action="/admin/xacml/policies" ' +
-        'style="display:inline">' +
+        'class="inline">' +
         self.hidden('action', 'delete') + self.hidden('name', row.name) +
         '<button type="submit">' + t.html('consoleXacml.policies.delete') +
         '</button></form>'
@@ -750,14 +750,14 @@ class XacmlPage {
         }
         const actions = writable
           ? '<form method="post" action="/admin/xacml/policies" ' +
-            'style="display:inline">' +
+            'class="inline">' +
             self.hidden('action', row.enabled ? 'disable' : 'enable') +
             self.hidden('name', row.name) + '<button type="submit">' +
             (row.enabled ? t.html('consoleXacml.policies.disable')
                          : t.html('consoleXacml.policies.enable')) +
             '</button></form> ' + (row.referenced ? ''
               : '<form method="post" action="/admin/xacml/policies" ' +
-                'style="display:inline">' + self.hidden('action', 'delete') +
+                'class="inline">' + self.hidden('action', 'delete') +
                 self.hidden('name', row.name) + '<button type="submit" ' +
                 'title="' + esc(t.text('consoleXacml.fga.removeTip')) + '">' +
                 t.html('consoleXacml.fga.remove') + '</button></form>')
@@ -826,7 +826,7 @@ class XacmlPage {
       const notify = row.notifyUrl
         ? '<code>' + esc(row.notifyUrl) + '</code>' +
           (row.notifyProblem
-            ? '<div class="sub" style="color:#b00">' +
+            ? '<div class="sub xacml-alert">' +
             esc(row.notifyProblem) +
               '</div>'
             : '') +
@@ -873,7 +873,7 @@ class XacmlPage {
           : '');
       const actions = writable
         ? '<form method="post" action="/admin/xacml/peps" ' +
-          'style="display:inline">' +
+          'class="inline">' +
           self.hidden('action', row.enabled ? 'disable-pep' : 'enable-pep') +
           self.hidden('name', row.name) +
           '<button type="submit">' +
@@ -881,7 +881,7 @@ class XacmlPage {
                        : t.html('consoleXacml.pep.nudge')) +
           '</button></form> ' +
           '<form method="post" action="/admin/xacml/peps" ' +
-          'style="display:inline">' +
+          'class="inline">' +
           self.hidden('action', 'forget-pep') +
           self.hidden('name', row.name) +
           '<button type="submit">' + t.html('consoleXacml.pep.forget') +
@@ -1312,7 +1312,10 @@ class XacmlPage {
         .map(function (one) {
           return '<strong>' + esc(one.label) + '</strong> — ' + esc(one.help);
         }).join('<br>');
-      return '<tr><td style="padding-left:' + (row.depth * 1.4) + 'rem">' +
+      // `.indent-N` in the console's stylesheet, N × 1.4rem: the console's
+      // policy allows no `style=""` (2026-11-10).
+      return '<tr><td class="indent-' +
+        Math.min(Math.max(0, Number(row.depth) || 0), 9) + '">' +
         '<code>' + esc(row.label) + '</code>' +
         (row.detail ? '<div class="sub">' + esc(row.detail) + '</div>' : '') +
         (ctx.write ? XacmlPage.editFormFor(json, row, t) : '') +
