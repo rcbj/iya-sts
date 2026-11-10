@@ -105,7 +105,7 @@ const OPERATIONS = [
 // (#1579): `models/api/management.tsp`, which `/admin-api` already holds the
 // request to. The validator is built from it, so an in-process caller meets
 // the same check, and which members are REQUIRED is the operation's.
-const OPERATIONS: Record<string, string> = {
+const ACTION_OPERATIONS: Record<string, string> = {
   'issue-server-key': 'issueEstServerKey',
   'revoke-certificate': 'revokeEstCertificate',
   'add-host-name': 'addEstHostName',
@@ -113,8 +113,8 @@ const OPERATIONS: Record<string, string> = {
 };
 
 const SCHEMAS: Record<string, any> = {};
-Object.keys(OPERATIONS).forEach(function (action) {
-  SCHEMAS[action] = ModelZod.body('management', OPERATIONS[action]);
+Object.keys(ACTION_OPERATIONS).forEach(function (action) {
+  SCHEMAS[action] = ModelZod.body('management', ACTION_OPERATIONS[action]);
 });
 
 /**
