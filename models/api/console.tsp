@@ -1954,7 +1954,7 @@ namespace IyaSts.Api.Console {
 
 @js(#{
     `description`:"A refusal or a failure. The sentence is for a person; no error code is ever in it."
-  }) @component model `SharedModel1` {
+  }) @component model `RefusalFailure2` {
     `ok`?: boolean;
     `errors`?: (string)[];
     `error`?: string;
@@ -1964,7 +1964,7 @@ namespace IyaSts.Api.Console {
     `status`?: integer
   }
 
-@component model `SharedModel8` is ({
+@component model `WithPathLabelBlurb` is ({
     `path`?: string;
     `label`?: string;
     `blurb`?: string;
@@ -1974,38 +1974,38 @@ namespace IyaSts.Api.Console {
   })[];
   
 
-@component model `SharedModel7` {
+@component model `WithPathLabelBlurb2` {
     `path`?: string;
     `label`?: string;
     `blurb`?: string;
     `hidden`?: boolean;
     `title`?: string;
     `what`?: string;
-    `items`?: `SharedModel8`
+    `items`?: `WithPathLabelBlurb`
   }
 
-@component model `SharedModel6` is (`SharedModel7`)[];
+@component model `WithPathLabelBlurb3` is (`WithPathLabelBlurb2`)[];
   
 
-@component model `SharedModel5` {
+@component model `WithPathLabelBlurb4` {
     `path`?: string;
     `label`?: string;
     `blurb`?: string;
     `hidden`?: boolean;
     `title`?: string;
     `what`?: string;
-    `items`?: `SharedModel6`
+    `items`?: `WithPathLabelBlurb3`
   }
 
-@component model `SharedModel4` is (`SharedModel5`)[];
+@component model `WithTitleWhatItems` is (`WithPathLabelBlurb4`)[];
   
 
-@component model `SharedModel3` {`title`?: string; `what`?: string; `items`?: `SharedModel4`}
+@component model `WithTitleWhatItems2` {`title`?: string; `what`?: string; `items`?: `WithTitleWhatItems`}
 
-@component model `SharedModel2` is (`SharedModel3`)[];
+@component model `WithLocaleChainCatalog` is (`WithTitleWhatItems2`)[];
   
 
-@component model `SharedModel10` {
+@component model `WithLocaleChainCatalog2` {
     `locale`?: string;
     `chain`?: (string)[];
     `catalog`?: string;
@@ -2015,16 +2015,16 @@ namespace IyaSts.Api.Console {
 
   
 
-@component model `SharedModel9` {
-    `negotiated`?: `SharedModel10`;
+@component model `WithNegotiatedOfferedDescription` {
+    `negotiated`?: `WithLocaleChainCatalog2`;
     `offered`?: (WithTagName)[];
     @js(#{`description`:"Each catalog along the chain, by language tag."}) `catalogs`?: Record<ListOfRecordString>;
     @js(#{`description`:"Each static catalog, by language tag."}) `catalogFiles`?: Record<string>
   }
 
-@component model `SharedModel11` {`ok`: boolean; `errors`?: (string)[]; `locale`?: `SharedModel9`}
+@component model `WithOkErrorsLocale` {`ok`: boolean; `errors`?: (string)[]; `locale`?: `WithNegotiatedOfferedDescription`}
 
-@component model `SharedModel13` {
+@component model `WithShapeLabelSublabel2` {
     `shape`?: string;
     `label`?: string;
     `sublabel`?: NullableString;
@@ -2034,10 +2034,10 @@ namespace IyaSts.Api.Console {
     `dashed`?: boolean
   }
 
-@js(#{`description`:"Each node's look, by node id."}) @component model `SharedModel12` is Record<`SharedModel13`>;
+@js(#{`description`:"Each node's look, by node id."}) @component model `NodeSLookNodeId` is Record<`WithShapeLabelSublabel2`>;
   
 
-@component model `SharedModel15` {
+@component model `WithIdKindRealm` {
     `id`?: string;
     `kind`?: string;
     `realm`?: WithIdNameIsDefault;
@@ -2067,10 +2067,10 @@ namespace IyaSts.Api.Console {
     `kinds`?: (string)[]
   }
 
-@component model `SharedModel14` is (`SharedModel15`)[];
+@component model `WithKindCountIdentifiers2` is (`WithIdKindRealm`)[];
   
 
-@component model `SharedModel19` {
+@component model `WithKindCountIdentifiers3` {
     `kind`?: string;
     `count`?: integer;
     `identifiers`?: (string)[];
@@ -2078,13 +2078,13 @@ namespace IyaSts.Api.Console {
     `notes`?: (string)[]
   }
 
-@component model `SharedModel18` is (`SharedModel19`)[];
+@component model `WithIdFromTo4` is (`WithKindCountIdentifiers3`)[];
   
 
-@component model `SharedModel20` is Record<`SharedModel19`>;
+@component model `WithIdFromTo5` is Record<`WithKindCountIdentifiers3`>;
   
 
-@component model `SharedModel17` {
+@component model `WithIdFromTo6` {
     `id`?: string;
     `from`?: string;
     `to`?: string;
@@ -2109,14 +2109,14 @@ namespace IyaSts.Api.Console {
     `lastAt`?: numeric;
     `authorizedBy`?: string;
     `reason`?: string;
-    `consumed`?: `SharedModel18`;
-    `produced`?: `SharedModel18`;
+    `consumed`?: `WithIdFromTo4`;
+    `produced`?: `WithIdFromTo4`;
     `attribute`?: string;
     `mechanism`?: string;
     `setOn`?: string;
     `used`?: boolean;
-    `consumedFold`?: `SharedModel20`;
-    `producedFold`?: `SharedModel20`;
+    `consumedFold`?: `WithIdFromTo5`;
+    `producedFold`?: `WithIdFromTo5`;
     `permissionId`?: string;
     `permissionName`?: string;
     `baseUri`?: string;
@@ -2136,10 +2136,10 @@ namespace IyaSts.Api.Console {
     `scopes`?: (string)[]
   }
 
-@component model `SharedModel16` is (`SharedModel17`)[];
+@component model `WithSeqAtKind3` is (`WithIdFromTo6`)[];
   
 
-@component model `SharedModel22` {
+@component model `WithSeqAtKind4` {
     `seq`?: numeric;
     `at`?: numeric;
     `kind`?: string;
@@ -2155,10 +2155,10 @@ namespace IyaSts.Api.Console {
     `target`?: string
   }
 
-@component model `SharedModel21` is (`SharedModel22`)[];
+@component model `WithTotalEntriesKey` is (`WithSeqAtKind4`)[];
   
 
-@component model `SharedModel23` {
+@component model `WithTotalEntriesKey2` {
     `total`?: integer;
     `entries`?: ({
       `key`?: string;
@@ -2172,7 +2172,7 @@ namespace IyaSts.Api.Console {
     `complete`?: boolean
   }
 
-@component model `SharedModel24` {
+@component model `WithDescriptionUsersDescription` {
     @js(#{`description`:"Each name in the answer that is a known person."}) `users`?: Record<boolean>;
     @js(#{`description`:"Each name in the answer the registry holds."}) `apps`?: Record<{`name`?: string; `dnLabel`?: string}>
   }
@@ -2194,7 +2194,7 @@ namespace IyaSts.Api.Console {
 
 @component union `SharedModel25` {SharedModel25_h1349}
 
-@component model `SharedModel26` {
+@component model `WithApplicationsGrantsLines3` {
     `applications`?: integer;
     `grants`?: integer;
     `lines`?: integer;
@@ -2205,7 +2205,7 @@ namespace IyaSts.Api.Console {
     `unused`?: integer
   }
 
-@component model `SharedModel28` {
+@component model `WithClientClientNamePermissionId3` {
     `client`?: string;
     `clientName`?: string;
     `permissionId`?: string;
@@ -2218,10 +2218,10 @@ namespace IyaSts.Api.Console {
     `asked`?: boolean
   }
 
-@component model `SharedModel27` is (`SharedModel28`)[];
+@component model `WithPagePagesPerPage4` is (`WithClientClientNamePermissionId3`)[];
   
 
-@component model `SharedModel29` {
+@component model `WithPagePagesPerPage5` {
     `page`?: integer;
     `pages`?: integer;
     `perPage`?: integer;
@@ -2232,7 +2232,7 @@ namespace IyaSts.Api.Console {
     `noun`?: NullableString
   }
 
-@component model `SharedModel31` {
+@component model `WithResourceResourceNameBaseUri2` {
     `resource`?: string;
     `resourceName`?: string;
     `baseUri`?: string;
@@ -2243,15 +2243,15 @@ namespace IyaSts.Api.Console {
     `grantedTo`?: (WithIdentifierNameAsked)[]
   }
 
-@component model `SharedModel30` is (`SharedModel31`)[];
+@component model `WithKeyMembersCounts` is (`WithResourceResourceNameBaseUri2`)[];
   
 
-@component model `SharedModel33` {`key`?: string; `members`?: (string)[]; `counts`?: `SharedModel26`}
+@component model `WithKeyMembersCounts2` {`key`?: string; `members`?: (string)[]; `counts`?: `WithApplicationsGrantsLines3`}
 
-@component model `SharedModel32` is (`SharedModel33`)[];
+@component model `WithAtFamilyKind2` is (`WithKeyMembersCounts2`)[];
   
 
-@component model `SharedModel36` {
+@component model `WithAtFamilyKind3` {
     `at`?: numeric;
     `family`?: string;
     `kind`?: string;
@@ -2274,26 +2274,26 @@ namespace IyaSts.Api.Console {
     `expiresAtMs`?: numeric
   }
 
-@component model `SharedModel35` is (`SharedModel36`)[];
+@component model `WithRealmIssuerNodes3` is (`WithAtFamilyKind3`)[];
   
 
-@component model `SharedModel34` {
+@component model `WithRealmIssuerNodes4` {
     `realm`?: WithIdNameIsDefault;
     `issuer`?: string;
-    `nodes`?: `SharedModel14`;
-    `edges`?: `SharedModel16`;
-    `tokens`?: `SharedModel21`;
+    `nodes`?: `WithKindCountIdentifiers2`;
+    `edges`?: `WithSeqAtKind3`;
+    `tokens`?: `WithTotalEntriesKey`;
     `tokensLeftOff`?: integer;
     `maxTokenRows`?: integer;
     `acts`?: integer;
     `chains`?: integer;
     `counts`?: WithNodesEdgesGrants;
-    `credentials`?: `SharedModel35`;
+    `credentials`?: `WithRealmIssuerNodes3`;
     `credentialsOnDelegationLines`?: integer;
     `subject`?: string
   }
 
-@component model `SharedModel41` {
+@component model `WithNameDescriptionId` {
     `name`?: string;
     `description`?: string;
     `id`?: NullableString;
@@ -2301,22 +2301,22 @@ namespace IyaSts.Api.Console {
     `grantedTo`?: (WithIdentifierNameAsked)[]
   }
 
-@component model `SharedModel40` is (`SharedModel41`)[];
+@component model `WithIdentifierNameBaseUri` is (`WithNameDescriptionId`)[];
   
 
-@component model `SharedModel39` {
+@component model `WithIdentifierNameBaseUri2` {
     `identifier`?: string;
     `name`?: string;
     `baseUri`?: string;
     `rawBaseUri`?: string;
-    `permissions`?: `SharedModel40`;
+    `permissions`?: `WithIdentifierNameBaseUri`;
     `grantsHeld`?: integer
   }
 
-@component model `SharedModel38` is (`SharedModel39`)[];
+@component model `WithResourcesPermissionsUnidentified` is (`WithIdentifierNameBaseUri2`)[];
   
 
-@component model `SharedModel42` {
+@component model `WithResourcesPermissionsUnidentified2` {
     `resources`?: integer;
     `permissions`?: integer;
     `unidentified`?: integer;
@@ -2327,40 +2327,40 @@ namespace IyaSts.Api.Console {
     `clients`?: integer
   }
 
-@component model `SharedModel37` {
-    `resources`?: `SharedModel38`;
-    `permissions`?: `SharedModel30`;
-    `grants`?: `SharedModel27`;
-    `counts`?: `SharedModel42`
+@component model `WithResourcesPermissionsGrants` {
+    `resources`?: `WithResourcesPermissionsUnidentified`;
+    `permissions`?: `WithKeyMembersCounts`;
+    `grants`?: `WithPagePagesPerPage4`;
+    `counts`?: `WithResourcesPermissionsUnidentified2`
   }
 
-@component model `SharedModel45` {
+@component model `WithKeyMembersGrants` {
     `key`?: string;
     `members`?: (string)[];
-    `grants`?: `SharedModel27`;
-    `permissions`?: `SharedModel30`;
-    `counts`?: `SharedModel26`
+    `grants`?: `WithPagePagesPerPage4`;
+    `permissions`?: `WithKeyMembersCounts`;
+    `counts`?: `WithApplicationsGrantsLines3`
   }
 
-@component model `SharedModel44` is (`SharedModel45`)[];
+@component model `WithClustersDescriptionMemberOf` is (`WithKeyMembersGrants`)[];
   
 
-@component model `SharedModel43` {
-    `clusters`?: `SharedModel44`;
+@component model `WithClustersDescriptionMemberOf2` {
+    `clusters`?: `WithClustersDescriptionMemberOf`;
     @js(#{`description`:"Each application, to its group's key."}) `memberOf`?: Record<string>;
     `counts`?: WithClustersApplicationsLargestEtc5
   }
 
-@component model `SharedModel46` {`shown`?: `SharedModel27`; `paging`?: `SharedModel29`}
+@component model `WithShownPagingShown` {`shown`?: `WithPagePagesPerPage4`; `paging`?: `WithPagePagesPerPage5`}
 
-@component model `SharedModel47` {`shown`?: `SharedModel30`; `paging`?: `SharedModel29`}
+@component model `WithShownPagingOnlyWhileOn` {`shown`?: `WithKeyMembersCounts`; `paging`?: `WithPagePagesPerPage5`}
 
-@component model `SharedModel49` {
+@component model `WithOnlyWhileOnAloneWhileOnKey2` {
     `onlyWhileOn`?: (WithSettingValuesOnEtc4)[];
     `aloneWhileOn`?: (WithSettingValuesOnEtc4)[]
   }
 
-@component model `SharedModel48` {
+@component model `WithKeyGroupLabel5` {
     `key`?: string;
     `group`?: string;
     `label`?: string;
@@ -2370,7 +2370,7 @@ namespace IyaSts.Api.Console {
     `csvValues`?: (string)[];
     `ordered`?: boolean;
     @js(#{`description`:"A sentence per value of the row."}) `csvValueNotes`?: Record<string>;
-    `selectAll`?: `SharedModel49`;
+    `selectAll`?: `WithOnlyWhileOnAloneWhileOnKey2`;
     `min`?: numeric;
     `max`?: numeric;
     `step`?: numeric;
@@ -2389,7 +2389,7 @@ namespace IyaSts.Api.Console {
     `overridden`?: boolean
   }
 
-@component model `SharedModel51` {
+@component model `WithSeqOriginAt4` {
     `seq`?: numeric;
     `origin`?: NullableString;
     `at`?: numeric;
@@ -2412,10 +2412,10 @@ namespace IyaSts.Api.Console {
     `chainKey`?: string
   }
 
-@component model `SharedModel50` is (`SharedModel51`)[];
+@component model `WithIdLabelCa2` is (`WithSeqOriginAt4`)[];
   
 
-@component model `SharedModel55` {
+@component model `WithIdLabelCa3` {
     `id`?: string;
     `label`?: string;
     `ca`?: boolean;
@@ -2427,10 +2427,10 @@ namespace IyaSts.Api.Console {
     `note`?: string
   }
 
-@component model `SharedModel54` is (`SharedModel55`)[];
+@component model `WithIdLabelClassical3` is (`WithIdLabelCa3`)[];
   
 
-@component model `SharedModel56` is ({
+@component model `WithIdLabelClassical4` is ({
     `id`?: string;
     `label`?: string;
     `classical`?: boolean;
@@ -2439,7 +2439,7 @@ namespace IyaSts.Api.Console {
   })[];
   
 
-@component model `SharedModel57` is ({
+@component model `WithIdLabelFamily` is ({
     `id`?: string;
     `label`?: string;
     `family`?: string;
@@ -2449,7 +2449,7 @@ namespace IyaSts.Api.Console {
   })[];
   
 
-@component model `SharedModel58` is ({
+@component model `WithIdLabelSubject2` is ({
     `id`?: string;
     `label`?: string;
     `subject`?: string;
@@ -2459,7 +2459,7 @@ namespace IyaSts.Api.Console {
   })[];
   
 
-@component model `SharedModel60` {
+@component model `WithIdCaProfile2` {
     `id`?: string;
     `ca`?: boolean;
     `profile`?: NullableString;
@@ -2487,16 +2487,16 @@ namespace IyaSts.Api.Console {
     `csrPem`?: string
   }
 
-@component model `SharedModel59` is (`SharedModel60`)[];
+@component model `WithFieldsProfilesPqModes3` is (`WithIdCaProfile2`)[];
   
 
-@component model `SharedModel53` {
+@component model `WithFieldsProfilesPqModes4` {
     `fields`?: (string)[];
-    `profiles`?: `SharedModel54`;
-    `pqModes`?: `SharedModel56`;
+    `profiles`?: `WithIdLabelClassical3`;
+    `pqModes`?: `WithIdLabelClassical4`;
     `pqMode`?: string;
-    `keyAlgorithms`?: `SharedModel57`;
-    `alternativeKeyAlgorithms`?: `SharedModel57`;
+    `keyAlgorithms`?: `WithIdLabelFamily`;
+    `alternativeKeyAlgorithms`?: `WithIdLabelFamily`;
     `signatureAlgorithms`?: ({`id`?: string; `label`?: string; `weak`?: boolean; `kind`?: string})[];
     `signerLabel`?: string;
     `keystoreFormats`?: (string)[];
@@ -2505,23 +2505,23 @@ namespace IyaSts.Api.Console {
     `netscapeTypes`?: ({`name`?: string})[];
     `accessMethods`?: (string)[];
     `dnFields`?: (WithAttrField)[];
-    `issuers`?: `SharedModel58`;
-    `objects`?: `SharedModel59`;
+    `issuers`?: `WithIdLabelSubject2`;
+    `objects`?: `WithFieldsProfilesPqModes3`;
     `maxObjects`?: integer;
     `slowFamilies`?: (string)[];
     @js(#{`description`:"The certificate form, by field name."}) `draft`?: Record<Shape8>
   }
 
-@component model `SharedModel52` {
+@component model `WithOkErrorsWhy` {
     `ok`: boolean;
     `errors`?: (string)[];
     `why`?: string;
     @js(#{`description`:"The certificate form, by field name."}) `draft`?: Record<Shape8>;
     `algorithm`?: string;
-    `workbench`?: `SharedModel53`
+    `workbench`?: `WithFieldsProfilesPqModes4`
   }
 
-@component model `SharedModel61` {
+@component model `WithOkChangedClientSecret` {
     `ok`: boolean;
     `changed`?: boolean;
     `clientSecret`?: string;
@@ -2532,7 +2532,7 @@ namespace IyaSts.Api.Console {
 @js(#{
     `x-free-form`:"The inside of an OpenAPI document (its paths and components): a statement about this API in OpenAPI's own vocabulary, whose every model is stated at the operation it describes.",
     `description`:"The inside of an OpenAPI document (its paths and components): a statement about this API in OpenAPI's own vocabulary, whose every model is stated at the operation it describes."
-  }) @component model `SharedModel62` {}
+  }) @component model `InsideOpenAPIDocumentPathsComponents` {}
 
 @endpoint("/admin-api/console/api-explorer",
   "get",
@@ -2567,7 +2567,7 @@ op `getApiExplorer`(`responses/200/content/application~1json/schema`: {
     `realmPrefix`?: string;
     `script`?: string
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
   
 
 @js(#{
@@ -2654,7 +2654,7 @@ op `getConsoleShell`(`parameters/0/schema`: "files",
     `realms`?: get_admin_api_console_r200_application_json_realms_h1386;
     `realmRoot`?: string;
     `portalHref`?: string;
-    `sections`?: `SharedModel2`;
+    `sections`?: `WithLocaleChainCatalog`;
     @js(#{`description`:"Every console page's label, by its path."}) `navLabels`?: Record<string>;
     `retiring`?: NullableObject114;
     `runtime`?: {
@@ -2666,9 +2666,9 @@ op `getConsoleShell`(`parameters/0/schema`: "files",
     };
     `persistence`?: WithEnabledMode;
     `version`?: WithVersionStampedBuildInfo;
-    `locale`?: `SharedModel9`
+    `locale`?: `WithNegotiatedOfferedDescription`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
   
 
 @endpoint("/admin-api/console/language",
@@ -2700,9 +2700,9 @@ op `setConsoleLanguage`(@js(#{`$open`:true}) `requestBody/content/application~1j
       `description`:"A BCP 47 tag a catalog answers, such as `fr-CA`, or empty to follow the browser."
     }) `lang`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel11`,
-  `responses/400/content/application~1json/schema`: `SharedModel11`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkErrorsLocale`,
+  `responses/400/content/application~1json/schema`: `WithOkErrorsLocale`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
   
 
 @endpoint("/admin-api/console/delegation/map",
@@ -2937,14 +2937,14 @@ op `getDelegationMap`(`parameters/0/schema`: "krb5-s4u2self" | "krb5-s4u2proxy-c
   `responses/200/content/image~1svg+xml/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `drawing`?: WithWidthHeightFailed;
-    `looks`?: `SharedModel12`;
+    `looks`?: `NodeSLookNodeId`;
     `label`?: string;
     `svg`?: string;
     `realm`?: WithIdNameIsDefault;
     `issuer`?: string;
-    `nodes`?: `SharedModel14`;
-    `edges`?: `SharedModel16`;
-    `tokens`?: `SharedModel21`;
+    `nodes`?: `WithKindCountIdentifiers2`;
+    `edges`?: `WithSeqAtKind3`;
+    `tokens`?: `WithTotalEntriesKey`;
     `tokensLeftOff`?: integer;
     `maxTokenRows`?: integer;
     `acts`?: integer;
@@ -2971,13 +2971,13 @@ op `getDelegationMap`(`parameters/0/schema`: "krb5-s4u2self" | "krb5-s4u2proxy-c
     `types`?: (WithTypeProtocolModeEtc7)[];
     `modes`?: (WithModeLabelWhat)[];
     `outcomes`?: (string)[];
-    `applicationChooser`?: `SharedModel23`;
-    `userChooser`?: `SharedModel23`;
+    `applicationChooser`?: `WithTotalEntriesKey2`;
+    `userChooser`?: `WithTotalEntriesKey2`;
     `mapKey`?: string;
     `directoryLoaded`?: boolean;
-    `facts`?: `SharedModel24`
+    `facts`?: `WithDescriptionUsersDescription`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
   
 
 @endpoint("/admin-api/console/federation/map",
@@ -3115,7 +3115,7 @@ op `getFederationMap`(`parameters/0/schema`: string,
     `protocols`?: (WithProtocolLabelFamilyEtc7)[];
     `mapKey`?: string
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
   
 
 @js(#{
@@ -3123,7 +3123,7 @@ op `getFederationMap`(`parameters/0/schema`: string,
     `properties`:#{
       `key`:#{`type`:"string"},
       `members`:#{`type`:"array",`items`:#{`type`:"string"}},
-      `counts`:#{`$ref`:"#/components/schemas/SharedModel26"}
+      `counts`:#{`$ref`:"#/components/schemas/WithApplicationsGrantsLines3"}
     },
     `$types`:#["object","null"]
   }) @hoisted model get_admin_api_console_delegation_cluster_r200_application_json_group_h1397 {}
@@ -3133,9 +3133,9 @@ op `getFederationMap`(`parameters/0/schema`: string,
     `properties`:#{
       `key`:#{`type`:"string"},
       `members`:#{`type`:"array",`items`:#{`type`:"string"}},
-      `grants`:#{`$ref`:"#/components/schemas/SharedModel27"},
-      `permissions`:#{`$ref`:"#/components/schemas/SharedModel30"},
-      `counts`:#{`$ref`:"#/components/schemas/SharedModel26"}
+      `grants`:#{`$ref`:"#/components/schemas/WithPagePagesPerPage4"},
+      `permissions`:#{`$ref`:"#/components/schemas/WithKeyMembersCounts"},
+      `counts`:#{`$ref`:"#/components/schemas/WithApplicationsGrantsLines3"}
     },
     `$types`:#["object","null"]
   }) @hoisted model get_admin_api_console_delegation_cluster_r200_application_json_cluster_h1398 {}
@@ -3380,30 +3380,30 @@ op `getDelegationCluster`(`parameters/0/schema`: string,
   `responses/200/content/image~1svg+xml/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `drawing`?: WithWidthHeightFailed;
-    `looks`?: `SharedModel12`;
+    `looks`?: `NodeSLookNodeId`;
     `label`?: string;
     `svg`?: string;
     `application`?: NullableString;
     `group`?: get_admin_api_console_delegation_cluster_r200_application_json_group_h1397;
-    `grants`?: `SharedModel27`;
-    `grantsPaging`?: `SharedModel29`;
-    `permissions`?: `SharedModel30`;
-    `permissionsPaging`?: `SharedModel29`;
-    `groups`?: `SharedModel32`;
+    `grants`?: `WithPagePagesPerPage4`;
+    `grantsPaging`?: `WithPagePagesPerPage5`;
+    `permissions`?: `WithKeyMembersCounts`;
+    `permissionsPaging`?: `WithPagePagesPerPage5`;
+    `groups`?: `WithAtFamilyKind2`;
     `counts`?: WithClustersApplicationsLargestEtc5;
-    `paging`?: `SharedModel29`;
+    `paging`?: `WithPagePagesPerPage5`;
     `asked`?: string;
-    `graph`?: `SharedModel34`;
+    `graph`?: `WithRealmIssuerNodes4`;
     `cluster`?: get_admin_api_console_delegation_cluster_r200_application_json_cluster_h1398;
-    `register`?: `SharedModel37`;
-    `clusters`?: `SharedModel43`;
-    `grantPage`?: `SharedModel46`;
-    `permissionPage`?: `SharedModel47`;
-    `groupPage`?: {`shown`?: `SharedModel44`; `paging`?: `SharedModel29`};
-    `facts`?: `SharedModel24`;
+    `register`?: `WithResourcesPermissionsGrants`;
+    `clusters`?: `WithClustersDescriptionMemberOf2`;
+    `grantPage`?: `WithShownPagingShown`;
+    `permissionPage`?: `WithShownPagingOnlyWhileOn`;
+    `groupPage`?: {`shown`?: `WithClustersDescriptionMemberOf`; `paging`?: `WithPagePagesPerPage5`};
+    `facts`?: `WithDescriptionUsersDescription`;
     @js(#{`description`:"Each name in the answer the registry holds."}) `apps`?: Record<{`name`?: string; `dnLabel`?: string}>
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
   
 
 @endpoint("/admin-api/console/delegation/allowed",
@@ -3638,22 +3638,22 @@ op `getDelegationAllowed`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/sche
   `responses/200/content/image~1svg+xml/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `drawing`?: WithWidthHeightFailed;
-    `looks`?: `SharedModel12`;
+    `looks`?: `NodeSLookNodeId`;
     `label`?: string;
     `svg`?: string;
-    `graph`?: `SharedModel34`;
-    `counts`?: `SharedModel42`;
-    `grants`?: `SharedModel27`;
-    `groups`?: `SharedModel32`;
+    `graph`?: `WithRealmIssuerNodes4`;
+    `counts`?: `WithResourcesPermissionsUnidentified2`;
+    `grants`?: `WithPagePagesPerPage4`;
+    `groups`?: `WithAtFamilyKind2`;
     `groupCounts`?: WithClustersApplicationsLargestEtc5;
-    `groupsPaging`?: `SharedModel29`;
-    `register`?: `SharedModel37`;
-    `clusters`?: `SharedModel43`;
-    `shownGroups`?: `SharedModel44`;
-    `facts`?: `SharedModel24`;
+    `groupsPaging`?: `WithPagePagesPerPage5`;
+    `register`?: `WithResourcesPermissionsGrants`;
+    `clusters`?: `WithClustersDescriptionMemberOf2`;
+    `shownGroups`?: `WithClustersDescriptionMemberOf`;
+    `facts`?: `WithDescriptionUsersDescription`;
     @js(#{`description`:"Each name in the answer the registry holds."}) `apps`?: Record<{`name`?: string; `dnLabel`?: string}>
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
   
 
 @js(#{
@@ -3667,7 +3667,7 @@ op `getDelegationAllowed`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/sche
           `additionalProperties`:false,
           `properties`:#{
             `group`:#{`type`:"string"},
-            `settings`:#{`type`:"array",`items`:#{`$ref`:"#/components/schemas/SharedModel48"}}
+            `settings`:#{`type`:"array",`items`:#{`$ref`:"#/components/schemas/WithKeyGroupLabel5"}}
           }
         }
       },
@@ -3927,24 +3927,24 @@ op `getDelegationSettings`(`parameters/0/schema`: string,
   @js(#{`minimum`:1}) `parameters/24/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `allowed`?: {
-      `resources`?: `SharedModel38`;
-      `permissions`?: `SharedModel30`;
-      `grants`?: `SharedModel27`;
-      `counts`?: `SharedModel42`;
+      `resources`?: `WithResourcesPermissionsUnidentified`;
+      `permissions`?: `WithKeyMembersCounts`;
+      `grants`?: `WithPagePagesPerPage4`;
+      `counts`?: `WithResourcesPermissionsUnidentified2`;
       `filter`?: WithPermissionsGrants;
-      `paging`?: {`permissions`?: `SharedModel29`; `grants`?: `SharedModel29`}
+      `paging`?: {`permissions`?: `WithPagePagesPerPage5`; `grants`?: `WithPagePagesPerPage5`}
     };
     `settings`?: get_admin_api_console_delegation_settings_r200_application_json_settings_h1402;
-    `register`?: `SharedModel37`;
+    `register`?: `WithResourcesPermissionsGrants`;
     `listState`?: {
       `permWanted`?: string;
       `grantWanted`?: string;
-      `permPage`?: `SharedModel47`;
-      `grantPage`?: `SharedModel46`
+      `permPage`?: `WithShownPagingOnlyWhileOn`;
+      `grantPage`?: `WithShownPagingShown`
     };
     `allApplications`?: (WithIdentifierName)[]
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
   
 
 @js(#{
@@ -4036,20 +4036,20 @@ op `getDelegationChain`(`parameters/0/schema`: string,
   `responses/200/content/image~1svg+xml/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `drawing`?: WithWidthHeightFailed;
-    `looks`?: `SharedModel12`;
+    `looks`?: `NodeSLookNodeId`;
     `label`?: string;
     `svg`?: string;
     `chain`?: get_admin_api_console_delegation_chain_r200_application_json_chain_h1404;
     `chainKey`?: string;
     `found`?: boolean;
-    `acts`?: `SharedModel50`;
-    `graph`?: `SharedModel34`;
+    `acts`?: `WithIdLabelCa2`;
+    `graph`?: `WithRealmIssuerNodes4`;
     `held`?: integer;
     `maxRecords`?: integer;
     `mapKey`?: string;
-    `facts`?: `SharedModel24`
+    `facts`?: `WithDescriptionUsersDescription`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
   
 
 @endpoint("/admin-api/console/dashboard",
@@ -4087,9 +4087,9 @@ op `getConsoleDashboard`(`responses/200/content/application~1json/schema`: {
     `base`?: string;
     `persistence`?: WithEnabledMode;
     `testDouble`?: boolean;
-    `sections`?: `SharedModel2`
+    `sections`?: `WithLocaleChainCatalog`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
   
 
 @endpoint("/admin-api/console/applications/new",
@@ -4160,7 +4160,7 @@ op `getConsoleNewApplicationForm`(`responses/200/content/application~1json/schem
       `section`?: string;
       `sectionLabel`?: string;
       `inSimple`?: boolean;
-      `described`?: `SharedModel48`
+      `described`?: `WithKeyGroupLabel5`
     })[];
     `fieldGroups`?: (WithIdLabelFamilies)[];
     `familyChoices`?: (WithIdLabelFamiliesEtc5)[];
@@ -4178,7 +4178,7 @@ op `getConsoleNewApplicationForm`(`responses/200/content/application~1json/schem
       `families`?: (string)[]
     })[]
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
   
 
 @js(#{
@@ -4463,13 +4463,13 @@ op `getConsoleDelegationUser`(@js(#{`examples`:#["alice"]}) `parameters/0/schema
   `responses/200/content/image~1svg+xml/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `drawing`?: WithWidthHeightFailed;
-    `looks`?: `SharedModel12`;
+    `looks`?: `NodeSLookNodeId`;
     `label`?: string;
     `svg`?: string;
     `user`?: get_admin_api_console_delegation_user_r200_application_json_user_h1415;
     `asked`?: NullableString;
     `key`?: string;
-    `credentials`?: `SharedModel35`;
+    `credentials`?: `WithRealmIssuerNodes3`;
     `flows`?: ({
       `flow`?: string;
       `protocol`?: string;
@@ -4481,8 +4481,8 @@ op `getConsoleDelegationUser`(@js(#{`examples`:#["alice"]}) `parameters/0/schema
       `unknown`?: boolean
     })[];
     `onDelegationLines`?: integer;
-    `acts`?: `SharedModel50`;
-    `graph`?: `SharedModel34`;
+    `acts`?: `WithIdLabelCa2`;
+    `graph`?: `WithRealmIssuerNodes4`;
     `counts`?: NullableObject115;
     `users`?: ({
       `key`?: string;
@@ -4504,11 +4504,11 @@ op `getConsoleDelegationUser`(@js(#{`examples`:#["alice"]}) `parameters/0/schema
       `roles`?: WithInitialIntermediaryTarget2
     })[];
     `usersComplete`?: boolean;
-    `chooser`?: `SharedModel23`;
+    `chooser`?: `WithTotalEntriesKey2`;
     `mapKey`?: string;
-    `facts`?: `SharedModel24`
+    `facts`?: `WithDescriptionUsersDescription`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
   
 
 @js(#{
@@ -4779,7 +4779,7 @@ op `getConsoleDelegationApplication`(@js(#{`examples`:#["no-such-application"]})
   `responses/200/content/image~1svg+xml/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `drawing`?: WithWidthHeightFailed;
-    `looks`?: `SharedModel12`;
+    `looks`?: `NodeSLookNodeId`;
     `label`?: string;
     `svg`?: string;
     `application`?: get_admin_api_console_delegation_application_r200_application_json_application_h1419;
@@ -4787,8 +4787,8 @@ op `getConsoleDelegationApplication`(@js(#{`examples`:#["no-such-application"]})
     `key`?: string;
     `registered`?: boolean;
     `registeredName`?: string;
-    `acts`?: `SharedModel50`;
-    `graph`?: `SharedModel34`;
+    `acts`?: `WithIdLabelCa2`;
+    `graph`?: `WithRealmIssuerNodes4`;
     @js(#{`description`:"The roles played, by the act's `seq`."}) `rolesBySeq`?: Record<(string)[]>;
     `applications`?: ({
       `key`?: string;
@@ -4808,11 +4808,11 @@ op `getConsoleDelegationApplication`(@js(#{`examples`:#["no-such-application"]})
     `held`?: integer;
     `maxRecords`?: integer;
     `roles`?: (WithRoleLabelWhat)[];
-    `chooser`?: `SharedModel23`;
+    `chooser`?: `WithTotalEntriesKey2`;
     `mapKey`?: string;
-    `facts`?: `SharedModel24`
+    `facts`?: `WithDescriptionUsersDescription`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
   
 
 @endpoint("/admin-api/console/pki/apply-profile",
@@ -4843,9 +4843,9 @@ op `applyPkiProfile`(@js(#{
     `examples`:#[#{`pki_profile`:"tls-server",`pki_pq_mode`:"classical"}],
     `additionalProperties`:true
   }) `requestBody/content/application~1json/schema`: {},
-  `responses/200/content/application~1json/schema`: `SharedModel52`,
-  `responses/400/content/application~1json/schema`: `SharedModel52`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkErrorsWhy`,
+  `responses/400/content/application~1json/schema`: `WithOkErrorsWhy`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
   
 
 @endpoint("/admin-api/console/pki/generate-keys",
@@ -4873,9 +4873,9 @@ op `applyPkiProfile`(@js(#{
     `security`:#[#{`oauth2`:#["admin:console"]},#{`bearerAuth`:#[]}]
   })
 op `generatePkiKeyPair`(@js(#{`examples`:#[#{`pki_key_alg`:"ec-p384"}],`additionalProperties`:true}) `requestBody/content/application~1json/schema`: {},
-  `responses/200/content/application~1json/schema`: `SharedModel52`,
-  `responses/400/content/application~1json/schema`: `SharedModel52`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkErrorsWhy`,
+  `responses/400/content/application~1json/schema`: `WithOkErrorsWhy`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
   
 
 @endpoint("/admin-api/console/pki/generate-alt-keys",
@@ -4906,9 +4906,9 @@ op `generatePkiAltKeyPair`(@js(#{
     `examples`:#[#{`pki_alt_key_alg`:"ml-dsa-65"}],
     `additionalProperties`:true
   }) `requestBody/content/application~1json/schema`: {},
-  `responses/200/content/application~1json/schema`: `SharedModel52`,
-  `responses/400/content/application~1json/schema`: `SharedModel52`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkErrorsWhy`,
+  `responses/400/content/application~1json/schema`: `WithOkErrorsWhy`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
   
 
 @endpoint("/admin-api/console/pki/use-key",
@@ -4939,9 +4939,9 @@ op `usePkiStoredKey`(@js(#{
     `examples`:#[#{`objectId`:"ca-1f2e3d4c5b6a7980"}],
     `additionalProperties`:true
   }) `requestBody/content/application~1json/schema`: WithDescriptionObjectId,
-  `responses/200/content/application~1json/schema`: `SharedModel52`,
-  `responses/400/content/application~1json/schema`: `SharedModel52`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkErrorsWhy`,
+  `responses/400/content/application~1json/schema`: `WithOkErrorsWhy`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
   
 
 @endpoint("/admin-api/console/applications/generate-secret",
@@ -4969,9 +4969,9 @@ op `usePkiStoredKey`(@js(#{
     `security`:#[#{`oauth2`:#["admin:console"]},#{`bearerAuth`:#[]}]
   })
 op `generateClientSecret`(@js(#{`examples`:#[#{}]}) `requestBody/content/application~1json/schema`: {},
-  `responses/200/content/application~1json/schema`: `SharedModel61`,
-  `responses/400/content/application~1json/schema`: `SharedModel61`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkChangedClientSecret`,
+  `responses/400/content/application~1json/schema`: `WithOkChangedClientSecret`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
   
 
 @endpoint("/admin-api/console/operations",
@@ -5005,7 +5005,7 @@ op `getConsoleOperations`(`responses/200/content/application~1json/schema`: {
       `query`?: (string)[]
     })[]
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
   
 
 @js(#{
@@ -5043,9 +5043,9 @@ op `getConsoleOpenApi`(`responses/200/content/application~1json/schema`: {
     `servers`?: ({`url`?: string; `description`?: string})[];
     `tags`?: ({`name`?: string; `description`?: string})[];
     `security`?: (get_admin_api_console_openapi_json_r200_application_json_security_i_h1421)[];
-    `paths`: `SharedModel62`;
-    `components`?: `SharedModel62`
+    `paths`: `InsideOpenAPIDocumentPathsComponents`;
+    `components`?: `InsideOpenAPIDocumentPathsComponents`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure2`): void;
   
 }

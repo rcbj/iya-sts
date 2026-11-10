@@ -3725,7 +3725,7 @@ namespace IyaSts.Api.Management {
 
 @js(#{
     `description`:"A refusal or a failure. The sentence is for a person; no error code is ever in it."
-  }) @component model `SharedModel1` {
+  }) @component model `RefusalFailure` {
     `ok`?: boolean;
     `errors`?: (string)[];
     `error`?: string;
@@ -3738,24 +3738,24 @@ namespace IyaSts.Api.Management {
 @js(#{
     `x-free-form`:"An RFC 8414 metadata member's value as the operator chose to publish it: any JSON, deliberately, including what no specification defines.",
     `description`:"An RFC 8414 metadata member's value as the operator chose to publish it: any JSON, deliberately, including what no specification defines."
-  }) @component model `SharedModel2` {}
+  }) @component model `RFCMetadataMemberSValue` {}
 
 @js(#{
     `x-free-form`:"An OpenAPI 3.1 document's own contents: their shape is OpenAPI's, not this service's, and they are generated from the route table.",
     `description`:"An OpenAPI 3.1 document's own contents: their shape is OpenAPI's, not this service's, and they are generated from the route table."
-  }) @component model `SharedModel4` {}
+  }) @component model `OpenAPI` {}
 
-@js(#{`description`:"An OpenAPI 3.1.0 document."}) @component model `SharedModel3` {
+@js(#{`description`:"An OpenAPI 3.1.0 document."}) @component model `OpenAPI2` {
     `openapi`?: string;
-    `info`?: `SharedModel4`;
-    `servers`?: `SharedModel4`;
-    `tags`?: `SharedModel4`;
-    `security`?: `SharedModel4`;
-    `paths`?: `SharedModel4`;
-    `components`?: `SharedModel4`
+    `info`?: `OpenAPI`;
+    `servers`?: `OpenAPI`;
+    `tags`?: `OpenAPI`;
+    `security`?: `OpenAPI`;
+    `paths`?: `OpenAPI`;
+    `components`?: `OpenAPI`
   }
 
-@component model `SharedModel5` {
+@component model `WithFromSharedRegion` {
     `from`?: string;
     `shared`?: boolean;
     `region`?: string;
@@ -3768,7 +3768,7 @@ namespace IyaSts.Api.Management {
 
 @js(#{
     `description`:"Which page of how many, and the query parameter that moves it."
-  }) @component model `SharedModel6` {
+  }) @component model `PageHowManyQueryParameter` {
     `page`?: integer;
     `pages`?: integer;
     `perPage`?: integer;
@@ -3779,7 +3779,7 @@ namespace IyaSts.Api.Management {
     `noun`?: string
   }
 
-@component model `SharedModel8` {
+@component model `WithLabelEncryptionsDecryptions` {
     `label`?: string;
     `encryptions`?: integer;
     `decryptions`?: integer;
@@ -3790,10 +3790,10 @@ namespace IyaSts.Api.Management {
     @js(#{`description`:"Milliseconds, 0 when never."}) `lastAt`?: numeric
   }
 
-@component model `SharedModel7` is (`SharedModel8`)[];
+@component model `WithOkMessageErrors` is (`WithLabelEncryptionsDecryptions`)[];
   
 
-@component model `SharedModel9` {
+@component model `WithOkMessageErrors2` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -3806,7 +3806,7 @@ namespace IyaSts.Api.Management {
 
 @js(#{
     `description`:"Present on an `ordered` setting whose select-all is narrowed by other settings. `onlyWhileOn`: the values are selected only while that setting is on. `aloneWhileOn`: while that setting is on, only the values are selected. `canBeOn` is false where this mode never lets that setting be on."
-  }) @component model `SharedModel15` {
+  }) @component model `PresentOrderedSettingWhoseSelect` {
     `onlyWhileOn`?: (WithSettingValuesOnEtc4)[];
     `aloneWhileOn`?: (WithSettingValuesOnEtc4)[]
   }
@@ -3836,7 +3836,7 @@ namespace IyaSts.Api.Management {
 
 @js(#{
     `description`:"One setting: what it is, what it is set to, and where that came from."
-  }) @component model `SharedModel14` {
+  }) @component model `SettingSetWhereCame` {
     @js(#{
       `description`:"The dot path, which is BOTH the name every operation here takes and the path in the appconfig file. `oid4vci.batchSize` is `appconfig.oid4vci.batchSize`."
     }) `key`?: string;
@@ -3861,7 +3861,7 @@ namespace IyaSts.Api.Management {
     @js(#{
       `description`:"Present beside `csvValues` where the setting describes each value: the value mapped to one sentence."
     }) `csvValueNotes`?: Record<string>;
-    `selectAll`?: `SharedModel15`;
+    `selectAll`?: `PresentOrderedSettingWhoseSelect`;
     @js(#{
       `description`:"The lowest value POST /config/set will take, on an int setting that declares one."
     }) `min`?: numeric;
@@ -3890,15 +3890,15 @@ namespace IyaSts.Api.Management {
     }) `overridden`?: boolean
   }
 
-@component model `SharedModel13` is (`SharedModel14`)[];
+@component model `WithDescriptionGroupSettings` is (`SettingSetWhereCame`)[];
   
 
-@js(#{`description`:"One group's settings."}) @component model `SharedModel12` {`group`?: string; `settings`?: `SharedModel13`}
+@js(#{`description`:"One group's settings."}) @component model `GroupSSettings` {`group`?: string; `settings`?: `WithDescriptionGroupSettings`}
 
-@js(#{`description`:"In the order `config.js` declares them."}) @component model `SharedModel11` is (`SharedModel12`)[];
+@js(#{`description`:"In the order `config.js` declares them."}) @component model `OrderConfig` is (`GroupSSettings`)[];
   
 
-@component model `SharedModel20` {
+@component model `WithConfigFileDefaultsFilePersistsAppconfig` {
     `configFile`?: NullableString;
     `defaultsFile`?: string;
     `persistsAppconfig`?: boolean;
@@ -3908,30 +3908,30 @@ namespace IyaSts.Api.Management {
     `realmId`?: string
   }
 
-@js(#{`description`:"A group drawn on another page as well, and those pages."}) @component model `SharedModel21` is Record<({`path`?: string; `label`?: NullableString})[]>;
+@js(#{`description`:"A group drawn on another page as well, and those pages."}) @component model `GroupDrawnAnotherPageWell` is Record<({`path`?: string; `label`?: NullableString})[]>;
   
 
 @js(#{
     `description`:"The settings this page draws, described: the same rows GET /config returns, filtered to the ones this page owns."
-  }) @component model `SharedModel10` {
+  }) @component model `SettingsPageDrawsDescribedSame` {
     `page`?: string;
-    `groups`?: `SharedModel11`;
+    `groups`?: `OrderConfig`;
     `settingCount`?: integer;
     @js(#{`description`:"How many of them can be changed while the service runs."}) `editableCount`?: integer;
     @js(#{`description`:"The keys on this page with a runtime override in force."}) `overridden`?: (string)[];
     @js(#{`description`:"The operation that writes them."}) `setWith`?: string;
-    `context`?: `SharedModel20`;
-    `sharedWith`?: `SharedModel21`
+    `context`?: `WithConfigFileDefaultsFilePersistsAppconfig`;
+    `sharedWith`?: `GroupDrawnAnotherPageWell`
   }
 
-@component model `SharedModel22` {
+@component model `WithCellDescriptionRefused` {
     `cell`?: string;
     @js(#{`description`:"Why the other cell did not list them."}) `refused`?: string;
     `people`?: ({`name`?: string; `uuid`?: string; `displayName`?: string})[];
     @js(#{`description`:"The `after` of the next page, empty on the last."}) `next`?: string
   }
 
-@component model `SharedModel23` {
+@component model `WithOkMessageErrors3` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -3940,7 +3940,7 @@ namespace IyaSts.Api.Management {
     `target`?: string
   }
 
-@component model `SharedModel24` {
+@component model `WithOkMessageErrors4` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -3955,7 +3955,7 @@ namespace IyaSts.Api.Management {
     })[]
   }
 
-@component model `SharedModel25` {
+@component model `WithMinVersionTls12Tls13Suites` {
     `minVersion`?: NullableString;
     `tls12`?: boolean;
     `tls13Suites`?: ({`name`?: string; `postQuantum`?: boolean})[];
@@ -3969,7 +3969,7 @@ namespace IyaSts.Api.Management {
     `clientAuth`?: NullableString
   }
 
-@component model `SharedModel26` {
+@component model `WithOkMessageErrors5` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -3979,7 +3979,7 @@ namespace IyaSts.Api.Management {
     `realm`?: NullableString
   }
 
-@component model `SharedModel27` {
+@component model `WithPagePagesPerPage` {
     `page`?: integer;
     `pages`?: integer;
     `perPage`?: integer;
@@ -3990,7 +3990,7 @@ namespace IyaSts.Api.Management {
     `noun`?: string
   }
 
-@component model `SharedModel28` {
+@component model `WithOkMessageErrors6` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -3998,7 +3998,7 @@ namespace IyaSts.Api.Management {
     `published`?: boolean
   }
 
-@component model `SharedModel29` {
+@component model `WithIdProviderTermsDigest` {
     `id`?: StringOrNumeric;
     `provider`?: string;
     `termsDigest`?: string;
@@ -4010,7 +4010,7 @@ namespace IyaSts.Api.Management {
     `acceptedAt`?: numeric
   }
 
-@component model `SharedModel31` {
+@component model `WithProviderTextUrl` {
     `provider`?: string;
     `text`?: string;
     `url`?: NullableString;
@@ -4019,7 +4019,7 @@ namespace IyaSts.Api.Management {
     `modified`?: string
   }
 
-@component model `SharedModel30` is (`SharedModel31`)[];
+@component model `WithAdditionalPropertiesPropertiesDataset` is (`WithProviderTextUrl`)[];
   
 
 @js(#{
@@ -4050,7 +4050,7 @@ namespace IyaSts.Api.Management {
 
 @component union `SharedModel32` {SharedModel32_h1358}
 
-@component model `SharedModel33` {
+@component model `WithOkMessageErrors7` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -4069,12 +4069,12 @@ namespace IyaSts.Api.Management {
     `overridden`?: string;
     `previous`?: string;
     `unloaded`?: boolean;
-    `acceptance`?: `SharedModel29`;
+    `acceptance`?: `WithIdProviderTermsDigest`;
     `bytes`?: numeric;
     `kind`?: string
   }
 
-@component model `SharedModel35` {
+@component model `WithIdRealmUsername` {
     `id`?: string;
     `realm`?: NullableString;
     `username`?: NullableString;
@@ -4104,7 +4104,7 @@ namespace IyaSts.Api.Management {
     `html`?: NullableString
   }
 
-@component model `SharedModel34` {
+@component model `WithOkMessageErrors8` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -4112,10 +4112,10 @@ namespace IyaSts.Api.Management {
     `error_description`?: string;
     `message_id`?: string;
     `verified`?: boolean;
-    `row`?: `SharedModel35`
+    `row`?: `WithIdRealmUsername`
   }
 
-@component model `SharedModel39` {
+@component model `WithStatusReasonSerial` {
     `status`?: string;
     `reason`?: string;
     `serial`?: string;
@@ -4125,19 +4125,19 @@ namespace IyaSts.Api.Management {
     `why`?: string
   }
 
-@component model `SharedModel38` {
+@component model `WithLevelFormatSummary` {
     `level`?: string;
     `format`?: string;
     `summary`?: string;
     `verifiedAt`?: string;
     `chainSerials`?: (string)[];
-    `revocation`?: `SharedModel39`;
+    `revocation`?: `WithStatusReasonSerial`;
     `freshness`?: WithStatusDetail
   }
 
 @hoisted union SharedModel40_jwk_ap_h1382 {string, (string)[], boolean, numeric}
 
-@component model `SharedModel40` {
+@component model `WithCertificateSubjectIssuer` {
     `certificate`?: string;
     `subject`?: NullableString;
     `issuer`?: NullableString;
@@ -4149,7 +4149,7 @@ namespace IyaSts.Api.Management {
     `attachment`?: string
   }
 
-@component model `SharedModel37` {
+@component model `WithIdKindThumbprint` {
     `id`?: string;
     `kind`?: string;
     `thumbprint`?: string;
@@ -4157,11 +4157,11 @@ namespace IyaSts.Api.Management {
     `added`?: string;
     `addedBy`?: string;
     `proof`?: string;
-    `attestation`?: `SharedModel38`;
-    `material`?: `SharedModel40`
+    `attestation`?: `WithLevelFormatSummary`;
+    `material`?: `WithCertificateSubjectIssuer`
   }
 
-@component model `SharedModel36` is (`SharedModel37`)[];
+@component model `WithAdditionalPropertiesPropertiesLevel` is (`WithIdKindThumbprint`)[];
   
 
 @js(#{
@@ -4180,14 +4180,14 @@ namespace IyaSts.Api.Management {
 
 @component union `SharedModel41` {SharedModel41_h1383}
 
-@component model `SharedModel42` {
+@component model `WithIdDnOwner` {
     `id`?: string;
     `dn`?: string;
     `owner`?: string;
     `ownerKind`?: string;
     `label`?: string;
     `applications`?: (string)[];
-    `keys`?: `SharedModel36`;
+    `keys`?: `WithAdditionalPropertiesPropertiesLevel`;
     `keyKinds`?: (string)[];
     `attestation`?: WithLevelFormatSummaryEtc4;
     `compliance`?: string;
@@ -4210,14 +4210,14 @@ namespace IyaSts.Api.Management {
     `applicationNames`?: (string)[]
   }
 
-@component model `SharedModel43` {
+@component model `WithOkMessageErrors9` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `error`?: string;
     `error_description`?: string;
     `id`?: string;
-    `device`?: `SharedModel42`;
+    `device`?: `WithIdDnOwner`;
     @js(#{`description`:"The key's id."}) `key`?: string;
     `previous`?: string;
     `status`?: string;
@@ -4225,7 +4225,7 @@ namespace IyaSts.Api.Management {
     `certificatesRevoked`?: numeric
   }
 
-@component model `SharedModel46` {
+@component model `WithIndexIdOk` {
     `index`?: integer;
     `id`?: string;
     `ok`?: boolean;
@@ -4237,10 +4237,10 @@ namespace IyaSts.Api.Management {
     `signalled`?: boolean
   }
 
-@component model `SharedModel45` is (`SharedModel46`)[];
+@component model `WithOkMessageErrors10` is (`WithIndexIdOk`)[];
   
 
-@component model `SharedModel44` {
+@component model `WithOkMessageErrors11` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -4248,7 +4248,7 @@ namespace IyaSts.Api.Management {
     `error_description`?: string;
     `applied`?: integer;
     `refused`?: integer;
-    `results`?: `SharedModel45`
+    `results`?: `WithOkMessageErrors10`
   }
 
 @js(#{
@@ -4291,7 +4291,7 @@ namespace IyaSts.Api.Management {
 
 @component union `SharedModel47` {SharedModel47_h1387}
 
-@component model `SharedModel48` {
+@component model `WithOkMessageErrors12` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -4299,7 +4299,7 @@ namespace IyaSts.Api.Management {
     `error_description`?: string
   }
 
-@component model `SharedModel50` {
+@component model `WithNameMethodsUrl` {
     `name`?: string;
     `methods`?: StringOrString;
     `url`?: string;
@@ -4309,15 +4309,15 @@ namespace IyaSts.Api.Management {
     `listening`?: boolean
   }
 
-@component model `SharedModel49` is (`SharedModel50`)[];
+@component model `WithParamsDescriptionParams` is (`WithNameMethodsUrl`)[];
   
 
 @js(#{
     `x-free-form`:"A manual run's `params`: the JSON its requester sent, whose members are the job's own to read, or null.",
     `description`:"A manual run's `params`: the JSON its requester sent, whose members are the job's own to read, or null."
-  }) @component model `SharedModel53` {}
+  }) @component model `ManualRunSParamsJSON` {}
 
-@component model `SharedModel52` {
+@component model `WithRunIdJobIdRealm` {
     `runId`?: string;
     `jobId`?: NullableString;
     `realm`?: NullableString;
@@ -4338,7 +4338,7 @@ namespace IyaSts.Api.Management {
     `durationMs`?: NullableNumber;
     `requestedBy`?: string;
     `requestedVia`?: string;
-    `params`?: `SharedModel53`;
+    `params`?: `ManualRunSParamsJSON`;
     `takenOver`?: boolean;
     `abandonedOf`?: NullableString;
     `ranIn`?: NullableString;
@@ -4351,7 +4351,7 @@ namespace IyaSts.Api.Management {
     `stale`?: boolean
   }
 
-@component model `SharedModel51` is (`SharedModel52`)[];
+@component model `WithAdditionalPropertiesPropertiesRunId` is (`WithRunIdJobIdRealm`)[];
   
 
 @js(#{
@@ -4377,7 +4377,7 @@ namespace IyaSts.Api.Management {
       `durationMs`:#{`type`:#["number","null"]},
       `requestedBy`:#{`type`:"string"},
       `requestedVia`:#{`type`:"string"},
-      `params`:#{`$ref`:"#/components/schemas/SharedModel53"},
+      `params`:#{`$ref`:"#/components/schemas/ManualRunSParamsJSON"},
       `takenOver`:#{`type`:"boolean"},
       `abandonedOf`:#{`type`:#["string","null"]},
       `ranIn`:#{`type`:#["string","null"]},
@@ -4397,7 +4397,7 @@ namespace IyaSts.Api.Management {
 
 @component union `SharedModel54` {SharedModel54_h1403}
 
-@component model `SharedModel56` {
+@component model `WithRunIdJobIdRealm2` {
     `runId`?: string;
     `jobId`?: NullableString;
     `realm`?: NullableString;
@@ -4418,7 +4418,7 @@ namespace IyaSts.Api.Management {
     `durationMs`?: NullableNumber;
     `requestedBy`?: string;
     `requestedVia`?: string;
-    `params`?: `SharedModel53`;
+    `params`?: `ManualRunSParamsJSON`;
     `takenOver`?: boolean;
     `abandonedOf`?: NullableString;
     `ranIn`?: NullableString;
@@ -4430,7 +4430,7 @@ namespace IyaSts.Api.Management {
     `stale`?: boolean
   }
 
-@component model `SharedModel55` {
+@component model `WithOkMessageErrors13` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -4439,13 +4439,13 @@ namespace IyaSts.Api.Management {
     `accepted`?: boolean;
     `runId`?: string;
     `alreadyQueued`?: boolean;
-    `run`?: `SharedModel56`;
+    `run`?: `WithRunIdJobIdRealm2`;
     `href`?: string;
     `command`?: string;
     `leaderAtRequest`?: NullableObject117
   }
 
-@component model `SharedModel57` {
+@component model `WithNameTitleDescription` {
     `name`?: string;
     `title`?: string;
     `description`?: string;
@@ -4473,7 +4473,7 @@ namespace IyaSts.Api.Management {
     `problem`?: NullableString
   }
 
-@component model `SharedModel61` {
+@component model `WithThreadIdSlotReady` {
     `threadId`?: IntegerOrString;
     `slot`?: NullOrIntegerOrString;
     `ready`?: boolean;
@@ -4484,10 +4484,10 @@ namespace IyaSts.Api.Management {
     `upSeconds`?: NullableNumber
   }
 
-@component model `SharedModel60` is (`SharedModel61`)[];
+@component model `WithIdTitleModule` is (`WithThreadIdSlotReady`)[];
   
 
-@component model `SharedModel59` {
+@component model `WithIdTitleModule2` {
     `id`?: string;
     `title`?: string;
     `module`?: string;
@@ -4516,13 +4516,13 @@ namespace IyaSts.Api.Management {
     };
     `startedAt`?: NullableString;
     `prefixes`?: (string)[];
-    `workers`?: `SharedModel60`
+    `workers`?: `WithIdTitleModule`
   }
 
-@component model `SharedModel58` is (`SharedModel59`)[];
+@component model `WithClusteredTextIntervalSeconds` is (`WithIdTitleModule2`)[];
   
 
-@component model `SharedModel62` {
+@component model `WithClusteredTextIntervalSeconds2` {
     `clustered`?: boolean;
     `text`?: string;
     `intervalSeconds`?: numeric;
@@ -4544,7 +4544,7 @@ namespace IyaSts.Api.Management {
 
 @component union `SharedModel64` {SharedModel64_h1433}
 
-@component model `SharedModel63` {
+@component model `WithAvailableFromEcsCgroupVersion` {
     `available`?: boolean;
     `fromEcs`?: boolean;
     `cgroupVersion`?: NullableInteger;
@@ -4566,7 +4566,7 @@ namespace IyaSts.Api.Management {
     `throttlingText`?: NullableString
   }
 
-@component model `SharedModel65` {
+@component model `WithAvailableFromEcsCgroupVersion2` {
     `available`?: boolean;
     `fromEcs`?: boolean;
     `cgroupVersion`?: NullableInteger;
@@ -4586,7 +4586,7 @@ namespace IyaSts.Api.Management {
     `oomKills`?: NullableNumber
   }
 
-@component model `SharedModel68` {
+@component model `WithPidThreadIdKind` {
     `pid`?: NullOrIntegerOrString;
     `threadId`?: NullOrIntegerOrString;
     `kind`?: string;
@@ -4606,20 +4606,20 @@ namespace IyaSts.Api.Management {
     `notReported`?: string
   }
 
-@component model `SharedModel67` is (`SharedModel68`)[];
+@component model `WithPidThreadIdRole` is (`WithPidThreadIdKind`)[];
   
 
-@component model `SharedModel70` {
+@component model `WithPidThreadIdRole2` {
     `pid`?: NullOrIntegerOrString;
     `threadId`?: NullOrIntegerOrString;
     `role`?: string;
     `why`?: string
   }
 
-@component model `SharedModel69` is (`SharedModel70`)[];
+@component model `WithRowsProcessesWorkerThreads` is (`WithPidThreadIdRole2`)[];
   
 
-@component model `SharedModel71` {
+@component model `WithRowsProcessesWorkerThreads2` {
     `rows`?: integer;
     `processes`?: integer;
     `workerThreads`?: integer;
@@ -4631,11 +4631,11 @@ namespace IyaSts.Api.Management {
     `isolatesWithHeap`?: integer
   }
 
-@component model `SharedModel66` {
-    `rows`?: `SharedModel67`;
-    `unanswered`?: `SharedModel69`;
+@component model `WithRowsUnansweredDebuggerNote` {
+    `rows`?: `WithPidThreadIdRole`;
+    `unanswered`?: `WithRowsProcessesWorkerThreads`;
     `debuggerNote`?: NullableString;
-    `totals`?: `SharedModel71`;
+    `totals`?: `WithRowsProcessesWorkerThreads2`;
     `totalsText`?: string
   }
 
@@ -4692,7 +4692,7 @@ namespace IyaSts.Api.Management {
     `$types`:#["object","null"]
   }) @hoisted model SharedModel72_containerLimits_h1487 {}
 
-@component model `SharedModel72` {
+@component model `WithAvailableEndpointDockerId` {
     `available`?: boolean;
     `endpoint`?: string;
     `dockerId`?: NullableString;
@@ -4703,7 +4703,7 @@ namespace IyaSts.Api.Management {
     `text`?: string
   }
 
-@component model `SharedModel77` {
+@component model `WithKindPidThreadId` {
     `kind`?: string;
     `pid`?: integer;
     `threadId`?: NullableInteger;
@@ -4718,10 +4718,10 @@ namespace IyaSts.Api.Management {
     `error`?: NullableString
   }
 
-@component model `SharedModel76` is (`SharedModel77`)[];
+@component model `WithIsolatesCollectedFailed` is (`WithKindPidThreadId`)[];
   
 
-@component model `SharedModel78` {
+@component model `WithIsolatesCollectedFailed2` {
     `isolates`?: integer;
     `collected`?: integer;
     `failed`?: integer;
@@ -4730,7 +4730,7 @@ namespace IyaSts.Api.Management {
     `longestPauseMs`?: numeric
   }
 
-@component model `SharedModel75` {
+@component model `WithOkMessageErrors14` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -4740,38 +4740,38 @@ namespace IyaSts.Api.Management {
     `node`?: NullableString;
     `pid`?: integer;
     `target`?: string;
-    `rows`?: `SharedModel76`;
+    `rows`?: `WithIsolatesCollectedFailed`;
     `unanswered`?: ({
       `pid`?: integer;
       `threadId`?: NullableInteger;
       `role`?: string;
       `why`?: string
     })[];
-    `totals`?: `SharedModel78`;
+    `totals`?: `WithIsolatesCollectedFailed2`;
     `threadIds`?: (string)[]
   }
 
 @js(#{
     `x-free-form`:"The rows of a PostgreSQL or MariaDB statistics view, keyed by the engine's own column names and typed by its driver, which vary by engine and version.",
     `description`:"The rows of a PostgreSQL or MariaDB statistics view, keyed by the engine's own column names and typed by its driver, which vary by engine and version."
-  }) @component model `SharedModel79` {}
+  }) @component model `RowsPostgreSQLMariaDBStatisticsView` {}
 
 @js(#{
     `x-free-form`:"What the secret store's own API answered to a probe, scrubbed of values: its shape is AWS's, Google's, Azure's or Vault's.",
     `description`:"What the secret store's own API answered to a probe, scrubbed of values: its shape is AWS's, Google's, Azure's or Vault's."
-  }) @component model `SharedModel82` {}
+  }) @component model `SecretStoreSOwnAPI` {}
 
-@component model `SharedModel81` {
+@component model `WithIdWhatOk` {
     `id`?: string;
     `what`?: string;
     `ok`?: boolean;
     `tookMs`?: numeric;
     `status`?: numeric;
     `error`?: string;
-    `data`?: `SharedModel82`
+    `data`?: `SecretStoreSOwnAPI`
   }
 
-@component model `SharedModel80` is (`SharedModel81`)[];
+@component model `WithAdditionalPropertiesPropertiesPage` is (`WithIdWhatOk`)[];
   
 
 @js(#{
@@ -4792,7 +4792,7 @@ namespace IyaSts.Api.Management {
 
 @component union `SharedModel83` {SharedModel83_h1499}
 
-@component model `SharedModel84` {
+@component model `WithOkMessageErrors15` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -4805,7 +4805,7 @@ namespace IyaSts.Api.Management {
     @js(#{`description`:"The address to follow the run at."}) `run`?: string
   }
 
-@component model `SharedModel85` {
+@component model `WithIdNameDoors` {
     `id`?: string;
     `name`?: string;
     `doors`?: (string)[];
@@ -4816,7 +4816,7 @@ namespace IyaSts.Api.Management {
     `lastUsedDoor`?: string
   }
 
-@component model `SharedModel87` {
+@component model `WithSha256SubjectIssuer` {
     `sha256`?: string;
     `subject`?: string;
     `issuer`?: string;
@@ -4827,12 +4827,12 @@ namespace IyaSts.Api.Management {
     `readable`?: boolean
   }
 
-@component model `SharedModel86` is (`SharedModel87`)[];
+@component model `WithSubjectLabelEnrolledAt` is (`WithSha256SubjectIssuer`)[];
   
 
 @component union `SharedModel88` {NullableObject57}
 
-@component model `SharedModel89` {
+@component model `WithSubjectLabelEnrolledAt2` {
     `subject`?: string;
     `label`?: string;
     `enrolledAt`?: NullOrStringOrNumeric;
@@ -4848,23 +4848,23 @@ namespace IyaSts.Api.Management {
 @js(#{
     `x-free-form`:"The OpenID Connect for Identity Assurance `verification` element: a caller may post it whole as JSON, and a wallet or a certificate may supply it, so its evidence is that specification's to shape.",
     `description`:"The OpenID Connect for Identity Assurance `verification` element: a caller may post it whole as JSON, and a wallet or a certificate may supply it, so its evidence is that specification's to shape."
-  }) @component model `SharedModel91` {}
+  }) @component model `OpenIDConnectIdentityAssuranceVerification` {}
 
 @js(#{
     `x-free-form`:"The verified claims and their values, as the OpenID Connect claim each is: a string for most, an object for `address`, a list for `nationalities`.",
     `description`:"The verified claims and their values, as the OpenID Connect claim each is: a string for most, an object for `address`, a list for `nationalities`."
-  }) @component model `SharedModel92` {}
+  }) @component model `VerifiedClaimsValuesOpenIDConnect` {}
 
-@component model `SharedModel90` {
+@component model `WithIdRecordedSource` {
     `id`?: string;
     `recorded`?: NullOrStringOrNumeric;
     `source`?: string;
     `by`?: string;
-    `verification`?: `SharedModel91`;
-    `claims`?: `SharedModel92`
+    `verification`?: `OpenIDConnectIdentityAssuranceVerification`;
+    `claims`?: `VerifiedClaimsValuesOpenIDConnect`
   }
 
-@component model `SharedModel93` {
+@component model `WithOkMessageErrors16` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -4878,7 +4878,7 @@ namespace IyaSts.Api.Management {
     `expiresAt`?: NullOrStringOrNumeric
   }
 
-@component model `SharedModel97` {
+@component model `WithValueAttributeHolds` {
     `value`?: string;
     `attribute`?: string;
     `holds`?: string;
@@ -4891,10 +4891,10 @@ namespace IyaSts.Api.Management {
     `displayName`?: string
   }
 
-@component model `SharedModel96` is (`SharedModel97`)[];
+@component model `WithDnOriginCreatedAt` is (`WithValueAttributeHolds`)[];
   
 
-@component model `SharedModel95` {
+@component model `WithDnOriginCreatedAt2` {
     `dn`?: string;
     `origin`?: string;
     `createdAt`?: NullOrStringOrNumeric;
@@ -4902,10 +4902,10 @@ namespace IyaSts.Api.Management {
     `operational`?: (string)[];
     `attributes`?: Record<StringOrString>;
     `rule`?: string;
-    `members`?: `SharedModel96`
+    `members`?: `WithDnOriginCreatedAt`
   }
 
-@component model `SharedModel94` {
+@component model `WithOkMessageErrors17` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -4913,7 +4913,7 @@ namespace IyaSts.Api.Management {
     `reason`?: string;
     `problems`?: (StringOrRecordStringOrNumericOrBooleanEtc)[];
     `dn`?: string;
-    `entry`?: `SharedModel95`;
+    `entry`?: `WithDnOriginCreatedAt2`;
     `typed`?: (string)[];
     `invented`?: boolean;
     `credential`?: string;
@@ -4933,7 +4933,7 @@ namespace IyaSts.Api.Management {
     `expiresAt`?: NullOrStringOrNumeric
   }
 
-@component model `SharedModel98` {
+@component model `WithOkMessageErrors18` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -4944,7 +4944,7 @@ namespace IyaSts.Api.Management {
     `password`?: string
   }
 
-@component model `SharedModel99` {
+@component model `WithOkMessageErrors19` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -4955,7 +4955,7 @@ namespace IyaSts.Api.Management {
     `remaining`?: numeric
   }
 
-@component model `SharedModel100` {
+@component model `WithOkMessageErrors20` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -4967,7 +4967,7 @@ namespace IyaSts.Api.Management {
 
 @js(#{`$comb`:"oneOf"}) @hoisted union SharedModel101_pending_h1526 {null, SharedModel101_pending_v1_h1525}
 
-@component model `SharedModel101` {
+@component model `WithOkMessageErrors21` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -4975,7 +4975,7 @@ namespace IyaSts.Api.Management {
     `pending`?: SharedModel101_pending_h1526
   }
 
-@component model `SharedModel102` {
+@component model `WithOkMessageErrors22` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -4986,7 +4986,7 @@ namespace IyaSts.Api.Management {
     `reason`?: string
   }
 
-@component model `SharedModel103` {
+@component model `WithOkMessageErrors23` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -4994,7 +4994,7 @@ namespace IyaSts.Api.Management {
     `user`?: string
   }
 
-@component model `SharedModel104` {
+@component model `WithOkMessageErrors24` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5006,7 +5006,7 @@ namespace IyaSts.Api.Management {
     `signedOut`?: WithEndedTerminatedMessage
   }
 
-@component model `SharedModel105` {
+@component model `WithOkMessageErrors25` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5021,7 +5021,7 @@ namespace IyaSts.Api.Management {
     `expiresAt`?: NullOrStringOrNumeric
   }
 
-@component model `SharedModel106` {
+@component model `WithOkMessageErrors26` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5033,13 +5033,13 @@ namespace IyaSts.Api.Management {
     `failed`?: numeric
   }
 
-@component model `SharedModel108` {
+@component model `WithTotpKeysBackupCodes` {
     `totp`?: boolean;
     `keys`?: (WithCredentialIdLabelEnrolledAt)[];
     `backupCodes`?: boolean
   }
 
-@component model `SharedModel109` {
+@component model `WithRequiredByUserByRealm` {
     `required`?: boolean;
     `byUser`?: boolean;
     `byRealm`?: boolean;
@@ -5048,20 +5048,20 @@ namespace IyaSts.Api.Management {
     `exemptServiceAccount`?: boolean
   }
 
-@component model `SharedModel107` {
+@component model `WithOkMessageErrors27` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `username`?: string;
     `reason`?: string;
     `problems`?: (StringOrRecordStringOrNumericOrBooleanEtc)[];
-    `removed`?: `SharedModel108`;
-    `requirement`?: `SharedModel109`;
+    `removed`?: `WithTotpKeysBackupCodes`;
+    `requirement`?: `WithRequiredByUserByRealm`;
     `sessionsEnded`?: numeric;
     `failed`?: numeric
   }
 
-@component model `SharedModel110` {
+@component model `WithOkMessageErrors28` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5069,7 +5069,7 @@ namespace IyaSts.Api.Management {
     `reason`?: string;
     `problems`?: (StringOrRecordStringOrNumericOrBooleanEtc)[];
     `required`?: boolean;
-    `requirement`?: `SharedModel109`
+    `requirement`?: `WithRequiredByUserByRealm`
   }
 
 @js(#{
@@ -5082,7 +5082,7 @@ namespace IyaSts.Api.Management {
     `$types`:#["object","null"]
   }) @hoisted model SharedModel111_signedOut_h1541 {}
 
-@component model `SharedModel111` {
+@component model `WithOkMessageErrors29` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5094,7 +5094,7 @@ namespace IyaSts.Api.Management {
     `signedOut`?: SharedModel111_signedOut_h1541
   }
 
-@component model `SharedModel112` {
+@component model `WithOkMessageErrors30` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5105,7 +5105,7 @@ namespace IyaSts.Api.Management {
     `changed`?: boolean
   }
 
-@component model `SharedModel113` {
+@component model `WithOkMessageErrors31` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5116,7 +5116,7 @@ namespace IyaSts.Api.Management {
     `alreadyQueued`?: boolean
   }
 
-@component model `SharedModel114` {
+@component model `WithOkMessageErrors32` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5126,7 +5126,7 @@ namespace IyaSts.Api.Management {
     `notDelegated`?: boolean
   }
 
-@component model `SharedModel115` {
+@component model `WithOkMessageErrors33` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5136,7 +5136,7 @@ namespace IyaSts.Api.Management {
     `mayAct`?: string
   }
 
-@component model `SharedModel116` {
+@component model `WithOkMessageErrors34` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5147,7 +5147,7 @@ namespace IyaSts.Api.Management {
     `defaultSemantics`?: NullableString
   }
 
-@component model `SharedModel117` {
+@component model `WithOkMessageErrors35` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5157,7 +5157,7 @@ namespace IyaSts.Api.Management {
     `state`?: string
   }
 
-@component model `SharedModel118` {
+@component model `WithOkMessageErrors36` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5167,7 +5167,7 @@ namespace IyaSts.Api.Management {
     `removed`?: string
   }
 
-@component model `SharedModel119` {
+@component model `WithOkMessageErrors37` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5175,11 +5175,11 @@ namespace IyaSts.Api.Management {
     `sha256`?: string;
     `user`?: string;
     `dn`?: string;
-    `certificates`?: `SharedModel86`;
+    `certificates`?: `WithSubjectLabelEnrolledAt`;
     `rule`?: string
   }
 
-@component model `SharedModel121` {
+@component model `WithSerialHexSubjectKeyAlg` {
     `serialHex`?: string;
     `subject`?: string;
     `keyAlg`?: string;
@@ -5192,13 +5192,13 @@ namespace IyaSts.Api.Management {
     `implicitName`?: string
   }
 
-@component model `SharedModel122` {
+@component model `WithPkcs12KeyChain` {
     `pkcs12`?: WithNameMimeTextEtc4;
     `key`?: WithNameMimeTextEtc4;
     `chain`?: WithNameMimeTextEtc4
   }
 
-@component model `SharedModel125` {
+@component model `WithSerialHexLabelSubject` {
     `serialHex`?: string;
     `label`?: string;
     `subject`?: string;
@@ -5212,15 +5212,15 @@ namespace IyaSts.Api.Management {
     `certificatePem`?: string
   }
 
-@component model `SharedModel124` is (`SharedModel125`)[];
+@component model `WithOkKindHolder` is (`WithSerialHexLabelSubject`)[];
   
 
-@component model `SharedModel123` {
+@component model `WithOkKindHolder2` {
     `ok`?: boolean;
     `kind`?: string;
     `holder`?: string;
     `implicitName`?: string;
-    `certificates`?: `SharedModel124`;
+    `certificates`?: `WithOkKindHolder`;
     `active`?: numeric;
     `max`?: numeric;
     `keyAlgorithms`?: (string)[];
@@ -5230,18 +5230,18 @@ namespace IyaSts.Api.Management {
     `caAvailable`?: boolean
   }
 
-@component model `SharedModel120` {
+@component model `WithOkMessageErrors38` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `purpose`?: string;
-    `certificate`?: `SharedModel121`;
-    `files`?: `SharedModel122`;
+    `certificate`?: `WithSerialHexSubjectKeyAlg`;
+    `files`?: `WithPkcs12KeyChain`;
     `user`?: string;
-    `signing`?: `SharedModel123`
+    `signing`?: `WithOkKindHolder2`
   }
 
-@component model `SharedModel127` {
+@component model `WithSlotLabelSerialHex` {
     `slot`?: string;
     `label`?: string;
     `serialHex`?: string;
@@ -5257,7 +5257,7 @@ namespace IyaSts.Api.Management {
     `certificatePem`?: string
   }
 
-@component model `SharedModel128` {
+@component model `WithSerialHexRevokedAtReason` {
     `serialHex`?: string;
     `revokedAt`?: NullOrStringOrNumeric;
     `reason`?: string;
@@ -5267,30 +5267,30 @@ namespace IyaSts.Api.Management {
     `note`?: string
   }
 
-@component model `SharedModel126` {
+@component model `WithOkMessageErrors39` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `certificate`?: `SharedModel127`;
+    `certificate`?: `WithSlotLabelSerialHex`;
     `reason`?: string;
     `already`?: boolean;
     `why`?: string;
-    `entry`?: `SharedModel128`;
+    `entry`?: `WithSerialHexRevokedAtReason`;
     `user`?: string;
-    `signing`?: `SharedModel123`
+    `signing`?: `WithOkKindHolder2`
   }
 
-@component model `SharedModel129` {
+@component model `WithOkMessageErrors40` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `username`?: string;
     `reason`?: string;
     `problems`?: (StringOrRecordStringOrNumericOrBooleanEtc)[];
-    `enrolled`?: `SharedModel89`
+    `enrolled`?: `WithSubjectLabelEnrolledAt2`
   }
 
-@component model `SharedModel130` {
+@component model `WithOkMessageErrors41` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5300,7 +5300,7 @@ namespace IyaSts.Api.Management {
     `preferred`?: NullableString
   }
 
-@component model `SharedModel131` {
+@component model `WithOkMessageErrors42` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5310,17 +5310,17 @@ namespace IyaSts.Api.Management {
     `deactivated`?: string
   }
 
-@component model `SharedModel132` {
+@component model `WithOkMessageErrors43` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `username`?: string;
     `reason`?: string;
     `problems`?: (StringOrRecordStringOrNumericOrBooleanEtc)[];
-    `verification`?: `SharedModel90`
+    `verification`?: `WithIdRecordedSource`
   }
 
-@component model `SharedModel136` {
+@component model `WithIdRealmClientId` {
     `id`?: string;
     `realm`?: string;
     `clientId`?: string;
@@ -5346,7 +5346,7 @@ namespace IyaSts.Api.Management {
     `encrypted`?: string
   }
 
-@component model `SharedModel135` is (`SharedModel136`)[];
+@component model `WithAdditionalPropertiesPropertiesEnded` is (`WithIdRealmClientId`)[];
   
 
 @js(#{
@@ -5356,7 +5356,7 @@ namespace IyaSts.Api.Management {
       `terminated`:#{`type`:"number"},
       `skipped`:#{`type`:"number"},
       `notifications`:#{`type`:"number"},
-      `backchannel`:#{`$ref`:"#/components/schemas/SharedModel135"},
+      `backchannel`:#{`$ref`:"#/components/schemas/WithAdditionalPropertiesPropertiesEnded"},
       `message`:#{`type`:"string"}
     },
     `$types`:#["object","null"]
@@ -5364,7 +5364,7 @@ namespace IyaSts.Api.Management {
 
 @component union `SharedModel134` {SharedModel134_h1591}
 
-@component model `SharedModel133` {
+@component model `WithOkMessageErrors44` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5376,7 +5376,7 @@ namespace IyaSts.Api.Management {
     `ended`?: `SharedModel134`
   }
 
-@component model `SharedModel137` {
+@component model `WithOkMessageErrors45` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5388,7 +5388,7 @@ namespace IyaSts.Api.Management {
     `links`?: (string)[]
   }
 
-@component model `SharedModel138` {
+@component model `WithOkMessageErrors46` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5406,33 +5406,33 @@ namespace IyaSts.Api.Management {
     `lastUsedDoor`?: string
   }
 
-@component model `SharedModel139` {
+@component model `WithOkMessageErrors47` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `username`?: string;
     `reason`?: string;
     `problems`?: (StringOrRecordStringOrNumericOrBooleanEtc)[];
-    `revoked`?: `SharedModel85`
+    `revoked`?: `WithIdNameDoors`
   }
 
-@component model `SharedModel141` {
+@component model `WithChallengeRpIdAllow` {
     `challenge`?: string;
     `rpId`?: string;
     `allow`?: string;
     `options`?: {`userVerification`?: string}
   }
 
-@component model `SharedModel140` {
+@component model `WithOkMessageErrors48` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `reason`?: string;
     `upgradeId`?: string;
-    `ceremony`?: `SharedModel141`
+    `ceremony`?: `WithChallengeRpIdAllow`
   }
 
-@component model `SharedModel144` {
+@component model `WithRpAlgorithmsAttestation` {
     `rp`?: WithNameId;
     `algorithms`?: (numeric)[];
     `attestation`?: string;
@@ -5443,23 +5443,23 @@ namespace IyaSts.Api.Management {
     `hints`?: (string)[]
   }
 
-@component model `SharedModel143` {
+@component model `WithChallengeRpIdUser` {
     `challenge`?: string;
     `rpId`?: string;
     `user`?: {`id`?: string; `name`?: string; `displayName`?: string};
     `exclude`?: (string)[];
-    `options`?: `SharedModel144`
+    `options`?: `WithRpAlgorithmsAttestation`
   }
 
-@component model `SharedModel142` {
+@component model `WithOkMessageErrors49` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `reason`?: string;
-    `ceremony`?: `SharedModel143`
+    `ceremony`?: `WithChallengeRpIdUser`
   }
 
-@component model `SharedModel145` {
+@component model `WithOkMessageErrors50` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5471,7 +5471,7 @@ namespace IyaSts.Api.Management {
     `lane`?: string
   }
 
-@component model `SharedModel146` {
+@component model `WithOkMessageErrors51` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5482,7 +5482,7 @@ namespace IyaSts.Api.Management {
     `lane`?: string;
     `kind`?: string;
     `expiresAt`?: NullOrStringOrNumeric;
-    `ceremony`?: `SharedModel143`
+    `ceremony`?: `WithChallengeRpIdUser`
   }
 
 @js(#{
@@ -5495,7 +5495,7 @@ namespace IyaSts.Api.Management {
     `$types`:#["object","null"]
   }) @hoisted model SharedModel147_enrolledBy_h1606 {}
 
-@component model `SharedModel147` {
+@component model `WithOkMessageErrors52` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5508,7 +5508,7 @@ namespace IyaSts.Api.Management {
     `enrolledBy`?: SharedModel147_enrolledBy_h1606
   }
 
-@component model `SharedModel150` is ({
+@component model `WithIdFamilyKind` is ({
     `id`?: string;
     `family`?: string;
     `kind`?: string;
@@ -5518,7 +5518,7 @@ namespace IyaSts.Api.Management {
   })[];
   
 
-@component model `SharedModel152` {
+@component model `WithRelationshipLabelProtocol` {
     `relationship`?: string;
     `label`?: string;
     `protocol`?: string;
@@ -5529,15 +5529,15 @@ namespace IyaSts.Api.Management {
     `fields`?: Record<string>
   }
 
-@component model `SharedModel151` is (`SharedModel152`)[];
+@component model `WithOkKeyScope` is (`WithRelationshipLabelProtocol`)[];
   
 
-@component model `SharedModel149` {
+@component model `WithOkKeyScope2` {
     `ok`?: boolean;
     `key`?: string;
     `scope`?: string;
-    `terminated`?: `SharedModel150`;
-    `skipped`?: `SharedModel150`;
+    `terminated`?: `WithIdFamilyKind`;
+    `skipped`?: `WithIdFamilyKind`;
     `unknown`?: (string)[];
     `notifications`?: ({
       `clientId`?: string;
@@ -5554,8 +5554,8 @@ namespace IyaSts.Api.Management {
       `url`?: string;
       `why`?: string
     })[];
-    `partnerLogouts`?: `SharedModel151`;
-    `backchannel`?: `SharedModel135`;
+    `partnerLogouts`?: `WithOkKeyScope`;
+    `backchannel`?: `WithAdditionalPropertiesPropertiesEnded`;
     `message`?: string;
     `acrossCluster`?: ({
       `family`?: string;
@@ -5564,19 +5564,19 @@ namespace IyaSts.Api.Management {
     })[]
   }
 
-@component model `SharedModel148` {
+@component model `WithOkMessageErrors53` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `result`?: `SharedModel149`
+    `result`?: `WithOkKeyScope2`
   }
 
-@component model `SharedModel158` {
+@component model `WithOnlyWhileOnAloneWhileOnKey` {
     `onlyWhileOn`?: (WithSettingValuesOnEtc4)[];
     `aloneWhileOn`?: (WithSettingValuesOnEtc4)[]
   }
 
-@component model `SharedModel157` {
+@component model `WithKeyGroupLabel` {
     `key`?: string;
     `group`?: string;
     `label`?: string;
@@ -5586,7 +5586,7 @@ namespace IyaSts.Api.Management {
     `csvValues`?: (StringOrNumericOrBooleanEtc)[];
     `ordered`?: boolean;
     `csvValueNotes`?: Record<string>;
-    `selectAll`?: `SharedModel158`;
+    `selectAll`?: `WithOnlyWhileOnAloneWhileOnKey`;
     `min`?: numeric;
     `max`?: numeric;
     `step`?: numeric;
@@ -5605,15 +5605,15 @@ namespace IyaSts.Api.Management {
     `overridden`?: boolean
   }
 
-@component model `SharedModel156` is (`SharedModel157`)[];
+@component model `WithGroupSettingsConfigFile` is (`WithKeyGroupLabel`)[];
   
 
-@component model `SharedModel155` {`group`?: string; `settings`?: `SharedModel156`}
+@component model `WithGroupSettingsConfigFile2` {`group`?: string; `settings`?: `WithGroupSettingsConfigFile`}
 
-@component model `SharedModel154` is (`SharedModel155`)[];
+@component model `WithConfigFileDefaultsFilePersistsAppconfig2` is (`WithGroupSettingsConfigFile2`)[];
   
 
-@component model `SharedModel159` {
+@component model `WithConfigFileDefaultsFilePersistsAppconfig3` {
     `configFile`?: NullableString;
     `defaultsFile`?: NullableString;
     `persistsAppconfig`?: boolean;
@@ -5627,12 +5627,12 @@ namespace IyaSts.Api.Management {
     `additionalProperties`:false,
     `properties`:#{
       `page`:#{`type`:"string"},
-      `groups`:#{`$ref`:"#/components/schemas/SharedModel154"},
+      `groups`:#{`$ref`:"#/components/schemas/WithConfigFileDefaultsFilePersistsAppconfig2"},
       `settingCount`:#{`type`:"integer"},
       `editableCount`:#{`type`:"integer"},
       `overridden`:#{`type`:"array",`items`:#{`type`:"string"}},
       `setWith`:#{`type`:"string"},
-      `context`:#{`$ref`:"#/components/schemas/SharedModel159"},
+      `context`:#{`$ref`:"#/components/schemas/WithConfigFileDefaultsFilePersistsAppconfig3"},
       `sharedWith`:#{
         `type`:"object",
         `additionalProperties`:#{
@@ -5655,14 +5655,14 @@ namespace IyaSts.Api.Management {
 
 @component union `SharedModel153` {SharedModel153_h1620}
 
-@component model `SharedModel160` {
+@component model `WithOkMessageErrors54` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `delivery`?: `SharedModel136`
+    `delivery`?: `WithIdRealmClientId`
   }
 
-@component model `SharedModel161` {
+@component model `WithOkMessageErrors55` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5671,11 +5671,11 @@ namespace IyaSts.Api.Management {
     `group`?: string;
     `members`?: (string)[];
     `dangling`?: (string)[];
-    `entry`?: `SharedModel95`;
+    `entry`?: `WithDnOriginCreatedAt2`;
     `existing`?: WithDnOrigin
   }
 
-@component model `SharedModel162` {
+@component model `WithOkMessageErrors56` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5686,10 +5686,10 @@ namespace IyaSts.Api.Management {
     `present`?: boolean;
     `attribute`?: string;
     `memberCount`?: numeric;
-    `entry`?: `SharedModel95`
+    `entry`?: `WithDnOriginCreatedAt2`
   }
 
-@component model `SharedModel163` {
+@component model `WithOkMessageErrors57` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5697,10 +5697,10 @@ namespace IyaSts.Api.Management {
     `changed`?: boolean;
     `dn`?: string;
     `mail`?: string;
-    `entry`?: `SharedModel95`
+    `entry`?: `WithDnOriginCreatedAt2`
   }
 
-@component model `SharedModel164` {
+@component model `WithOkMessageErrors58` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5711,7 +5711,7 @@ namespace IyaSts.Api.Management {
     `value`?: string
   }
 
-@component model `SharedModel165` {
+@component model `WithOkMessageErrors59` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5721,7 +5721,7 @@ namespace IyaSts.Api.Management {
     `owners`?: (WithDnKindNameEtc4)[]
   }
 
-@component model `SharedModel166` {
+@component model `WithPagePagesPerPage2` {
     `page`?: integer;
     `pages`?: integer;
     `perPage`?: integer;
@@ -5732,7 +5732,7 @@ namespace IyaSts.Api.Management {
     `noun`?: NullableString
   }
 
-@component model `SharedModel167` {
+@component model `WithOkMessageErrors60` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5744,11 +5744,11 @@ namespace IyaSts.Api.Management {
     `member`?: string;
     `created`?: boolean;
     `resolves`?: boolean;
-    `entry`?: `SharedModel95`;
+    `entry`?: `WithDnOriginCreatedAt2`;
     `dn`?: string
   }
 
-@component model `SharedModel168` {
+@component model `WithOkMessageErrors61` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5761,7 +5761,7 @@ namespace IyaSts.Api.Management {
     `removed`?: numeric
   }
 
-@component model `SharedModel169` {
+@component model `WithOfferedDigitsSecretBits` {
     `offered`?: boolean;
     `digits`?: numeric;
     `secretBits`?: numeric;
@@ -5772,7 +5772,7 @@ namespace IyaSts.Api.Management {
     `algorithms`?: ({`name`?: string; `id`?: string; `inUse`?: boolean; `note`?: string})[]
   }
 
-@component model `SharedModel172` {
+@component model `WithNameCoseAlgOffered` {
     `name`?: string;
     `coseAlg`?: numeric;
     `offered`?: boolean;
@@ -5782,10 +5782,10 @@ namespace IyaSts.Api.Management {
     `notOfferedBecause`?: string
   }
 
-@component model `SharedModel171` is (`SharedModel172`)[];
+@component model `WithUrlRowsSerial` is (`WithNameCoseAlgOffered`)[];
   
 
-@component model `SharedModel173` {
+@component model `WithUrlRowsSerial2` {
     `url`?: string;
     `rows`?: numeric;
     `serial`?: numeric;
@@ -5798,12 +5798,12 @@ namespace IyaSts.Api.Management {
     `nextUpdateAt`?: numeric
   }
 
-@component model `SharedModel170` {
+@component model `WithOfferedRpNameRpId` {
     `offered`?: boolean;
     `rpName`?: string;
     `rpId`?: string;
     `rpIdSource`?: string;
-    `algorithms`?: `SharedModel171`;
+    `algorithms`?: `WithUrlRowsSerial`;
     `algorithmsSource`?: string;
     `registrationMode`?: string;
     `insecureAlgorithms`?: boolean;
@@ -5837,10 +5837,10 @@ namespace IyaSts.Api.Management {
     `maxKeysPerPerson`?: numeric;
     `signatureCounter`?: string;
     `clientDataHash`?: string;
-    `mds`?: `SharedModel173`
+    `mds`?: `WithUrlRowsSerial2`
   }
 
-@component model `SharedModel174` {
+@component model `WithSeqOriginAt` {
     `seq`?: numeric;
     `origin`?: StringOrNumericOrNull;
     `at`?: numeric;
@@ -5863,7 +5863,7 @@ namespace IyaSts.Api.Management {
     `chainKey`?: string
   }
 
-@component model `SharedModel176` {
+@component model `WithKindCountIdentifiers` {
     `kind`?: string;
     `count`?: integer;
     `identifiers`?: (string)[];
@@ -5871,10 +5871,10 @@ namespace IyaSts.Api.Management {
     `notes`?: (string)[]
   }
 
-@component model `SharedModel175` is (`SharedModel176`)[];
+@component model `WithOkMessageErrors62` is (`WithKindCountIdentifiers`)[];
   
 
-@component model `SharedModel177` {
+@component model `WithOkMessageErrors63` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5883,7 +5883,7 @@ namespace IyaSts.Api.Management {
     `revocationReach`?: string
   }
 
-@component model `SharedModel178` {
+@component model `WithOkMessageErrors64` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5897,7 +5897,7 @@ namespace IyaSts.Api.Management {
     `kinds`?: (string)[]
   }
 
-@component model `SharedModel180` {
+@component model `WithSinceSinceIsoInProgress` {
     `since`?: numeric;
     `sinceIso`?: string;
     `inProgress`?: boolean;
@@ -5908,7 +5908,7 @@ namespace IyaSts.Api.Management {
     `finish`?: string
   }
 
-@component model `SharedModel181` {
+@component model `WithLateFailedUndelivered` {
     `late`?: (string)[];
     `failed`?: (string)[];
     `undelivered`?: ({`count`?: numeric; `what`?: string})[];
@@ -5925,7 +5925,7 @@ namespace IyaSts.Api.Management {
     `$types`:#["object","null"]
   }) @hoisted model SharedModel179_bootstrap_h1628 {}
 
-@component model `SharedModel179` {
+@component model `WithOkMessageErrors65` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5939,11 +5939,11 @@ namespace IyaSts.Api.Management {
       `description`:"The bootstrap administrator's generated password, in product mode, once."
     }) `password`?: string;
     `username`?: string;
-    `retiring`?: `SharedModel180`;
-    `retirement`?: `SharedModel181`
+    `retiring`?: `WithSinceSinceIsoInProgress`;
+    `retirement`?: `WithLateFailedUndelivered`
   }
 
-@js(#{`description`:"One parameter, its sensitive values masked."}) @component model `SharedModel182` {
+@js(#{`description`:"One parameter, its sensitive values masked."}) @component model `ParameterSensitiveValuesMasked` {
     @js(#{`description`:"The parameter's dot path."}) `key`?: string;
     `group`?: string;
     `type`?: string;
@@ -5958,18 +5958,18 @@ namespace IyaSts.Api.Management {
     @js(#{`description`:"Present, true, when a sensitive value was replaced."}) `masked`?: boolean
   }
 
-@component model `SharedModel183` {
+@component model `WithOkMessageErrors66` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `error`?: string;
     `error_description`?: string;
     `key`?: string;
-    `setting`?: `SharedModel14`;
+    `setting`?: `SettingSetWhereCame`;
     `realm`?: NullableString
   }
 
-@component model `SharedModel184` {
+@component model `WithOkMessageErrors67` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5977,10 +5977,10 @@ namespace IyaSts.Api.Management {
     `error_description`?: string;
     `applied`?: (string)[];
     `changed`?: (string)[];
-    `settings`?: `SharedModel13`
+    `settings`?: `WithDescriptionGroupSettings`
   }
 
-@component model `SharedModel185` {
+@component model `WithOkMessageErrors68` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -5990,7 +5990,7 @@ namespace IyaSts.Api.Management {
     `realm`?: NullableString
   }
 
-@component model `SharedModel191` {
+@component model `WithKeyGroupLabel2` {
     `key`?: string;
     `group`?: string;
     `label`?: string;
@@ -6000,7 +6000,7 @@ namespace IyaSts.Api.Management {
     `csvValues`?: (string)[];
     `ordered`?: boolean;
     @js(#{`description`:"The sentence beside each of a list's values."}) `csvValueNotes`?: Record<string>;
-    `selectAll`?: `SharedModel158`;
+    `selectAll`?: `WithOnlyWhileOnAloneWhileOnKey`;
     `min`?: numeric;
     `max`?: numeric;
     `step`?: numeric;
@@ -6019,48 +6019,48 @@ namespace IyaSts.Api.Management {
     `overridden`?: boolean
   }
 
-@component model `SharedModel190` is (`SharedModel191`)[];
+@component model `WithGroupSettingsDescription` is (`WithKeyGroupLabel2`)[];
   
 
-@component model `SharedModel189` {`group`?: string; `settings`?: `SharedModel190`}
+@component model `WithGroupSettingsDescription2` {`group`?: string; `settings`?: `WithGroupSettingsDescription`}
 
-@component model `SharedModel188` is (`SharedModel189`)[];
+@component model `WithDescriptionPathLabel` is (`WithGroupSettingsDescription2`)[];
   
 
-@js(#{`description`:"The other pages each settings group is drawn on."}) @component model `SharedModel192` is Record<({`path`?: string; `label`?: string})[]>;
+@js(#{`description`:"The other pages each settings group is drawn on."}) @component model `OtherPagesSettingsGroupDrawn` is Record<({`path`?: string; `label`?: string})[]>;
   
 
-@component model `SharedModel187` {
+@component model `WithPageGroupsSettingCount` {
     `page`?: string;
-    `groups`?: `SharedModel188`;
+    `groups`?: `WithDescriptionPathLabel`;
     `settingCount`?: integer;
     `editableCount`?: integer;
     `overridden`?: (string)[];
     `setWith`?: string;
-    `context`?: `SharedModel159`;
-    `sharedWith`?: `SharedModel192`
+    `context`?: `WithConfigFileDefaultsFilePersistsAppconfig3`;
+    `sharedWith`?: `OtherPagesSettingsGroupDrawn`
   }
 
-@component model `SharedModel186` {
+@component model `WithPageTitleWhat` {
     `page`?: string;
     `title`?: string;
     `what`?: string;
     `notes`?: (string)[];
     `links`?: (WithHrefWhat2)[];
-    `settings`?: `SharedModel187`;
+    `settings`?: `WithPageGroupsSettingCount`;
     `leadHtml`?: string;
     `alsoHtml`?: (string)[];
-    `protocolEndpoints`?: `SharedModel49`
+    `protocolEndpoints`?: `WithParamsDescriptionParams`
   }
 
-@component model `SharedModel195` {
+@component model `WithKvnoEtypesEtype` {
     `kvno`?: numeric;
     `etypes`?: ({`etype`?: integer; `name`?: NullableString})[];
     `retiredAt`?: string;
     `expiresAt`?: string
   }
 
-@component model `SharedModel194` is (`SharedModel195`)[];
+@component model `WithAdditionalPropertiesPropertiesPrincipal` is (`WithKvnoEtypesEtype`)[];
   
 
 @js(#{
@@ -6082,7 +6082,7 @@ namespace IyaSts.Api.Management {
       `keyCreatedAt`:#{`type`:"string"},
       `rotatedAt`:#{`type`:"string"},
       `invalidatedAt`:#{`type`:"string"},
-      `retained`:#{`$ref`:"#/components/schemas/SharedModel194"},
+      `retained`:#{`$ref`:"#/components/schemas/WithAdditionalPropertiesPropertiesPrincipal"},
       `windowOpenUntil`:#{`type`:"string"},
       `retainedTtlSeconds`:#{`type`:"number"},
       `why`:#{`type`:"string"},
@@ -6104,7 +6104,7 @@ namespace IyaSts.Api.Management {
 
 @component union `SharedModel193` {SharedModel193_h1640}
 
-@js(#{`description`:"The rules by kind: onlyWhileOn and aloneWhileOn."}) @component model `SharedModel201` is Record<({
+@js(#{`description`:"The rules by kind: onlyWhileOn and aloneWhileOn."}) @component model `RulesKindOnlyWhileOnAloneWhileOn` is Record<({
     `setting`?: string;
     `values`?: (string)[];
     `on`?: boolean;
@@ -6112,7 +6112,7 @@ namespace IyaSts.Api.Management {
   })[]>;
   
 
-@component model `SharedModel200` {
+@component model `WithKeyGroupLabel3` {
     `key`?: string;
     `group`?: string;
     `label`?: string;
@@ -6122,7 +6122,7 @@ namespace IyaSts.Api.Management {
     `csvValues`?: (string)[];
     `ordered`?: boolean;
     @js(#{`description`:"The sentence beside each value."}) `csvValueNotes`?: Record<string>;
-    `selectAll`?: `SharedModel201`;
+    `selectAll`?: `RulesKindOnlyWhileOnAloneWhileOn`;
     `min`?: numeric;
     `max`?: numeric;
     `step`?: numeric;
@@ -6141,15 +6141,15 @@ namespace IyaSts.Api.Management {
     `overridden`?: boolean
   }
 
-@component model `SharedModel199` is (`SharedModel200`)[];
+@component model `WithGroupSettingsConfigFile3` is (`WithKeyGroupLabel3`)[];
   
 
-@component model `SharedModel198` {`group`?: string; `settings`?: `SharedModel199`}
+@component model `WithGroupSettingsConfigFile4` {`group`?: string; `settings`?: `WithGroupSettingsConfigFile3`}
 
-@component model `SharedModel197` is (`SharedModel198`)[];
+@component model `WithConfigFileDefaultsFilePersistsAppconfig4` is (`WithGroupSettingsConfigFile4`)[];
   
 
-@component model `SharedModel202` {
+@component model `WithConfigFileDefaultsFilePersistsAppconfig5` {
     `configFile`?: NullableString;
     `defaultsFile`?: NullableString;
     `persistsAppconfig`?: boolean;
@@ -6159,57 +6159,57 @@ namespace IyaSts.Api.Management {
     `realmId`?: NullableString
   }
 
-@component model `SharedModel196` {
+@component model `WithPageGroupsSettingCount2` {
     `page`?: string;
-    `groups`?: `SharedModel197`;
+    `groups`?: `WithConfigFileDefaultsFilePersistsAppconfig4`;
     `settingCount`?: integer;
     `editableCount`?: integer;
     `overridden`?: (string)[];
     `setWith`?: string;
-    `context`?: `SharedModel202`;
+    `context`?: `WithConfigFileDefaultsFilePersistsAppconfig5`;
     @js(#{`description`:"The other pages, by settings group."}) `sharedWith`?: Record<({`path`?: string; `label`?: string})[]>
   }
 
-@component model `SharedModel203` {
+@component model `WithPageTitleWhat2` {
     `page`?: string;
     `title`?: string;
     `what`?: string;
     `notes`?: (string)[];
     `links`?: (WithHrefWhat2)[];
-    `settings`?: `SharedModel196`;
+    `settings`?: `WithPageGroupsSettingCount2`;
     `leadHtml`?: string;
     `alsoHtml`?: (string)[];
-    `protocolEndpoints`?: `SharedModel49`
+    `protocolEndpoints`?: `WithParamsDescriptionParams`
   }
 
-@component model `SharedModel204` {
+@component model `WithOkMessageErrors69` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `applied`?: (string)[];
     `changed`?: (string)[];
-    `settings`?: `SharedModel190`
+    `settings`?: `WithGroupSettingsDescription`
   }
 
-@component model `SharedModel205` {
+@component model `WithOkMessageErrors70` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `cleared`?: (string)[];
-    `settings`?: `SharedModel190`
+    `settings`?: `WithGroupSettingsDescription`
   }
 
-@component model `SharedModel206` {
+@component model `WithOkMessageErrors71` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `applied`?: (string)[];
     `changed`?: (string)[];
     `cleared`?: (string)[];
-    `settings`?: `SharedModel199`
+    `settings`?: `WithGroupSettingsConfigFile3`
   }
 
-@component model `SharedModel209` {
+@component model `WithNameValueAttribute` {
     `name`?: string;
     `value`?: string;
     `attribute`?: string;
@@ -6220,21 +6220,21 @@ namespace IyaSts.Api.Management {
     `claimId`?: string
   }
 
-@component model `SharedModel208` is (`SharedModel209`)[];
+@component model `WithOkMessageErrors72` is (`WithNameValueAttribute`)[];
   
 
-@component model `SharedModel207` {
+@component model `WithOkMessageErrors73` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `set`?: string;
-    `claims`?: `SharedModel208`;
+    `claims`?: `WithOkMessageErrors72`;
     `attributes`?: (string)[];
     `added`?: (string)[];
     `removed`?: (string)[]
   }
 
-@component model `SharedModel211` {
+@component model `WithLdapClaimLabel` {
     `ldap`?: string;
     `claim`?: string;
     `label`?: NullableString;
@@ -6246,31 +6246,31 @@ namespace IyaSts.Api.Management {
     `pacClaimId`?: string
   }
 
-@component model `SharedModel210` is (`SharedModel211`)[];
+@component model `WithDescriptionLdapClaim` is (`WithLdapClaimLabel`)[];
   
 
 @js(#{
     `x-free-form`:"A claim value as it would be issued. Its JSON type is the catalogue row's and the person's own data, and a row may nest under a dotted path.",
     `description`:"A claim value as it would be issued. Its JSON type is the catalogue row's and the person's own data, and a row may nest under a dotted path."
-  }) @component model `SharedModel213` {}
+  }) @component model `ClaimValueWouldIssued` {}
 
-@component model `SharedModel214` is (`SharedModel213`)[];
+@component model `WithLdapClaimValue` is (`ClaimValueWouldIssued`)[];
   
 
-@component model `SharedModel212` {
+@component model `WithLdapClaimValue2` {
     `ldap`?: string;
     `claim`?: string;
-    `value`?: `SharedModel213`;
+    `value`?: `ClaimValueWouldIssued`;
     `source`?: string;
     `ldpTerm`?: NullableString;
     `claimId`?: string;
-    `values`?: `SharedModel214`
+    `values`?: `WithLdapClaimValue`
   }
 
-@js(#{`description`:"By directory attribute."}) @component model `SharedModel215` is Record<`SharedModel212`>;
+@js(#{`description`:"By directory attribute."}) @component model `DirectoryAttribute` is Record<`WithLdapClaimValue2`>;
   
 
-@component model `SharedModel217` {
+@component model `WithOkLoadedExamined` {
     `ok`?: boolean;
     `loaded`?: boolean;
     `examined`?: integer;
@@ -6281,39 +6281,39 @@ namespace IyaSts.Api.Management {
     `errors`?: (string)[]
   }
 
-@component model `SharedModel216` {
+@component model `WithOkMessageErrors74` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `selected`?: (string)[];
     `added`?: (string)[];
     `removed`?: (string)[];
-    `sweep`?: `SharedModel217`
+    `sweep`?: `WithOkLoadedExamined`
   }
 
-@component model `SharedModel221` {
+@component model `WithVctvaluesDoctypevalueTypevalues` {
     `vct_values`?: (string)[];
     `doctype_value`?: string;
     `type_values`?: (StringOrString)[]
   }
 
-@component model `SharedModel220` {
+@component model `WithIdFormatMeta` {
     `id`?: string;
     `format`?: string;
-    `meta`?: `SharedModel221`;
+    `meta`?: `WithVctvaluesDoctypevalueTypevalues`;
     `require_cryptographic_holder_binding`?: boolean;
     `claims`?: ({`path`?: (string)[]})[]
   }
 
-@component model `SharedModel219` is (`SharedModel220`)[];
+@component model `WithCredentialsCredentialsetsState` is (`WithIdFormatMeta`)[];
   
 
-@component model `SharedModel218` {
-    `credentials`?: `SharedModel219`;
+@component model `WithCredentialsCredentialsetsState2` {
+    `credentials`?: `WithCredentialsCredentialsetsState`;
     `credential_sets`?: (WithOptionsRequired)[]
   }
 
-@component model `SharedModel223` {
+@component model `WithStateFormatResponseType` {
     `state`?: string;
     `format`?: string;
     `responseType`?: string;
@@ -6330,10 +6330,10 @@ namespace IyaSts.Api.Management {
     `error`?: string
   }
 
-@component model `SharedModel222` is (`SharedModel223`)[];
+@component model `WithOkMessageErrors75` is (`WithStateFormatResponseType`)[];
   
 
-@component model `SharedModel224` {
+@component model `WithOkMessageErrors76` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -6343,7 +6343,7 @@ namespace IyaSts.Api.Management {
     `format`?: string
   }
 
-@component model `SharedModel225` {
+@component model `WithOkMessageErrors77` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -6356,7 +6356,7 @@ namespace IyaSts.Api.Management {
     `byReference`?: boolean;
     `clientId`?: string;
     `requested`?: (string)[];
-    `dcql_query`?: `SharedModel218`;
+    `dcql_query`?: `WithCredentialsCredentialsetsState2`;
     `expiresAt`?: string;
     `wallet`?: string;
     `walletUrl`?: string;
@@ -6369,18 +6369,18 @@ namespace IyaSts.Api.Management {
 @js(#{
     `x-free-form`:"What a holder's wallet disclosed from a credential, which may be another issuer's: its names and values are the presentation's, not this service's.",
     `description`:"What a holder's wallet disclosed from a credential, which may be another issuer's: its names and values are the presentation's, not this service's."
-  }) @component model `SharedModel226` {}
+  }) @component model `HolderSWalletDisclosedCredential` {}
 
 @js(#{
     `additionalProperties`:false,
     `properties`:#{
       `page`:#{`type`:"string"},
-      `groups`:#{`$ref`:"#/components/schemas/SharedModel154"},
+      `groups`:#{`$ref`:"#/components/schemas/WithConfigFileDefaultsFilePersistsAppconfig2"},
       `settingCount`:#{`type`:"integer"},
       `editableCount`:#{`type`:"integer"},
       `overridden`:#{`type`:"array",`items`:#{`type`:"string"}},
       `setWith`:#{`type`:"string"},
-      `context`:#{`$ref`:"#/components/schemas/SharedModel159"},
+      `context`:#{`$ref`:"#/components/schemas/WithConfigFileDefaultsFilePersistsAppconfig3"},
       `sharedWith`:#{
         `type`:"object",
         `additionalProperties`:#{
@@ -6398,7 +6398,7 @@ namespace IyaSts.Api.Management {
 
 @component union `SharedModel227` {SharedModel227_h1658}
 
-@component model `SharedModel229` {
+@component model `WithNameKindRole` {
     `name`?: string;
     `kind`?: string;
     `role`?: string;
@@ -6410,52 +6410,52 @@ namespace IyaSts.Api.Management {
     `editable`?: BooleanOrString
   }
 
-@component model `SharedModel228` is (`SharedModel229`)[];
+@component model `WithDescriptionAdditionalPropertiesProperties` is (`WithNameKindRole`)[];
   
 
 @js(#{
     `x-free-form`:"A value of a document a partner published or answered, kept and relayed as it arrived: nothing here narrows it, and a partner's odd value must not turn an operator's own page into a failure.",
     `description`:"A value of a document a partner published or answered, kept and relayed as it arrived: nothing here narrows it, and a partner's odd value must not turn an operator's own page into a failure."
-  }) @component model `SharedModel231` {}
+  }) @component model `ValueDocumentPartnerPublishedAnswered` {}
 
-@component model `SharedModel232` is (`SharedModel231`)[];
+@component model `WithAdditionalPropertiesPropertiesIssuer` is (`ValueDocumentPartnerPublishedAnswered`)[];
   
 
 @js(#{
     `additionalProperties`:false,
     `properties`:#{
-      `issuer`:#{`$ref`:"#/components/schemas/SharedModel231"},
-      `jwks_uri`:#{`$ref`:"#/components/schemas/SharedModel231"},
-      `configuration_endpoint`:#{`$ref`:"#/components/schemas/SharedModel231"},
-      `status_endpoint`:#{`$ref`:"#/components/schemas/SharedModel231"},
-      `add_subject_endpoint`:#{`$ref`:"#/components/schemas/SharedModel231"},
-      `remove_subject_endpoint`:#{`$ref`:"#/components/schemas/SharedModel231"},
-      `verification_endpoint`:#{`$ref`:"#/components/schemas/SharedModel231"},
-      `delivery_methods_supported`:#{`$ref`:"#/components/schemas/SharedModel232"}
+      `issuer`:#{`$ref`:"#/components/schemas/ValueDocumentPartnerPublishedAnswered"},
+      `jwks_uri`:#{`$ref`:"#/components/schemas/ValueDocumentPartnerPublishedAnswered"},
+      `configuration_endpoint`:#{`$ref`:"#/components/schemas/ValueDocumentPartnerPublishedAnswered"},
+      `status_endpoint`:#{`$ref`:"#/components/schemas/ValueDocumentPartnerPublishedAnswered"},
+      `add_subject_endpoint`:#{`$ref`:"#/components/schemas/ValueDocumentPartnerPublishedAnswered"},
+      `remove_subject_endpoint`:#{`$ref`:"#/components/schemas/ValueDocumentPartnerPublishedAnswered"},
+      `verification_endpoint`:#{`$ref`:"#/components/schemas/ValueDocumentPartnerPublishedAnswered"},
+      `delivery_methods_supported`:#{`$ref`:"#/components/schemas/WithAdditionalPropertiesPropertiesIssuer"}
     },
     `$types`:#["object","null"]
   }) @hoisted model SharedModel230_h1660 {}
 
 @component union `SharedModel230` {SharedModel230_h1660}
 
-@component model `SharedModel234` {`method`?: `SharedModel231`; `endpoint_url`?: `SharedModel231`}
+@component model `WithMethodEndpointurlAdditionalProperties` {`method`?: `ValueDocumentPartnerPublishedAnswered`; `endpoint_url`?: `ValueDocumentPartnerPublishedAnswered`}
 
 @js(#{
     `additionalProperties`:false,
     `properties`:#{
-      `stream_id`:#{`$ref`:"#/components/schemas/SharedModel231"},
-      `aud`:#{`$ref`:"#/components/schemas/SharedModel231"},
-      `events_supported`:#{`$ref`:"#/components/schemas/SharedModel231"},
-      `events_requested`:#{`$ref`:"#/components/schemas/SharedModel231"},
-      `events_delivered`:#{`$ref`:"#/components/schemas/SharedModel231"},
-      `delivery`:#{`$ref`:"#/components/schemas/SharedModel234"}
+      `stream_id`:#{`$ref`:"#/components/schemas/ValueDocumentPartnerPublishedAnswered"},
+      `aud`:#{`$ref`:"#/components/schemas/ValueDocumentPartnerPublishedAnswered"},
+      `events_supported`:#{`$ref`:"#/components/schemas/ValueDocumentPartnerPublishedAnswered"},
+      `events_requested`:#{`$ref`:"#/components/schemas/ValueDocumentPartnerPublishedAnswered"},
+      `events_delivered`:#{`$ref`:"#/components/schemas/ValueDocumentPartnerPublishedAnswered"},
+      `delivery`:#{`$ref`:"#/components/schemas/WithMethodEndpointurlAdditionalProperties"}
     },
     `$types`:#["object","null"]
   }) @hoisted model SharedModel233_h1661 {}
 
 @component union `SharedModel233` {SharedModel233_h1661}
 
-@component model `SharedModel235` is ({
+@component model `WithRelationshipUsernameAt` is ({
     `relationship`?: string;
     `username`?: string;
     `at`?: string;
@@ -6465,7 +6465,7 @@ namespace IyaSts.Api.Management {
   })[];
   
 
-@component model `SharedModel239` {
+@component model `WithEventReactionDone` {
     `event`?: string;
     `reaction`?: string;
     `done`?: boolean;
@@ -6481,10 +6481,10 @@ namespace IyaSts.Api.Management {
     `status`?: string
   }
 
-@component model `SharedModel238` is (`SharedModel239`)[];
+@component model `WithRelationshipJtiVia` is (`WithEventReactionDone`)[];
   
 
-@component model `SharedModel237` {
+@component model `WithRelationshipJtiVia2` {
     `relationship`?: string;
     `jti`?: string;
     `via`?: string;
@@ -6499,11 +6499,11 @@ namespace IyaSts.Api.Management {
     }) `subject`?: unknown;
     `person`?: string;
     `mapping`?: string;
-    `reactions`?: `SharedModel238`;
+    `reactions`?: `WithRelationshipJtiVia`;
     `iat`?: numeric
   }
 
-@component model `SharedModel236` is (`SharedModel237`)[];
+@component model `WithAdditionalPropertiesPropertiesKty` is (`WithRelationshipJtiVia2`)[];
   
 
 @js(#{
@@ -6632,7 +6632,7 @@ namespace IyaSts.Api.Management {
 
 @component union `SharedModel242` {SharedModel242_h1663}
 
-@component model `SharedModel241` {
+@component model `WithOkMessageErrors78` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -6641,7 +6641,7 @@ namespace IyaSts.Api.Management {
     `kid`?: string
   }
 
-@component model `SharedModel243` {
+@component model `WithOkMessageErrors79` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -6658,7 +6658,7 @@ namespace IyaSts.Api.Management {
     `readable`?: integer
   }
 
-@component model `SharedModel245` {
+@component model `WithRelationshipNameKind` {
     `relationship`?: string;
     `name`?: string;
     `kind`?: string;
@@ -6699,20 +6699,20 @@ namespace IyaSts.Api.Management {
       `refused`?: integer;
       `acted`?: integer
     };
-    `blocks`?: `SharedModel235`
+    `blocks`?: `WithRelationshipUsernameAt`
   }
 
 @js(#{
     `x-free-form`:"The partner's own answer to an SSF stream management call (SSF 1.0 section 8), relayed as it arrived; null when it sent none.",
     `description`:"The partner's own answer to an SSF stream management call (SSF 1.0 section 8), relayed as it arrived; null when it sent none."
-  }) @component model `SharedModel246` {}
+  }) @component model `PartnerSOwnAnswerSSF` {}
 
-@component model `SharedModel244` {
+@component model `WithOkMessageErrors80` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `signals`?: `SharedModel245`;
-    `answer`?: `SharedModel246`;
+    `signals`?: `WithRelationshipNameKind`;
+    `answer`?: `PartnerSOwnAnswerSSF`;
     `polled`?: {
       `received`?: integer;
       `acted`?: integer;
@@ -6722,7 +6722,7 @@ namespace IyaSts.Api.Management {
     }
   }
 
-@component model `SharedModel247` {
+@component model `WithPagePagesPerPage3` {
     `page`?: integer;
     `pages`?: integer;
     `perPage`?: integer;
@@ -6801,7 +6801,7 @@ namespace IyaSts.Api.Management {
 
 @component union `SharedModel249` {SharedModel249_h1666}
 
-@component model `SharedModel248` {
+@component model `WithOkMessageErrors81` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -6809,7 +6809,7 @@ namespace IyaSts.Api.Management {
     `changed`?: boolean
   }
 
-@component model `SharedModel250` {
+@component model `WithOkMessageErrors82` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -6833,7 +6833,7 @@ namespace IyaSts.Api.Management {
     `why`?: string
   }
 
-@js(#{`description`:"The members this server overrides."}) @component model `SharedModel253` is Record<`SharedModel2`>;
+@js(#{`description`:"The members this server overrides."}) @component model `MembersServerOverrides` is Record<`RFCMetadataMemberSValue`>;
   
 
 @js(#{
@@ -6842,7 +6842,7 @@ namespace IyaSts.Api.Management {
       `id`:#{`type`:"string"},
       `label`:#{`type`:"string"},
       `description`:#{`type`:"string"},
-      `overrides`:#{`$ref`:"#/components/schemas/SharedModel253"},
+      `overrides`:#{`$ref`:"#/components/schemas/MembersServerOverrides"},
       `removed`:#{`type`:"array",`items`:#{`type`:"string"}},
       `changedAt`:#{`type`:"string"},
       `memberCount`:#{`type`:"integer"},
@@ -6866,17 +6866,17 @@ namespace IyaSts.Api.Management {
 
 @component union `SharedModel252` {SharedModel252_h1669}
 
-@component model `SharedModel251` {
+@component model `WithOkMessageErrors83` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `profile`?: `SharedModel252`
   }
 
-@js(#{`description`:"By attribute name."}) @component model `SharedModel257` is Record<StringOrNumericOrBooleanEtc3>;
+@js(#{`description`:"By attribute name."}) @component model `AttributeName` is Record<StringOrNumericOrBooleanEtc3>;
   
 
-@component model `SharedModel256` {
+@component model `WithIdentifierDnLabelDn` {
     `identifier`?: string;
     `dnLabel`?: NullableString;
     `dn`?: NullableString;
@@ -6899,15 +6899,15 @@ namespace IyaSts.Api.Management {
     `createdAt`?: NullableString;
     `modifiedAt`?: NullableString;
     `operational`?: (string)[];
-    `attributes`?: `SharedModel257`;
-    `fields`?: `SharedModel257`
+    `attributes`?: `AttributeName`;
+    `fields`?: `AttributeName`
   }
 
-@hoisted union SharedModel255_h1679 {string, `SharedModel256`, null}
+@hoisted union SharedModel255_h1679 {string, `WithIdentifierDnLabelDn`, null}
 
 @component union `SharedModel255` {SharedModel255_h1679}
 
-@component model `SharedModel254` {
+@component model `WithOkMessageErrors84` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -6915,7 +6915,7 @@ namespace IyaSts.Api.Management {
     `changed`?: BooleanOrString2
   }
 
-@component model `SharedModel258` {
+@component model `WithOkMessageErrors85` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -6924,7 +6924,7 @@ namespace IyaSts.Api.Management {
     `warnings`?: (WithAttributeValueReasonEtc5)[]
   }
 
-@component model `SharedModel259` {
+@component model `WithOkMessageErrors86` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -6934,7 +6934,7 @@ namespace IyaSts.Api.Management {
     `owners`?: (WithDnKindNameEtc4)[]
   }
 
-@component model `SharedModel260` {
+@component model `WithOkMessageErrors87` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -6948,7 +6948,7 @@ namespace IyaSts.Api.Management {
     `left`?: integer
   }
 
-@component model `SharedModel261` {
+@component model `WithOkMessageErrors88` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -6958,7 +6958,7 @@ namespace IyaSts.Api.Management {
     `value`?: string
   }
 
-@component model `SharedModel262` {
+@component model `WithOkMessageErrors89` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -6976,9 +6976,9 @@ namespace IyaSts.Api.Management {
     `why`?: string
   }
 
-@component model `SharedModel264` {`@context`?: StringOrNumericOrBooleanEtc3; `linked_dids`?: (string)[]}
+@component model `WithLinkeddidsOkMessage` {`@context`?: StringOrNumericOrBooleanEtc3; `linked_dids`?: (string)[]}
 
-@component model `SharedModel263` {
+@component model `WithOkMessageErrors90` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -6988,12 +6988,12 @@ namespace IyaSts.Api.Management {
     `did`?: NullableString;
     `origin`?: string;
     `kid`?: string;
-    `didConfiguration`?: `SharedModel264`;
+    `didConfiguration`?: `WithLinkeddidsOkMessage`;
     `filename`?: string;
     `hostAt`?: string
   }
 
-@component model `SharedModel267` {
+@component model `WithNameValueNameFormat` {
     `name`?: string;
     `value`?: StringOrNumericOrBooleanEtc3;
     `nameFormat`?: string;
@@ -7003,20 +7003,20 @@ namespace IyaSts.Api.Management {
     `type`?: string
   }
 
-@component model `SharedModel266` is (`SharedModel267`)[];
+@component model `WithOkMessageErrors91` is (`WithNameValueNameFormat`)[];
   
 
-@component model `SharedModel265` {
+@component model `WithOkMessageErrors92` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `application`?: `SharedModel255`;
     `changed`?: BooleanOrString2;
     `set`?: string;
-    `claims`?: `SharedModel266`
+    `claims`?: `WithOkMessageErrors91`
   }
 
-@component model `SharedModel268` {
+@component model `WithOkMessageErrors93` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -7027,7 +7027,7 @@ namespace IyaSts.Api.Management {
     `attributes`?: NullableArray
   }
 
-@component model `SharedModel269` {
+@component model `WithOkMessageErrors94` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -7041,7 +7041,7 @@ namespace IyaSts.Api.Management {
     })[]
   }
 
-@component model `SharedModel270` {
+@component model `WithOkMessageErrors95` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -7055,19 +7055,19 @@ namespace IyaSts.Api.Management {
 @js(#{
     `x-free-form`:"The JSON an operator wrote into an access type's definition: a JSON Schema (RFC 9396 leaves a type's fields to its definition), or the definition.",
     `description`:"The JSON an operator wrote into an access type's definition: a JSON Schema (RFC 9396 leaves a type's fields to its definition), or the definition."
-  }) @component model `SharedModel272` {}
+  }) @component model `JSONOperatorWroteIntoAccess` {}
 
-@component model `SharedModel271` {
+@component model `WithOkMessageErrors96` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `application`?: `SharedModel255`;
     `changed`?: BooleanOrString2;
     `type`?: string;
-    `definition`?: `SharedModel272`
+    `definition`?: `JSONOperatorWroteIntoAccess`
   }
 
-@component model `SharedModel276` {
+@component model `WithNameKindDn` {
     `name`?: string;
     `kind`?: string;
     `dn`?: string;
@@ -7077,22 +7077,22 @@ namespace IyaSts.Api.Management {
     `why`?: string
   }
 
-@component model `SharedModel275` is (`SharedModel276`)[];
+@component model `WithGroupAuthzenGroupTotal` is (`WithNameKindDn`)[];
   
 
-@component model `SharedModel274` {
+@component model `WithGroupAuthzenGroupTotal2` {
     `group`?: string;
     `authzenGroup`?: string;
     `total`?: integer;
     `truncated`?: boolean;
     `unlocated`?: integer;
-    `holders`?: `SharedModel275`;
-    `granted`?: `SharedModel275`;
-    `held`?: `SharedModel275`;
-    `failed`?: `SharedModel275`
+    `holders`?: `WithGroupAuthzenGroupTotal`;
+    `granted`?: `WithGroupAuthzenGroupTotal`;
+    `held`?: `WithGroupAuthzenGroupTotal`;
+    `failed`?: `WithGroupAuthzenGroupTotal`
   }
 
-@component model `SharedModel273` {
+@component model `WithOkMessageErrors97` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -7102,10 +7102,10 @@ namespace IyaSts.Api.Management {
     `enforced`?: boolean;
     `created`?: boolean;
     `failure`?: string;
-    `peps`?: `SharedModel274`
+    `peps`?: `WithGroupAuthzenGroupTotal2`
   }
 
-@component model `SharedModel278` {
+@component model `WithSerialHexSubjectKeyAlg2` {
     `serialHex`?: string;
     `subject`?: string;
     `keyAlg`?: string;
@@ -7118,18 +7118,18 @@ namespace IyaSts.Api.Management {
     `implicitName`?: string
   }
 
-@component model `SharedModel277` {
+@component model `WithOkMessageErrors98` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `application`?: `SharedModel255`;
     `changed`?: BooleanOrString2;
     `purpose`?: string;
-    `certificate`?: `SharedModel278`;
-    `files`?: `SharedModel122`
+    `certificate`?: `WithSerialHexSubjectKeyAlg2`;
+    `files`?: `WithPkcs12KeyChain`
   }
 
-@component model `SharedModel280` {
+@component model `WithSerialHexLabelSubject2` {
     `serialHex`?: string;
     `label`?: NullableString;
     `subject`?: NullableString;
@@ -7161,27 +7161,27 @@ namespace IyaSts.Api.Management {
 
 @component union `SharedModel281` {SharedModel281_h1718}
 
-@component model `SharedModel279` {
+@component model `WithOkMessageErrors99` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `application`?: `SharedModel255`;
     `changed`?: BooleanOrString2;
-    `certificate`?: `SharedModel280`;
+    `certificate`?: `WithSerialHexLabelSubject2`;
     `reason`?: string;
     `entry`?: `SharedModel281`;
     `why`?: string;
     @js(#{`description`:"True when the certificate was already revoked. The earlier entry is kept and its date does not move."}) `already`?: boolean
   }
 
-@component model `SharedModel282` {
+@component model `WithOkMessageErrors100` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `application`?: `SharedModel255`;
     `changed`?: BooleanOrString2;
     `dn`?: NullableString;
-    `certificates`?: `SharedModel86`;
+    `certificates`?: `WithSubjectLabelEnrolledAt`;
     `rule`?: string;
     `sha256`?: string
   }
@@ -7189,19 +7189,19 @@ namespace IyaSts.Api.Management {
 @js(#{
     `x-free-form`:"A software statement's claims: RFC 7591 client metadata the operator asked it to fix, beside its registered claims.",
     `description`:"A software statement's claims: RFC 7591 client metadata the operator asked it to fix, beside its registered claims."
-  }) @component model `SharedModel284` {}
+  }) @component model `SoftwareStatementSClaimsRFC` {}
 
-@component model `SharedModel283` {
+@component model `WithOkMessageErrors101` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `application`?: `SharedModel255`;
     `changed`?: BooleanOrString2;
     `softwareStatement`?: string;
-    `claims`?: `SharedModel284`
+    `claims`?: `SoftwareStatementSClaimsRFC`
   }
 
-@component model `SharedModel285` {
+@component model `WithOkMessageErrors102` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -7227,13 +7227,13 @@ namespace IyaSts.Api.Management {
 @js(#{
     `x-free-form`:"An RFC 9728 document as the resource published it, which may carry extensions and a signed form: the document's, not this service's.",
     `description`:"An RFC 9728 document as the resource published it, which may carry extensions and a signed form: the document's, not this service's."
-  }) @component model `SharedModel287` {}
+  }) @component model `RFCDocumentResourcePublishedMay` {}
 
 @hoisted union SharedModel289_problem_h1730 {string, null}
 
-@component model `SharedModel289` {
+@component model `WithMemberValueKnown` {
     `member`?: string;
-    `value`?: `SharedModel287`;
+    `value`?: `RFCDocumentResourcePublishedMay`;
     `known`?: boolean;
     `type`?: string;
     `what`?: string;
@@ -7241,10 +7241,10 @@ namespace IyaSts.Api.Management {
     `problem`?: SharedModel289_problem_h1730
   }
 
-@component model `SharedModel288` is (`SharedModel289`)[];
+@component model `WithCheckedMatchesExpected` is (`WithMemberValueKnown`)[];
   
 
-@component model `SharedModel290` {
+@component model `WithCheckedMatchesExpected2` {
     `checked`?: boolean;
     `matches`?: NullableBoolean;
     `expected`?: (string)[];
@@ -7252,28 +7252,28 @@ namespace IyaSts.Api.Management {
     `why`?: string
   }
 
-@component model `SharedModel293` {
+@component model `WithIssuerMatchedAuthorizationServer` {
     `issuer`?: StringOrNumericOrBooleanEtc3;
     `matched`?: boolean;
     `authorizationServer`?: string
   }
 
-@component model `SharedModel292` is (`SharedModel293`)[];
+@component model `WithListedMatchedAllMatched` is (`WithIssuerMatchedAuthorizationServer`)[];
   
 
-@component model `SharedModel291` {
+@component model `WithListedMatchedAllMatched2` {
     `listed`?: integer;
     `matched`?: integer;
     `allMatched`?: boolean;
     `anyUnmatched`?: boolean;
-    `rows`?: `SharedModel292`;
-    `realm`?: `SharedModel287`
+    `rows`?: `WithListedMatchedAllMatched`;
+    `realm`?: `RFCDocumentResourcePublishedMay`
   }
 
-@component model `SharedModel295` is (`SharedModel287`)[];
+@component model `WithDetailsTypeLinesNameIdentifier` is (`RFCDocumentResourcePublishedMay`)[];
   
 
-@component model `SharedModel294` {
+@component model `WithDetailsTypeLinesNameIdentifier2` {
     `detailsTypeLines`?: (string)[];
     `name`?: string;
     `identifier`?: string;
@@ -7281,12 +7281,12 @@ namespace IyaSts.Api.Management {
     `baseUri`?: string;
     `audience`?: string;
     `protocols`?: (string)[];
-    `permissions`?: `SharedModel295`;
+    `permissions`?: `WithDetailsTypeLinesNameIdentifier`;
     `permissionLines`?: (string)[];
     `warnings`?: (string)[]
   }
 
-@component model `SharedModel286` {
+@component model `WithOkMessageErrors103` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -7296,20 +7296,20 @@ namespace IyaSts.Api.Management {
     `url`?: string;
     `filename`?: string;
     `contentType`?: string;
-    `document`?: `SharedModel287`;
+    `document`?: `RFCDocumentResourcePublishedMay`;
     `compact`?: string;
     `pretty`?: string;
-    `members`?: `SharedModel288`;
+    `members`?: `WithCheckedMatchesExpected`;
     `extensions`?: (string)[];
-    `signedMetadata`?: `SharedModel287`;
-    `resourceCheck`?: `SharedModel290`;
-    `authorizationServers`?: `SharedModel291`;
-    `plan`?: `SharedModel294`;
+    `signedMetadata`?: `RFCDocumentResourcePublishedMay`;
+    `resourceCheck`?: `WithCheckedMatchesExpected2`;
+    `authorizationServers`?: `WithListedMatchedAllMatched2`;
+    `plan`?: `WithDetailsTypeLinesNameIdentifier2`;
     `warnings`?: (string)[];
     `status`?: numeric
   }
 
-@component model `SharedModel296` {
+@component model `WithOkMessageErrors104` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -7322,7 +7322,7 @@ namespace IyaSts.Api.Management {
     `files`?: (WithNameMimeTextEtc4)[]
   }
 
-@component model `SharedModel301` {
+@component model `WithKeyGroupLabel4` {
     `key`?: string;
     `group`?: string;
     `label`?: string;
@@ -7332,7 +7332,7 @@ namespace IyaSts.Api.Management {
     `csvValues`?: (string)[];
     `ordered`?: boolean;
     `csvValueNotes`?: Record<string>;
-    `selectAll`?: `SharedModel158`;
+    `selectAll`?: `WithOnlyWhileOnAloneWhileOnKey`;
     `min`?: numeric;
     `max`?: numeric;
     `step`?: numeric;
@@ -7351,24 +7351,24 @@ namespace IyaSts.Api.Management {
     `overridden`?: boolean
   }
 
-@component model `SharedModel300` is (`SharedModel301`)[];
+@component model `WithGroupSettingsAdditionalProperties` is (`WithKeyGroupLabel4`)[];
   
 
-@component model `SharedModel299` {`group`?: string; `settings`?: `SharedModel300`}
+@component model `WithGroupSettingsAdditionalProperties2` {`group`?: string; `settings`?: `WithGroupSettingsAdditionalProperties`}
 
-@component model `SharedModel298` is (`SharedModel299`)[];
+@component model `WithAdditionalPropertiesPropertiesPage2` is (`WithGroupSettingsAdditionalProperties2`)[];
   
 
 @js(#{
     `additionalProperties`:false,
     `properties`:#{
       `page`:#{`type`:"string"},
-      `groups`:#{`$ref`:"#/components/schemas/SharedModel298"},
+      `groups`:#{`$ref`:"#/components/schemas/WithAdditionalPropertiesPropertiesPage2"},
       `settingCount`:#{`type`:"integer"},
       `editableCount`:#{`type`:"integer"},
       `overridden`:#{`type`:"array",`items`:#{`type`:"string"}},
       `setWith`:#{`type`:"string"},
-      `context`:#{`$ref`:"#/components/schemas/SharedModel159"},
+      `context`:#{`$ref`:"#/components/schemas/WithConfigFileDefaultsFilePersistsAppconfig3"},
       `sharedWith`:#{
         `type`:"object",
         `additionalProperties`:#{
@@ -7386,7 +7386,7 @@ namespace IyaSts.Api.Management {
 
 @component union `SharedModel297` {SharedModel297_h1748}
 
-@component model `SharedModel303` {
+@component model `WithKeyLabelDecides` {
     `key`?: string;
     `label`?: string;
     `decides`?: string;
@@ -7404,10 +7404,10 @@ namespace IyaSts.Api.Management {
     `readsRisk`?: boolean
   }
 
-@component model `SharedModel302` is (`SharedModel303`)[];
+@component model `WithKindTypeLexical` is (`WithKeyLabelDecides`)[];
   
 
-@component model `SharedModel304` {
+@component model `WithKindTypeLexical2` {
     `kind`?: string;
     `type`?: string;
     `lexical`?: string;
@@ -7427,7 +7427,7 @@ namespace IyaSts.Api.Management {
 
 @component union `SharedModel307` {NullableObject100}
 
-@component model `SharedModel306` {
+@component model `WithIdStateAuthorizationServer` {
     `id`?: string;
     `state`?: string;
     `authorizationServer`?: NullableString;
@@ -7446,14 +7446,14 @@ namespace IyaSts.Api.Management {
     `history`?: (WithAtStateNote)[]
   }
 
-@component model `SharedModel305` {
+@component model `WithOkMessageErrors105` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `grant`?: `SharedModel306`
+    `grant`?: `WithIdStateAuthorizationServer`
   }
 
-@component model `SharedModel308` {
+@component model `WithOkMessageErrors106` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -7462,7 +7462,7 @@ namespace IyaSts.Api.Management {
     `problems`?: NullableArray
   }
 
-@component model `SharedModel309` {
+@component model `WithOkMessageErrors107` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -7491,7 +7491,7 @@ namespace IyaSts.Api.Management {
 @js(#{
     `x-free-form`:"A Security Event Token's claims. An event's members are each event type's, and the claims are what was signed, so a model of them here would be a second list of every event type.",
     `description`:"A Security Event Token's claims. An event's members are each event type's, and the claims are what was signed, so a model of them here would be a second list of every event type."
-  }) @component model `SharedModel313` {}
+  }) @component model `SecurityEventTokenSClaims` {}
 
 @js(#{
     `additionalProperties`:false,
@@ -7502,7 +7502,7 @@ namespace IyaSts.Api.Management {
       `deadLettered`:#{`type`:"boolean"},
       `jti`:#{`type`:"string"},
       `token`:#{`type`:"string"},
-      `claims`:#{`$ref`:"#/components/schemas/SharedModel313"},
+      `claims`:#{`$ref`:"#/components/schemas/SecurityEventTokenSClaims"},
       `status`:#{`type`:#["integer","null"]},
       `err`:#{`type`:#["string","null"]},
       `why`:#{`type`:#["string","null"]}
@@ -7512,38 +7512,38 @@ namespace IyaSts.Api.Management {
 
 @component union `SharedModel312` {SharedModel312_h1778}
 
-@component model `SharedModel311` {
+@component model `WithOkMessageErrors108` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `report`?: `SharedModel312`
   }
 
-@component model `SharedModel316` {
+@component model `WithOkDeliveredHeld` {
     `ok`?: boolean;
     `delivered`?: boolean;
     `held`?: boolean;
     `deadLettered`?: boolean;
     `jti`?: string;
     `token`?: string;
-    `claims`?: `SharedModel313`;
+    `claims`?: `SecurityEventTokenSClaims`;
     `status`?: NullableInteger;
     `err`?: NullableString;
     `why`?: NullableString
   }
 
-@component model `SharedModel315` is (`SharedModel316`)[];
+@component model `WithOkMessageErrors109` is (`WithOkDeliveredHeld`)[];
   
 
-@component model `SharedModel314` {
+@component model `WithOkMessageErrors110` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `warnings`?: (string)[];
-    `reports`?: `SharedModel315`
+    `reports`?: `WithOkMessageErrors109`
   }
 
-@component model `SharedModel318` {
+@component model `WithScimLdapKind` {
     `scim`?: string;
     `ldap`?: NullableString;
     `kind`?: NullableString;
@@ -7556,19 +7556,19 @@ namespace IyaSts.Api.Management {
     `note`?: string
   }
 
-@component model `SharedModel317` is (`SharedModel318`)[];
+@component model `WithAdditionalPropertiesPropertiesPage3` is (`WithScimLdapKind`)[];
   
 
 @js(#{
     `additionalProperties`:false,
     `properties`:#{
       `page`:#{`type`:"string"},
-      `groups`:#{`$ref`:"#/components/schemas/SharedModel197"},
+      `groups`:#{`$ref`:"#/components/schemas/WithConfigFileDefaultsFilePersistsAppconfig4"},
       `settingCount`:#{`type`:"integer"},
       `editableCount`:#{`type`:"integer"},
       `overridden`:#{`type`:"array",`items`:#{`type`:"string"}},
       `setWith`:#{`type`:"string"},
-      `context`:#{`$ref`:"#/components/schemas/SharedModel202"},
+      `context`:#{`$ref`:"#/components/schemas/WithConfigFileDefaultsFilePersistsAppconfig5"},
       `sharedWith`:#{
         `type`:"object",
         `additionalProperties`:#{
@@ -7602,7 +7602,7 @@ namespace IyaSts.Api.Management {
 
 @component union `SharedModel322` {SharedModel322_h1787}
 
-@component model `SharedModel326` {
+@component model `WithIdRealmClientId2` {
     `id`?: string;
     `realm`?: NullableString;
     `clientId`?: string;
@@ -7626,10 +7626,10 @@ namespace IyaSts.Api.Management {
     `pendingChange`?: boolean
   }
 
-@component model `SharedModel325` is (`SharedModel326`)[];
+@component model `WithCellHereReachable` is (`WithIdRealmClientId2`)[];
   
 
-@component model `SharedModel324` {
+@component model `WithCellHereReachable2` {
     `cell`?: string;
     `here`?: boolean;
     `reachable`?: boolean;
@@ -7641,12 +7641,12 @@ namespace IyaSts.Api.Management {
     `pausedUntil`?: string;
     `failures`?: numeric;
     `lastReconcileAt`?: string;
-    `queued`?: `SharedModel325`;
-    `retrying`?: `SharedModel325`;
-    `dead`?: `SharedModel325`
+    `queued`?: `WithCellHereReachable`;
+    `retrying`?: `WithCellHereReachable`;
+    `dead`?: `WithCellHereReachable`
   }
 
-@component model `SharedModel323` is (`SharedModel324`)[];
+@component model `WithAdditionalPropertiesPropertiesSubject` is (`WithCellHereReachable2`)[];
   
 
 @js(#{
@@ -7661,7 +7661,7 @@ namespace IyaSts.Api.Management {
     `$types`:#["object","null"]
   }) @hoisted model SharedModel321_certificate_h1795 {}
 
-@component model `SharedModel321` {
+@component model `WithIdIdentifierDn` {
     `id`?: string;
     `identifier`?: string;
     `dn`?: string;
@@ -7699,13 +7699,13 @@ namespace IyaSts.Api.Management {
     `failures`?: numeric;
     `lastReconcileAt`?: string;
     `lastReconcile`?: `SharedModel322`;
-    `byCell`?: `SharedModel323`
+    `byCell`?: `WithAdditionalPropertiesPropertiesSubject`
   }
 
-@component model `SharedModel320` is (`SharedModel321`)[];
+@component model `WithAuthMethodsOauthClientAuthTlsSources` is (`WithIdIdentifierDn`)[];
   
 
-@component model `SharedModel327` {
+@component model `WithAuthMethodsOauthClientAuthTlsSources2` {
     `authMethods`?: (string)[];
     `oauthClientAuth`?: (string)[];
     `tlsSources`?: (string)[];
@@ -7714,10 +7714,10 @@ namespace IyaSts.Api.Management {
     `deprovision`?: (string)[]
   }
 
-@component model `SharedModel329` {
-    `queued`?: `SharedModel325`;
-    `retrying`?: `SharedModel325`;
-    `dead`?: `SharedModel325`;
+@component model `WithQueuedRetryingDead` {
+    `queued`?: `WithCellHereReachable`;
+    `retrying`?: `WithCellHereReachable`;
+    `dead`?: `WithCellHereReachable`;
     `counts`?: WithQueuedRetryingDeadEtc4
   }
 
@@ -7803,8 +7803,8 @@ namespace IyaSts.Api.Management {
       `failures`:#{`type`:"number"},
       `lastReconcileAt`:#{`type`:"string"},
       `lastReconcile`:#{`$ref`:"#/components/schemas/SharedModel322"},
-      `byCell`:#{`$ref`:"#/components/schemas/SharedModel323"},
-      `queues`:#{`$ref`:"#/components/schemas/SharedModel329"},
+      `byCell`:#{`$ref`:"#/components/schemas/WithAdditionalPropertiesPropertiesSubject"},
+      `queues`:#{`$ref`:"#/components/schemas/WithQueuedRetryingDead"},
       `linked`:#{`type`:"number"},
       `discovery`:#{`$ref`:"#/components/schemas/SharedModel330"}
     },
@@ -7813,7 +7813,7 @@ namespace IyaSts.Api.Management {
 
 @component union `SharedModel328` {SharedModel328_h1797}
 
-@component model `SharedModel333` {
+@component model `WithTierUseCaseLabel` {
     `tier`?: string;
     `useCase`?: NullableString;
     `label`?: string;
@@ -7834,7 +7834,7 @@ namespace IyaSts.Api.Management {
     `pqc`?: NullableObject38
   }
 
-@component model `SharedModel332` is (`SharedModel333`)[];
+@component model `WithAdditionalPropertiesPropertiesRealm` is (`WithTierUseCaseLabel`)[];
   
 
 @js(#{
@@ -7851,14 +7851,14 @@ namespace IyaSts.Api.Management {
       `country`:#{`type`:#["string","null"]},
       `issuedCount`:#{`type`:"integer"},
       `persisted`:#{`type`:"boolean"},
-      `tiers`:#{`$ref`:"#/components/schemas/SharedModel332"}
+      `tiers`:#{`$ref`:"#/components/schemas/WithAdditionalPropertiesPropertiesRealm"}
     },
     `$types`:#["object","null"]
   }) @hoisted model SharedModel331_h1803 {}
 
 @component union `SharedModel331` {SharedModel331_h1803}
 
-@component model `SharedModel334` is ({
+@component model `WithIdLabelKind` is ({
     `id`?: string;
     `label`?: string;
     `kind`?: string;
@@ -7868,7 +7868,7 @@ namespace IyaSts.Api.Management {
   })[];
   
 
-@component model `SharedModel336` {
+@component model `WithSerialHexRevokedAtReason2` {
     `serialHex`?: string;
     `revokedAt`?: NullOrStringOrNumeric;
     `reason`?: string;
@@ -7878,10 +7878,10 @@ namespace IyaSts.Api.Management {
     `note`?: string
   }
 
-@component model `SharedModel335` is (`SharedModel336`)[];
+@component model `WithIdLabelKid` is (`WithSerialHexRevokedAtReason2`)[];
   
 
-@component model `SharedModel339` {
+@component model `WithIdLabelKid2` {
     `id`?: string;
     `label`?: string;
     `kid`?: string;
@@ -7909,12 +7909,12 @@ namespace IyaSts.Api.Management {
     `pqc`?: NullableObject38
   }
 
-@component model `SharedModel338` is (`SharedModel339`)[];
+@component model `WithHasKeyPairKeysDeclaredIssuers` is (`WithIdLabelKid2`)[];
   
 
-@component model `SharedModel337` {
+@component model `WithHasKeyPairKeysDeclaredIssuers2` {
     `hasKeyPair`?: boolean;
-    `keys`?: `SharedModel338`;
+    `keys`?: `WithHasKeyPairKeysDeclaredIssuers`;
     `declaredIssuers`?: (string)[];
     `issuers`?: (string)[];
     `declared`?: boolean
@@ -7957,7 +7957,7 @@ namespace IyaSts.Api.Management {
 
 @component union `SharedModel340` {SharedModel340_h1813}
 
-@component model `SharedModel343` {
+@component model `WithIdLabelCa` {
     `id`?: string;
     `label`?: string;
     `ca`?: boolean;
@@ -7969,10 +7969,10 @@ namespace IyaSts.Api.Management {
     `note`?: string
   }
 
-@component model `SharedModel342` is (`SharedModel343`)[];
+@component model `WithIdLabelClassical` is (`WithIdLabelCa`)[];
   
 
-@component model `SharedModel344` is ({
+@component model `WithIdLabelClassical2` is ({
     `id`?: string;
     `label`?: string;
     `classical`?: boolean;
@@ -7981,7 +7981,7 @@ namespace IyaSts.Api.Management {
   })[];
   
 
-@component model `SharedModel345` is ({
+@component model `WithIdLabelSubject` is ({
     `id`?: string;
     `label`?: string;
     `subject`?: string;
@@ -7991,7 +7991,7 @@ namespace IyaSts.Api.Management {
   })[];
   
 
-@component model `SharedModel347` {
+@component model `WithIdCaProfile` {
     `id`?: string;
     `ca`?: boolean;
     `profile`?: string;
@@ -8022,16 +8022,16 @@ namespace IyaSts.Api.Management {
     `altPublicKeyPem`?: NullableString
   }
 
-@component model `SharedModel346` is (`SharedModel347`)[];
+@component model `WithFieldsProfilesPqModes` is (`WithIdCaProfile`)[];
   
 
-@component model `SharedModel341` {
+@component model `WithFieldsProfilesPqModes2` {
     `fields`?: (string)[];
-    `profiles`?: `SharedModel342`;
-    `pqModes`?: `SharedModel344`;
+    `profiles`?: `WithIdLabelClassical`;
+    `pqModes`?: `WithIdLabelClassical2`;
     `pqMode`?: string;
-    `keyAlgorithms`?: `SharedModel334`;
-    `alternativeKeyAlgorithms`?: `SharedModel334`;
+    `keyAlgorithms`?: `WithIdLabelKind`;
+    `alternativeKeyAlgorithms`?: `WithIdLabelKind`;
     `signatureAlgorithms`?: (WithIdLabelWeakEtc4)[];
     `signerLabel`?: string;
     `keystoreFormats`?: (string)[];
@@ -8040,14 +8040,14 @@ namespace IyaSts.Api.Management {
     `netscapeTypes`?: ({`name`?: string})[];
     `accessMethods`?: (string)[];
     `dnFields`?: (WithAttrField)[];
-    `issuers`?: `SharedModel345`;
-    `objects`?: `SharedModel346`;
+    `issuers`?: `WithIdLabelSubject`;
+    `objects`?: `WithFieldsProfilesPqModes`;
     `maxObjects`?: integer;
     `slowFamilies`?: (string)[];
     `draft`?: Record<NullOrStringOrBoolean>
   }
 
-@component model `SharedModel349` {
+@component model `WithSubjectIssuerSerialHex` {
     `subject`?: string;
     `issuer`?: string;
     `serialHex`?: string;
@@ -8063,12 +8063,12 @@ namespace IyaSts.Api.Management {
     `extensionCount`?: integer
   }
 
-@component model `SharedModel352` {
+@component model `WithTextAttributesOid` {
     `text`?: string;
     `attributes`?: ({`oid`?: string; `short`?: string; `label`?: string; `value`?: string})[]
   }
 
-@component model `SharedModel353` {
+@component model `WithNotBeforeNotAfterAdditionalProperties` {
     `notBefore`?: WithIsoType;
     `notAfter`?: WithIsoType
   }
@@ -8084,7 +8084,7 @@ namespace IyaSts.Api.Management {
     `$types`:#["object","null"]
   }) @hoisted model SharedModel354_key_h1826 {}
 
-@component model `SharedModel354` {
+@component model `WithAlgorithmDescriptionKey` {
     `algorithm`?: WithOidNameParameters;
     `description`?: string;
     `key`?: SharedModel354_key_h1826;
@@ -8096,50 +8096,50 @@ namespace IyaSts.Api.Management {
 @js(#{
     `x-free-form`:"An X.509 extension's decoded value, on a certificate that may be anybody's: its shape is that extension's ASN.1 module's.",
     `description`:"An X.509 extension's decoded value, on a certificate that may be anybody's: its shape is that extension's ASN.1 module's."
-  }) @component model `SharedModel357` {}
+  }) @component model `X` {}
 
-@component model `SharedModel356` {
+@component model `WithOidNameLabel` {
     `oid`?: string;
     `name`?: string;
     `label`?: string;
     `critical`?: boolean;
-    `value`?: `SharedModel357`;
+    `value`?: `X`;
     `text`?: NullableString;
     `parseError`?: NullableString
   }
 
-@component model `SharedModel355` is (`SharedModel356`)[];
+@component model `WithVersionValueEncoded` is (`WithOidNameLabel`)[];
   
 
-@component model `SharedModel351` {
+@component model `WithVersionValueEncoded2` {
     `version`?: {`value`?: integer; `encoded`?: integer};
     `serialNumber`?: {`hex`?: string; `decimal`?: string; `octets`?: numeric};
     `signature`?: WithOidNameParameters;
-    `issuer`?: `SharedModel352`;
-    `validity`?: `SharedModel353`;
-    `subject`?: `SharedModel352`;
-    `subjectPublicKeyInfo`?: `SharedModel354`;
+    `issuer`?: `WithTextAttributesOid`;
+    `validity`?: `WithNotBeforeNotAfterAdditionalProperties`;
+    `subject`?: `WithTextAttributesOid`;
+    `subjectPublicKeyInfo`?: `WithAlgorithmDescriptionKey`;
     `issuerUniqueID`?: NullableString;
     `subjectUniqueID`?: NullableString;
-    `extensions`?: `SharedModel355`
+    `extensions`?: `WithVersionValueEncoded`
   }
 
-@component model `SharedModel350` {
-    `tbsCertificate`?: `SharedModel351`;
+@component model `WithTbsCertificateSignatureAlgorithmSignatureAlgorithmsAgree` {
+    `tbsCertificate`?: `WithVersionValueEncoded2`;
     `signatureAlgorithm`?: WithOidNameParameters;
     `signatureAlgorithmsAgree`?: boolean;
     `signatureValue`?: {`octets`?: integer; `hex`?: string}
   }
 
-@component model `SharedModel348` {
+@component model `WithFingerprintPemSummary` {
     `fingerprint`?: string;
     `pem`?: string;
-    `summary`?: `SharedModel349`;
+    `summary`?: `WithSubjectIssuerSerialHex`;
     `fingerprints`?: {`sha1`?: string; `sha256`?: string};
-    `fields`?: `SharedModel350`
+    `fields`?: `WithTbsCertificateSignatureAlgorithmSignatureAlgorithmsAgree`
   }
 
-@component model `SharedModel359` {
+@component model `WithFingerprint256PemKind` {
     `fingerprint256`?: string;
     `pem`?: string;
     `kind`?: string;
@@ -8154,19 +8154,19 @@ namespace IyaSts.Api.Management {
     `unadmittable`?: string
   }
 
-@component model `SharedModel358` is (`SharedModel359`)[];
+@component model `WithOkMessageErrors111` is (`WithFingerprint256PemKind`)[];
   
 
-@component model `SharedModel360` {
+@component model `WithOkMessageErrors112` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `added`?: `SharedModel358`;
+    `added`?: `WithOkMessageErrors111`;
     `duplicates`?: integer;
     `refused`?: ({`subject`?: string; `why`?: string})[]
   }
 
-@component model `SharedModel361` {
+@component model `WithOkMessageErrors113` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -8175,17 +8175,17 @@ namespace IyaSts.Api.Management {
     `changes`?: integer
   }
 
-@component model `SharedModel362` {
+@component model `WithOkMessageErrors114` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `chain`?: `SharedModel331`;
     `why`?: string;
     `draft`?: Record<NullOrStringOrBoolean>;
-    `workbench`?: `SharedModel341`
+    `workbench`?: `WithFieldsProfilesPqModes2`
   }
 
-@component model `SharedModel366` {
+@component model `WithKtyUseAlg` {
     `kty`?: string;
     `use`?: string;
     `alg`?: string;
@@ -8205,18 +8205,18 @@ namespace IyaSts.Api.Management {
     `x5u`?: string
   }
 
-@component model `SharedModel365` is (`SharedModel366`)[];
+@component model `WithAdditionalPropertiesPropertiesKeys` is (`WithKtyUseAlg`)[];
   
 
 @js(#{
     `additionalProperties`:false,
-    `properties`:#{`keys`:#{`$ref`:"#/components/schemas/SharedModel365"}},
+    `properties`:#{`keys`:#{`$ref`:"#/components/schemas/WithAdditionalPropertiesPropertiesKeys"}},
     `$types`:#["object","null"]
   }) @hoisted model SharedModel364_h1837 {}
 
 @component union `SharedModel364` {SharedModel364_h1837}
 
-@component model `SharedModel363` {
+@component model `WithOkMessageErrors115` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -8239,10 +8239,10 @@ namespace IyaSts.Api.Management {
     `serialHex`?: string;
     `why`?: string;
     `draft`?: Record<NullOrStringOrBoolean>;
-    `workbench`?: `SharedModel341`
+    `workbench`?: `WithFieldsProfilesPqModes2`
   }
 
-@component model `SharedModel367` {
+@component model `WithOkMessageErrors116` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -8259,7 +8259,7 @@ namespace IyaSts.Api.Management {
     `serialHex`?: string;
     `why`?: string;
     `draft`?: Record<NullOrStringOrBoolean>;
-    `workbench`?: `SharedModel341`
+    `workbench`?: `WithFieldsProfilesPqModes2`
   }
 
 @js(#{
@@ -8268,7 +8268,7 @@ namespace IyaSts.Api.Management {
     `$types`:#["object","null"]
   }) @hoisted model SharedModel368_revocation_h1844 {}
 
-@component model `SharedModel368` {
+@component model `WithOkMessageErrors117` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -8290,50 +8290,50 @@ namespace IyaSts.Api.Management {
     `serialHex`?: string;
     `why`?: string;
     `draft`?: Record<NullOrStringOrBoolean>;
-    `workbench`?: `SharedModel341`
+    `workbench`?: `WithFieldsProfilesPqModes2`
   }
 
-@component model `SharedModel369` {
+@component model `WithOkMessageErrors118` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `why`?: string;
     `draft`?: Record<NullOrStringOrBoolean>;
-    `workbench`?: `SharedModel341`
+    `workbench`?: `WithFieldsProfilesPqModes2`
   }
 
-@component model `SharedModel370` {
+@component model `WithOkMessageErrors119` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `object`?: `SharedModel347`;
+    `object`?: `WithIdCaProfile`;
     `dropped`?: integer;
     `why`?: string;
     `draft`?: Record<NullOrStringOrBoolean>;
-    `workbench`?: `SharedModel341`
+    `workbench`?: `WithFieldsProfilesPqModes2`
   }
 
-@component model `SharedModel371` {
+@component model `WithOkMessageErrors120` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `files`?: (WithNameMimeBase64)[];
     `why`?: string;
     `draft`?: Record<NullOrStringOrBoolean>;
-    `workbench`?: `SharedModel341`
+    `workbench`?: `WithFieldsProfilesPqModes2`
   }
 
-@component model `SharedModel372` {
+@component model `WithOkMessageErrors121` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `root`?: `SharedModel340`;
     `why`?: string;
     `draft`?: Record<NullOrStringOrBoolean>;
-    `workbench`?: `SharedModel341`
+    `workbench`?: `WithFieldsProfilesPqModes2`
   }
 
-@component model `SharedModel373` {
+@component model `WithOkMessageErrors122` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -8341,17 +8341,17 @@ namespace IyaSts.Api.Management {
     `activatesAt`?: NullOrStringOrNumeric;
     `why`?: string;
     `draft`?: Record<NullOrStringOrBoolean>;
-    `workbench`?: `SharedModel341`
+    `workbench`?: `WithFieldsProfilesPqModes2`
   }
 
-@component model `SharedModel374` {
+@component model `WithOkMessageErrors123` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `unpinned`?: (string)[];
     `why`?: string;
     `draft`?: Record<NullOrStringOrBoolean>;
-    `workbench`?: `SharedModel341`
+    `workbench`?: `WithFieldsProfilesPqModes2`
   }
 
 @js(#{
@@ -8372,7 +8372,7 @@ namespace IyaSts.Api.Management {
 
 @component union `SharedModel376` {SharedModel376_h1862}
 
-@component model `SharedModel375` {
+@component model `WithOkMessageErrors124` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -8380,10 +8380,10 @@ namespace IyaSts.Api.Management {
     `already`?: boolean;
     `why`?: string;
     `draft`?: Record<NullOrStringOrBoolean>;
-    `workbench`?: `SharedModel341`
+    `workbench`?: `WithFieldsProfilesPqModes2`
   }
 
-@component model `SharedModel378` {
+@component model `WithSubjectIssuerSerial` {
     `subject`?: NullableString;
     `issuer`?: NullableString;
     `serial`?: NullableString;
@@ -8399,10 +8399,10 @@ namespace IyaSts.Api.Management {
     `unadmittable`?: string
   }
 
-@component model `SharedModel377` is (`SharedModel378`)[];
+@component model `WithOkMessageErrors125` is (`WithSubjectIssuerSerial`)[];
   
 
-@component model `SharedModel379` {
+@component model `WithOkMessageErrors126` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -8414,7 +8414,7 @@ namespace IyaSts.Api.Management {
     `warning`?: string
   }
 
-@component model `SharedModel380` {
+@component model `WithOkMessageErrors127` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -8424,7 +8424,7 @@ namespace IyaSts.Api.Management {
     `removedAnchor`?: WithSubjectFingerprint256Source
   }
 
-@component model `SharedModel381` {
+@component model `WithTrustRealmKerberosRealmEnabled` {
     `trustRealm`?: NullableString;
     `kerberosRealm`?: NullableString;
     `enabled`?: boolean;
@@ -8433,7 +8433,7 @@ namespace IyaSts.Api.Management {
     `served`?: (string)[]
   }
 
-@component model `SharedModel382` {
+@component model `WithOkMessageErrors128` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -8443,14 +8443,14 @@ namespace IyaSts.Api.Management {
     `kvno`?: numeric;
     `etypes`?: (integer)[];
     `sealed`?: boolean;
-    `retained`?: `SharedModel194`;
+    `retained`?: `WithAdditionalPropertiesPropertiesPrincipal`;
     `keytabKvnos`?: (integer)[];
     `keytabFilename`?: string;
     `keytab`?: string;
     `trustRealm`?: NullableString
   }
 
-@component model `SharedModel383` {
+@component model `WithOkMessageErrors129` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -8459,7 +8459,7 @@ namespace IyaSts.Api.Management {
     `trustRealm`?: NullableString
   }
 
-@component model `SharedModel384` {
+@component model `WithOkMessageErrors130` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -8468,7 +8468,7 @@ namespace IyaSts.Api.Management {
     `trustRealm`?: NullableString
   }
 
-@component model `SharedModel385` {
+@component model `WithOkMessageErrors131` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -8481,7 +8481,7 @@ namespace IyaSts.Api.Management {
     `trustRealm`?: NullableString
   }
 
-@component model `SharedModel386` {
+@component model `WithOkMessageErrors132` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -8506,7 +8506,7 @@ namespace IyaSts.Api.Management {
     `problems`?: (string)[]
   }
 
-@component model `SharedModel387` {
+@component model `WithOkMessageErrors133` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -8558,7 +8558,7 @@ namespace IyaSts.Api.Management {
     `$types`:#["object","null"]
   }) @hoisted model SharedModel389_previous_h1889 {}
 
-@component model `SharedModel389` {
+@component model `WithPreviousHeldKvno` {
     `previous`?: SharedModel389_previous_h1889;
     `held`?: boolean;
     `kvno`?: numeric;
@@ -8567,14 +8567,14 @@ namespace IyaSts.Api.Management {
     `principal`?: string
   }
 
-@component model `SharedModel391` {
+@component model `WithKindLevelText` {
     `kind`?: string;
     `level`?: string;
     `text`?: string;
     @js(#{`description`:"What the sentence is filled from."}) `params`?: Record<string>
   }
 
-@component model `SharedModel390` is (`SharedModel391`)[];
+@component model `WithAdditionalPropertiesPropertiesPartnerRealm` is (`WithKindLevelText`)[];
   
 
 @js(#{
@@ -8594,7 +8594,7 @@ namespace IyaSts.Api.Management {
       `forestTrustInfo`:#{`$ref`:"#/components/schemas/SharedModel388"},
       `claimsTransformation`:#{`type`:"string"},
       `boundary`:#{`type`:"string"},
-      `incoming`:#{`$ref`:"#/components/schemas/SharedModel389"},
+      `incoming`:#{`$ref`:"#/components/schemas/WithPreviousHeldKvno"},
       `outgoing`:#{
         `type`:"object",
         `additionalProperties`:false,
@@ -8618,7 +8618,7 @@ namespace IyaSts.Api.Management {
         }
       },
       `lastKeyChangeAt`:#{`type`:#["string","null"]},
-      `health`:#{`$ref`:"#/components/schemas/SharedModel390"}
+      `health`:#{`$ref`:"#/components/schemas/WithAdditionalPropertiesPropertiesPartnerRealm"}
     },
     `$types`:#["object","null"]
   }) @hoisted model SharedModel392_h1891 {}
@@ -8644,7 +8644,7 @@ namespace IyaSts.Api.Management {
 
 @component union `SharedModel394` {SharedModel394_h1892}
 
-@component model `SharedModel393` {
+@component model `WithOkMessageErrors134` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -8659,7 +8659,7 @@ namespace IyaSts.Api.Management {
     `rotated`?: (string)[]
   }
 
-@component model `SharedModel396` {
+@component model `WithAtFamilyKind` {
     `at`?: NullableNumber;
     `family`?: string;
     `kind`?: string;
@@ -8682,10 +8682,10 @@ namespace IyaSts.Api.Management {
     `expiresAtMs`?: NullableNumber
   }
 
-@component model `SharedModel395` is (`SharedModel396`)[];
+@component model `WithSeqOriginAt2` is (`WithAtFamilyKind`)[];
   
 
-@component model `SharedModel398` {
+@component model `WithSeqOriginAt3` {
     `seq`?: numeric;
     `origin`?: string;
     `at`?: NullableNumber;
@@ -8708,10 +8708,10 @@ namespace IyaSts.Api.Management {
     `chainKey`?: string
   }
 
-@component model `SharedModel397` is (`SharedModel398`)[];
+@component model `WithIdKindKey` is (`WithSeqOriginAt3`)[];
   
 
-@component model `SharedModel401` {
+@component model `WithIdKindKey2` {
     `id`?: string;
     `kind`?: string;
     `key`?: string;
@@ -8741,13 +8741,13 @@ namespace IyaSts.Api.Management {
     `dangling`?: integer
   }
 
-@component model `SharedModel400` is (`SharedModel401`)[];
+@component model `WithIdFromTo` is (`WithIdKindKey2`)[];
   
 
-@component model `SharedModel404` is Record<`SharedModel176`>;
+@component model `WithIdFromTo2` is Record<`WithKindCountIdentifiers`>;
   
 
-@component model `SharedModel403` {
+@component model `WithIdFromTo3` {
     `id`?: string;
     `from`?: string;
     `to`?: string;
@@ -8773,10 +8773,10 @@ namespace IyaSts.Api.Management {
     `lastAt`?: NullableNumber;
     `authorizedBy`?: string;
     `reason`?: string;
-    `consumed`?: `SharedModel175`;
-    `produced`?: `SharedModel175`;
-    `consumedFold`?: `SharedModel404`;
-    `producedFold`?: `SharedModel404`;
+    `consumed`?: `WithOkMessageErrors62`;
+    `produced`?: `WithOkMessageErrors62`;
+    `consumedFold`?: `WithIdFromTo2`;
+    `producedFold`?: `WithIdFromTo2`;
     `attribute`?: string;
     `mechanism`?: string;
     `setOn`?: string;
@@ -8793,10 +8793,10 @@ namespace IyaSts.Api.Management {
     `asked`?: boolean
   }
 
-@component model `SharedModel402` is (`SharedModel403`)[];
+@component model `WithSeqAtKind` is (`WithIdFromTo3`)[];
   
 
-@component model `SharedModel406` {
+@component model `WithSeqAtKind2` {
     `seq`?: numeric;
     `at`?: NullableNumber;
     `kind`?: string;
@@ -8812,26 +8812,26 @@ namespace IyaSts.Api.Management {
     `target`?: NullableString
   }
 
-@component model `SharedModel405` is (`SharedModel406`)[];
+@component model `WithRealmIssuerNodes` is (`WithSeqAtKind2`)[];
   
 
-@component model `SharedModel399` {
+@component model `WithRealmIssuerNodes2` {
     `realm`?: WithIdNameIsDefault2;
     `issuer`?: string;
-    `nodes`?: `SharedModel400`;
-    `edges`?: `SharedModel402`;
-    `tokens`?: `SharedModel405`;
+    `nodes`?: `WithIdFromTo`;
+    `edges`?: `WithSeqAtKind`;
+    `tokens`?: `WithRealmIssuerNodes`;
     `tokensLeftOff`?: integer;
     `maxTokenRows`?: integer;
     `acts`?: integer;
     `chains`?: integer;
-    `credentials`?: `SharedModel395`;
+    `credentials`?: `WithSeqOriginAt2`;
     `credentialsOnDelegationLines`?: integer;
     `subject`?: string;
     `counts`?: WithNodesEdgesGrants
   }
 
-@component model `SharedModel408` {
+@component model `WithShapeLabelSublabel` {
     `shape`?: string;
     `label`?: string;
     `sublabel`?: string;
@@ -8841,10 +8841,10 @@ namespace IyaSts.Api.Management {
     `dashed`?: boolean
   }
 
-@component model `SharedModel407` is Record<`SharedModel408`>;
+@component model `WithKeyNamesLabel` is Record<`WithShapeLabelSublabel`>;
   
 
-@component model `SharedModel410` is ({
+@component model `WithKeyNamesLabel2` is ({
     `key`?: string;
     `names`?: (NullableString)[];
     `label`?: string;
@@ -8853,20 +8853,20 @@ namespace IyaSts.Api.Management {
   })[];
   
 
-@component model `SharedModel409` {
+@component model `WithTotalEntriesSlice` {
     `total`?: integer;
-    `entries`?: `SharedModel410`;
+    `entries`?: `WithKeyNamesLabel2`;
     `slice`?: WithMatchedFrom;
     `search`?: string;
     `complete`?: boolean
   }
 
-@component model `SharedModel411` {
+@component model `WithUsersAppsName` {
     `users`?: Record<boolean>;
     `apps`?: Record<{`name`?: string; `dnLabel`?: string}>
   }
 
-@component model `SharedModel413` {
+@component model `WithResourceResourceNameBaseUri` {
     `resource`?: string;
     `resourceName`?: string;
     `baseUri`?: NullableString;
@@ -8877,10 +8877,10 @@ namespace IyaSts.Api.Management {
     `grantedTo`?: (WithIdentifierNameAsked)[]
   }
 
-@component model `SharedModel412` is (`SharedModel413`)[];
+@component model `WithClientClientNamePermissionId` is (`WithResourceResourceNameBaseUri`)[];
   
 
-@component model `SharedModel415` {
+@component model `WithClientClientNamePermissionId2` {
     `client`?: string;
     `clientName`?: string;
     `permissionId`?: string;
@@ -8893,10 +8893,10 @@ namespace IyaSts.Api.Management {
     `asked`?: boolean
   }
 
-@component model `SharedModel414` is (`SharedModel415`)[];
+@component model `WithApplicationsGrantsLines` is (`WithClientClientNamePermissionId2`)[];
   
 
-@component model `SharedModel416` {
+@component model `WithApplicationsGrantsLines2` {
     `applications`?: integer;
     `grants`?: integer;
     `lines`?: integer;
@@ -8909,10 +8909,10 @@ namespace IyaSts.Api.Management {
 
 @hoisted union SharedModel419_ap_h1934 {StringOrNumericOrBooleanEtc, (StringOrNumericOrBooleanEtc)[]}
 
-@component model `SharedModel419` is Record<SharedModel419_ap_h1934>;
+@component model `WithIdentifierDnLabelDn2` is Record<SharedModel419_ap_h1934>;
   
 
-@component model `SharedModel418` {
+@component model `WithIdentifierDnLabelDn3` {
     `identifier`?: string;
     `dnLabel`?: NullableString;
     `dn`?: NullableString;
@@ -8935,19 +8935,19 @@ namespace IyaSts.Api.Management {
     `createdAt`?: NullableString;
     `modifiedAt`?: NullableString;
     `operational`?: (string)[];
-    `attributes`?: `SharedModel419`;
-    `fields`?: `SharedModel419`
+    `attributes`?: `WithIdentifierDnLabelDn2`;
+    `fields`?: `WithIdentifierDnLabelDn2`
   }
 
-@component model `SharedModel417` {
+@component model `WithOkMessageErrors135` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `changed`?: boolean;
-    `application`?: `SharedModel418`
+    `application`?: `WithIdentifierDnLabelDn3`
   }
 
-@component model `SharedModel421` {
+@component model `WithOwnersNameLocalName` {
     `owners`?: (string)[];
     `name`?: string;
     `localName`?: string;
@@ -8968,15 +8968,15 @@ namespace IyaSts.Api.Management {
     `ownerProtected`?: boolean
   }
 
-@component model `SharedModel420` is (`SharedModel421`)[];
+@component model `WithDescriptionOkMessage` is (`WithOwnersNameLocalName`)[];
   
 
 @js(#{
     `x-free-form`:"An exchange or per-right verdict the role PEP passes through from the XACML obligations of the policy that decided it.",
     `description`:"An exchange or per-right verdict the role PEP passes through from the XACML obligations of the policy that decided it."
-  }) @component model `SharedModel422` {}
+  }) @component model `ExchangePerRightVerdictRole` {}
 
-@component model `SharedModel423` {
+@component model `WithOkMessageErrors136` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -8984,7 +8984,7 @@ namespace IyaSts.Api.Management {
     `stillRequired`?: (string)[]
   }
 
-@component model `SharedModel424` {
+@component model `WithOkMessageErrors137` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -8993,7 +8993,7 @@ namespace IyaSts.Api.Management {
     `member`?: string
   }
 
-@component model `SharedModel425` {
+@component model `WithOkMessageErrors138` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -9002,7 +9002,7 @@ namespace IyaSts.Api.Management {
     `gated`?: boolean
   }
 
-@component model `SharedModel426` {
+@component model `WithOkMessageErrors139` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -9012,7 +9012,7 @@ namespace IyaSts.Api.Management {
     `owners`?: (WithDnKindNameEtc4)[]
   }
 
-@component model `SharedModel427` {
+@component model `WithOkMessageErrors140` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -9025,7 +9025,7 @@ namespace IyaSts.Api.Management {
     `account`?: `SharedModel47`
   }
 
-@component model `SharedModel428` {
+@component model `WithNamePrecedenceStored` {
     `name`?: string;
     `precedence`?: integer;
     `stored`?: boolean;
@@ -9051,7 +9051,7 @@ namespace IyaSts.Api.Management {
     `scryptParallelism`?: StringOrNumericOrBooleanEtc8
   }
 
-@component model `SharedModel430` {
+@component model `WithKeyAttributeLabel` {
     `key`?: string;
     `attribute`?: string;
     `label`?: string;
@@ -9072,10 +9072,10 @@ namespace IyaSts.Api.Management {
     `disabledWhy`?: string
   }
 
-@component model `SharedModel429` is (`SharedModel430`)[];
+@component model `WithContainerDefinitionContainerObjectClasses` is (`WithKeyAttributeLabel`)[];
   
 
-@component model `SharedModel431` {
+@component model `WithContainerDefinitionContainerObjectClasses2` {
     `container`?: string;
     `definitionContainer`?: string;
     `objectClasses`?: (WithNameWhat)[];
@@ -9083,33 +9083,33 @@ namespace IyaSts.Api.Management {
     `personAttributes`?: (WithNameWhat)[]
   }
 
-@component model `SharedModel434` {
+@component model `WithApplicationsGroupsPeople` {
     `applications`?: (string)[];
     `groups`?: (string)[];
     `people`?: (string)[];
     `peopleComplete`?: boolean
   }
 
-@component model `SharedModel433` {
+@component model `WithNameDnDescription` {
     `name`?: string;
     `dn`?: string;
     `description`?: string;
     `precedence`?: integer;
     `selectApplications`?: (string)[];
     `selectGroups`?: (string)[];
-    `namedBy`?: `SharedModel434`;
+    `namedBy`?: `WithApplicationsGroupsPeople`;
     `rules`?: (string)[];
-    `fields`?: `SharedModel429`;
+    `fields`?: `WithContainerDefinitionContainerObjectClasses`;
     `registrationAlgorithms`?: (string)[];
     `registrationMode`?: string;
     `mechanisms`?: (string)[];
     `secondFactors`?: (string)[]
   }
 
-@component model `SharedModel432` is (`SharedModel433`)[];
+@component model `WithNamePrecedenceStored2` is (`WithNameDnDescription`)[];
   
 
-@component model `SharedModel435` {
+@component model `WithNamePrecedenceStored3` {
     `name`?: string;
     `precedence`?: integer;
     `stored`?: boolean;
@@ -9145,7 +9145,7 @@ namespace IyaSts.Api.Management {
     `federationPrimary`?: StringOrNumericOrBooleanEtc8
   }
 
-@component model `SharedModel436` {
+@component model `WithNamePrecedenceStored4` {
     `name`?: string;
     `precedence`?: integer;
     `stored`?: boolean;
@@ -9173,7 +9173,7 @@ namespace IyaSts.Api.Management {
     `rotationAlarmFailures`?: StringOrNumericOrBooleanEtc8
   }
 
-@component model `SharedModel437` {
+@component model `WithNamePrecedenceStored5` {
     `name`?: string;
     `precedence`?: integer;
     `stored`?: boolean;
@@ -9212,7 +9212,7 @@ namespace IyaSts.Api.Management {
     `deviceBoundRequired`?: StringOrNumericOrBooleanEtc8
   }
 
-@component model `SharedModel438` {
+@component model `WithNamePrecedenceStored6` {
     `name`?: string;
     `precedence`?: integer;
     `stored`?: boolean;
@@ -9227,7 +9227,7 @@ namespace IyaSts.Api.Management {
     `populatePreferredLanguage`?: StringOrNumericOrBooleanEtc8
   }
 
-@component model `SharedModel439` {
+@component model `WithNamePrecedenceStored7` {
     `name`?: string;
     `precedence`?: integer;
     `stored`?: boolean;
@@ -9242,7 +9242,7 @@ namespace IyaSts.Api.Management {
     `requiredAttributes`?: StringOrNumericOrBooleanEtc8
   }
 
-@component model `SharedModel440` {
+@component model `WithNamePrecedenceStored8` {
     `name`?: string;
     `precedence`?: integer;
     `stored`?: boolean;
@@ -9263,23 +9263,23 @@ namespace IyaSts.Api.Management {
     `noPasskeyFallback`?: StringOrNumericOrBooleanEtc8
   }
 
-@component model `SharedModel441` {
+@component model `WithOkMessageErrors141` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `kind`?: string;
-    `profile`?: `SharedModel428`;
+    `profile`?: `WithNamePrecedenceStored`;
     `rules`?: (string)[];
     `enforced`?: boolean;
     `removed`?: boolean
   }
 
-@component model `SharedModel442` {
+@component model `WithOkMessageErrors142` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `kind`?: string;
-    `profile`?: `SharedModel435`;
+    `profile`?: `WithNamePrecedenceStored3`;
     `rules`?: (string)[];
     `enforced`?: boolean;
     `removed`?: boolean
@@ -9300,7 +9300,7 @@ namespace IyaSts.Api.Management {
 
 @component union `SharedModel444` {SharedModel444_h2124}
 
-@component model `SharedModel443` {
+@component model `WithOkMessageErrors143` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -9311,29 +9311,29 @@ namespace IyaSts.Api.Management {
     `name`?: string
   }
 
-@component model `SharedModel445` {
+@component model `WithOkMessageErrors144` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `kind`?: string;
-    `profile`?: `SharedModel436`;
+    `profile`?: `WithNamePrecedenceStored4`;
     `rules`?: (string)[];
     `enforced`?: boolean;
     `removed`?: boolean
   }
 
-@component model `SharedModel446` {
+@component model `WithOkMessageErrors145` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `kind`?: string;
-    `profile`?: `SharedModel437`;
+    `profile`?: `WithNamePrecedenceStored5`;
     `rules`?: (string)[];
     `enforced`?: boolean;
     `removed`?: boolean
   }
 
-@component model `SharedModel447` {
+@component model `WithOkMessageErrors146` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -9344,23 +9344,23 @@ namespace IyaSts.Api.Management {
     `dn`?: string
   }
 
-@component model `SharedModel448` {
+@component model `WithOkMessageErrors147` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `kind`?: string;
-    `profile`?: `SharedModel438`;
+    `profile`?: `WithNamePrecedenceStored6`;
     `rules`?: (string)[];
     `enforced`?: boolean;
     `removed`?: boolean
   }
 
-@component model `SharedModel449` {
+@component model `WithOkMessageErrors148` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `kind`?: string;
-    `profile`?: `SharedModel439`;
+    `profile`?: `WithNamePrecedenceStored7`;
     `rules`?: (string)[];
     `enforced`?: boolean;
     `removed`?: boolean
@@ -9383,7 +9383,7 @@ namespace IyaSts.Api.Management {
 
 @component union `SharedModel451` {SharedModel451_h2125}
 
-@component model `SharedModel450` {
+@component model `WithOkMessageErrors149` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -9395,30 +9395,30 @@ namespace IyaSts.Api.Management {
     `holders`?: integer
   }
 
-@component model `SharedModel452` {
+@component model `WithOkMessageErrors150` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `kind`?: string;
-    `profile`?: `SharedModel440`;
+    `profile`?: `WithNamePrecedenceStored8`;
     `rules`?: (string)[];
     `enforced`?: boolean;
     `removed`?: boolean
   }
 
-@component model `SharedModel453` {
+@component model `WithOkMessageErrors151` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `changed`?: boolean;
-    `application`?: `SharedModel418`;
+    `application`?: `WithIdentifierDnLabelDn3`;
     `revoked`?: integer;
     `withdrawnAt`?: NullableString;
     `removed`?: integer;
     `dn`?: NullableString
   }
 
-@component model `SharedModel455` {
+@component model `WithAddressListeningError` {
     `address`?: string;
     `listening`?: boolean;
     `error`?: string;
@@ -9432,10 +9432,10 @@ namespace IyaSts.Api.Management {
     `realm`?: string
   }
 
-@component model `SharedModel454` is (`SharedModel455`)[];
+@component model `WithTrustDomainTrustDomainIdX509Keys` is (`WithAddressListeningError`)[];
   
 
-@component model `SharedModel457` {
+@component model `WithTrustDomainTrustDomainIdX509Keys2` {
     `trustDomain`?: string;
     `trustDomainId`?: string;
     `x509Keys`?: integer;
@@ -9450,10 +9450,10 @@ namespace IyaSts.Api.Management {
     `updatedAt`?: NullOrStringOrNumeric
   }
 
-@component model `SharedModel456` is (`SharedModel457`)[];
+@component model `WithIdDnSpiffeId` is (`WithTrustDomainTrustDomainIdX509Keys2`)[];
   
 
-@component model `SharedModel458` {
+@component model `WithIdDnSpiffeId2` {
     `id`?: string;
     `dn`?: string;
     `spiffeId`?: string;
@@ -9479,15 +9479,15 @@ namespace IyaSts.Api.Management {
     `selectorTexts`?: (string)[]
   }
 
-@component model `SharedModel459` {
+@component model `WithOkMessageErrors152` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `id`?: string;
-    `entry`?: `SharedModel458`
+    `entry`?: `WithIdDnSpiffeId2`
   }
 
-@component model `SharedModel460` {
+@component model `WithOkMessageErrors153` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -9495,7 +9495,7 @@ namespace IyaSts.Api.Management {
     `referenceTypes`?: (string)[]
   }
 
-@component model `SharedModel461` {
+@component model `WithIdDnAttestationType` {
     `id`?: string;
     `dn`?: string;
     `attestationType`?: string;
@@ -9511,15 +9511,15 @@ namespace IyaSts.Api.Management {
     `selectorTexts`?: (string)[]
   }
 
-@component model `SharedModel462` {
+@component model `WithOkMessageErrors154` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `id`?: string;
-    `agent`?: `SharedModel461`
+    `agent`?: `WithIdDnAttestationType`
   }
 
-@component model `SharedModel463` {
+@component model `WithOkMessageErrors155` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -9534,7 +9534,7 @@ namespace IyaSts.Api.Management {
     `$types`:#["object","null"]
   }) @hoisted model SharedModel464_entry_h2141 {}
 
-@component model `SharedModel464` {
+@component model `WithIdStatusEntry` {
     `id`?: string;
     `status`?: string;
     `entry`?: SharedModel464_entry_h2141;
@@ -9559,7 +9559,7 @@ namespace IyaSts.Api.Management {
     `$types`:#["object","null"]
   }) @hoisted model SharedModel467_revoked_h2156 {}
 
-@component model `SharedModel467` {
+@component model `WithSerialHexEntryEntryUri` {
     `serialHex`?: string;
     `entry`?: WithKindId;
     `entryUri`?: string;
@@ -9580,21 +9580,21 @@ namespace IyaSts.Api.Management {
     `account`?: NullableString
   }
 
-@component model `SharedModel466` is (`SharedModel467`)[];
+@component model `WithPagingRowsEntry` is (`WithSerialHexEntryEntryUri`)[];
   
 
-@component model `SharedModel465` {`paging`?: `SharedModel27`; `rows`?: `SharedModel466`}
+@component model `WithPagingRowsEntry2` {`paging`?: `WithPagePagesPerPage`; `rows`?: `WithPagingRowsEntry`}
 
-@component model `SharedModel469` {
+@component model `WithEntryEntryUriHostNames` {
     `entry`?: WithKindId;
     `entryUri`?: string;
     `hostNames`?: (string)[]
   }
 
-@component model `SharedModel468` is (`SharedModel469`)[];
+@component model `WithAtOperationOutcome` is (`WithEntryEntryUriHostNames`)[];
   
 
-@component model `SharedModel471` {
+@component model `WithAtOperationOutcome2` {
     `at`?: string;
     `operation`?: string;
     `outcome`?: NullableString;
@@ -9607,10 +9607,10 @@ namespace IyaSts.Api.Management {
     `serialHex`?: NullableString
   }
 
-@component model `SharedModel470` is (`SharedModel471`)[];
+@component model `WithOkMessageErrors156` is (`WithAtOperationOutcome2`)[];
   
 
-@component model `SharedModel472` {
+@component model `WithOkMessageErrors157` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -9624,14 +9624,14 @@ namespace IyaSts.Api.Management {
     `certbot`?: string
   }
 
-@component model `SharedModel473` {
+@component model `WithOkMessageErrors158` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `account`?: `SharedModel464`
+    `account`?: `WithIdStatusEntry`
   }
 
-@component model `SharedModel474` {
+@component model `WithOkMessageErrors159` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -9639,7 +9639,7 @@ namespace IyaSts.Api.Management {
     `reason`?: string
   }
 
-@component model `SharedModel475` {
+@component model `WithOkMessageErrors160` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -9647,13 +9647,13 @@ namespace IyaSts.Api.Management {
     `entryUri`?: string
   }
 
-@component model `SharedModel476` {
+@component model `WithOkMessageErrors161` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `target`?: WithKindId;
     `keyAlg`?: string;
-    `record`?: `SharedModel467`;
+    `record`?: `WithSerialHexEntryEntryUri`;
     `certificatePem`?: string;
     `chainPem`?: (string)[];
     `privateKeyPem`?: string;
@@ -9661,7 +9661,7 @@ namespace IyaSts.Api.Management {
     `why`?: string
   }
 
-@component model `SharedModel477` {
+@component model `WithOkMessageErrors162` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -9674,7 +9674,7 @@ namespace IyaSts.Api.Management {
     `why`?: string
   }
 
-@component model `SharedModel478` {
+@component model `WithOkMessageErrors163` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -9686,7 +9686,7 @@ namespace IyaSts.Api.Management {
     `why`?: string
   }
 
-@component model `SharedModel479` {
+@component model `WithPresentStatusSubject` {
     `present`?: boolean;
     `status`?: string;
     `subject`?: string;
@@ -9699,7 +9699,7 @@ namespace IyaSts.Api.Management {
     `certificatePem`?: string
   }
 
-@component model `SharedModel480` {
+@component model `WithOkMessageErrors164` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -9714,14 +9714,14 @@ namespace IyaSts.Api.Management {
     `hint`?: string
   }
 
-@component model `SharedModel481` {
+@component model `WithOkMessageErrors165` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `ra`?: `SharedModel479`
+    `ra`?: `WithPresentStatusSubject`
   }
 
-@component model `SharedModel482` {
+@component model `WithOkMessageErrors166` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -9730,7 +9730,7 @@ namespace IyaSts.Api.Management {
     `reason`?: string
   }
 
-@component model `SharedModel483` {
+@component model `WithOkMessageErrors167` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -9741,7 +9741,7 @@ namespace IyaSts.Api.Management {
 @js(#{
     `x-free-form`:"A JWK Set, a metadata document, a metadata policy or a constraints object as an administrator gave it or a partner's statement carried it (OpenID Federation 1.1 sections 3, 6): nothing here narrows it further.",
     `description`:"A JWK Set, a metadata document, a metadata policy or a constraints object as an administrator gave it or a partner's statement carried it (OpenID Federation 1.1 sections 3, 6): nothing here narrows it further."
-  }) @component model `SharedModel484` {}
+  }) @component model `JWKSetMetadataDocumentMetadata` {}
 
 @js(#{
     `additionalProperties`:false,
@@ -9758,24 +9758,24 @@ namespace IyaSts.Api.Management {
 
 @component union `SharedModel486` {SharedModel486_h2171}
 
-@component model `SharedModel485` {`crawl`?: `SharedModel486`; `crawlEveryS`?: numeric; `jobOff`?: string}
+@component model `WithCrawlCrawlEverySJobOff` {`crawl`?: `SharedModel486`; `crawlEveryS`?: numeric; `jobOff`?: string}
 
-@component model `SharedModel487` {
+@component model `WithSubjectAnchorExpiresAt` {
     `subject`?: string;
     `anchor`?: string;
     `expiresAt`?: string;
     `chain`?: ({`iss`?: string; `sub`?: string; `exp`?: numeric})[];
-    `metadata`?: `SharedModel484`;
+    `metadata`?: `JWKSetMetadataDocumentMetadata`;
     `trustMarks`?: (NullableString)[]
   }
 
-@component model `SharedModel489` {
+@component model `WithEntityIdJwksMetadata` {
     `entityId`?: string;
-    `jwks`?: `SharedModel484`;
-    `metadata`?: `SharedModel484`;
-    `metadataPolicy`?: `SharedModel484`;
+    `jwks`?: `JWKSetMetadataDocumentMetadata`;
+    `metadata`?: `JWKSetMetadataDocumentMetadata`;
+    `metadataPolicy`?: `JWKSetMetadataDocumentMetadata`;
     `metadataPolicyCrit`?: (string)[];
-    `constraints`?: `SharedModel484`;
+    `constraints`?: `JWKSetMetadataDocumentMetadata`;
     `entityTypes`?: (string)[];
     `intermediate`?: boolean;
     `localRealm`?: NullableString;
@@ -9783,53 +9783,53 @@ namespace IyaSts.Api.Management {
     `updatedAt`?: NullOrStringOrNumeric
   }
 
-@component model `SharedModel488` {
+@component model `WithOkMessageErrors168` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `subordinate`?: `SharedModel489`
+    `subordinate`?: `WithEntityIdJwksMetadata`
   }
 
-@component model `SharedModel490` {
+@component model `WithOkMessageErrors169` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `collection`?: `SharedModel485`
+    `collection`?: `WithCrawlCrawlEverySJobOff`
   }
 
-@component model `SharedModel491` {
+@component model `WithOkMessageErrors170` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `jwks`?: `SharedModel484`
+    `jwks`?: `JWKSetMetadataDocumentMetadata`
   }
 
-@component model `SharedModel492` {
+@component model `WithOkMessageErrors171` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `markType`?: WithTypeLifetimeSLogoUriEtc5
   }
 
-@component model `SharedModel495` {`sub`?: string; `jwks`?: `SharedModel484`}
+@component model `WithSubJwksType` {`sub`?: string; `jwks`?: `JWKSetMetadataDocumentMetadata`}
 
-@component model `SharedModel494` {`type`?: string; `issuers`?: (string)[]; `owner`?: `SharedModel495`}
+@component model `WithTypeIssuersOwner` {`type`?: string; `issuers`?: (string)[]; `owner`?: `WithSubJwksType`}
 
-@component model `SharedModel493` {
+@component model `WithOkMessageErrors172` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `markPolicy`?: `SharedModel494`
+    `markPolicy`?: `WithTypeIssuersOwner`
   }
 
-@component model `SharedModel496` {
+@component model `WithOkMessageErrors173` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `resolution`?: `SharedModel487`
+    `resolution`?: `WithSubjectAnchorExpiresAt`
   }
 
-@component model `SharedModel497` {
+@component model `WithOkMessageErrors174` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -9838,7 +9838,7 @@ namespace IyaSts.Api.Management {
     `state`?: string
   }
 
-@component model `SharedModel499` {
+@component model `WithIdDialectHost` {
     `id`?: string;
     `dialect`?: string;
     `host`?: string;
@@ -9876,11 +9876,11 @@ namespace IyaSts.Api.Management {
 
 @component union `SharedModel500` {SharedModel500_h2180}
 
-@component model `SharedModel498` {
+@component model `WithOkMessageErrors175` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `source`?: `SharedModel499`;
+    `source`?: `WithIdDialectHost`;
     `key`?: string;
     `found`?: boolean;
     `why`?: string;
@@ -9890,7 +9890,7 @@ namespace IyaSts.Api.Management {
     `failures`?: ({`source`?: string; `why`?: string})[]
   }
 
-@component model `SharedModel501` {
+@component model `WithProviderPayloadRegion` {
     `provider`?: string;
     `payload`?: string;
     `region`?: string;
@@ -9912,7 +9912,7 @@ namespace IyaSts.Api.Management {
       `payload`:#{`type`:"string"},
       `usable`:#{`type`:"boolean"},
       `problems`:#{`type`:"array",`items`:#{`type`:"string"}},
-      `location`:#{`$ref`:"#/components/schemas/SharedModel501"},
+      `location`:#{`$ref`:"#/components/schemas/WithProviderPayloadRegion"},
       `credentialSet`:#{`type`:"boolean"},
       `credentialShape`:#{`type`:"string"}
     },
@@ -9921,7 +9921,7 @@ namespace IyaSts.Api.Management {
 
 @component union `SharedModel503` {SharedModel503_h2182}
 
-@component model `SharedModel502` {
+@component model `WithOkMessageErrors176` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -9929,7 +9929,7 @@ namespace IyaSts.Api.Management {
     `version`?: NumericOrStringOrNull
   }
 
-@component model `SharedModel504` {
+@component model `WithKeyObjectProperty` {
     `key`?: string;
     `object`?: string;
     `property`?: string;
@@ -9940,7 +9940,7 @@ namespace IyaSts.Api.Management {
     `description`?: string
   }
 
-@component model `SharedModel505` {
+@component model `WithDnNameKind` {
     `dn`?: string;
     `name`?: string;
     `kind`?: string;
@@ -9952,12 +9952,12 @@ namespace IyaSts.Api.Management {
 @js(#{
     `x-free-form`:"What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them.",
     `description`:"What the AuthZEN caller sent at the denial, bound and relayed: the subject, resource and action objects carry properties of the caller's own naming, and this service states only that it kept them."
-  }) @component model `SharedModel507` {}
+  }) @component model `AuthZENCallerSentDenialBound` {}
 
 @js(#{
     `x-free-form`:"The members of the caller's AuthZEN context that the policy's advice named, each as the request carried it: a policy names them and a caller fills them, so neither key nor value is this service's vocabulary.",
     `description`:"The members of the caller's AuthZEN context that the policy's advice named, each as the request carried it: a policy names them and a caller fills them, so neither key nor value is this service's vocabulary."
-  }) @component model `SharedModel508` {}
+  }) @component model `MembersCallerSAuthZENContext` {}
 
 @js(#{
     `additionalProperties`:false,
@@ -9971,16 +9971,16 @@ namespace IyaSts.Api.Management {
     `$types`:#["object","null"]
   }) @hoisted model SharedModel506_approval_h2186 {}
 
-@component model `SharedModel506` {
+@component model `WithIdStatusRequester` {
     `id`?: string;
     `status`?: string;
     `requester`?: string;
     `client`?: NullableObject26;
     `application`?: NullableString;
-    `subject`?: `SharedModel507`;
-    `action`?: `SharedModel507`;
-    `resource`?: `SharedModel507`;
-    `context`?: `SharedModel508`;
+    `subject`?: `AuthZENCallerSentDenialBound`;
+    `action`?: `AuthZENCallerSentDenialBound`;
+    `resource`?: `AuthZENCallerSentDenialBound`;
+    `context`?: `MembersCallerSAuthZENContext`;
     `emergency`?: boolean;
     `justification`?: string;
     `createdAt`?: numeric;
@@ -9991,33 +9991,33 @@ namespace IyaSts.Api.Management {
     `approvers`?: WithRolesGroupsOwners
   }
 
-@component model `SharedModel509` {
+@component model `WithOkMessageErrors177` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `changed`?: boolean;
     `replaced`?: boolean;
-    `row`?: `SharedModel504`;
+    `row`?: `WithKeyObjectProperty`;
     `removed`?: string
   }
 
-@component model `SharedModel510` {
+@component model `WithOkMessageErrors178` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `changed`?: boolean;
-    `caller`?: `SharedModel505`
+    `caller`?: `WithDnNameKind`
   }
 
-@component model `SharedModel511` {
+@component model `WithOkMessageErrors179` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `changed`?: boolean;
-    `task`?: `SharedModel506`
+    `task`?: `WithIdStatusRequester`
   }
 
-@component model `SharedModel513` {
+@component model `WithIdentifierNameOwnsResources` {
     `identifier`?: string;
     `name`?: string;
     `ownsResources`?: boolean;
@@ -10028,10 +10028,10 @@ namespace IyaSts.Api.Management {
     `pending`?: integer
   }
 
-@component model `SharedModel512` is (`SharedModel513`)[];
+@component model `WithIdNameType` is (`WithIdentifierNameOwnsResources`)[];
   
 
-@component model `SharedModel515` {
+@component model `WithIdNameType2` {
     `id`?: string;
     `name`?: string;
     `type`?: string;
@@ -10042,10 +10042,10 @@ namespace IyaSts.Api.Management {
     `createdAt`?: numeric
   }
 
-@component model `SharedModel514` is (`SharedModel515`)[];
+@component model `WithIdStateOwner` is (`WithIdNameType2`)[];
   
 
-@component model `SharedModel517` {
+@component model `WithIdStateOwner2` {
     `id`?: string;
     `state`?: string;
     `owner`?: string;
@@ -10058,10 +10058,10 @@ namespace IyaSts.Api.Management {
     `expiresAt`?: numeric
   }
 
-@component model `SharedModel516` is (`SharedModel517`)[];
+@component model `WithIdResourceIdScopes` is (`WithIdStateOwner2`)[];
   
 
-@component model `SharedModel518` {
+@component model `WithIdResourceIdScopes2` {
     `id`?: string;
     `resourceId`?: string;
     `scopes`?: (string)[];
@@ -10071,7 +10071,7 @@ namespace IyaSts.Api.Management {
     `askMe`?: boolean
   }
 
-@component model `SharedModel520` {
+@component model `WithAuthenticatedCertificateSubjectCurrent` {
     `authenticated`?: boolean;
     `certificateSubject`?: string;
     `current`?: boolean;
@@ -10109,14 +10109,14 @@ namespace IyaSts.Api.Management {
       `lastAt`:#{`anyOf`:#[#{`type`:"string"},#{`type`:"number"},#{`type`:"null"}]},
       `lastDecision`:#{`type`:#["string","null"]},
       `lastAllowed`:#{`type`:#["boolean","null"]},
-      `remote`:#{`$ref`:"#/components/schemas/SharedModel520"}
+      `remote`:#{`$ref`:"#/components/schemas/WithAuthenticatedCertificateSubjectCurrent"}
     },
     `$types`:#["object","null"]
   }) @hoisted model SharedModel519_h2191 {}
 
 @component union `SharedModel519` {SharedModel519_h2191}
 
-@component model `SharedModel521` {
+@component model `WithOkMessageErrors180` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -10126,7 +10126,7 @@ namespace IyaSts.Api.Management {
     `ownsResources`?: boolean
   }
 
-@component model `SharedModel522` {
+@component model `WithOkMessageErrors181` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -10134,16 +10134,16 @@ namespace IyaSts.Api.Management {
     `revoked`?: integer
   }
 
-@component model `SharedModel523` {
+@component model `WithOkMessageErrors182` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `owner`?: string;
-    `share`?: `SharedModel518`;
+    `share`?: `WithIdResourceIdScopes2`;
     `revoked`?: integer
   }
 
-@component model `SharedModel525` {
+@component model `WithIdOwnerOwnerKind` {
     `id`?: string;
     `owner`?: string;
     `ownerKind`?: string;
@@ -10159,15 +10159,15 @@ namespace IyaSts.Api.Management {
     `expiresAt`?: numeric
   }
 
-@component model `SharedModel524` {
+@component model `WithOkMessageErrors183` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `owner`?: string;
-    `pending`?: `SharedModel525`
+    `pending`?: `WithIdOwnerOwnerKind`
   }
 
-@component model `SharedModel526` {
+@component model `WithNamePostQuantumRequiredPrecedence` {
     `name`?: string;
     `postQuantumRequired`?: string;
     `precedence`?: numeric;
@@ -10175,7 +10175,7 @@ namespace IyaSts.Api.Management {
     `namedByApplications`?: (string)[]
   }
 
-@component model `SharedModel530` {
+@component model `WithAlgorithmCoseAlgPostQuantum` {
     `algorithm`?: string;
     `coseAlg`?: NullableInteger;
     `postQuantum`?: boolean;
@@ -10184,21 +10184,21 @@ namespace IyaSts.Api.Management {
     `model`?: NullableString
   }
 
-@component model `SharedModel529` is (`SharedModel530`)[];
+@component model `WithUsernameDnKind` is (`WithAlgorithmCoseAlgPostQuantum`)[];
   
 
-@component model `SharedModel528` {
+@component model `WithUsernameDnKind2` {
     `username`?: string;
     `dn`?: string;
     `kind`?: string;
     `passkeys`?: integer;
-    `keys`?: `SharedModel529`
+    `keys`?: `WithUsernameDnKind`
   }
 
-@component model `SharedModel527` is (`SharedModel528`)[];
+@component model `WithOkMessageErrors184` is (`WithUsernameDnKind2`)[];
   
 
-@component model `SharedModel531` {
+@component model `WithOkMessageErrors185` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -10209,7 +10209,7 @@ namespace IyaSts.Api.Management {
     `alreadyQueued`?: boolean
   }
 
-@component model `SharedModel533` {
+@component model `WithIdActivityGroups` {
     `id`?: string;
     `activity`?: string;
     `groups`?: (string)[];
@@ -10224,16 +10224,16 @@ namespace IyaSts.Api.Management {
     `endedAt`?: NumericOrStringOrNull
   }
 
-@component model `SharedModel532` {
+@component model `WithOkMessageErrors186` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `started`?: `SharedModel533`
+    `started`?: `WithIdActivityGroups`
   }
 
 @hoisted union SharedModel534_headers_h2205 {string, Record<string>}
 
-@component model `SharedModel534` {
+@component model `WithIdNameType3` {
     `id`?: string;
     `name`?: string;
     `type`?: string;
@@ -10275,20 +10275,20 @@ namespace IyaSts.Api.Management {
     `primed`?: boolean
   }
 
-@component model `SharedModel535` {
+@component model `WithOkMessageErrors187` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `error`?: string;
     `error_description`?: string;
-    `destination`?: `SharedModel534`;
+    `destination`?: `WithIdNameType3`;
     `diagnostic`?: {
       `disposition`?: NullableString;
       `test`?: boolean
     }
   }
 
-@component model `SharedModel537` {
+@component model `WithTypeWidthHeight` {
     `type`?: string;
     `width`?: numeric;
     `height`?: numeric;
@@ -10300,17 +10300,17 @@ namespace IyaSts.Api.Management {
     `src`?: string
   }
 
-@component model `SharedModel536` {
+@component model `WithOkMessageErrors188` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `error`?: string;
     `error_description`?: string;
     `status`?: numeric;
-    `logo`?: `SharedModel537`
+    `logo`?: `WithTypeWidthHeight`
   }
 
-@component model `SharedModel538` {
+@component model `WithOkMessageErrors189` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -10320,7 +10320,7 @@ namespace IyaSts.Api.Management {
     `removed`?: boolean
   }
 
-@component model `SharedModel544` {
+@component model `WithIdRealmClientId3` {
     `id`?: string;
     `realm`?: NullableString;
     `clientId`?: string;
@@ -10343,10 +10343,10 @@ namespace IyaSts.Api.Management {
     `pendingChange`?: boolean
   }
 
-@component model `SharedModel543` is (`SharedModel544`)[];
+@component model `WithCellHereReachable3` is (`WithIdRealmClientId3`)[];
   
 
-@component model `SharedModel542` {
+@component model `WithCellHereReachable4` {
     `cell`?: string;
     `here`?: boolean;
     `reachable`?: boolean;
@@ -10358,12 +10358,12 @@ namespace IyaSts.Api.Management {
     `pausedUntil`?: string;
     `failures`?: numeric;
     `lastReconcileAt`?: string;
-    `queued`?: `SharedModel543`;
-    `retrying`?: `SharedModel543`;
-    `dead`?: `SharedModel543`
+    `queued`?: `WithCellHereReachable3`;
+    `retrying`?: `WithCellHereReachable3`;
+    `dead`?: `WithCellHereReachable3`
   }
 
-@component model `SharedModel541` is (`SharedModel542`)[];
+@component model `WithAdditionalPropertiesPropertiesId` is (`WithCellHereReachable4`)[];
   
 
 @js(#{
@@ -10425,14 +10425,14 @@ namespace IyaSts.Api.Management {
       `failures`:#{`type`:"number"},
       `lastReconcileAt`:#{`type`:"string"},
       `lastReconcile`:#{`$ref`:"#/components/schemas/SharedModel322"},
-      `byCell`:#{`$ref`:"#/components/schemas/SharedModel541"}
+      `byCell`:#{`$ref`:"#/components/schemas/WithAdditionalPropertiesPropertiesId"}
     },
     `$types`:#["object","null"]
   }) @hoisted model SharedModel540_h2215 {}
 
 @component union `SharedModel540` {SharedModel540_h2215}
 
-@component model `SharedModel545` {
+@component model `WithOkPatchFilter` {
     `ok`?: boolean;
     `patch`?: boolean;
     `filter`?: boolean;
@@ -10441,7 +10441,7 @@ namespace IyaSts.Api.Management {
     `why`?: string
   }
 
-@component model `SharedModel539` {
+@component model `WithOkMessageErrors190` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
@@ -10452,7 +10452,7 @@ namespace IyaSts.Api.Management {
       `notAfter`?: NullableString;
       `rootPem`?: NullableString
     };
-    `discovery`?: `SharedModel545`;
+    `discovery`?: `WithOkPatchFilter`;
     `totalResults`?: NullableNumber;
     `count`?: numeric;
     `cells`?: ({
@@ -10471,7 +10471,7 @@ namespace IyaSts.Api.Management {
     `notPushedHere`?: boolean
   }
 
-@component model `SharedModel546` {
+@component model `WithIdClientIdCommand` {
     `id`?: string;
     `clientId`?: string;
     `command`?: string;
@@ -10489,7 +10489,7 @@ namespace IyaSts.Api.Management {
     `finishedAt`?: string
   }
 
-@component model `SharedModel548` {
+@component model `WithIdRealmClientId4` {
     `id`?: string;
     `realm`?: string;
     `clientId`?: string;
@@ -10513,15 +10513,15 @@ namespace IyaSts.Api.Management {
     `awaitingCallback`?: boolean
   }
 
-@component model `SharedModel547` {
+@component model `WithOkMessageErrors191` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `row`?: `SharedModel548`;
-    `run`?: `SharedModel546`
+    `row`?: `WithIdRealmClientId4`;
+    `run`?: `WithIdClientIdCommand`
   }
 
-@component model `SharedModel550` {
+@component model `WithIdRealmClientId5` {
     `id`?: string;
     `realm`?: string;
     `clientId`?: NullableString;
@@ -10563,13 +10563,13 @@ namespace IyaSts.Api.Management {
     }) `body`?: unknown
   }
 
-@component model `SharedModel549` {
+@component model `WithOkMessageErrors192` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `error`?: string;
     `error_description`?: string;
-    `row`?: `SharedModel550`
+    `row`?: `WithIdRealmClientId5`
   }
 
 @endpoint("/admin-api",
@@ -10592,7 +10592,7 @@ namespace IyaSts.Api.Management {
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getIndex`(`responses/200/content/application~1json/schema`: `ApiIndex`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/sts-metadata",
@@ -10681,7 +10681,7 @@ op `getStsMetadata`(`responses/200/content/application~1json/schema`: {
       `id`?: string;
       `label`?: NullableString;
       `description`?: NullableString;
-      @js(#{`description`:"The metadata members this server overrides."}) `overrides`?: Record<`SharedModel2`>;
+      @js(#{`description`:"The metadata members this server overrides."}) `overrides`?: Record<`RFCMetadataMemberSValue`>;
       `removed`?: (string)[];
       `changedAt`?: string;
       `memberCount`?: integer;
@@ -10694,7 +10694,7 @@ op `getStsMetadata`(`responses/200/content/application~1json/schema`: {
     `defaultServerId`?: string;
     `groupOrder`?: (string)[]
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/openapi.json",
@@ -10716,8 +10716,8 @@ op `getStsMetadata`(`responses/200/content/application~1json/schema`: {
     },
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getOpenApi`(`responses/200/content/application~1json/schema`: `SharedModel3`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+op `getOpenApi`(`responses/200/content/application~1json/schema`: `OpenAPI2`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/crypto",
@@ -10740,7 +10740,7 @@ op `getOpenApi`(`responses/200/content/application~1json/schema`: `SharedModel3`
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getCryptoMetadata`(`responses/200/content/application~1json/schema`: `CryptoMetadata`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -10812,7 +10812,7 @@ op `getEncryption`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
       `inKms`?: boolean;
       `kmsKey`?: NullableString;
       `providerKnown`?: boolean;
-      `where`?: `SharedModel5`;
+      `where`?: `WithFromSharedRegion`;
       `providers`?: (WithIdLabel)[];
       `note`?: string
     };
@@ -10853,7 +10853,7 @@ op `getEncryption`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
         `values`?: NullableNumber;
         `countedAt`?: NullableString
       })[];
-      `paging`?: `SharedModel6`;
+      `paging`?: `PageHowManyQueryParameter`;
       `note`?: string
     };
     `algorithmNote`?: string;
@@ -10882,7 +10882,7 @@ op `getEncryption`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
       `failures`?: NullableInteger;
       `lastAt`?: NullableString
     })[];
-    `unclassified`?: `SharedModel7`;
+    `unclassified`?: `WithOkMessageErrors`;
     `accounting`?: {
       `operations`?: integer;
       `encryptions`?: integer;
@@ -10893,13 +10893,13 @@ op `getEncryption`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
       `since`?: string;
       `firstAt`?: NullableString;
       `lastAt`?: NullableString;
-      `labels`?: `SharedModel7`
+      `labels`?: `WithOkMessageErrors`
     };
     `accountingNote`?: string;
     `failuresNote`?: string;
     `noSamples`?: string
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/encryption/rotate-data-keys",
@@ -10938,10 +10938,10 @@ op `rotateDataKeys`(@js(#{`examples`:#[#{`realm`:"no-such-realm",`cls`:"no-such-
       `description`:"A data class, e.g. `minted-rows`; omitted for every class."
     }) `cls`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel9`,
-  `responses/202/content/application~1json/schema`: `SharedModel9`,
-  `responses/400/content/application~1json/schema`: `SharedModel9`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors2`,
+  `responses/202/content/application~1json/schema`: `WithOkMessageErrors2`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors2`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 // NO EXAMPLE, deliberately (#1475): an example is executed, this body has
@@ -10976,10 +10976,10 @@ op `rotateDataKeys`(@js(#{`examples`:#[#{`realm`:"no-such-realm",`cls`:"no-such-
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `reencryptDataKeys`(`requestBody/content/application~1json/schema`: {},
-  `responses/200/content/application~1json/schema`: `SharedModel9`,
-  `responses/202/content/application~1json/schema`: `SharedModel9`,
-  `responses/400/content/application~1json/schema`: `SharedModel9`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors2`,
+  `responses/202/content/application~1json/schema`: `WithOkMessageErrors2`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors2`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/encryption/count-data-keys",
@@ -11011,10 +11011,10 @@ op `reencryptDataKeys`(`requestBody/content/application~1json/schema`: {},
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `countDataKeys`(@js(#{`examples`:#[#{}]}) `requestBody/content/application~1json/schema`: {},
-  `responses/200/content/application~1json/schema`: `SharedModel9`,
-  `responses/202/content/application~1json/schema`: `SharedModel9`,
-  `responses/400/content/application~1json/schema`: `SharedModel9`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors2`,
+  `responses/202/content/application~1json/schema`: `WithOkMessageErrors2`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors2`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 // NO EXAMPLE, deliberately (#1475): executed, and with nothing to name, an
@@ -11049,10 +11049,10 @@ op `countDataKeys`(@js(#{`examples`:#[#{}]}) `requestBody/content/application~1j
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `rotateKek`(`requestBody/content/application~1json/schema`: {},
-  `responses/200/content/application~1json/schema`: `SharedModel9`,
-  `responses/202/content/application~1json/schema`: `SharedModel9`,
-  `responses/400/content/application~1json/schema`: `SharedModel9`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors2`,
+  `responses/202/content/application~1json/schema`: `WithOkMessageErrors2`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors2`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -11199,10 +11199,10 @@ op `getCells`(@js(#{`examples`:#["cell-a"]}) `parameters/0/schema`: string,
     };
     `placement`?: {`relayed`?: integer; `placedHere`?: integer; `rows`?: integer};
     `sessions`?: {`projections`?: integer; `exports`?: integer};
-    `settings`?: `SharedModel10`;
-    `people`?: `SharedModel22`
+    `settings`?: `SettingsPageDrawsDescribedSame`;
+    `people`?: `WithCellDescriptionRefused`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/cells/people",
@@ -11242,8 +11242,8 @@ op `getCells`(@js(#{`examples`:#["cell-a"]}) `parameters/0/schema`: string,
   })
 op `getCellPeople`(@js(#{`minLength`:1,`maxLength`:16,`examples`:#["cell-a"]}) `parameters/0/schema`: string,
   @js(#{`maxLength`:256,`examples`:#["alice"]}) `parameters/1/schema`: string,
-  `responses/200/content/application~1json/schema`: `SharedModel22`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithCellDescriptionRefused`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/cells/rehome",
@@ -11274,9 +11274,9 @@ op `rehomePerson`(@js(#{`examples`:#[#{`username`:"alice",`target`:"cac1"}]}) `r
     @js(#{`minLength`:1,`maxLength`:256}) `username`: string;
     @js(#{`minLength`:1,`maxLength`:16}) `target`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel23`,
-  `responses/400/content/application~1json/schema`: `SharedModel23`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors3`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors3`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/broadcast",
@@ -11309,7 +11309,7 @@ op `getBroadcast`(`responses/200/content/application~1json/schema`: {
     `ready`?: boolean;
     `why`?: string
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/broadcast/send",
@@ -11350,9 +11350,9 @@ op `sendBroadcast`(@js(#{
     @js(#{`description`:"Which applications show it."}) `surfaces`: ("admin-console" | "user-portal" | "report")[];
     @js(#{`description`:"Every realm, not only this one."}) `everyRealm`?: boolean
   },
-  `responses/200/content/application~1json/schema`: `SharedModel24`,
-  `responses/400/content/application~1json/schema`: `SharedModel24`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors4`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors4`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/announcements",
@@ -11385,7 +11385,7 @@ op `sendBroadcast`(@js(#{
   })
 op `getConsoleAnnouncements`(@js(#{`minimum`:0,`examples`:#[0]}) `parameters/0/schema`: integer,
   `responses/200/content/application~1json/schema`: WithNowEveryMsAnnouncements,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/mode",
@@ -11443,7 +11443,7 @@ op `getMode`(`responses/200/content/application~1json/schema`: {
     })[];
     `notYet`?: (WithIdWhat)[]
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/account-api",
@@ -11469,9 +11469,9 @@ op `getAccountApi`(`responses/200/content/application~1json/schema`: {
     @js(#{`description`:"Where the account API publishes the document itself."}) `url`?: string;
     @js(#{`description`:"Paths in the document."}) `paths`?: integer;
     @js(#{`description`:"Operations in the document."}) `operations`?: integer;
-    `document`?: `SharedModel3`
+    `document`?: `OpenAPI2`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -11574,7 +11574,7 @@ op `getListeners`(`responses/200/content/application~1json/schema`: {
       `state`?: string;
       `why`?: NullableString;
       `certificate`?: get_admin_api_listeners_r200_application_json_custom_i_certificate_h2300;
-      `policy`?: `SharedModel25`;
+      `policy`?: `WithMinVersionTls12Tls13Suites`;
       `http`?: {
         `keepAliveTimeoutS`?: numeric;
         `headersTimeoutS`?: numeric;
@@ -11602,15 +11602,15 @@ op `getListeners`(`responses/200/content/application~1json/schema`: {
     `rescue`?: boolean;
     `problem`?: get_admin_api_listeners_r200_application_json_problem_h2302;
     `warnings`?: (string)[];
-    `process`?: `SharedModel25`;
+    `process`?: `WithMinVersionTls12Tls13Suites`;
     `live`?: ({
       `label`?: string;
       `kind`?: string;
       `realm`?: NullableString
     })[];
-    `settings`?: `SharedModel10`
+    `settings`?: `SettingsPageDrawsDescribedSame`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @hoisted model post_admin_api_listeners_set_listeners_b_application_json_value_v1_h2304 is unknown[];
@@ -11664,9 +11664,9 @@ op `setListeners`(@js(#{
   }) `requestBody/content/application~1json/schema`: {
     `value`: post_admin_api_listeners_set_listeners_b_application_json_value_h2305
   },
-  `responses/200/content/application~1json/schema`: `SharedModel26`,
-  `responses/400/content/application~1json/schema`: `SharedModel26`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors5`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors5`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -11719,9 +11719,9 @@ op `setListenerApplications`(@js(#{
     `value`: post_admin_api_listeners_set_applications_b_application_json_value_h2307;
     `confirm`?: post_admin_api_listeners_set_applications_b_application_json_confirm_h2308
   },
-  `responses/200/content/application~1json/schema`: `SharedModel26`,
-  `responses/400/content/application~1json/schema`: `SharedModel26`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors5`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors5`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/vc-status",
@@ -11785,9 +11785,9 @@ op `getCredentialStatus`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schem
       `changedAt`?: NullableNumber;
       `via`?: NullableString
     })[];
-    `rowsPaging`?: `SharedModel27`
+    `rowsPaging`?: `WithPagePagesPerPage`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/vc-status/suspend",
@@ -11817,7 +11817,7 @@ op `getCredentialStatus`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schem
 op `suspendCredential`(@js(#{`examples`:#[#{`idx`:4711}]}) `requestBody/content/application~1json/schema`: WithMinimumDescriptionIdx,
   `responses/200/content/application~1json/schema`: WithOkMessageErrorsEtc5,
   `responses/400/content/application~1json/schema`: WithOkMessageErrorsEtc5,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/vc-status/reinstate",
@@ -11847,7 +11847,7 @@ op `suspendCredential`(@js(#{`examples`:#[#{`idx`:4711}]}) `requestBody/content/
 op `reinstateCredential`(@js(#{`examples`:#[#{`idx`:4711}]}) `requestBody/content/application~1json/schema`: WithMinimumDescriptionIdx,
   `responses/200/content/application~1json/schema`: WithOkMessageErrorsEtc5,
   `responses/400/content/application~1json/schema`: WithOkMessageErrorsEtc5,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/vc-status/revoke",
@@ -11877,7 +11877,7 @@ op `reinstateCredential`(@js(#{`examples`:#[#{`idx`:4711}]}) `requestBody/conten
 op `revokeCredential`(@js(#{`examples`:#[#{`idx`:4711}]}) `requestBody/content/application~1json/schema`: WithMinimumDescriptionIdx,
   `responses/200/content/application~1json/schema`: WithOkMessageErrorsEtc5,
   `responses/400/content/application~1json/schema`: WithOkMessageErrorsEtc5,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/vc-status/publish",
@@ -11907,9 +11907,9 @@ op `revokeCredential`(@js(#{`examples`:#[#{`idx`:4711}]}) `requestBody/content/a
 op `publishStatusList`(@js(#{`examples`:#[#{`purpose`:"revocation"}]}) `requestBody/content/application~1json/schema`: {
     @js(#{`description`:"Which list."}) `purpose`: "revocation" | "suspension"
   },
-  `responses/200/content/application~1json/schema`: `SharedModel28`,
-  `responses/400/content/application~1json/schema`: `SharedModel28`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors6`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors6`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -11949,7 +11949,7 @@ op `publishStatusList`(@js(#{`examples`:#[#{`purpose`:"revocation"}]}) `requestB
         `description`:"The version of each dataset this was read from."
       },
       `stale`:#{`type`:"array",`items`:#{`type`:"string"}},
-      `attributions`:#{`$ref`:"#/components/schemas/SharedModel30"}
+      `attributions`:#{`$ref`:"#/components/schemas/WithAdditionalPropertiesPropertiesDataset"}
     },
     `$types`:#["object","null"]
   }) @hoisted model get_admin_api_risk_r200_application_json_lookup_h2335 {}
@@ -11997,12 +11997,12 @@ op `publishStatusList`(@js(#{`examples`:#[#{`purpose`:"revocation"}]}) `requestB
           }
         }
       },
-      `attributions`:#{`$ref`:"#/components/schemas/SharedModel30"}
+      `attributions`:#{`$ref`:"#/components/schemas/WithAdditionalPropertiesPropertiesDataset"}
     },
     `$types`:#["object","null"]
   }) @hoisted model get_admin_api_risk_r200_application_json_authenticatorLookup_h2336 {}
 
-@hoisted union get_admin_api_risk_r200_application_json_assessments_rows_i_datasets_ap_v1_i_h2360 {string, `SharedModel31`}
+@hoisted union get_admin_api_risk_r200_application_json_assessments_rows_i_datasets_ap_v1_i_h2360 {string, `WithProviderTextUrl`}
 
 @hoisted union get_admin_api_risk_r200_application_json_assessments_rows_i_datasets_ap_h2361 {
     string,
@@ -12191,8 +12191,8 @@ op `getRisk`(`parameters/0/schema`: string,
       `accepted`?: get_admin_api_risk_r200_application_json_providers_i_accepted_h2334;
       `changed`?: boolean
     })[];
-    `acceptances`?: (`SharedModel29`)[];
-    `attributions`?: `SharedModel30`;
+    `acceptances`?: (`WithIdProviderTermsDigest`)[];
+    `attributions`?: `WithAdditionalPropertiesPropertiesDataset`;
     `redistribution`?: string;
     `lookup`?: get_admin_api_risk_r200_application_json_lookup_h2335;
     `authenticatorLookup`?: get_admin_api_risk_r200_application_json_authenticatorLookup_h2336;
@@ -12257,7 +12257,7 @@ op `getRisk`(`parameters/0/schema`: string,
         `feedbackAt`?: numeric
       })[]
     };
-    `assessmentsPaging`?: `SharedModel6`;
+    `assessmentsPaging`?: `PageHowManyQueryParameter`;
     `subjects`?: ({
       `subject`?: string;
       `username`?: NullableString;
@@ -12272,7 +12272,7 @@ op `getRisk`(`parameters/0/schema`: string,
       @js(#{`description`:"Each reaction taken, and the assessment that took it."}) `actions`?: Record<string>;
       `feedback`?: NullableString
     })[];
-    `subjectsPaging`?: `SharedModel6`;
+    `subjectsPaging`?: `PageHowManyQueryParameter`;
     `signals`?: ({`signal`?: string; `factor`?: numeric; `what`?: string})[];
     `assessmentsInDatabase`?: boolean;
     `failures`?: {
@@ -12294,10 +12294,10 @@ op `getRisk`(`parameters/0/schema`: string,
         `errorCode`?: NullableString
       })[]
     };
-    `failuresPaging`?: `SharedModel6`;
-    `settings`?: `SharedModel10`
+    `failuresPaging`?: `PageHowManyQueryParameter`;
+    `settings`?: `SettingsPageDrawsDescribedSame`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -12429,7 +12429,7 @@ op `getRiskMetrics`(@js(#{`examples`:#["24h"]}) `parameters/0/schema`: "1h" | "2
     }
   },
   `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc52,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -12554,7 +12554,7 @@ op `getGeolocation`(@js(#{`examples`:#["7d"]}) `parameters/0/schema`: "live" | "
       `state`?: string;
       `version`?: string
     })[];
-    `attributions`?: `SharedModel30`;
+    `attributions`?: `WithAdditionalPropertiesPropertiesDataset`;
     `outlines`?: {
       `source`?: string;
       `url`?: string;
@@ -12570,7 +12570,7 @@ op `getGeolocation`(@js(#{`examples`:#["7d"]}) `parameters/0/schema`: "live" | "
     `noDataColour`?: string
   },
   `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc52,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/risk/upload",
@@ -12718,13 +12718,13 @@ op `uploadRiskDataset`(@js(#{`examples`:#["iplist.operator-allow"]}) `parameters
   @js(#{`format`:"binary"}) `requestBody/content/application~1octet-stream/schema`: string,
   @js(#{`format`:"binary"}) `requestBody/content/application~1gzip/schema`: string,
   @js(#{`format`:"binary"}) `requestBody/content/application~1zip/schema`: string,
-  `responses/200/content/application~1json/schema`: `SharedModel33`,
-  `responses/202/content/application~1json/schema`: `SharedModel33`,
-  `responses/400/content/application~1json/schema`: `SharedModel33`,
-  `responses/413/content/application~1json/schema`: `SharedModel33`,
-  `responses/415/content/application~1json/schema`: `SharedModel33`,
-  `responses/507/content/application~1json/schema`: `SharedModel33`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors7`,
+  `responses/202/content/application~1json/schema`: `WithOkMessageErrors7`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors7`,
+  `responses/413/content/application~1json/schema`: `WithOkMessageErrors7`,
+  `responses/415/content/application~1json/schema`: `WithOkMessageErrors7`,
+  `responses/507/content/application~1json/schema`: `WithOkMessageErrors7`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/risk/import",
@@ -12775,9 +12775,9 @@ op `importRiskDataset`(@js(#{
       `description`:"Accept the provider's current terms as part of this import. Without it, an import of a provider whose terms nobody has accepted is refused."
     }) `acceptTerms`?: boolean
   },
-  `responses/200/content/application~1json/schema`: `SharedModel33`,
-  `responses/400/content/application~1json/schema`: `SharedModel33`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors7`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors7`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/risk/activate",
@@ -12805,9 +12805,9 @@ op `importRiskDataset`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `activateRiskDataset`(@js(#{`examples`:#[#{`dataset`:"asn",`version`:"2026-09"}]}) `requestBody/content/application~1json/schema`: WithDatasetVersionRealm,
-  `responses/200/content/application~1json/schema`: `SharedModel33`,
-  `responses/400/content/application~1json/schema`: `SharedModel33`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors7`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors7`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/risk/reload",
@@ -12839,9 +12839,9 @@ op `reloadRiskDatasetVersion`(@js(#{
       #{`dataset`:"android.attestation-status",`version`:"sha-e1d9d5eafeea416f"}
     ]
   }) `requestBody/content/application~1json/schema`: WithDatasetVersionRealm,
-  `responses/200/content/application~1json/schema`: `SharedModel33`,
-  `responses/400/content/application~1json/schema`: `SharedModel33`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors7`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors7`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/risk/rollback",
@@ -12872,9 +12872,9 @@ op `rollbackRiskDataset`(@js(#{`examples`:#[#{`dataset`:"asn"}]}) `requestBody/c
     `dataset`: "geo.city" | "geo.country" | "asn" | "iplist.tor-exit" | "iplist.reputation" | "iplist.operator-deny" | "iplist.operator-allow" | "fido.mds3" | "android.attestation-status";
     `realm`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel33`,
-  `responses/400/content/application~1json/schema`: `SharedModel33`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors7`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors7`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/risk/accept-terms",
@@ -12904,9 +12904,9 @@ op `rollbackRiskDataset`(@js(#{`examples`:#[#{`dataset`:"asn"}]}) `requestBody/c
 op `acceptRiskProviderTerms`(@js(#{`examples`:#[#{`provider`:"dbip-lite"}]}) `requestBody/content/application~1json/schema`: {
     `provider`: "dbip-lite" | "ipinfo-lite" | "tor-project" | "firehol" | "operator" | "fido-mds3" | "google-android-attestation"
   },
-  `responses/200/content/application~1json/schema`: `SharedModel33`,
-  `responses/400/content/application~1json/schema`: `SharedModel33`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors7`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors7`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/risk/delete",
@@ -12934,9 +12934,9 @@ op `acceptRiskProviderTerms`(@js(#{`examples`:#[#{`provider`:"dbip-lite"}]}) `re
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `deleteRiskDatasetVersion`(@js(#{`examples`:#[#{`dataset`:"asn",`version`:"2026-08"}]}) `requestBody/content/application~1json/schema`: WithDatasetVersionRealm,
-  `responses/200/content/application~1json/schema`: `SharedModel33`,
-  `responses/400/content/application~1json/schema`: `SharedModel33`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors7`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors7`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -13049,7 +13049,7 @@ op `getMail`(@js(#{`examples`:#["password-reset"]}) `parameters/0/schema`: "pass
       `languages`?: (string)[];
       `builtInLanguages`?: (string)[]
     })[];
-    `settings`?: `SharedModel10`;
+    `settings`?: `SettingsPageDrawsDescribedSame`;
     `template`?: {
       `id`?: string;
       `title`?: string;
@@ -13064,7 +13064,7 @@ op `getMail`(@js(#{`examples`:#["password-reset"]}) `parameters/0/schema`: "pass
     }
   },
   `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc52,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/mail/test",
@@ -13092,9 +13092,9 @@ op `getMail`(@js(#{`examples`:#["password-reset"]}) `parameters/0/schema`: "pass
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `sendMailTestMessage`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/content/application~1json/schema`: WithDescriptionUser,
-  `responses/200/content/application~1json/schema`: `SharedModel34`,
-  `responses/400/content/application~1json/schema`: `SharedModel34`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors8`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors8`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/mail/verify",
@@ -13122,9 +13122,9 @@ op `sendMailTestMessage`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/co
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `sendMailVerificationLink`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/content/application~1json/schema`: WithDescriptionUser,
-  `responses/200/content/application~1json/schema`: `SharedModel34`,
-  `responses/400/content/application~1json/schema`: `SharedModel34`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors8`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors8`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/mail/save-template",
@@ -13168,9 +13168,9 @@ op `saveMailTemplate`(@js(#{
     @js(#{`description`:"The text part."}) `text`: string;
     @js(#{`description`:"The HTML part."}) `html`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel34`,
-  `responses/400/content/application~1json/schema`: `SharedModel34`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors8`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors8`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/mail/reset-template",
@@ -13201,9 +13201,9 @@ op `resetMailTemplate`(@js(#{`examples`:#[#{`template`:"test-message",`lang`:"de
     @js(#{`description`:"The message id."}) `template`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "reset-refused-attempt" | "layout" | "test-message";
     @js(#{`description`:"A BCP 47 tag."}) `lang`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel34`,
-  `responses/400/content/application~1json/schema`: `SharedModel34`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors8`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors8`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -13342,11 +13342,11 @@ op `getMailOutbox`(`parameters/0/schema`: "pending" | "sent" | "captured" | "dea
       `text`?: NullableString;
       `html`?: NullableString
     })[];
-    `rowsPaging`?: `SharedModel6`;
+    `rowsPaging`?: `PageHowManyQueryParameter`;
     `message`?: get_admin_api_mail_outbox_r200_application_json_message_h2428
   },
   `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc52,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/mail/outbox/retry",
@@ -13376,9 +13376,9 @@ op `getMailOutbox`(`parameters/0/schema`: "pending" | "sent" | "captured" | "dea
 op `retryMailDeadLetter`(@js(#{`examples`:#[#{`message`:"no-such-message"}]}) `requestBody/content/application~1json/schema`: {
     @js(#{`description`:"The message id, as the outbox lists it."}) `message`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel34`,
-  `responses/400/content/application~1json/schema`: `SharedModel34`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors8`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors8`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -13390,7 +13390,7 @@ op `retryMailDeadLetter`(@js(#{`examples`:#[#{`message`:"no-such-message"}]}) `r
       `ownerKind`:#{`type`:"string"},
       `label`:#{`type`:"string"},
       `applications`:#{`type`:"array",`items`:#{`type`:"string"}},
-      `keys`:#{`$ref`:"#/components/schemas/SharedModel36"},
+      `keys`:#{`$ref`:"#/components/schemas/WithAdditionalPropertiesPropertiesLevel"},
       `keyKinds`:#{`type`:"array",`items`:#{`type`:"string"}},
       `attestation`:#{
         `type`:"object",
@@ -13591,14 +13591,14 @@ op `getDevices`(`parameters/0/schema`: string,
     `total`?: integer;
     `matched`?: integer;
     @js(#{`description`:"What the list was narrowed by."}) `filter`?: Record<string>;
-    `devices`?: (`SharedModel42`)[];
+    `devices`?: (`WithIdDnOwner`)[];
     `page`?: integer;
     `pages`?: integer;
     `perPage`?: integer;
-    `devicesPaging`?: `SharedModel6`
+    `devicesPaging`?: `PageHowManyQueryParameter`
   },
   `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc52,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/devices/create",
@@ -13655,9 +13655,9 @@ op `createDevice`(@js(#{
     @js(#{`description`:"One key, with keyKind."}) `key`?: unknown;
     `keyLabel`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel43`,
-  `responses/400/content/application~1json/schema`: `SharedModel43`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors9`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors9`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/devices/update",
@@ -13694,9 +13694,9 @@ op `updateDevice`(@js(#{`examples`:#[#{`id`:"no-such-device",`label`:"Kitchen ta
     @js(#{`maxLength`:128}) `os`?: string;
     @js(#{`description`:"The whole list, as on create."}) `applications`?: unknown
   },
-  `responses/200/content/application~1json/schema`: `SharedModel43`,
-  `responses/400/content/application~1json/schema`: `SharedModel43`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors9`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors9`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/devices/remove",
@@ -13724,9 +13724,9 @@ op `updateDevice`(@js(#{`examples`:#[#{`id`:"no-such-device",`label`:"Kitchen ta
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `removeDevice`(@js(#{`examples`:#[#{`id`:"no-such-device"}]}) `requestBody/content/application~1json/schema`: {@js(#{`description`:"The device id."}) `id`: string},
-  `responses/200/content/application~1json/schema`: `SharedModel43`,
-  `responses/400/content/application~1json/schema`: `SharedModel43`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors9`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors9`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/devices/add-key",
@@ -13772,9 +13772,9 @@ op `addDeviceKey`(@js(#{
     @js(#{`description`:"PEM, JWK (object or JSON) or credential id."}) `value`: unknown;
     @js(#{`maxLength`:128}) `label`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel43`,
-  `responses/400/content/application~1json/schema`: `SharedModel43`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors9`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors9`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/devices/remove-key",
@@ -13805,9 +13805,9 @@ op `removeDeviceKey`(@js(#{`examples`:#[#{`id`:"no-such-device",`key`:"k-none"}]
     @js(#{`description`:"The device id."}) `id`: string;
     @js(#{`description`:"The key id or thumbprint."}) `key`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel43`,
-  `responses/400/content/application~1json/schema`: `SharedModel43`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors9`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors9`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/devices/set-compliance",
@@ -13847,9 +13847,9 @@ op `setDeviceCompliance`(@js(#{
     `status`: "compliant" | "not-compliant" | "unknown";
     @js(#{`maxLength`:500}) `reason`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel43`,
-  `responses/400/content/application~1json/schema`: `SharedModel43`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors9`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors9`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/devices/set-status",
@@ -13885,9 +13885,9 @@ op `setDeviceStatus`(@js(#{
     `status`: "active" | "compromised";
     @js(#{`maxLength`:500}) `reason`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel43`,
-  `responses/400/content/application~1json/schema`: `SharedModel43`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors9`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors9`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/device-compliance",
@@ -13932,9 +13932,9 @@ op `reportDeviceCompliance`(@js(#{
       @js(#{`maxLength`:500}) `reason`?: string
     })[]
   },
-  `responses/200/content/application~1json/schema`: `SharedModel44`,
-  `responses/400/content/application~1json/schema`: `SharedModel44`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors11`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors11`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/devices/monitor",
@@ -14010,7 +14010,7 @@ op `getDevicesMonitor`(@js(#{`minimum`:1,`maximum`:366,`examples`:#[30]}) `param
     };
     `complianceSources`?: (string)[]
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/service-accounts",
@@ -14112,12 +14112,12 @@ op `getServiceAccounts`(`parameters/0/schema`: "true",
         `name`?: NullableString
       }
     })[];
-    `paging`?: `SharedModel27`;
+    `paging`?: `WithPagePagesPerPage`;
     `found`?: boolean;
     `account`?: `SharedModel47`
   },
-  `responses/400/content/application~1json/schema`: `SharedModel48`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors12`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/device-registration",
@@ -14140,7 +14140,7 @@ op `getServiceAccounts`(`parameters/0/schema`: "true",
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getDeviceRegistration`(`responses/200/content/application~1json/schema`: {
-    `protocolEndpoints`?: `SharedModel49`;
+    `protocolEndpoints`?: `WithParamsDescriptionParams`;
     `enrolment`?: ({`method`?: string; `built`?: boolean; `what`?: string})[];
     `recognition`?: ({`kind`?: string; `built`?: boolean; `what`?: string})[];
     `ownerKinds`?: (string)[];
@@ -14200,7 +14200,7 @@ op `getDeviceRegistration`(`responses/200/content/application~1json/schema`: {
       `max`?: numeric;
       `purposes`?: (string)[]
     };
-    `settings`?: `SharedModel10`;
+    `settings`?: `SettingsPageDrawsDescribedSame`;
     `androidStatus`?: {
       `active`?: string;
       `loadedAt`?: numeric;
@@ -14213,7 +14213,7 @@ op `getDeviceRegistration`(`responses/200/content/application~1json/schema`: {
       `error`?: string
     }
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @hoisted union get_admin_api_scheduler_r200_application_json_commands_i_obeyedBy_v1_h2468 {
@@ -14352,17 +14352,17 @@ op `getScheduler`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
       `runsOn`?: string;
       `onFront`?: NullableString;
       `nice`?: numeric;
-      `processes`?: `SharedModel51`;
+      `processes`?: `WithAdditionalPropertiesPropertiesRunId`;
       `lastRun`?: `SharedModel54`;
       `running`?: `SharedModel54`;
-      `queued`?: `SharedModel51`;
+      `queued`?: `WithAdditionalPropertiesPropertiesRunId`;
       `nextRunAt`?: NullableString;
       `nextRunInMs`?: NullableNumber;
       `nextRunState`?: string;
       `overdueSince`?: NullableString;
       `overdueWhy`?: NullableString
     })[];
-    `runs`?: `SharedModel51`;
+    `runs`?: `WithAdditionalPropertiesPropertiesRunId`;
     `commands`?: ({
       `id`?: string;
       `command`?: string;
@@ -14378,16 +14378,16 @@ op `getScheduler`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
       `job`?: NullableString;
       `outcome`?: NullableString
     };
-    `runsPaging`?: `SharedModel6`;
-    `jobsPaging`?: `SharedModel6`;
+    `runsPaging`?: `PageHowManyQueryParameter`;
+    `jobsPaging`?: `PageHowManyQueryParameter`;
     `jobIds`?: (string)[];
-    `settings`?: `SharedModel10`;
+    `settings`?: `SettingsPageDrawsDescribedSame`;
     @js(#{`description`:"The run asked for by `?run=`."}) `run`?: string;
     `found`?: boolean;
     `detail`?: `SharedModel54`
   },
   `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc52,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/scheduler/run",
@@ -14429,10 +14429,10 @@ op `runSchedulerJob`(@js(#{`examples`:#[#{`job`:"pki.crl-directory-refresh"}]}) 
       `$open`:true
     }) `params`?: {}
   },
-  `responses/200/content/application~1json/schema`: `SharedModel55`,
-  `responses/202/content/application~1json/schema`: `SharedModel55`,
-  `responses/400/content/application~1json/schema`: `SharedModel55`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors13`,
+  `responses/202/content/application~1json/schema`: `WithOkMessageErrors13`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors13`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/scheduler/step-down",
@@ -14464,10 +14464,10 @@ op `runSchedulerJob`(@js(#{`examples`:#[#{`job`:"pki.crl-directory-refresh"}]}) 
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `stepDownScheduler`(@js(#{`examples`:#[#{}]}) `requestBody/content/application~1json/schema`: {},
-  `responses/200/content/application~1json/schema`: `SharedModel55`,
-  `responses/202/content/application~1json/schema`: `SharedModel55`,
-  `responses/400/content/application~1json/schema`: `SharedModel55`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors13`,
+  `responses/202/content/application~1json/schema`: `WithOkMessageErrors13`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors13`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/caches",
@@ -14518,7 +14518,7 @@ op `getCaches`(`parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `generatedAt`?: string;
     `pid`?: string;
-    `caches`?: (`SharedModel57`)[];
+    `caches`?: (`WithNameTitleDescription`)[];
     `totals`?: {`caches`?: integer; `entries`?: integer; `expired`?: integer};
     `notListed`?: ({`what`?: string; `where`?: string; `why`?: string})[];
     `otherProcesses`?: ({
@@ -14547,7 +14547,7 @@ op `getCaches`(`parameters/0/schema`: string,
     @js(#{`description`:"The one asked for by `?cache=`."}) `cache`?: string;
     `found`?: boolean;
     @js(#{`description`:"The caches there are, when the one asked for is not."}) `known`?: (string)[];
-    `summary`?: `SharedModel57`;
+    `summary`?: `WithNameTitleDescription`;
     `entries`?: ({
       `realm`?: NullableString;
       `key`?: string;
@@ -14557,9 +14557,9 @@ op `getCaches`(`parameters/0/schema`: string,
       `basis`?: string;
       `remaining`?: string
     })[];
-    `entriesPaging`?: `SharedModel6`
+    `entriesPaging`?: `PageHowManyQueryParameter`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -14571,7 +14571,7 @@ op `getCaches`(`parameters/0/schema`: string,
       `mainThread`:#{`type`:"boolean"},
       `scope`:#{`type`:"string"},
       `scopeText`:#{`type`:"string"},
-      `pools`:#{`$ref`:"#/components/schemas/SharedModel58"}
+      `pools`:#{`$ref`:"#/components/schemas/WithClusteredTextIntervalSeconds"}
     },
     `$types`:#["object","null"]
   }) @hoisted model get_admin_api_worker_pools_r200_application_json_nodes_i_view_h2484 {}
@@ -14616,10 +14616,10 @@ op `getWorkerPools`(@js(#{`examples`:#["node-a"]}) `parameters/0/schema`: string
     `mainThread`?: boolean;
     `scope`?: string;
     `scopeText`?: string;
-    `pools`?: `SharedModel58`;
+    `pools`?: `WithClusteredTextIntervalSeconds`;
     `answeredBy`?: WithNodePid;
     `state`?: string;
-    `cluster`?: `SharedModel62`;
+    `cluster`?: `WithClusteredTextIntervalSeconds2`;
     `nodes`?: ({
       `name`?: string;
       `self`?: boolean;
@@ -14647,7 +14647,7 @@ op `getWorkerPools`(@js(#{`examples`:#["node-a"]}) `parameters/0/schema`: string
     }
   },
   `responses/404/content/application~1json/schema`: WithOkErrorsDescriptionEtc4,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -14660,10 +14660,10 @@ op `getWorkerPools`(@js(#{`examples`:#["node-a"]}) `parameters/0/schema`: string
       `scopeText`:#{`type`:"string"},
       `cgroup`:#{`type`:#["string","null"]},
       `cgroupVersion`:#{`type`:#["integer","null"]},
-      `cpu`:#{`$ref`:"#/components/schemas/SharedModel63"},
-      `memory`:#{`$ref`:"#/components/schemas/SharedModel65"},
-      `processes`:#{`$ref`:"#/components/schemas/SharedModel66"},
-      `ecs`:#{`$ref`:"#/components/schemas/SharedModel72"},
+      `cpu`:#{`$ref`:"#/components/schemas/WithAvailableFromEcsCgroupVersion"},
+      `memory`:#{`$ref`:"#/components/schemas/WithAvailableFromEcsCgroupVersion2"},
+      `processes`:#{`$ref`:"#/components/schemas/WithRowsUnansweredDebuggerNote"},
+      `ecs`:#{`$ref`:"#/components/schemas/WithAvailableEndpointDockerId"},
       `machine`:#{
         `type`:"object",
         `additionalProperties`:false,
@@ -14720,10 +14720,10 @@ op `getNodeHealth`(@js(#{`examples`:#["node-a"]}) `parameters/0/schema`: string,
     `scopeText`?: string;
     `cgroup`?: NullableString;
     `cgroupVersion`?: NullableInteger;
-    `cpu`?: `SharedModel63`;
-    `memory`?: `SharedModel65`;
-    `processes`?: `SharedModel66`;
-    `ecs`?: `SharedModel72`;
+    `cpu`?: `WithAvailableFromEcsCgroupVersion`;
+    `memory`?: `WithAvailableFromEcsCgroupVersion2`;
+    `processes`?: `WithRowsUnansweredDebuggerNote`;
+    `ecs`?: `WithAvailableEndpointDockerId`;
     `machine`?: {
       `text`?: string;
       `loadavg`?: (numeric)[];
@@ -14733,7 +14733,7 @@ op `getNodeHealth`(@js(#{`examples`:#["node-a"]}) `parameters/0/schema`: string,
     };
     `answeredBy`?: WithNodePid;
     `state`?: string;
-    `cluster`?: `SharedModel62`;
+    `cluster`?: `WithClusteredTextIntervalSeconds2`;
     `nodes`?: ({
       `name`?: string;
       `self`?: boolean;
@@ -14762,7 +14762,7 @@ op `getNodeHealth`(@js(#{`examples`:#["node-a"]}) `parameters/0/schema`: string,
     }
   },
   `responses/404/content/application~1json/schema`: WithOkErrorsDescriptionEtc4,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{`minimum`:0}) @hoisted scalar post_admin_api_node_health_collect_garbage_b_application_json_target_v1_h2499 extends integer;
@@ -14811,11 +14811,11 @@ op `getNodeHealth`(@js(#{`examples`:#["node-a"]}) `parameters/0/schema`: string,
 op `collectGarbage`(@js(#{`examples`:#[#{`target`:"all"}]}) `requestBody/content/application~1json/schema`: {
     `target`?: post_admin_api_node_health_collect_garbage_b_application_json_target_h2500
   },
-  `responses/200/content/application~1json/schema`: `SharedModel75`,
-  `responses/400/content/application~1json/schema`: `SharedModel75`,
-  `responses/404/content/application~1json/schema`: `SharedModel75`,
-  `responses/500/content/application~1json/schema`: `SharedModel75`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors14`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors14`,
+  `responses/404/content/application~1json/schema`: `WithOkMessageErrors14`,
+  `responses/500/content/application~1json/schema`: `WithOkMessageErrors14`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -14836,7 +14836,7 @@ op `collectGarbage`(@js(#{`examples`:#[#{`target`:"all"}]}) `requestBody/content
           `provider`:#{`type`:"string"},
           `label`:#{`type`:"string"},
           `known`:#{`type`:"boolean"},
-          `where`:#{`$ref`:"#/components/schemas/SharedModel5"},
+          `where`:#{`$ref`:"#/components/schemas/WithFromSharedRegion"},
           `shared`:#{`type`:"boolean"},
           `field`:#{`type`:"string"},
           `providers`:#{
@@ -14907,8 +14907,8 @@ op `getDatabase`(`responses/200/content/application~1json/schema`: {
       `group`?: string;
       `what`?: string;
       `shape`?: string;
-      `row`?: `SharedModel79`;
-      `rows`?: `SharedModel79`;
+      `row`?: `RowsPostgreSQLMariaDBStatisticsView`;
+      `rows`?: `RowsPostgreSQLMariaDBStatisticsView`;
       `count`?: integer;
       `tookMs`?: numeric;
       `error`?: string;
@@ -14931,7 +14931,7 @@ op `getDatabase`(`responses/200/content/application~1json/schema`: {
     `schemaDrift`?: {`declared`?: (string)[]; `present`?: (string)[]; `missing`?: (string)[]};
     `failed`?: (string)[]
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -14977,7 +14977,7 @@ op `getSecrets`(`responses/200/content/application~1json/schema`: {
       `label`?: string;
       `where`?: string;
       `secrets`?: (string)[];
-      `probes`?: `SharedModel80`
+      `probes`?: `WithAdditionalPropertiesPropertiesPage`
     })[];
     `secrets`?: ({
       `secret`?: string;
@@ -14985,7 +14985,7 @@ op `getSecrets`(`responses/200/content/application~1json/schema`: {
       `provider`?: string;
       `label`?: string;
       `known`?: boolean;
-      `where`?: `SharedModel5`;
+      `where`?: `WithFromSharedRegion`;
       `shared`?: boolean;
       `field`?: string;
       `settings`?: {
@@ -14995,7 +14995,7 @@ op `getSecrets`(`responses/200/content/application~1json/schema`: {
       };
       `lastRead`?: get_admin_api_secrets_r200_application_json_secrets_i_lastRead_h2514;
       `store`?: NullableString;
-      `probes`?: `SharedModel80`
+      `probes`?: `WithAdditionalPropertiesPropertiesPage`
     })[];
     `failed`?: (string)[];
     `mode`?: string;
@@ -15010,7 +15010,7 @@ op `getSecrets`(`responses/200/content/application~1json/schema`: {
       `rotating`?: string
     }>
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -15076,9 +15076,9 @@ op `getDebugger`(`responses/200/content/application~1json/schema`: {
       `allowListProblems`?: (string)[];
       `anchorReplacements`?: integer
     };
-    `settings`?: `SharedModel10`
+    `settings`?: `SettingsPageDrawsDescribedSame`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/keys",
@@ -15101,7 +15101,7 @@ op `getDebugger`(`responses/200/content/application~1json/schema`: {
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getKeys`(`responses/200/content/application~1json/schema`: `KeyList`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/keys/history/certificate",
@@ -15142,7 +15142,7 @@ op `getKeys`(`responses/200/content/application~1json/schema`: `KeyList`,
 op `getKeyHistoryCertificate`(@js(#{`examples`:#["jose:RS256"]}) `parameters/0/schema`: string,
   @js(#{`examples`:#["no-such-kid"]}) `parameters/1/schema`: string,
   `responses/200/content/application~1pem-certificate-chain/schema`: string,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -15252,7 +15252,7 @@ op `getKeyHistory`(`parameters/0/schema`: string,
     `errors`?: (string)[];
     @js(#{`description`:"The units there are."}) `units`?: (string)[]
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/keys/export",
@@ -15289,8 +15289,8 @@ op `exportKey`(@js(#{`examples`:#[#{`key`:"sts-rsa",`format`:"pem",`password`:""
     }) `password`?: string
   },
   `responses/200/content/application~1json/schema`: `KeyExport`,
-  `responses/400/content/application~1json/schema`: `SharedModel1`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/400/content/application~1json/schema`: `RefusalFailure`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/keys/rotate",
@@ -15326,10 +15326,10 @@ op `rotateSigningKeys`(@js(#{`examples`:#[#{`units`:#["no-such-unit"]}]}) `reque
       `description`:"Units from GET /admin-api/keys `rotation.units`, e.g. `jose:RS256`."
     }) `units`?: (string)[]
   },
-  `responses/200/content/application~1json/schema`: `SharedModel84`,
-  `responses/202/content/application~1json/schema`: `SharedModel84`,
-  `responses/400/content/application~1json/schema`: `SharedModel84`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors15`,
+  `responses/202/content/application~1json/schema`: `WithOkMessageErrors15`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors15`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/keys/emergency",
@@ -15361,10 +15361,10 @@ op `rotateSigningKeys`(@js(#{`examples`:#[#{`units`:#["no-such-unit"]}]}) `reque
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `rotateSigningKeysEmergency`(@js(#{`examples`:#[#{`confirm`:"compromised",`units`:#["no-such-unit"]}]}) `requestBody/content/application~1json/schema`: {`confirm`: "compromised"; `units`?: (string)[]},
-  `responses/200/content/application~1json/schema`: `SharedModel84`,
-  `responses/202/content/application~1json/schema`: `SharedModel84`,
-  `responses/400/content/application~1json/schema`: `SharedModel84`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors15`,
+  `responses/202/content/application~1json/schema`: `WithOkMessageErrors15`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors15`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/status",
@@ -15387,7 +15387,7 @@ op `rotateSigningKeysEmergency`(@js(#{`examples`:#[#{`confirm`:"compromised",`un
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getStatus`(`responses/200/content/application~1json/schema`: `Status`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -15460,7 +15460,7 @@ op `getMe`(`responses/200/content/application~1json/schema`: {
     };
     `pages`?: (string)[]
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/metrics",
@@ -15483,7 +15483,7 @@ op `getMe`(`responses/200/content/application~1json/schema`: {
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getMetrics`(`responses/200/content/application~1json/schema`: `Metrics`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @hoisted union get_admin_api_users_r200_application_json_h2549 {
@@ -15638,8 +15638,8 @@ op `getUsers`(`parameters/0/schema`: string,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/13/schema`: integer,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/14/schema`: integer,
   `responses/200/content/application~1json/schema`: get_admin_api_users_r200_application_json_h2549,
-  `responses/400/content/application~1json/schema`: `SharedModel48`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors12`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/app-passwords",
@@ -15706,15 +15706,15 @@ op `getUserAppPasswords`(`parameters/0/schema`: string,
     `unreadable`?: boolean;
     `doors`?: (WithIdLabelWhat)[];
     `passwordOnlyDoors`?: WithSecondFactorRefusedAcceptedEtc5;
-    `passwords`?: (`SharedModel85`)[];
+    `passwords`?: (`WithIdNameDoors`)[];
     `page`?: integer;
     `pages`?: integer;
     `perPage`?: integer;
     `total`?: integer;
-    `paging`?: `SharedModel27`
+    `paging`?: `WithPagePagesPerPage`
   },
-  `responses/400/content/application~1json/schema`: `SharedModel48`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors12`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/certificates",
@@ -15752,10 +15752,10 @@ op `getUserCertificates`(@js(#{`examples`:#["alice"]}) `parameters/0/schema`: st
     `errors`?: (string)[];
     `user`?: string;
     `dn`?: string;
-    `certificates`?: `SharedModel86`;
+    `certificates`?: `WithSubjectLabelEnrolledAt`;
     `rule`?: string
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/devices",
@@ -15846,8 +15846,8 @@ op `getUserDevices`(`parameters/0/schema`: string,
       `created`?: NullOrStringOrNumeric2
     })[]
   },
-  `responses/400/content/application~1json/schema`: `SharedModel48`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors12`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/self-issued-subjects",
@@ -15897,10 +15897,10 @@ op `getUserSelfIssuedSubjects`(`parameters/0/schema`: string,
     `signInEnabled`?: boolean;
     `maxPerPerson`?: numeric;
     `subjectSyntaxTypes`?: (string)[];
-    `subjects`?: (`SharedModel89`)[]
+    `subjects`?: (`WithSubjectLabelEnrolledAt2`)[]
   },
-  `responses/400/content/application~1json/schema`: `SharedModel48`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors12`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{`$comb`:"oneOf"}) @hoisted union get_admin_api_users_published_dids_r200_application_json_dids_i_deactivated_h2568 {
@@ -15971,8 +15971,8 @@ op `getUserPublishedDids`(`parameters/0/schema`: string,
       `versions`?: (WithVersionIdCreatedChangeEtc5)[]
     })[]
   },
-  `responses/400/content/application~1json/schema`: `SharedModel48`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors12`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/verifications",
@@ -16041,15 +16041,15 @@ op `getUserVerifications`(`parameters/0/schema`: string,
     `electronicRecordTypes`?: (string)[];
     `attestationTypes`?: (string)[];
     `verifiableClaims`?: (string)[];
-    `verifications`?: (`SharedModel90`)[];
+    `verifications`?: (`WithIdRecordedSource`)[];
     `page`?: integer;
     `pages`?: integer;
     `perPage`?: integer;
     `total`?: integer;
-    `paging`?: `SharedModel27`
+    `paging`?: `WithPagePagesPerPage`
   },
-  `responses/400/content/application~1json/schema`: `SharedModel48`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors12`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/new",
@@ -16094,8 +16094,8 @@ op `getUserVerifications`(`parameters/0/schema`: string,
 op `getNewUserForm`(`parameters/0/schema`: string,
   @js(#{`maxLength`:256,`examples`:#["alice"]}) `parameters/1/schema`: string,
   `responses/200/content/application~1json/schema`: `NewUserForm`,
-  `responses/400/content/application~1json/schema`: `SharedModel48`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors12`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/issue-activation",
@@ -16131,9 +16131,9 @@ op `issueActivationLink`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/co
       `description`:"`mail` (#63) sends the link to the address on the person's entry through the realm's mail transport and does NOT return it: the answer carries `mailedTo`. If it cannot be mailed the link is returned as with `show` (the default), with `mailError` saying why."
     }) `deliver`?: "show" | "mail"
   },
-  `responses/200/content/application~1json/schema`: `SharedModel93`,
-  `responses/400/content/application~1json/schema`: `SharedModel93`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors16`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors16`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -16229,9 +16229,9 @@ op `createUser`(@js(#{
       `description`:"Only when this service is deployed as cells (#98): the id of the cell the person is homed in. Empty means the realm's `cells.homeCell`, or the cell that answers. Another cell's id makes the creation THERE; a cell the service does not have, or one in a jurisdiction the realm does not allow, is refused 400. Ignored in single-cell mode."
     }) `homeCell`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel94`,
-  `responses/400/content/application~1json/schema`: `SharedModel94`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors17`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors17`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/set-password",
@@ -16271,9 +16271,9 @@ op `setUserPassword`(@js(#{`examples`:#[#{`user`:"alice",`generate`:true}]}) `re
       `description`:"Make one up instead — 32 bytes of randomBytes, base64url, the same generator the product-mode bootstrap account uses. It is RETURNED ONCE in `password` and never again."
     }) `generate`?: boolean
   },
-  `responses/200/content/application~1json/schema`: `SharedModel98`,
-  `responses/400/content/application~1json/schema`: `SharedModel98`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors18`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors18`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/clear-totp",
@@ -16301,9 +16301,9 @@ op `setUserPassword`(@js(#{`examples`:#[#{`user`:"alice",`generate`:true}]}) `re
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `clearUserAuthenticatorApp`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/content/application~1json/schema`: WithDescriptionEvidenceDescriptionEtc62,
-  `responses/200/content/application~1json/schema`: `SharedModel99`,
-  `responses/400/content/application~1json/schema`: `SharedModel99`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors19`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors19`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/clear-backup-codes",
@@ -16331,9 +16331,9 @@ op `clearUserAuthenticatorApp`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestB
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `clearUserBackupCodes`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/content/application~1json/schema`: WithDescriptionEvidenceDescriptionEtc62,
-  `responses/200/content/application~1json/schema`: `SharedModel99`,
-  `responses/400/content/application~1json/schema`: `SharedModel99`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors19`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors19`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/clear-email-factor",
@@ -16361,9 +16361,9 @@ op `clearUserBackupCodes`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/c
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `clearUserEmailFactor`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/content/application~1json/schema`: WithDescriptionEvidenceDescriptionEtc62,
-  `responses/200/content/application~1json/schema`: `SharedModel100`,
-  `responses/400/content/application~1json/schema`: `SharedModel100`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors20`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors20`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/set-aud-sub",
@@ -16398,7 +16398,7 @@ op `setUserAudSub`(@js(#{`examples`:#[#{`user`:"alice",`client`:"crm",`value`:"a
   },
   `responses/200/content/application~1json/schema`: WithOkMessageErrors,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/set-mail",
@@ -16432,7 +16432,7 @@ op `setUserMail`(@js(#{`examples`:#[#{`user`:"alice",`mail`:"alice@example.com"}
   },
   `responses/200/content/application~1json/schema`: WithOkMessageErrorsEtc57,
   `responses/400/content/application~1json/schema`: WithOkMessageErrorsEtc57,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{`maxLength`:8}) @hoisted scalar post_admin_api_users_set_pseudonyms_b_application_json_cancelPending_v1_h2578 extends string;
@@ -16477,9 +16477,9 @@ op `setUserPseudonyms`(@js(#{`examples`:#[#{`user`:"alice",`add`:"alice.other"}]
     @js(#{`maxLength`:254,`description`:"A live name to remove."}) `remove`?: string;
     `cancelPending`?: post_admin_api_users_set_pseudonyms_b_application_json_cancelPending_h2579
   },
-  `responses/200/content/application~1json/schema`: `SharedModel101`,
-  `responses/400/content/application~1json/schema`: `SharedModel101`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors21`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors21`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/set-attribute",
@@ -16520,9 +16520,9 @@ op `setUserAttribute`(@js(#{
       `description`:"The one value it will hold; empty removes it."
     }) `value`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel102`,
-  `responses/400/content/application~1json/schema`: `SharedModel102`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors22`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors22`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/add-attribute",
@@ -16560,9 +16560,9 @@ op `addUserAttributeValue`(@js(#{
     }) `attribute`: string;
     @js(#{`maxLength`:1024,`description`:"The value to add."}) `value`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel102`,
-  `responses/400/content/application~1json/schema`: `SharedModel102`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors22`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors22`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/remove-attribute",
@@ -16600,9 +16600,9 @@ op `removeUserAttributeValue`(@js(#{
     }) `attribute`: string;
     @js(#{`maxLength`:1024,`description`:"The value to remove."}) `value`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel102`,
-  `responses/400/content/application~1json/schema`: `SharedModel102`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors22`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors22`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/update-fields",
@@ -16653,9 +16653,9 @@ op `updateUserFields`(@js(#{
     }) `fields`?: {};
     `present`?: Shape11
   },
-  `responses/200/content/application~1json/schema`: `SharedModel103`,
-  `responses/400/content/application~1json/schema`: `SharedModel103`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors23`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors23`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/reset-password",
@@ -16689,9 +16689,9 @@ op `resetUserPassword`(@js(#{`examples`:#[#{`user`:"alice"},#{`user`:"alice",`co
       `description`:"The reset is BECAUSE a credential was compromised: RISC `credential-compromise` (`password`) is sent as well (#146)."
     }) `compromised`?: boolean
   },
-  `responses/200/content/application~1json/schema`: `SharedModel104`,
-  `responses/400/content/application~1json/schema`: `SharedModel104`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors24`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors24`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/issue-password-reset",
@@ -16728,9 +16728,9 @@ op `issuePasswordResetLink`(@js(#{`examples`:#[#{`user`:"alice"},#{`user`:"alice
       `description`:"`mail` (#63) sends the link to the address on the person's entry through the realm's mail transport and does NOT return it: the answer carries `mailedTo`. If it cannot be mailed the link is returned as with `show` (the default), with `mailError` saying why."
     }) `deliver`?: "show" | "mail"
   },
-  `responses/200/content/application~1json/schema`: `SharedModel105`,
-  `responses/400/content/application~1json/schema`: `SharedModel105`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors25`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors25`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/disable-primary-keys",
@@ -16758,9 +16758,9 @@ op `issuePasswordResetLink`(@js(#{`examples`:#[#{`user`:"alice"},#{`user`:"alice
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `disableUserPasskeys`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/content/application~1json/schema`: WithDescriptionUserDescriptionEtc4,
-  `responses/200/content/application~1json/schema`: `SharedModel106`,
-  `responses/400/content/application~1json/schema`: `SharedModel106`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors26`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors26`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/disable-mfa",
@@ -16788,9 +16788,9 @@ op `disableUserPasskeys`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/co
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `disableUserSecondFactors`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/content/application~1json/schema`: WithDescriptionUserDescriptionEtc4,
-  `responses/200/content/application~1json/schema`: `SharedModel107`,
-  `responses/400/content/application~1json/schema`: `SharedModel107`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors27`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors27`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/require-mfa",
@@ -16818,9 +16818,9 @@ op `disableUserSecondFactors`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBo
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `requireUserSecondFactor`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/content/application~1json/schema`: WithDescriptionUserDescriptionEtc4,
-  `responses/200/content/application~1json/schema`: `SharedModel110`,
-  `responses/400/content/application~1json/schema`: `SharedModel110`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors28`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors28`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/stop-requiring-mfa",
@@ -16848,9 +16848,9 @@ op `requireUserSecondFactor`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBod
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `stopRequiringUserSecondFactor`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/content/application~1json/schema`: WithDescriptionUserDescriptionEtc4,
-  `responses/200/content/application~1json/schema`: `SharedModel110`,
-  `responses/400/content/application~1json/schema`: `SharedModel110`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors28`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors28`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -16903,9 +16903,9 @@ op `setUserServiceAccount`(@js(#{
       `description`:"The secret's name or path at the destination; it must already exist there."
     }) `secretName`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel111`,
-  `responses/400/content/application~1json/schema`: `SharedModel111`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors29`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors29`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/add-service-account-owner",
@@ -16941,9 +16941,9 @@ op `addServiceAccountOwner`(@js(#{
     @js(#{`description`:"Accepted for `user`."}) `username`?: string;
     @js(#{`description`:"The person or group to add."}) `owner`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel112`,
-  `responses/400/content/application~1json/schema`: `SharedModel112`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors30`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors30`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/remove-service-account-owner",
@@ -16977,9 +16977,9 @@ op `removeServiceAccountOwner`(@js(#{
     @js(#{`description`:"Accepted for `user`."}) `username`?: string;
     @js(#{`description`:"The owner's DN."}) `owner`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel112`,
-  `responses/400/content/application~1json/schema`: `SharedModel112`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors30`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors30`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/set-service-account-destination",
@@ -17020,9 +17020,9 @@ op `setServiceAccountDestination`(@js(#{
     @js(#{`description`:"The destination's DN, or empty."}) `destination`?: string;
     @js(#{`description`:"The secret's name or path there, or empty."}) `secretName`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel112`,
-  `responses/400/content/application~1json/schema`: `SharedModel112`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors30`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors30`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/rotate-password",
@@ -17053,9 +17053,9 @@ op `rotateServiceAccountPassword`(@js(#{`examples`:#[#{`user`:"svc-backup"}]}) `
     @js(#{`description`:"The service account, as /admin-api/users names it."}) `user`: string;
     @js(#{`description`:"Accepted for `user`."}) `username`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel113`,
-  `responses/400/content/application~1json/schema`: `SharedModel113`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors31`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors31`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/set-not-delegated",
@@ -17087,9 +17087,9 @@ op `setUserNotDelegated`(@js(#{`examples`:#[#{`user`:"alice",`value`:true}]}) `r
     @js(#{`description`:"Accepted for `user`."}) `username`?: string;
     @js(#{`description`:"true sets the flag (the default), false clears it."}) `value`?: boolean
   },
-  `responses/200/content/application~1json/schema`: `SharedModel114`,
-  `responses/400/content/application~1json/schema`: `SharedModel114`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors32`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors32`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/set-may-act",
@@ -17123,9 +17123,9 @@ op `setUserMayAct`(@js(#{
     @js(#{`description`:"Accepted for `user`."}) `username`?: string;
     @js(#{`description`:"The DN of the person or application; empty clears it."}) `delegate`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel115`,
-  `responses/400/content/application~1json/schema`: `SharedModel115`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors33`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors33`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -17170,9 +17170,9 @@ op `setUserDelegationSemantics`(@js(#{
     `semantics`?: post_admin_api_users_set_delegation_semantics_b_application_json_semantics_h2582;
     @js(#{`description`:"The default; left out, it is cleared."}) `default`?: "delegation" | "impersonation"
   },
-  `responses/200/content/application~1json/schema`: `SharedModel116`,
-  `responses/400/content/application~1json/schema`: `SharedModel116`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors34`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors34`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/answer-ciba-request",
@@ -17206,9 +17206,9 @@ op `answerUserCibaRequest`(@js(#{`examples`:#[#{`user`:"alice",`id`:"auth-req-id
     @js(#{`description`:"true approves, false denies."}) `approve`: boolean;
     @js(#{`description`:"The level the approval is recorded as reaching."}) `acr`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel117`,
-  `responses/400/content/application~1json/schema`: `SharedModel117`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors35`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors35`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/remove-device",
@@ -17242,9 +17242,9 @@ op `removeUserDevice`(@js(#{
     @js(#{`description`:"Accepted for `user`."}) `username`?: string;
     @js(#{`description`:"The device's id, from GET /admin-api/users/devices."}) `id`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel118`,
-  `responses/400/content/application~1json/schema`: `SharedModel118`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors36`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors36`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/add-certificate",
@@ -17283,9 +17283,9 @@ op `addUserCertificate`(@js(#{
     @js(#{`description`:"Accepted for `user`."}) `username`?: string;
     @js(#{`description`:"The leaf, as one PEM block or base64 DER."}) `certificate`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel119`,
-  `responses/400/content/application~1json/schema`: `SharedModel119`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors37`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors37`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/remove-certificate",
@@ -17324,9 +17324,9 @@ op `removeUserCertificate`(@js(#{
     @js(#{`description`:"Accepted for `user`."}) `username`?: string;
     @js(#{`description`:"The SHA-256 of the certificate's DER, hex."}) `sha256`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel119`,
-  `responses/400/content/application~1json/schema`: `SharedModel119`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors37`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors37`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/issue-signing-certificate",
@@ -17371,9 +17371,9 @@ op `issueUserSigningCertificate`(@js(#{
     @js(#{`maxLength`:40}) `label`?: string;
     @js(#{`minimum`:1}) `days`?: integer
   },
-  `responses/200/content/application~1json/schema`: `SharedModel120`,
-  `responses/400/content/application~1json/schema`: `SharedModel120`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors38`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors38`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/revoke-signing-certificate",
@@ -17408,9 +17408,9 @@ op `revokeUserSigningCertificate`(@js(#{
     `serialHex`: string;
     `reason`?: "cessationOfOperation" | "keyCompromise"
   },
-  `responses/200/content/application~1json/schema`: `SharedModel126`,
-  `responses/400/content/application~1json/schema`: `SharedModel126`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors39`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors39`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/enrol-self-issued-subject",
@@ -17451,9 +17451,9 @@ op `enrolUserSelfIssuedSubject`(@js(#{
     @js(#{`description`:"The DID, thumbprint or JWK."}) `subject`: string;
     @js(#{`description`:"A name for it, at most 64 characters."}) `label`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel129`,
-  `responses/400/content/application~1json/schema`: `SharedModel129`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors40`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors40`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/remove-self-issued-subject",
@@ -17492,9 +17492,9 @@ op `removeUserSelfIssuedSubject`(@js(#{
     @js(#{`description`:"Accepted for `user`."}) `username`?: string;
     @js(#{`description`:"The subject, as listed."}) `subject`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel118`,
-  `responses/400/content/application~1json/schema`: `SharedModel118`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors36`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors36`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/set-preferred-self-issued-subject",
@@ -17533,9 +17533,9 @@ op `setUserPreferredSelfIssuedSubject`(@js(#{
     @js(#{`description`:"Accepted for `user`."}) `username`?: string;
     @js(#{`description`:"The DID, as listed; empty or absent clears the mark."}) `subject`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel130`,
-  `responses/400/content/application~1json/schema`: `SharedModel130`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors41`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors41`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/deactivate-published-did",
@@ -17573,9 +17573,9 @@ op `deactivateUserPublishedDid`(@js(#{
       `description`:"The DID, or its random id (`rid`), as GET /admin-api/users/published-dids lists it."
     }) `did`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel131`,
-  `responses/400/content/application~1json/schema`: `SharedModel131`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors42`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors42`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/record-verification",
@@ -17632,9 +17632,9 @@ op `recordUserVerification`(@js(#{
       `description`:"The claims it covered, from claims_in_verified_claims_supported."
     }) `claims`: ("name" | "given_name" | "family_name" | "middle_name" | "birthdate" | "gender" | "address" | "email" | "phone_number" | "place_of_birth" | "nationalities" | "birth_family_name" | "birth_given_name" | "birth_middle_name" | "salutation" | "title" | "msisdn" | "also_known_as")[]
   },
-  `responses/200/content/application~1json/schema`: `SharedModel132`,
-  `responses/400/content/application~1json/schema`: `SharedModel132`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors43`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors43`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/remove-verification",
@@ -17670,9 +17670,9 @@ op `removeUserVerification`(@js(#{
       `description`:"The verification's id, from GET /admin-api/users/verifications."
     }) `id`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel118`,
-  `responses/400/content/application~1json/schema`: `SharedModel118`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors36`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors36`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/disable",
@@ -17712,9 +17712,9 @@ op `disableUserAccount`(@js(#{
       `description`:"RISC account-disabled's `reason` (section 2.2), sent to receivers; omitted when not given (#146)."
     }) `riscReason`?: "hijacking" | "bulk-account"
   },
-  `responses/200/content/application~1json/schema`: `SharedModel133`,
-  `responses/400/content/application~1json/schema`: `SharedModel133`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors44`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors44`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/enable",
@@ -17746,9 +17746,9 @@ op `enableUserAccount`(@js(#{`examples`:#[#{`user`:"mallory"}]}) `requestBody/co
     @js(#{`description`:"Accepted for `user`."}) `username`?: string;
     @js(#{`description`:"Recorded on the audit row."}) `reason`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel133`,
-  `responses/400/content/application~1json/schema`: `SharedModel133`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors44`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors44`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/federation-link",
@@ -17790,9 +17790,9 @@ op `linkUserFederation`(@js(#{
       `description`:"The partner's entity ID or `iss`; the relationship's fedPeer when omitted, and refused if it differs from it."
     }) `issuer`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel137`,
-  `responses/400/content/application~1json/schema`: `SharedModel137`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors45`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors45`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/federation-unlink",
@@ -17833,9 +17833,9 @@ op `unlinkUserFederation`(@js(#{
       `description`:"Instead of `link`; the relationship's fedPeer when omitted."
     }) `issuer`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel137`,
-  `responses/400/content/application~1json/schema`: `SharedModel137`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors45`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors45`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/create-app-password",
@@ -17872,9 +17872,9 @@ op `createUserAppPassword`(@js(#{
     }) `name`: string;
     @js(#{`description`:"The doors it is accepted at. At least one."}) `doors`: ("ldap" | "wstrust" | "scim" | "ssf" | "est")[]
   },
-  `responses/200/content/application~1json/schema`: `SharedModel138`,
-  `responses/400/content/application~1json/schema`: `SharedModel138`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors46`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors46`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/revoke-app-password",
@@ -17906,9 +17906,9 @@ op `revokeUserAppPassword`(@js(#{`examples`:#[#{`user`:"alice",`id`:"K7QD"}]}) `
     @js(#{`description`:"Accepted for `user`."}) `username`?: string;
     @js(#{`description`:"The app password's public id."}) `id`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel139`,
-  `responses/400/content/application~1json/schema`: `SharedModel139`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors47`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors47`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/begin-passkey-upgrade",
@@ -17936,9 +17936,9 @@ op `revokeUserAppPassword`(@js(#{`examples`:#[#{`user`:"alice",`id`:"K7QD"}]}) `
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `beginUserPasskeyUpgrade`(@js(#{`examples`:#[#{`user`:"no-such-person",`credentialId`:"no-such-credential"}]}) `requestBody/content/application~1json/schema`: {`user`: string; `credentialId`: string},
-  `responses/200/content/application~1json/schema`: `SharedModel140`,
-  `responses/400/content/application~1json/schema`: `SharedModel140`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors48`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors48`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/prove-passkey-upgrade",
@@ -17966,9 +17966,9 @@ op `beginUserPasskeyUpgrade`(@js(#{`examples`:#[#{`user`:"no-such-person",`crede
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `proveUserPasskeyUpgrade`(@js(#{`examples`:#[#{`user`:"no-such-person",`upgradeId`:"no-such-upgrade",`credential`:"{}"}]}) `requestBody/content/application~1json/schema`: WithUserUpgradeIdMaxLengthEtc4,
-  `responses/200/content/application~1json/schema`: `SharedModel142`,
-  `responses/400/content/application~1json/schema`: `SharedModel142`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors49`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors49`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/finish-passkey-upgrade",
@@ -17996,9 +17996,9 @@ op `proveUserPasskeyUpgrade`(@js(#{`examples`:#[#{`user`:"no-such-person",`upgra
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `finishUserPasskeyUpgrade`(@js(#{`examples`:#[#{`user`:"no-such-person",`upgradeId`:"no-such-upgrade",`credential`:"{}"}]}) `requestBody/content/application~1json/schema`: WithUserUpgradeIdMaxLengthEtc4,
-  `responses/200/content/application~1json/schema`: `SharedModel145`,
-  `responses/400/content/application~1json/schema`: `SharedModel145`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors50`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors50`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/cancel-passkey-upgrade",
@@ -18028,7 +18028,7 @@ op `finishUserPasskeyUpgrade`(@js(#{`examples`:#[#{`user`:"no-such-person",`upgr
 op `cancelUserPasskeyUpgrade`(@js(#{`examples`:#[#{`user`:"no-such-person"}]}) `requestBody/content/application~1json/schema`: {`user`: string},
   `responses/200/content/application~1json/schema`: WithOkMessageErrors,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/clear-key",
@@ -18061,9 +18061,9 @@ op `clearUserSecurityKey`(@js(#{`examples`:#[#{`user`:"alice",`credentialId`:"q1
     @js(#{`description`:"Accepted for `user`."}) `username`?: string;
     @js(#{`description`:"base64url, as WebAuthn produced it."}) `credentialId`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel99`,
-  `responses/400/content/application~1json/schema`: `SharedModel99`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors19`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors19`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/rename-key",
@@ -18103,7 +18103,7 @@ op `renameUserPasskey`(@js(#{
   },
   `responses/200/content/application~1json/schema`: WithOkMessageErrorsEtc45,
   `responses/400/content/application~1json/schema`: WithOkMessageErrorsEtc45,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/begin-passkey-enrolment",
@@ -18143,9 +18143,9 @@ op `beginUserPasskeyEnrolment`(@js(#{`examples`:#[#{`user`:"alice",`kind`:"secur
       `description`:"Which kind of authenticator to ask for; the realm's attachment setting decides either way."
     }) `kind`?: "passkey" | "security-key"
   },
-  `responses/200/content/application~1json/schema`: `SharedModel146`,
-  `responses/400/content/application~1json/schema`: `SharedModel146`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors51`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors51`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/users/finish-passkey-enrolment",
@@ -18189,9 +18189,9 @@ op `finishUserPasskeyEnrolment`(@js(#{
       `description`:"The browser's registration as JSON: `id`, `rawId`, `type`, `authenticatorAttachment`, `clientExtensionResults` and `response` (`clientDataJSON`, `attestationObject`, `transports`), base64url — or `{ error, message }` where the browser refused."
     }) `credential`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel147`,
-  `responses/400/content/application~1json/schema`: `SharedModel147`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors52`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors52`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/sessions",
@@ -18260,8 +18260,8 @@ op `getSessions`(`parameters/0/schema`: string,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/3/schema`: integer,
   @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/4/schema`: integer,
   `responses/200/content/application~1json/schema`: `SessionList`,
-  `responses/400/content/application~1json/schema`: `SharedModel48`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors12`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/sessions/revoke",
@@ -18296,9 +18296,9 @@ op `revokeSession`(@js(#{`examples`:#[#{`key`:"alice",`select`:"session:8mJ2b1u0
       `description`:"Which session, in the form the list gives it as `id`: `session:…`, `ldap:…` or `krb5:…@REALM`. It is the identifier POST /admin-api/logout/selective takes too, because both go through one termination."
     }) `select`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel148`,
-  `responses/400/content/application~1json/schema`: `SharedModel148`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors53`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors53`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/logout",
@@ -18433,7 +18433,7 @@ op `getLiveSessions`(`parameters/0/schema`: string,
       `why`?: string;
       `sessionId`?: string
     })[];
-    `paging`?: `SharedModel27`;
+    `paging`?: `WithPagePagesPerPage`;
     `family`?: string;
     `backchannelDeliveries`?: ({
       `id`?: string;
@@ -18461,7 +18461,7 @@ op `getLiveSessions`(`parameters/0/schema`: string,
       `trigger`?: string;
       `encrypted`?: string
     })[];
-    `backchannelDeliveriesPaging`?: `SharedModel27`;
+    `backchannelDeliveriesPaging`?: `WithPagePagesPerPage`;
     `backchannelCounts`?: Record<numeric>;
     `deliveryState`?: string;
     `deliveryq`?: string;
@@ -18470,8 +18470,8 @@ op `getLiveSessions`(`parameters/0/schema`: string,
     `kerberosRealm`?: string;
     `opensTestControls`?: boolean
   },
-  `responses/400/content/application~1json/schema`: `SharedModel48`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors12`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/logout/global",
@@ -18503,9 +18503,9 @@ op `globalLogout`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/content/a
       `description`:"The identity to sign out, as typed. Normalised the way the GET normalises one."
     }) `user`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel148`,
-  `responses/400/content/application~1json/schema`: `SharedModel148`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors53`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors53`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/logout/end",
@@ -18536,9 +18536,9 @@ op `endLiveSessions`(@js(#{`examples`:#[#{`user`:"alice",`select`:#["session:8Qk
     @js(#{`description`:"The identity to act on."}) `user`: string;
     @js(#{`description`:"Row ids from `GET /admin-api/logout?user=`."}) `select`: (string)[]
   },
-  `responses/200/content/application~1json/schema`: `SharedModel148`,
-  `responses/400/content/application~1json/schema`: `SharedModel148`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors53`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors53`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/logout/retry-backchannel",
@@ -18568,9 +18568,9 @@ op `endLiveSessions`(@js(#{`examples`:#[#{`user`:"alice",`select`:#["session:8Qk
 op `retryBackchannelDelivery`(@js(#{`examples`:#[#{`delivery`:"no-such-delivery"}]}) `requestBody/content/application~1json/schema`: {
     @js(#{`description`:"The delivery's `id`, from `backchannelDeliveries`."}) `delivery`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel160`,
-  `responses/400/content/application~1json/schema`: `SharedModel160`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors54`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors54`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/logout/restore-token",
@@ -18603,7 +18603,7 @@ op `restoreLoggedOutToken`(@js(#{`examples`:#[#{`user`:"alice",`jti`:"A-Rz5JpfK0
   },
   `responses/200/content/application~1json/schema`: WithOkMessageErrorsEtc42,
   `responses/400/content/application~1json/schema`: WithOkMessageErrorsEtc42,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/logout/restore-kerberos",
@@ -18635,7 +18635,7 @@ op `clearKerberosSignOut`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/c
   },
   `responses/200/content/application~1json/schema`: WithOkMessageErrors,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -18644,7 +18644,7 @@ op `clearKerberosSignOut`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/c
       `dn`:#{`type`:"string"},
       `cn`:#{`type`:"string"},
       `description`:#{`type`:"string"},
-      `members`:#{`$ref`:"#/components/schemas/SharedModel96"},
+      `members`:#{`$ref`:"#/components/schemas/WithDnOriginCreatedAt"},
       `memberCount`:#{`type`:"number"},
       `owners`:#{
         `type`:"array",
@@ -18707,7 +18707,7 @@ op `clearKerberosSignOut`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/c
     {
       `found`?: boolean;
       `group`?: get_admin_api_groups_r200_application_json_v4_group_h2595;
-      `membersPaging`?: `SharedModel27`
+      `membersPaging`?: `WithPagePagesPerPage`
     }
   }
 
@@ -18795,8 +18795,8 @@ op `getGroups`(`parameters/0/schema`: string,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/5/schema`: integer,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/6/schema`: integer,
   `responses/200/content/application~1json/schema`: get_admin_api_groups_r200_application_json_h2596,
-  `responses/400/content/application~1json/schema`: `SharedModel48`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors12`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -18849,9 +18849,9 @@ op `createGroup`(@js(#{
       `description`:"The group's own email address, its `mail` attribute (#989): where a report definition shared with the group sends its result notices. One address, or omitted."
     }) `mail`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel161`,
-  `responses/400/content/application~1json/schema`: `SharedModel161`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors55`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors55`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/groups/add-member",
@@ -18884,9 +18884,9 @@ op `addGroupMember`(@js(#{`examples`:#[#{`group`:"developers",`member`:"alice"}]
     @js(#{`description`:"Accepted for `member`."}) `user`?: string;
     @js(#{`description`:"Accepted for `member`."}) `username`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel162`,
-  `responses/400/content/application~1json/schema`: `SharedModel162`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors56`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors56`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/groups/set-mail",
@@ -18917,9 +18917,9 @@ op `setGroupMail`(@js(#{`examples`:#[#{`group`:"developers",`mail`:"developers@e
     @js(#{`description`:"The group's `cn` or its whole DN."}) `group`: string;
     @js(#{`description`:"The address, or empty to remove it."}) `mail`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel163`,
-  `responses/400/content/application~1json/schema`: `SharedModel163`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors57`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors57`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/groups/set-policy",
@@ -18963,9 +18963,9 @@ op `setGroupPolicy`(@js(#{
       `description`:"`default`, a named policy of the kind, or empty to remove it."
     }) `policy`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel164`,
-  `responses/400/content/application~1json/schema`: `SharedModel164`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors58`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors58`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/groups/add-owner",
@@ -18996,9 +18996,9 @@ op `addGroupOwner`(@js(#{`examples`:#[#{`group`:"developers",`owner`:"alice"}]})
     @js(#{`description`:"The group's `cn`, DN or SCIM id."}) `group`: string;
     @js(#{`description`:"The person or group to add."}) `owner`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel165`,
-  `responses/400/content/application~1json/schema`: `SharedModel165`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors59`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors59`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/groups/remove-owner",
@@ -19031,9 +19031,9 @@ op `removeGroupOwner`(@js(#{
     @js(#{`description`:"The group's `cn`, DN or SCIM id."}) `group`: string;
     @js(#{`description`:"The owner's DN."}) `owner`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel165`,
-  `responses/400/content/application~1json/schema`: `SharedModel165`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors59`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors59`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/ldap/directory",
@@ -19090,7 +19090,7 @@ op `getDirectoryEntries`(`parameters/0/schema`: string,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
   @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/3/schema`: integer,
   `responses/200/content/application~1json/schema`: `DirectoryEntryList`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/ldap/applications",
@@ -19139,7 +19139,7 @@ op `getDirectoryApplications`(`parameters/0/schema`: string,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
   @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/2/schema`: integer,
   `responses/200/content/application~1json/schema`: `DirectoryApplicationList`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/ldap/federations",
@@ -19188,7 +19188,7 @@ op `getDirectoryFederations`(`parameters/0/schema`: string,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
   @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/2/schema`: integer,
   `responses/200/content/application~1json/schema`: `DirectoryFederationList`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/ldap/spiffe",
@@ -19261,7 +19261,7 @@ op `getDirectorySpiffe`(`parameters/0/schema`: string,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/4/schema`: integer,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/5/schema`: integer,
   `responses/200/content/application~1json/schema`: `DirectorySpiffe`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/ldap/roles",
@@ -19310,7 +19310,7 @@ op `getDirectoryRoles`(`parameters/0/schema`: string,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
   @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/2/schema`: integer,
   `responses/200/content/application~1json/schema`: `DirectoryRoleList`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/ldap/policies",
@@ -19359,7 +19359,7 @@ op `getDirectoryPolicies`(`parameters/0/schema`: string,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
   @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/2/schema`: integer,
   `responses/200/content/application~1json/schema`: `DirectoryPolicyList`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/ldap/peps",
@@ -19408,7 +19408,7 @@ op `getDirectoryPeps`(`parameters/0/schema`: string,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
   @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/2/schema`: integer,
   `responses/200/content/application~1json/schema`: `DirectoryPepList`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/ldap/devices",
@@ -19478,11 +19478,11 @@ op `getDirectoryDevices`(`parameters/0/schema`: string,
     `perPage`?: integer;
     `firstRow`?: integer;
     `lastRow`?: integer;
-    `paging`?: `SharedModel166`;
+    `paging`?: `WithPagePagesPerPage2`;
     `directory`?: boolean;
     `message`?: string
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/ldap/service",
@@ -19505,7 +19505,7 @@ op `getDirectoryDevices`(`parameters/0/schema`: string,
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getDirectoryService`(`responses/200/content/application~1json/schema`: `DirectoryService`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -19697,7 +19697,7 @@ op `getAdminRoles`(`parameters/0/schema`: string,
       `userKey`?: string
     })[];
     `candidates`?: (WithUsernameInDirectorySeen)[];
-    `candidatesPaging`?: `SharedModel27`;
+    `candidatesPaging`?: `WithPagePagesPerPage`;
     `candidateSearch`?: {
       `q`?: NullableString;
       `total`?: numeric;
@@ -19708,7 +19708,7 @@ op `getAdminRoles`(`parameters/0/schema`: string,
       `incomplete`?: get_admin_api_rbac_r200_application_json_candidateSearch_incomplete_h2612
     };
     `picked`?: get_admin_api_rbac_r200_application_json_picked_h2613;
-    `paging`?: `SharedModel27`;
+    `paging`?: `WithPagePagesPerPage`;
     `candidatePane`?: {
       `from`?: numeric;
       `matched`?: numeric;
@@ -19724,8 +19724,8 @@ op `getAdminRoles`(`parameters/0/schema`: string,
       `implies`?: (string)[]
     })[]
   },
-  `responses/400/content/application~1json/schema`: `SharedModel48`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors12`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/rbac/grant",
@@ -19758,9 +19758,9 @@ op `grantAdminRole`(@js(#{`examples`:#[#{`username`:"rcbj",`role`:"write"}]}) `r
     }) `username`: string;
     @js(#{`description`:"`write` includes `read`."}) `role`: "read" | "write" | "security"
   },
-  `responses/200/content/application~1json/schema`: `SharedModel167`,
-  `responses/400/content/application~1json/schema`: `SharedModel167`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors60`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors60`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/rbac/revoke",
@@ -19791,9 +19791,9 @@ op `revokeAdminRole`(@js(#{`examples`:#[#{`username`:"rcbj",`role`:"read"}]}) `r
     @js(#{`description`:"Who to take it from."}) `username`: string;
     `role`: "read" | "write" | "security"
   },
-  `responses/200/content/application~1json/schema`: `SharedModel168`,
-  `responses/400/content/application~1json/schema`: `SharedModel168`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors61`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors61`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/mfa",
@@ -19855,8 +19855,8 @@ op `getMultiFactor`(`parameters/0/schema`: string,
   @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/3/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `offered`?: boolean;
-    `totp`?: `SharedModel169`;
-    `webauthn`?: `SharedModel170`;
+    `totp`?: `WithOfferedDigitsSecretBits`;
+    `webauthn`?: `WithOfferedRpNameRpId`;
     `counts`?: {
       `people`?: numeric;
       `withSecond`?: numeric;
@@ -19900,8 +19900,8 @@ op `getMultiFactor`(`parameters/0/schema`: string,
       `usable`?: boolean
     })[]
   },
-  `responses/400/content/application~1json/schema`: `SharedModel48`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors12`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/mfa/clear-totp",
@@ -19929,9 +19929,9 @@ op `getMultiFactor`(`parameters/0/schema`: string,
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `clearAuthenticatorApp`(@js(#{`examples`:#[#{`username`:"alice"}]}) `requestBody/content/application~1json/schema`: WithDescriptionEvidenceDescriptionEtc6,
-  `responses/200/content/application~1json/schema`: `SharedModel99`,
-  `responses/400/content/application~1json/schema`: `SharedModel99`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors19`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors19`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/mfa/clear-key",
@@ -19964,9 +19964,9 @@ op `clearSecurityKey`(@js(#{`examples`:#[#{`username`:"alice",`credentialId`:"q1
     @js(#{`description`:"Accepted for `username`."}) `user`?: string;
     @js(#{`description`:"base64url, as WebAuthn produced it."}) `credentialId`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel99`,
-  `responses/400/content/application~1json/schema`: `SharedModel99`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors19`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors19`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/mfa/clear-email-factor",
@@ -19994,9 +19994,9 @@ op `clearSecurityKey`(@js(#{`examples`:#[#{`username`:"alice",`credentialId`:"q1
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `clearEmailFactor`(@js(#{`examples`:#[#{`username`:"alice"}]}) `requestBody/content/application~1json/schema`: WithDescriptionEvidenceDescriptionEtc6,
-  `responses/200/content/application~1json/schema`: `SharedModel100`,
-  `responses/400/content/application~1json/schema`: `SharedModel100`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors20`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors20`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{`$comb`:"oneOf"}) @hoisted union get_admin_api_tokens_credential_r200_application_json_credential_h2627 {null, `IssuedRecord`}
@@ -20166,11 +20166,11 @@ op `getCredentialLineage`(@js(#{`examples`:#["no-such-credential"]}) `parameters
     })[];
     `walls`?: ({
       `identifier`?: string;
-      `act`?: `SharedModel174`;
+      `act`?: `WithSeqOriginAt`;
       `credential`?: WithKindIdentifierNote
     })[];
     `truncated`?: boolean;
-    `acts`?: (`SharedModel174`)[];
+    `acts`?: (`WithSeqOriginAt`)[];
     `graph`?: {
       `realm`?: WithIdNameIsDefault;
       `issuer`?: string;
@@ -20208,8 +20208,8 @@ op `getCredentialLineage`(@js(#{`examples`:#["no-such-credential"]}) `parameters
         `lastAt`?: numeric;
         `authorizedBy`?: string;
         `reason`?: string;
-        `consumed`?: `SharedModel175`;
-        `produced`?: `SharedModel175`;
+        `consumed`?: `WithOkMessageErrors62`;
+        `produced`?: `WithOkMessageErrors62`;
         `skipped`?: (string)[];
         `chainKey`?: string;
         `protocols`?: (string)[];
@@ -20274,7 +20274,7 @@ op `getCredentialLineage`(@js(#{`examples`:#["no-such-credential"]}) `parameters
       @js(#{`description`:"Which values in the answer are applications."}) `apps`?: Record<{`name`?: string; `dnLabel`?: string}>
     }
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/tokens",
@@ -20352,7 +20352,7 @@ op `getIssued`(`parameters/0/schema`: "token" | "assertion" | "ticket" | "svid",
   @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/5/schema`: integer,
   `responses/200/content/application~1json/schema`: `IssuedList`,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/tokens/set",
@@ -20385,7 +20385,7 @@ op `getIssued`(`parameters/0/schema`: "token" | "assertion" | "ticket" | "svid",
   })
 op `getIssuedSet`(@js(#{`examples`:#["no-such-set"]}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: `IssuedSetDetail`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/tokens/revoke",
@@ -20415,7 +20415,7 @@ op `getIssuedSet`(@js(#{`examples`:#["no-such-set"]}) `parameters/0/schema`: str
 op `revokeToken`(@js(#{`examples`:#[#{`target`:"a1b2c3d4e5f6g7h8i9j0kl"}]}) `requestBody/content/application~1json/schema`: WithDescriptionTargetDescriptionEtc6,
   `responses/200/content/application~1json/schema`: WithOkMessageErrorsEtc42,
   `responses/400/content/application~1json/schema`: WithOkMessageErrorsEtc42,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/tokens/restore",
@@ -20445,7 +20445,7 @@ op `revokeToken`(@js(#{`examples`:#[#{`target`:"a1b2c3d4e5f6g7h8i9j0kl"}]}) `req
 op `restoreToken`(@js(#{`examples`:#[#{`target`:"a1b2c3d4e5f6g7h8i9j0kl"}]}) `requestBody/content/application~1json/schema`: WithDescriptionTargetDescriptionEtc6,
   `responses/200/content/application~1json/schema`: WithOkMessageErrorsEtc42,
   `responses/400/content/application~1json/schema`: WithOkMessageErrorsEtc42,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/tokens/revoke-artifact",
@@ -20478,9 +20478,9 @@ op `revokeIssuedArtifact`(@js(#{`examples`:#[#{`artifact`:"artifact-12"}]}) `req
     }) `artifact`: string;
     @js(#{`description`:"Accepted for `artifact`."}) `key`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel177`,
-  `responses/400/content/application~1json/schema`: `SharedModel177`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors63`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors63`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/tokens/restore-artifact",
@@ -20511,9 +20511,9 @@ op `restoreIssuedArtifact`(@js(#{`examples`:#[#{`artifact`:"artifact-12"}]}) `re
     @js(#{`description`:"The `key` off a row of GET /admin-api/tokens."}) `artifact`: string;
     @js(#{`description`:"Accepted for `artifact`."}) `key`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel177`,
-  `responses/400/content/application~1json/schema`: `SharedModel177`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors63`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors63`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/tokens/revoke-set",
@@ -20541,9 +20541,9 @@ op `restoreIssuedArtifact`(@js(#{`examples`:#[#{`artifact`:"artifact-12"}]}) `re
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `revokeIssuedSet`(@js(#{`examples`:#[#{`set`:"set:a1b2c3d4e5f6"}]}) `requestBody/content/application~1json/schema`: WithDescriptionSetDescriptionEtc4,
-  `responses/200/content/application~1json/schema`: `SharedModel178`,
-  `responses/400/content/application~1json/schema`: `SharedModel178`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors64`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors64`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/tokens/restore-set",
@@ -20571,9 +20571,9 @@ op `revokeIssuedSet`(@js(#{`examples`:#[#{`set`:"set:a1b2c3d4e5f6"}]}) `requestB
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `restoreIssuedSet`(@js(#{`examples`:#[#{`set`:"set:a1b2c3d4e5f6"}]}) `requestBody/content/application~1json/schema`: WithDescriptionSetDescriptionEtc4,
-  `responses/200/content/application~1json/schema`: `SharedModel178`,
-  `responses/400/content/application~1json/schema`: `SharedModel178`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors64`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors64`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/tokens/revoke-kind",
@@ -20605,7 +20605,7 @@ op `revokeTokensByKind`(@js(#{`examples`:#[#{`kind`:"access_token"}]}) `requestB
   },
   `responses/200/content/application~1json/schema`: WithOkMessageErrorsEtc56,
   `responses/400/content/application~1json/schema`: WithOkMessageErrorsEtc56,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/tokens/revoke-subject",
@@ -20637,7 +20637,7 @@ op `revokeTokensBySubject`(@js(#{
   }) `requestBody/content/application~1json/schema`: {`subject`: string},
   `responses/200/content/application~1json/schema`: WithOkMessageErrorsEtc56,
   `responses/400/content/application~1json/schema`: WithOkMessageErrorsEtc56,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/tokens/revoke-user",
@@ -20667,7 +20667,7 @@ op `revokeTokensBySubject`(@js(#{
 op `revokeTokensByUser`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/content/application~1json/schema`: {`user`: string},
   `responses/200/content/application~1json/schema`: WithOkMessageErrorsEtc56,
   `responses/400/content/application~1json/schema`: WithOkMessageErrorsEtc56,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/tokens/revoke-all",
@@ -20697,7 +20697,7 @@ op `revokeTokensByUser`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/con
 op `revokeAllTokens`(@js(#{`examples`:#[#{}]}) `requestBody/content/application~1json/schema`: {},
   `responses/200/content/application~1json/schema`: WithOkMessageErrorsEtc56,
   `responses/400/content/application~1json/schema`: WithOkMessageErrorsEtc56,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -20805,14 +20805,14 @@ op `getRealms`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
       `cards`?: (string)[];
       `note`?: string
     })[];
-    `settings`?: `SharedModel10`;
+    `settings`?: `SettingsPageDrawsDescribedSame`;
     `defaultDomain`?: string;
     `count`?: integer;
     `currentName`?: string;
     `persistence`?: {`persistsRealms`?: boolean; `mode`?: string};
     `paging`?: `SharedModel83`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/realms/create",
@@ -20863,9 +20863,9 @@ op `createRealm`(@js(#{
       `$open`:true
     }) `overrides`?: {}
   },
-  `responses/200/content/application~1json/schema`: `SharedModel179`,
-  `responses/400/content/application~1json/schema`: `SharedModel179`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors65`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors65`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/realms/update",
@@ -20898,9 +20898,9 @@ op `updateRealm`(@js(#{`examples`:#[#{`id`:"acme",`name`:"Acme Corporation (stag
     `description`?: string;
     `domain`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel179`,
-  `responses/400/content/application~1json/schema`: `SharedModel179`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors65`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors65`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/realms/set",
@@ -20930,9 +20930,9 @@ op `updateRealm`(@js(#{`examples`:#[#{`id`:"acme",`name`:"Acme Corporation (stag
 op `setRealmSetting`(@js(#{
     `examples`:#[#{`id`:"acme",`key`:"saml.organizationName",`value`:"Acme"}]
   }) `requestBody/content/application~1json/schema`: {`id`: string; `key`: string; `value`: unknown},
-  `responses/200/content/application~1json/schema`: `SharedModel179`,
-  `responses/400/content/application~1json/schema`: `SharedModel179`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors65`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors65`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/realms/unset",
@@ -20960,9 +20960,9 @@ op `setRealmSetting`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `unsetRealmSetting`(@js(#{`examples`:#[#{`id`:"acme",`key`:"saml.organizationName"}]}) `requestBody/content/application~1json/schema`: {`id`: string; `key`: string},
-  `responses/200/content/application~1json/schema`: `SharedModel179`,
-  `responses/400/content/application~1json/schema`: `SharedModel179`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors65`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors65`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/realms/remove",
@@ -20990,9 +20990,9 @@ op `unsetRealmSetting`(@js(#{`examples`:#[#{`id`:"acme",`key`:"saml.organization
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `removeRealm`(@js(#{`examples`:#[#{`id`:"acme"}]}) `requestBody/content/application~1json/schema`: {`id`: string},
-  `responses/200/content/application~1json/schema`: `SharedModel179`,
-  `responses/400/content/application~1json/schema`: `SharedModel179`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors65`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors65`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/config",
@@ -21015,7 +21015,7 @@ op `removeRealm`(@js(#{`examples`:#[#{`id`:"acme"}]}) `requestBody/content/appli
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getConfig`(`responses/200/content/application~1json/schema`: `Config`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/config-dump",
@@ -21052,13 +21052,13 @@ op `getConfigDump`(@js(#{`description`:"The configuration dump."}) `responses/20
       @js(#{`description`:"The text that replaces a sensitive value."}) `mask`?: string;
       @js(#{`description`:"How many parameters had a value replaced."}) `maskedValues`?: integer
     };
-    @js(#{`description`:"Every parameter, in table order."}) `settings`?: (`SharedModel182`)[];
+    @js(#{`description`:"Every parameter, in table order."}) `settings`?: (`ParameterSensitiveValuesMasked`)[];
     @js(#{`description`:"Every other realm. Empty under a realm's prefix."}) `realms`?: ({
       `id`?: string;
-      @js(#{`description`:"The parameters this realm sets itself."}) `settings`?: (`SharedModel182`)[]
+      @js(#{`description`:"The parameters this realm sets itself."}) `settings`?: (`ParameterSensitiveValuesMasked`)[]
     })[]
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/config/set",
@@ -21091,9 +21091,9 @@ op `setSetting`(@js(#{`examples`:#[#{`key`:"saml.organizationName",`value`:"Exam
       `description`:"A string is always accepted and is coerced to the setting's type, so the environment spelling works here too; a JSON number, boolean or array of strings is accepted where the type takes one."
     }) `value`: unknown
   },
-  `responses/200/content/application~1json/schema`: `SharedModel183`,
-  `responses/400/content/application~1json/schema`: `SharedModel183`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors66`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors66`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/config/set-many",
@@ -21125,9 +21125,9 @@ op `setSettings`(@js(#{
     `examples`:#[#{`oid4vci.batchSize`:8,`oid4vci.offerUsername`:"alice"}],
     `additionalProperties`:true
   }) `requestBody/content/application~1json/schema`: {},
-  `responses/200/content/application~1json/schema`: `SharedModel184`,
-  `responses/400/content/application~1json/schema`: `SharedModel184`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors67`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors67`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/config/reset",
@@ -21155,9 +21155,9 @@ op `setSettings`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `resetSetting`(@js(#{`examples`:#[#{`key`:"saml.organizationName"}]}) `requestBody/content/application~1json/schema`: {`key`: string},
-  `responses/200/content/application~1json/schema`: `SharedModel183`,
-  `responses/400/content/application~1json/schema`: `SharedModel183`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors66`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors66`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 // NO EXAMPLE, deliberately (#1475): with nothing to name, an executed example
@@ -21188,9 +21188,9 @@ op `resetSetting`(@js(#{`examples`:#[#{`key`:"saml.organizationName"}]}) `reques
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `resetAllSettings`(`requestBody/content/application~1json/schema`: {},
-  `responses/200/content/application~1json/schema`: `SharedModel185`,
-  `responses/400/content/application~1json/schema`: `SharedModel185`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors68`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors68`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/oauth2",
@@ -21212,8 +21212,8 @@ op `resetAllSettings`(`requestBody/content/application~1json/schema`: {},
     },
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getOauth2Settings`(`responses/200/content/application~1json/schema`: `SharedModel186`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+op `getOauth2Settings`(`responses/200/content/application~1json/schema`: `WithPageTitleWhat`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/oid4vci-settings",
@@ -21235,8 +21235,8 @@ op `getOauth2Settings`(`responses/200/content/application~1json/schema`: `Shared
     },
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getOid4vciSettings`(`responses/200/content/application~1json/schema`: `SharedModel186`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+op `getOid4vciSettings`(`responses/200/content/application~1json/schema`: `WithPageTitleWhat`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/oid4vp-settings",
@@ -21258,8 +21258,8 @@ op `getOid4vciSettings`(`responses/200/content/application~1json/schema`: `Share
     },
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getOid4vpSettings`(`responses/200/content/application~1json/schema`: `SharedModel186`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+op `getOid4vpSettings`(`responses/200/content/application~1json/schema`: `WithPageTitleWhat`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/totp",
@@ -21294,11 +21294,11 @@ op `getTotpSettings`(`responses/200/content/application~1json/schema`: {
     `settings`?: `SharedModel153`;
     `leadHtml`?: string;
     `alsoHtml`?: (string)[];
-    `status`?: `SharedModel169`;
-    `protocolEndpoints`?: `SharedModel49`
+    `status`?: `WithOfferedDigitsSecretBits`;
+    `protocolEndpoints`?: `WithParamsDescriptionParams`
   },
-  `responses/400/content/application~1json/schema`: `SharedModel48`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors12`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/backup-codes",
@@ -21346,10 +21346,10 @@ op `getBackupCodesSettings`(`responses/200/content/application~1json/schema`: {
       `atRest`?: string;
       `comparisonOfAHash`?: string
     };
-    `protocolEndpoints`?: `SharedModel49`
+    `protocolEndpoints`?: `WithParamsDescriptionParams`
   },
-  `responses/400/content/application~1json/schema`: `SharedModel48`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors12`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/webauthn",
@@ -21384,11 +21384,11 @@ op `getWebauthnSettings`(`responses/200/content/application~1json/schema`: {
     `settings`?: `SharedModel153`;
     `leadHtml`?: string;
     `alsoHtml`?: (string)[];
-    `status`?: `SharedModel170`;
-    `protocolEndpoints`?: `SharedModel49`
+    `status`?: `WithOfferedRpNameRpId`;
+    `protocolEndpoints`?: `WithParamsDescriptionParams`
   },
-  `responses/400/content/application~1json/schema`: `SharedModel48`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors12`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -21458,12 +21458,12 @@ op `getKerberosSettings`(`responses/200/content/application~1json/schema`: {
     `what`?: string;
     `notes`?: (string)[];
     `links`?: (WithHrefWhat2)[];
-    `settings`?: `SharedModel196`;
+    `settings`?: `WithPageGroupsSettingCount2`;
     `leadHtml`?: string;
     `alsoHtml`?: (string)[];
-    `protocolEndpoints`?: `SharedModel49`
+    `protocolEndpoints`?: `WithParamsDescriptionParams`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/ldap",
@@ -21485,8 +21485,8 @@ op `getKerberosSettings`(`responses/200/content/application~1json/schema`: {
     },
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getLdapSettings`(`responses/200/content/application~1json/schema`: `SharedModel203`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+op `getLdapSettings`(`responses/200/content/application~1json/schema`: `WithPageTitleWhat2`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/persistence",
@@ -21509,7 +21509,7 @@ op `getLdapSettings`(`responses/200/content/application~1json/schema`: `SharedMo
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getPersistenceSettings`(`responses/200/content/application~1json/schema`: `PageSettings`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/cluster",
@@ -21532,7 +21532,7 @@ op `getPersistenceSettings`(`responses/200/content/application~1json/schema`: `P
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getClusterSettings`(`responses/200/content/application~1json/schema`: `PageSettings`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/wstrust",
@@ -21554,8 +21554,8 @@ op `getClusterSettings`(`responses/200/content/application~1json/schema`: `PageS
     },
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getWsTrustSettings`(`responses/200/content/application~1json/schema`: `SharedModel203`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+op `getWsTrustSettings`(`responses/200/content/application~1json/schema`: `WithPageTitleWhat2`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/wsfed",
@@ -21577,8 +21577,8 @@ op `getWsTrustSettings`(`responses/200/content/application~1json/schema`: `Share
     },
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getWsFedSettings`(`responses/200/content/application~1json/schema`: `SharedModel203`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+op `getWsFedSettings`(`responses/200/content/application~1json/schema`: `WithPageTitleWhat2`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/tls",
@@ -21600,8 +21600,8 @@ op `getWsFedSettings`(`responses/200/content/application~1json/schema`: `SharedM
     },
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getTlsSettings`(`responses/200/content/application~1json/schema`: `SharedModel203`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+op `getTlsSettings`(`responses/200/content/application~1json/schema`: `WithPageTitleWhat2`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/token-lifetimes",
@@ -21624,7 +21624,7 @@ op `getTlsSettings`(`responses/200/content/application~1json/schema`: `SharedMod
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getTokenLifetimes`(`responses/200/content/application~1json/schema`: `TokenLifetimes`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/token-lifetimes/set",
@@ -21669,9 +21669,9 @@ op `setTokenLifetimes`(@js(#{
     @js(#{`description`:"Revoke refresh tokens on sign-out"}) `oauth2.revokeRefreshOnLogout`?: boolean;
     @js(#{`description`:"Token clock skew (s)"}) `oauth2.clockSkewS`?: integer
   },
-  `responses/200/content/application~1json/schema`: `SharedModel204`,
-  `responses/400/content/application~1json/schema`: `SharedModel204`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors69`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors69`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 // NO EXAMPLE, deliberately (#1475): with nothing to name, an executed example
@@ -21702,9 +21702,9 @@ op `setTokenLifetimes`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `resetTokenLifetimes`(`requestBody/content/application~1json/schema`: {},
-  `responses/200/content/application~1json/schema`: `SharedModel205`,
-  `responses/400/content/application~1json/schema`: `SharedModel205`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors70`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors70`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/saml-assertions",
@@ -21727,17 +21727,17 @@ op `resetTokenLifetimes`(`requestBody/content/application~1json/schema`: {},
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getSamlAssertions`(`responses/200/content/application~1json/schema`: {
-    `protocolEndpoints`?: `SharedModel49`;
+    `protocolEndpoints`?: `WithParamsDescriptionParams`;
     `assertions`?: WithSaml2LifetimeMinSaml11LifetimeMinClockSkewSEtc5;
     `perApplication`?: (WithSettingAttributeProfile)[];
-    `settings`?: `SharedModel199`;
+    `settings`?: `WithGroupSettingsConfigFile3`;
     `assertionsIssued`?: WithHeldForgottenCapEtc4;
     `now`?: numeric;
     `context`?: NullableObject94;
     `rows`?: (WithKeyUnitKindEtc5)[];
     @js(#{`description`:"Each setting in seconds, by key."}) `seconds`?: Record<NullableNumber>
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/saml-assertions/set",
@@ -21791,9 +21791,9 @@ op `setSamlAssertions`(@js(#{
     @js(#{`description`:"Assertion lifetime (minutes)"}) `wsfed.assertionLifetimeMin`?: integer;
     @js(#{`description`:"Assertion clock skew (s)"}) `saml.clockSkewS`?: integer
   },
-  `responses/200/content/application~1json/schema`: `SharedModel206`,
-  `responses/400/content/application~1json/schema`: `SharedModel206`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors71`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors71`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 // NO EXAMPLE, deliberately (#1475): with nothing to name, an executed example
@@ -21824,9 +21824,9 @@ op `setSamlAssertions`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `resetSamlAssertions`(`requestBody/content/application~1json/schema`: {},
-  `responses/200/content/application~1json/schema`: `SharedModel206`,
-  `responses/400/content/application~1json/schema`: `SharedModel206`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors71`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors71`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/claims",
@@ -21859,7 +21859,7 @@ op `resetSamlAssertions`(`requestBody/content/application~1json/schema`: {},
   })
 op `getClaims`(@js(#{`default`:"alice",`examples`:#["alice"]}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: `ClaimSets`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/claims/add",
@@ -21898,9 +21898,9 @@ op `addClaim`(@js(#{`examples`:#[#{`set`:"id_token",`name`:"dept",`value`:"engin
       `description`:"The SAML 1.1 set only. Defaults to the WS-Federation claim namespace, which is what every relying party already reads."
     }) `namespace`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel207`,
-  `responses/400/content/application~1json/schema`: `SharedModel207`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/claims/add-attribute-claim",
@@ -21940,9 +21940,9 @@ op `addAttributeClaim`(@js(#{
     @js(#{`description`:"The SAML 2.0 set only."}) `nameFormat`?: string;
     @js(#{`description`:"The SAML 1.1 set only."}) `namespace`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel207`,
-  `responses/400/content/application~1json/schema`: `SharedModel207`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/claims/remove",
@@ -21970,9 +21970,9 @@ op `addAttributeClaim`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `removeClaim`(@js(#{`examples`:#[#{`set`:"id_token",`name`:"dept"}]}) `requestBody/content/application~1json/schema`: {`set`: "access_token" | "id_token"; `name`: string},
-  `responses/200/content/application~1json/schema`: `SharedModel207`,
-  `responses/400/content/application~1json/schema`: `SharedModel207`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/claims/clear",
@@ -22000,9 +22000,9 @@ op `removeClaim`(@js(#{`examples`:#[#{`set`:"id_token",`name`:"dept"}]}) `reques
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `clearClaims`(@js(#{`examples`:#[#{`set`:"id_token"}]}) `requestBody/content/application~1json/schema`: WithSet2,
-  `responses/200/content/application~1json/schema`: `SharedModel207`,
-  `responses/400/content/application~1json/schema`: `SharedModel207`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/claims/replace",
@@ -22040,9 +22040,9 @@ op `replaceClaims`(@js(#{
       }
     ]
   }) `requestBody/content/application~1json/schema`: {`set`: "access_token" | "id_token"; `claims`: (`ClaimEntry`)[]},
-  `responses/200/content/application~1json/schema`: `SharedModel207`,
-  `responses/400/content/application~1json/schema`: `SharedModel207`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/claims/attributes",
@@ -22077,9 +22077,9 @@ op `setClaimAttributes`(@js(#{
       `description`:"LDAP attribute type names, from `attributeCatalogue`. An EMPTY array clears the selection — and so does an ABSENT one, so a misspelt field name empties the set rather than being refused. The reply names everything it `removed` and the audit log keeps a row saying the same, and `attributes-clear` is how a caller that means it says so."
     }) `attributes`: (string)[]
   },
-  `responses/200/content/application~1json/schema`: `SharedModel207`,
-  `responses/400/content/application~1json/schema`: `SharedModel207`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/claims/attributes-all",
@@ -22107,9 +22107,9 @@ op `setClaimAttributes`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `selectAllClaimAttributes`(@js(#{`examples`:#[#{`set`:"id_token"}]}) `requestBody/content/application~1json/schema`: WithSet2,
-  `responses/200/content/application~1json/schema`: `SharedModel207`,
-  `responses/400/content/application~1json/schema`: `SharedModel207`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/claims/attributes-clear",
@@ -22137,9 +22137,9 @@ op `selectAllClaimAttributes`(@js(#{`examples`:#[#{`set`:"id_token"}]}) `request
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `clearClaimAttributes`(@js(#{`examples`:#[#{`set`:"id_token"}]}) `requestBody/content/application~1json/schema`: WithSet2,
-  `responses/200/content/application~1json/schema`: `SharedModel207`,
-  `responses/400/content/application~1json/schema`: `SharedModel207`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/userinfo-claims",
@@ -22180,7 +22180,7 @@ op `clearClaimAttributes`(@js(#{`examples`:#[#{`set`:"id_token"}]}) `requestBody
 op `getUserInfoClaims`(@js(#{`default`:"alice",`examples`:#["alice"]}) `parameters/0/schema`: string,
   @js(#{`examples`:#["{\"userinfo\":{\"birthdate\":null}}"]}) `parameters/1/schema`: string,
   `responses/200/content/application~1json/schema`: `UserInfoClaimSets`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/userinfo-claims/add",
@@ -22219,9 +22219,9 @@ op `addUserInfoClaim`(@js(#{`examples`:#[#{`set`:"userinfo",`name`:"dept",`value
       `description`:"The SAML 1.1 set only. Defaults to the WS-Federation claim namespace, which is what every relying party already reads."
     }) `namespace`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel207`,
-  `responses/400/content/application~1json/schema`: `SharedModel207`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/userinfo-claims/add-attribute-claim",
@@ -22261,9 +22261,9 @@ op `addUserInfoAttributeClaim`(@js(#{
     @js(#{`description`:"The SAML 2.0 set only."}) `nameFormat`?: string;
     @js(#{`description`:"The SAML 1.1 set only."}) `namespace`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel207`,
-  `responses/400/content/application~1json/schema`: `SharedModel207`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/userinfo-claims/remove",
@@ -22291,9 +22291,9 @@ op `addUserInfoAttributeClaim`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `removeUserInfoClaim`(@js(#{`examples`:#[#{`set`:"userinfo",`name`:"dept"}]}) `requestBody/content/application~1json/schema`: {`set`: "userinfo"; `name`: string},
-  `responses/200/content/application~1json/schema`: `SharedModel207`,
-  `responses/400/content/application~1json/schema`: `SharedModel207`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/userinfo-claims/clear",
@@ -22321,9 +22321,9 @@ op `removeUserInfoClaim`(@js(#{`examples`:#[#{`set`:"userinfo",`name`:"dept"}]})
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `clearUserInfoClaims`(@js(#{`examples`:#[#{`set`:"userinfo"}]}) `requestBody/content/application~1json/schema`: {`set`: "userinfo"},
-  `responses/200/content/application~1json/schema`: `SharedModel207`,
-  `responses/400/content/application~1json/schema`: `SharedModel207`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/userinfo-claims/replace",
@@ -22361,9 +22361,9 @@ op `replaceUserInfoClaims`(@js(#{
       }
     ]
   }) `requestBody/content/application~1json/schema`: {`set`: "userinfo"; `claims`: (`ClaimEntry`)[]},
-  `responses/200/content/application~1json/schema`: `SharedModel207`,
-  `responses/400/content/application~1json/schema`: `SharedModel207`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/userinfo-claims/attributes",
@@ -22398,9 +22398,9 @@ op `setUserInfoClaimAttributes`(@js(#{
       `description`:"LDAP attribute type names, from `attributeCatalogue`. An EMPTY array clears the selection — and so does an ABSENT one, so a misspelt field name empties the set rather than being refused. The reply names everything it `removed` and the audit log keeps a row saying the same, and `attributes-clear` is how a caller that means it says so."
     }) `attributes`: (string)[]
   },
-  `responses/200/content/application~1json/schema`: `SharedModel207`,
-  `responses/400/content/application~1json/schema`: `SharedModel207`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/userinfo-claims/attributes-all",
@@ -22428,9 +22428,9 @@ op `setUserInfoClaimAttributes`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `selectAllUserInfoClaimAttributes`(@js(#{`examples`:#[#{`set`:"userinfo"}]}) `requestBody/content/application~1json/schema`: {`set`: "userinfo"},
-  `responses/200/content/application~1json/schema`: `SharedModel207`,
-  `responses/400/content/application~1json/schema`: `SharedModel207`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/userinfo-claims/attributes-clear",
@@ -22458,9 +22458,9 @@ op `selectAllUserInfoClaimAttributes`(@js(#{`examples`:#[#{`set`:"userinfo"}]}) 
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `clearUserInfoClaimAttributes`(@js(#{`examples`:#[#{`set`:"userinfo"}]}) `requestBody/content/application~1json/schema`: {`set`: "userinfo"},
-  `responses/200/content/application~1json/schema`: `SharedModel207`,
-  `responses/400/content/application~1json/schema`: `SharedModel207`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/saml-attributes",
@@ -22493,35 +22493,35 @@ op `clearUserInfoClaimAttributes`(@js(#{`examples`:#[#{`set`:"userinfo"}]}) `req
   })
 op `getSamlAttributes`(@js(#{`default`:"alice",`examples`:#["alice"]}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: {
-    `protocolEndpoints`?: `SharedModel49`;
+    `protocolEndpoints`?: `WithParamsDescriptionParams`;
     `defaultSaml11Namespace`?: string;
     `placeholders`?: (string)[];
-    `attributeCatalogue`?: `SharedModel210`;
+    `attributeCatalogue`?: `WithDescriptionLdapClaim`;
     `precedence`?: string;
     `sets`?: ({
       `id`?: string;
       `label`?: string;
-      `claims`?: `SharedModel208`;
+      `claims`?: `WithOkMessageErrors72`;
       `attributes`?: (string)[];
       @js(#{
         `x-free-form`:"The claims one person would be issued, keyed and nested by the claim names the catalogue and an administrator chose.",
         `description`:"The claims one person would be issued, keyed and nested by the claim names the catalogue and an administrator chose."
       }) `attributeClaims`?: unknown;
-      `attributeReport`?: (`SharedModel212`)[];
+      `attributeReport`?: (`WithLdapClaimValue2`)[];
       `attributeClaimPreview`?: ({
         `name`?: string;
         `attribute`?: string;
         `carried`?: boolean;
-        `value`?: `SharedModel213`
+        `value`?: `ClaimValueWouldIssued`
       })[];
       @js(#{`description`:"Partners withholding it, by claim."}) `withheldFrom`?: Record<(string)[]>
     })[];
     `attributeChoices`?: (WithAttributeFrom)[];
-    `preview`?: {`user`?: string; `byLdap`?: `SharedModel215`; `entryFound`?: boolean};
+    `preview`?: {`user`?: string; `byLdap`?: `DirectoryAttribute`; `entryFound`?: boolean};
     `groups`?: WithEnabledLoadedClaimEtc11;
     `withholding`?: (WithIdNames)[]
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/saml-attributes/add",
@@ -22560,9 +22560,9 @@ op `addSamlAttribute`(@js(#{`examples`:#[#{`set`:"saml11",`name`:"dept",`value`:
       `description`:"The SAML 1.1 set only. Defaults to the WS-Federation claim namespace, which is what every relying party already reads."
     }) `namespace`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel207`,
-  `responses/400/content/application~1json/schema`: `SharedModel207`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/saml-attributes/add-attribute-claim",
@@ -22602,9 +22602,9 @@ op `addSamlDirectoryAttributeClaim`(@js(#{
     @js(#{`description`:"The SAML 2.0 set only."}) `nameFormat`?: string;
     @js(#{`description`:"The SAML 1.1 set only."}) `namespace`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel207`,
-  `responses/400/content/application~1json/schema`: `SharedModel207`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/saml-attributes/remove",
@@ -22632,9 +22632,9 @@ op `addSamlDirectoryAttributeClaim`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `removeSamlAttribute`(@js(#{`examples`:#[#{`set`:"saml11",`name`:"dept"}]}) `requestBody/content/application~1json/schema`: {`set`: "saml2" | "saml11"; `name`: string},
-  `responses/200/content/application~1json/schema`: `SharedModel207`,
-  `responses/400/content/application~1json/schema`: `SharedModel207`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/saml-attributes/clear",
@@ -22662,9 +22662,9 @@ op `removeSamlAttribute`(@js(#{`examples`:#[#{`set`:"saml11",`name`:"dept"}]}) `
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `clearSamlAttributes`(@js(#{`examples`:#[#{`set`:"saml11"}]}) `requestBody/content/application~1json/schema`: WithSet,
-  `responses/200/content/application~1json/schema`: `SharedModel207`,
-  `responses/400/content/application~1json/schema`: `SharedModel207`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/saml-attributes/replace",
@@ -22702,9 +22702,9 @@ op `replaceSamlAttributes`(@js(#{
       }
     ]
   }) `requestBody/content/application~1json/schema`: {`set`: "saml2" | "saml11"; `claims`: (`ClaimEntry`)[]},
-  `responses/200/content/application~1json/schema`: `SharedModel207`,
-  `responses/400/content/application~1json/schema`: `SharedModel207`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/saml-attributes/attributes",
@@ -22739,9 +22739,9 @@ op `setSamlDirectoryAttributes`(@js(#{
       `description`:"LDAP attribute type names, from `attributeCatalogue`. An EMPTY array clears the selection — and so does an ABSENT one, so a misspelt field name empties the set rather than being refused. The reply names everything it `removed` and the audit log keeps a row saying the same, and `attributes-clear` is how a caller that means it says so."
     }) `attributes`: (string)[]
   },
-  `responses/200/content/application~1json/schema`: `SharedModel207`,
-  `responses/400/content/application~1json/schema`: `SharedModel207`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/saml-attributes/attributes-all",
@@ -22769,9 +22769,9 @@ op `setSamlDirectoryAttributes`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `selectAllSamlDirectoryAttributes`(@js(#{`examples`:#[#{`set`:"saml11"}]}) `requestBody/content/application~1json/schema`: WithSet,
-  `responses/200/content/application~1json/schema`: `SharedModel207`,
-  `responses/400/content/application~1json/schema`: `SharedModel207`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/saml-attributes/attributes-clear",
@@ -22799,9 +22799,9 @@ op `selectAllSamlDirectoryAttributes`(@js(#{`examples`:#[#{`set`:"saml11"}]}) `r
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `clearSamlDirectoryAttributes`(@js(#{`examples`:#[#{`set`:"saml11"}]}) `requestBody/content/application~1json/schema`: WithSet,
-  `responses/200/content/application~1json/schema`: `SharedModel207`,
-  `responses/400/content/application~1json/schema`: `SharedModel207`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/kerberos/claims",
@@ -22834,7 +22834,7 @@ op `clearSamlDirectoryAttributes`(@js(#{`examples`:#[#{`set`:"saml11"}]}) `reque
   })
 op `getKerberosPacClaims`(@js(#{`default`:"alice",`examples`:#["alice"]}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: {
-    `protocolEndpoints`?: `SharedModel49`;
+    `protocolEndpoints`?: `WithParamsDescriptionParams`;
     `enabled`?: boolean;
     `setting`?: string;
     `types`?: (string)[];
@@ -22844,26 +22844,26 @@ op `getKerberosPacClaims`(@js(#{`default`:"alice",`examples`:#["alice"]}) `param
     `sets`?: ({
       `id`?: string;
       `label`?: string;
-      `claims`?: `SharedModel208`;
+      `claims`?: `WithOkMessageErrors72`;
       `attributes`?: (string)[]
     })[];
-    `attributeCatalogue`?: `SharedModel210`;
+    `attributeCatalogue`?: `WithDescriptionLdapClaim`;
     `attributeChoices`?: (WithAttributeFrom)[];
     `preview`?: {
       `user`?: string;
       `entryFound`?: boolean;
-      `byLdap`?: `SharedModel215`;
+      `byLdap`?: `DirectoryAttribute`;
       `claims`?: ({
         `name`?: string;
         `id`?: string;
         `type`?: string;
-        `values`?: `SharedModel214`;
+        `values`?: `WithLdapClaimValue`;
         `from`?: string;
         `dropped`?: boolean
       })[]
     }
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/kerberos/claims/add",
@@ -22904,9 +22904,9 @@ op `addKerberosPacClaim`(@js(#{
       `description`:"The SAML 1.1 set only. Defaults to the WS-Federation claim namespace, which is what every relying party already reads."
     }) `namespace`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel207`,
-  `responses/400/content/application~1json/schema`: `SharedModel207`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/kerberos/claims/add-attribute-claim",
@@ -22946,9 +22946,9 @@ op `addKerberosPacAttributeClaim`(@js(#{
     @js(#{`description`:"The SAML 2.0 set only."}) `nameFormat`?: string;
     @js(#{`description`:"The SAML 1.1 set only."}) `namespace`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel207`,
-  `responses/400/content/application~1json/schema`: `SharedModel207`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/kerberos/claims/remove",
@@ -22976,9 +22976,9 @@ op `addKerberosPacAttributeClaim`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `removeKerberosPacClaim`(@js(#{`examples`:#[#{`set`:"kerberos-pac",`name`:"dept"}]}) `requestBody/content/application~1json/schema`: {`set`: "kerberos-pac"; `name`: string},
-  `responses/200/content/application~1json/schema`: `SharedModel207`,
-  `responses/400/content/application~1json/schema`: `SharedModel207`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/kerberos/claims/clear",
@@ -23006,9 +23006,9 @@ op `removeKerberosPacClaim`(@js(#{`examples`:#[#{`set`:"kerberos-pac",`name`:"de
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `clearKerberosPacClaims`(@js(#{`examples`:#[#{`set`:"kerberos-pac"}]}) `requestBody/content/application~1json/schema`: {`set`: "kerberos-pac"},
-  `responses/200/content/application~1json/schema`: `SharedModel207`,
-  `responses/400/content/application~1json/schema`: `SharedModel207`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/kerberos/claims/replace",
@@ -23046,9 +23046,9 @@ op `replaceKerberosPacClaims`(@js(#{
       }
     ]
   }) `requestBody/content/application~1json/schema`: {`set`: "kerberos-pac"; `claims`: (`ClaimEntry`)[]},
-  `responses/200/content/application~1json/schema`: `SharedModel207`,
-  `responses/400/content/application~1json/schema`: `SharedModel207`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/kerberos/claims/attributes",
@@ -23085,9 +23085,9 @@ op `setKerberosPacClaimAttributes`(@js(#{
       `description`:"LDAP attribute type names, from `attributeCatalogue`. An EMPTY array clears the selection — and so does an ABSENT one, so a misspelt field name empties the set rather than being refused. The reply names everything it `removed` and the audit log keeps a row saying the same, and `attributes-clear` is how a caller that means it says so."
     }) `attributes`: (string)[]
   },
-  `responses/200/content/application~1json/schema`: `SharedModel207`,
-  `responses/400/content/application~1json/schema`: `SharedModel207`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/kerberos/claims/attributes-all",
@@ -23115,9 +23115,9 @@ op `setKerberosPacClaimAttributes`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `selectAllKerberosPacClaimAttributes`(@js(#{`examples`:#[#{`set`:"kerberos-pac"}]}) `requestBody/content/application~1json/schema`: {`set`: "kerberos-pac"},
-  `responses/200/content/application~1json/schema`: `SharedModel207`,
-  `responses/400/content/application~1json/schema`: `SharedModel207`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/kerberos/claims/attributes-clear",
@@ -23145,9 +23145,9 @@ op `selectAllKerberosPacClaimAttributes`(@js(#{`examples`:#[#{`set`:"kerberos-pa
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `clearKerberosPacClaimAttributes`(@js(#{`examples`:#[#{`set`:"kerberos-pac"}]}) `requestBody/content/application~1json/schema`: {`set`: "kerberos-pac"},
-  `responses/200/content/application~1json/schema`: `SharedModel207`,
-  `responses/400/content/application~1json/schema`: `SharedModel207`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors73`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
   
@@ -23186,10 +23186,10 @@ op `getCredentialClaims`(@js(#{`default`:"alice",`examples`:#["alice"]}) `parame
     `defaults`?: (string)[];
     `ldpOmitted`?: (string)[];
     `attributes`?: (WithLdapClaimLabelEtc7)[];
-    `protocolEndpoints`?: `SharedModel49`;
+    `protocolEndpoints`?: `WithParamsDescriptionParams`;
     `preview`?: WithUserClaims
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/credential-claims/select",
@@ -23219,9 +23219,9 @@ op `getCredentialClaims`(@js(#{`default`:"alice",`examples`:#["alice"]}) `parame
 op `selectCredentialClaims`(@js(#{`examples`:#[#{`attributes`:#["givenName","sn","mail"]}]}) `requestBody/content/application~1json/schema`: {
     @js(#{`description`:"LDAP attribute type names, from the catalogue."}) `attributes`: (string)[]
   },
-  `responses/200/content/application~1json/schema`: `SharedModel216`,
-  `responses/400/content/application~1json/schema`: `SharedModel216`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors74`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors74`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/credential-claims/add",
@@ -23249,9 +23249,9 @@ op `selectCredentialClaims`(@js(#{`examples`:#[#{`attributes`:#["givenName","sn"
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `addCredentialClaim`(`requestBody/content/application~1json/schema`: Shape12OrShape13,
-  `responses/200/content/application~1json/schema`: `SharedModel216`,
-  `responses/400/content/application~1json/schema`: `SharedModel216`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors74`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors74`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/credential-claims/remove",
@@ -23279,9 +23279,9 @@ op `addCredentialClaim`(`requestBody/content/application~1json/schema`: Shape12O
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `removeCredentialClaim`(`requestBody/content/application~1json/schema`: Shape12OrShape13,
-  `responses/200/content/application~1json/schema`: `SharedModel216`,
-  `responses/400/content/application~1json/schema`: `SharedModel216`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors74`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors74`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/credential-claims/defaults",
@@ -23309,9 +23309,9 @@ op `removeCredentialClaim`(`requestBody/content/application~1json/schema`: Shape
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `resetCredentialClaims`(@js(#{`examples`:#[#{}]}) `requestBody/content/application~1json/schema`: {},
-  `responses/200/content/application~1json/schema`: `SharedModel216`,
-  `responses/400/content/application~1json/schema`: `SharedModel216`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors74`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors74`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/credential-claims/populate",
@@ -23339,9 +23339,9 @@ op `resetCredentialClaims`(@js(#{`examples`:#[#{}]}) `requestBody/content/applic
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `populateDirectory`(@js(#{`examples`:#[#{}]}) `requestBody/content/application~1json/schema`: {},
-  `responses/200/content/application~1json/schema`: `SharedModel216`,
-  `responses/400/content/application~1json/schema`: `SharedModel216`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors74`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors74`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/verifier-request",
@@ -23364,23 +23364,23 @@ op `populateDirectory`(@js(#{`examples`:#[#{}]}) `requestBody/content/applicatio
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getVerifierRequest`(`responses/200/content/application~1json/schema`: {
-    `protocolEndpoints`?: `SharedModel49`;
+    `protocolEndpoints`?: `WithParamsDescriptionParams`;
     `requested`?: (string)[];
     `defaults`?: (string)[];
     `format`?: string;
     `formats`?: (WithIdLabelIdentifiedByEtc9)[];
     `ldpOmitted`?: (string)[];
     `catalogue`?: (WithClaimLabelNestedEtc8)[];
-    `dcqlQuery`?: `SharedModel218`;
+    `dcqlQuery`?: `WithCredentialsCredentialsetsState2`;
     `extras`?: (WithClaimPaths)[];
     `recentVerifications`?: {
-      `verifications`?: `SharedModel222`;
+      `verifications`?: `WithOkMessageErrors75`;
       `total`?: integer;
       `limit`?: integer
     };
     `startChoices`?: WithFormatByModeEtc6
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/verifier-request/select",
@@ -23412,9 +23412,9 @@ op `selectRequestedClaims`(@js(#{`examples`:#[#{`claims`:#["given_name","family_
       `description`:"Top-level claim names. A credential carries one Disclosure per top-level claim, so `address` is one unit however many attributes feed it."
     }) `claims`: (string)[]
   },
-  `responses/200/content/application~1json/schema`: `SharedModel224`,
-  `responses/400/content/application~1json/schema`: `SharedModel224`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors76`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors76`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/verifier-request/add",
@@ -23442,9 +23442,9 @@ op `selectRequestedClaims`(@js(#{`examples`:#[#{`claims`:#["given_name","family_
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `addRequestedClaim`(`requestBody/content/application~1json/schema`: Shape14OrShape13,
-  `responses/200/content/application~1json/schema`: `SharedModel224`,
-  `responses/400/content/application~1json/schema`: `SharedModel224`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors76`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors76`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/verifier-request/remove",
@@ -23472,9 +23472,9 @@ op `addRequestedClaim`(`requestBody/content/application~1json/schema`: Shape14Or
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `removeRequestedClaim`(`requestBody/content/application~1json/schema`: Shape14OrShape13,
-  `responses/200/content/application~1json/schema`: `SharedModel224`,
-  `responses/400/content/application~1json/schema`: `SharedModel224`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors76`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors76`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/verifier-request/defaults",
@@ -23502,9 +23502,9 @@ op `removeRequestedClaim`(`requestBody/content/application~1json/schema`: Shape1
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `resetRequestedClaims`(@js(#{`examples`:#[#{}]}) `requestBody/content/application~1json/schema`: {},
-  `responses/200/content/application~1json/schema`: `SharedModel224`,
-  `responses/400/content/application~1json/schema`: `SharedModel224`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors76`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors76`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/verifier-request/format",
@@ -23539,9 +23539,9 @@ op `setRequestFormat`(@js(#{`examples`:#[#{`format`:"dc+sd-jwt"}]}) `requestBody
       `description`:"An alias for `claim`; `vpConfigAction()` reads `body.claim || body.name`, so both spellings have always worked and only one was published."
     }) `name`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel224`,
-  `responses/400/content/application~1json/schema`: `SharedModel224`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors76`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors76`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/verifications/start",
@@ -23590,9 +23590,9 @@ op `startVerification`(@js(#{
       `description`:"The caller's page the wallet is sent to once the Verifier has answered (#594); a registered redirect URI of the calling client wherever only registered addresses are accepted."
     }) `redirect_uri`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel225`,
-  `responses/400/content/application~1json/schema`: `SharedModel225`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors77`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors77`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -23626,7 +23626,7 @@ op `startVerification`(@js(#{
         }
       },
       `at`:#{`type`:"string"},
-      `claims`:#{`$ref`:"#/components/schemas/SharedModel226"},
+      `claims`:#{`$ref`:"#/components/schemas/HolderSWalletDisclosedCredential"},
       `disclosed`:#{
         `type`:"array",
         `items`:#{
@@ -23711,7 +23711,7 @@ op `startVerification`(@js(#{
               }
             ]
           },
-          `claims`:#{`$ref`:"#/components/schemas/SharedModel226"}
+          `claims`:#{`$ref`:"#/components/schemas/HolderSWalletDisclosedCredential"}
         }
       }
     },
@@ -23752,16 +23752,16 @@ op `startVerification`(@js(#{
   })
 op `getVerifications`(@js(#{`examples`:#["no-such-state"]}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: {
-    `verifications`?: `SharedModel222`;
+    `verifications`?: `WithOkMessageErrors75`;
     `total`?: integer;
     `limit`?: integer;
-    `protocolEndpoints`?: `SharedModel49`;
+    `protocolEndpoints`?: `WithParamsDescriptionParams`;
     `found`?: boolean;
     `state`?: string;
     `nonce`?: string;
     `client_id`?: string;
     `requested`?: (string)[];
-    `dcql_query`?: `SharedModel218`;
+    `dcql_query`?: `WithCredentialsCredentialsetsState2`;
     `received`?: boolean;
     `verdict`?: get_admin_api_verifications_r200_application_json_verdict_h2676
   },
@@ -23771,7 +23771,7 @@ op `getVerifications`(@js(#{`examples`:#["no-such-state"]}) `parameters/0/schema
     `state`?: string;
     `errors`?: (string)[]
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/oid4vci/last-request",
@@ -23803,7 +23803,7 @@ op `getLastCredentialRequest`(`responses/200/content/application~1json/schema`: 
     `enc`?: NullableString;
     `at`?: string
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/oid4vci/notifications",
@@ -23841,7 +23841,7 @@ op `getCredentialNotification`(@js(#{`examples`:#["no-such-notification"]}) `par
     `event_description`?: StringOrNumericOrBooleanEtc4;
     `notified_at`?: StringOrNumericOrNull
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -23895,7 +23895,7 @@ op `getCredentialNotification`(@js(#{`examples`:#["no-such-notification"]}) `par
           `acted`:#{`type`:"integer"}
         }
       },
-      `blocks`:#{`$ref`:"#/components/schemas/SharedModel235"}
+      `blocks`:#{`$ref`:"#/components/schemas/WithRelationshipUsernameAt"}
     },
     `$types`:#["object","null"]
   }) @hoisted model get_admin_api_federation_r200_application_json_signals_h2694 {}
@@ -24044,7 +24044,7 @@ op `getFederationRelationships`(`parameters/0/schema`: string,
     `roles`?: (WithRoleLabelShortEtc4)[];
     `protocols`?: (WithProtocolLabelFamilyEtc7)[];
     `paths`?: WithBaseLoginAcsEtc18;
-    `paging`?: `SharedModel27`;
+    `paging`?: `WithPagePagesPerPage`;
     `roleCounts`?: Record<numeric>;
     `categoryCounts`?: Record<numeric>;
     `consumerProviders`?: WithOnCatalogue;
@@ -24078,18 +24078,18 @@ op `getFederationRelationships`(`parameters/0/schema`: string,
     `dn`?: string;
     `endpoints`?: WithAssertionConsumerServiceLoginMetadataEtc10;
     `fields`?: WithFedIdCnFedNameEtc89;
-    `editable`?: `SharedModel228`;
+    `editable`?: `WithDescriptionAdditionalPropertiesProperties`;
     `unmappedAttributes`?: (WithNameRefusedFirstEtc4)[];
     `signals`?: get_admin_api_federation_r200_application_json_signals_h2694;
-    `signalArrivals`?: `SharedModel236`;
+    `signalArrivals`?: `WithAdditionalPropertiesPropertiesKty`;
     `outboundSignals`?: NullableObject63;
     `encryption`?: get_admin_api_federation_r200_application_json_encryption_h2696;
     `links`?: (WithUsernameDnLinkEtc5)[];
-    `linksPaging`?: `SharedModel27`;
-    `setFields`?: `SharedModel228`;
-    `multiFields`?: `SharedModel228`;
-    `signalSetFields`?: `SharedModel228`;
-    `schema`?: `SharedModel228`;
+    `linksPaging`?: `WithPagePagesPerPage`;
+    `setFields`?: `WithDescriptionAdditionalPropertiesProperties`;
+    `multiFields`?: `WithDescriptionAdditionalPropertiesProperties`;
+    `signalSetFields`?: `WithDescriptionAdditionalPropertiesProperties`;
+    `schema`?: `WithDescriptionAdditionalPropertiesProperties`;
     `enumLabels`?: Record<string>;
     `defaultSubjectPolicy`?: string;
     `autocreateDefault`?: boolean;
@@ -24099,10 +24099,10 @@ op `getFederationRelationships`(`parameters/0/schema`: string,
     `loginHref`?: string;
     `metadataUrl`?: string;
     `signOut`?: WithSingleLogoutSignOutCleanupBackchannelLogoutEtc5;
-    `protocolEndpoints`?: `SharedModel49`
+    `protocolEndpoints`?: `WithParamsDescriptionParams`
   },
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/federation/create",
@@ -24168,9 +24168,9 @@ op `createFederationRelationship`(@js(#{
       `description`:"With `provider`: this service's secret at the provider, set as `fedClientSecret` in the same act and sealed as that field always is. Never echoed."
     }) `clientSecret`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel241`,
-  `responses/400/content/application~1json/schema`: `SharedModel241`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors78`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors78`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/federation/set",
@@ -24214,9 +24214,9 @@ op `setFederationField`(@js(#{
       `description`:"The new value. An empty string clears it. `fedSigningCertificate` is normalised — PEM armour and whitespace are stripped, because what the schema holds is the base64 DER a ds:X509Certificate carries."
     }) `value`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel241`,
-  `responses/400/content/application~1json/schema`: `SharedModel241`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors78`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors78`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/federation/add-value",
@@ -24256,9 +24256,9 @@ op `addFederationValue`(@js(#{
     @js(#{`description`:"Which list."}) `field`: "description" | "fedAllowedTenants" | "fedAuthorizeParams" | "fedAttributeMap" | "fedSubjectGroup" | "fedSubjectDomain" | "fedHomeRealmDomain" | "fedSignalsEvents" | "fedRelease";
     @js(#{`description`:"The value to add."}) `value`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel241`,
-  `responses/400/content/application~1json/schema`: `SharedModel241`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors78`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors78`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/federation/remove-value",
@@ -24290,9 +24290,9 @@ op `removeFederationValue`(@js(#{`examples`:#[#{`id`:"no-such-relationship",`fie
     @js(#{`description`:"Which list."}) `field`: "description" | "fedAllowedTenants" | "fedAuthorizeParams" | "fedAttributeMap" | "fedSubjectGroup" | "fedSubjectDomain" | "fedHomeRealmDomain" | "fedSignalsEvents" | "fedRelease";
     @js(#{`description`:"The value to remove, exactly as it stands."}) `value`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel241`,
-  `responses/400/content/application~1json/schema`: `SharedModel241`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors78`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors78`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/federation/enable",
@@ -24320,9 +24320,9 @@ op `removeFederationValue`(@js(#{`examples`:#[#{`id`:"no-such-relationship",`fie
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `enableFederationRelationship`(@js(#{`examples`:#[#{`id`:"partner-a"}]}) `requestBody/content/application~1json/schema`: WithDescriptionId,
-  `responses/200/content/application~1json/schema`: `SharedModel241`,
-  `responses/400/content/application~1json/schema`: `SharedModel241`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors78`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors78`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/federation/disable",
@@ -24350,9 +24350,9 @@ op `enableFederationRelationship`(@js(#{`examples`:#[#{`id`:"partner-a"}]}) `req
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `disableFederationRelationship`(@js(#{`examples`:#[#{`id`:"no-such-relationship"}]}) `requestBody/content/application~1json/schema`: WithDescriptionId,
-  `responses/200/content/application~1json/schema`: `SharedModel241`,
-  `responses/400/content/application~1json/schema`: `SharedModel241`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors78`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors78`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/federation/check-partner",
@@ -24380,9 +24380,9 @@ op `disableFederationRelationship`(@js(#{`examples`:#[#{`id`:"no-such-relationsh
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `checkFederationPartner`(@js(#{`examples`:#[#{`id`:"no-such-relationship"}]}) `requestBody/content/application~1json/schema`: WithDescriptionId,
-  `responses/200/content/application~1json/schema`: `SharedModel243`,
-  `responses/400/content/application~1json/schema`: `SharedModel243`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors79`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors79`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/federation/register-partner",
@@ -24412,7 +24412,7 @@ op `checkFederationPartner`(@js(#{`examples`:#[#{`id`:"no-such-relationship"}]})
 op `registerAtFederationPartner`(@js(#{`examples`:#[#{`id`:"no-such-relationship"}]}) `requestBody/content/application~1json/schema`: WithDescriptionId,
   `responses/200/content/application~1json/schema`: WithOkMessageErrorsEtc58,
   `responses/400/content/application~1json/schema`: WithOkMessageErrorsEtc58,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/federation/rotate-key",
@@ -24440,9 +24440,9 @@ op `registerAtFederationPartner`(@js(#{`examples`:#[#{`id`:"no-such-relationship
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `rotateFederationKey`(@js(#{`examples`:#[#{`id`:"no-such-relationship"}]}) `requestBody/content/application~1json/schema`: WithDescriptionId,
-  `responses/200/content/application~1json/schema`: `SharedModel241`,
-  `responses/400/content/application~1json/schema`: `SharedModel241`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors78`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors78`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/federation/signals-discover",
@@ -24470,9 +24470,9 @@ op `rotateFederationKey`(@js(#{`examples`:#[#{`id`:"no-such-relationship"}]}) `r
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `discoverFederationSignals`(@js(#{`examples`:#[#{`id`:"partner"}]}) `requestBody/content/application~1json/schema`: WithDescriptionId,
-  `responses/200/content/application~1json/schema`: `SharedModel244`,
-  `responses/400/content/application~1json/schema`: `SharedModel244`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors80`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors80`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/federation/signals-create-stream",
@@ -24500,9 +24500,9 @@ op `discoverFederationSignals`(@js(#{`examples`:#[#{`id`:"partner"}]}) `requestB
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `createFederationSignalsStream`(@js(#{`examples`:#[#{`id`:"partner"}]}) `requestBody/content/application~1json/schema`: WithDescriptionId,
-  `responses/200/content/application~1json/schema`: `SharedModel244`,
-  `responses/400/content/application~1json/schema`: `SharedModel244`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors80`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors80`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/federation/signals-read-stream",
@@ -24530,9 +24530,9 @@ op `createFederationSignalsStream`(@js(#{`examples`:#[#{`id`:"partner"}]}) `requ
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `readFederationSignalsStream`(@js(#{`examples`:#[#{`id`:"partner"}]}) `requestBody/content/application~1json/schema`: WithDescriptionId,
-  `responses/200/content/application~1json/schema`: `SharedModel244`,
-  `responses/400/content/application~1json/schema`: `SharedModel244`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors80`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors80`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/federation/signals-update-stream",
@@ -24560,9 +24560,9 @@ op `readFederationSignalsStream`(@js(#{`examples`:#[#{`id`:"partner"}]}) `reques
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `updateFederationSignalsStream`(@js(#{`examples`:#[#{`id`:"partner"}]}) `requestBody/content/application~1json/schema`: WithDescriptionId,
-  `responses/200/content/application~1json/schema`: `SharedModel244`,
-  `responses/400/content/application~1json/schema`: `SharedModel244`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors80`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors80`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/federation/signals-replace-stream",
@@ -24590,9 +24590,9 @@ op `updateFederationSignalsStream`(@js(#{`examples`:#[#{`id`:"partner"}]}) `requ
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `replaceFederationSignalsStream`(@js(#{`examples`:#[#{`id`:"partner"}]}) `requestBody/content/application~1json/schema`: WithDescriptionId,
-  `responses/200/content/application~1json/schema`: `SharedModel244`,
-  `responses/400/content/application~1json/schema`: `SharedModel244`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors80`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors80`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/federation/signals-delete-stream",
@@ -24620,9 +24620,9 @@ op `replaceFederationSignalsStream`(@js(#{`examples`:#[#{`id`:"partner"}]}) `req
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `deleteFederationSignalsStream`(@js(#{`examples`:#[#{`id`:"partner"}]}) `requestBody/content/application~1json/schema`: WithDescriptionId,
-  `responses/200/content/application~1json/schema`: `SharedModel244`,
-  `responses/400/content/application~1json/schema`: `SharedModel244`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors80`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors80`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/federation/signals-read-status",
@@ -24650,9 +24650,9 @@ op `deleteFederationSignalsStream`(@js(#{`examples`:#[#{`id`:"partner"}]}) `requ
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `readFederationSignalsStatus`(@js(#{`examples`:#[#{`id`:"partner"}]}) `requestBody/content/application~1json/schema`: WithDescriptionId,
-  `responses/200/content/application~1json/schema`: `SharedModel244`,
-  `responses/400/content/application~1json/schema`: `SharedModel244`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors80`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors80`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/federation/signals-verify",
@@ -24680,9 +24680,9 @@ op `readFederationSignalsStatus`(@js(#{`examples`:#[#{`id`:"partner"}]}) `reques
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `verifyFederationSignalsStream`(@js(#{`examples`:#[#{`id`:"partner"}]}) `requestBody/content/application~1json/schema`: WithDescriptionId,
-  `responses/200/content/application~1json/schema`: `SharedModel244`,
-  `responses/400/content/application~1json/schema`: `SharedModel244`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors80`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors80`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/federation/signals-poll-now",
@@ -24710,9 +24710,9 @@ op `verifyFederationSignalsStream`(@js(#{`examples`:#[#{`id`:"partner"}]}) `requ
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `pollFederationSignals`(@js(#{`examples`:#[#{`id`:"partner"}]}) `requestBody/content/application~1json/schema`: WithDescriptionId,
-  `responses/200/content/application~1json/schema`: `SharedModel244`,
-  `responses/400/content/application~1json/schema`: `SharedModel244`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors80`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors80`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/federation/signals-set-status",
@@ -24744,9 +24744,9 @@ op `setFederationSignalsStatus`(@js(#{`examples`:#[#{`id`:"partner",`status`:"pa
     `status`: "enabled" | "paused" | "disabled";
     @js(#{`maxLength`:512}) `reason`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel244`,
-  `responses/400/content/application~1json/schema`: `SharedModel244`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors80`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors80`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/federation/signals-add-subject",
@@ -24781,9 +24781,9 @@ op `addFederationSignalsSubject`(@js(#{
       }
     ]
   }) `requestBody/content/application~1json/schema`: WithDescriptionIdApTrueEtc4,
-  `responses/200/content/application~1json/schema`: `SharedModel244`,
-  `responses/400/content/application~1json/schema`: `SharedModel244`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors80`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors80`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/federation/signals-remove-subject",
@@ -24818,9 +24818,9 @@ op `removeFederationSignalsSubject`(@js(#{
       }
     ]
   }) `requestBody/content/application~1json/schema`: WithDescriptionIdApTrueEtc4,
-  `responses/200/content/application~1json/schema`: `SharedModel244`,
-  `responses/400/content/application~1json/schema`: `SharedModel244`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors80`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors80`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/federation/signals-unblock",
@@ -24851,9 +24851,9 @@ op `unblockFederationSignals`(@js(#{`examples`:#[#{`id`:"partner",`user`:"alice"
     @js(#{`description`:"The relationship."}) `id`: string;
     @js(#{`description`:"The person."}) `user`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel244`,
-  `responses/400/content/application~1json/schema`: `SharedModel244`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors80`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors80`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/federation/delete",
@@ -24883,7 +24883,7 @@ op `unblockFederationSignals`(@js(#{`examples`:#[#{`id`:"partner",`user`:"alice"
 op `deleteFederationRelationship`(@js(#{`examples`:#[#{`id`:"no-such-relationship"}]}) `requestBody/content/application~1json/schema`: WithDescriptionId,
   `responses/200/content/application~1json/schema`: WithOkMessageErrors,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/saml2",
@@ -24948,15 +24948,15 @@ op `getSaml2ServiceProviders`(`parameters/0/schema`: string,
   @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/3/schema`: integer,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/4/schema`: integer,
   `responses/200/content/application~1json/schema`: {
-    `protocolEndpoints`?: `SharedModel49`;
+    `protocolEndpoints`?: `WithParamsDescriptionParams`;
     `serviceProviders`?: (WithNameAuthenticationsSessionsEtc19)[];
-    `paging`?: `SharedModel247`;
+    `paging`?: `WithPagePagesPerPage3`;
     `unscopedMetadata`?: string;
-    `settings`?: `SharedModel196`;
+    `settings`?: `WithPageGroupsSettingCount2`;
     `artifactsAwaitingResolution`?: numeric;
     `requestsHeldForSignIn`?: numeric;
     `mdqRefused`?: (WithEntityIdWhyFirstAtEtc5)[];
-    `mdqRefusedPaging`?: `SharedModel247`;
+    `mdqRefusedPaging`?: `WithPagePagesPerPage3`;
     `kind`?: string;
     `found`?: boolean;
     `name`?: string;
@@ -24980,7 +24980,7 @@ op `getSaml2ServiceProviders`(`parameters/0/schema`: string,
     `sloUrl`?: string;
     `arsUrl`?: string
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/saml2/register",
@@ -25008,9 +25008,9 @@ op `getSaml2ServiceProviders`(`parameters/0/schema`: string,
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `registerSaml2ServiceProvider`(@js(#{`examples`:#[#{`sp`:"https://sp.example.com/saml"}]}) `requestBody/content/application~1json/schema`: {@js(#{`description`:"The service provider's entityID."}) `sp`: string},
-  `responses/200/content/application~1json/schema`: `SharedModel248`,
-  `responses/400/content/application~1json/schema`: `SharedModel248`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors81`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors81`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/saml2/set-logout-service",
@@ -25048,9 +25048,9 @@ op `addSaml2LogoutService`(@js(#{
     @js(#{`description`:"The service provider's entityID."}) `sp`: string;
     @js(#{`description`:"An absolute URL."}) `value`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel248`,
-  `responses/400/content/application~1json/schema`: `SharedModel248`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors81`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors81`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/saml2/remove-logout-service",
@@ -25088,9 +25088,9 @@ op `removeSaml2LogoutService`(@js(#{
     `sp`: string;
     @js(#{`description`:"The exact value to remove."}) `value`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel248`,
-  `responses/400/content/application~1json/schema`: `SharedModel248`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors81`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors81`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/saml2/set-signing-certificate",
@@ -25121,9 +25121,9 @@ op `setSaml2SigningCertificate`(@js(#{`examples`:#[#{`sp`:"https://sp.example.co
     `sp`: string;
     @js(#{`description`:"Base64 DER or PEM; empty clears the list."}) `value`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel248`,
-  `responses/400/content/application~1json/schema`: `SharedModel248`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors81`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors81`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/saml2/remove-signing-certificate",
@@ -25154,9 +25154,9 @@ op `removeSaml2SigningCertificate`(@js(#{`examples`:#[#{`sp`:"https://sp.example
     `sp`: string;
     @js(#{`description`:"The certificate to remove."}) `value`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel248`,
-  `responses/400/content/application~1json/schema`: `SharedModel248`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors81`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors81`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/saml2/confirm-signing-certificate",
@@ -25184,9 +25184,9 @@ op `removeSaml2SigningCertificate`(@js(#{`examples`:#[#{`sp`:"https://sp.example
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `confirmSaml2SigningCertificate`(@js(#{`examples`:#[#{`sp`:"https://sp.example.com/saml"}]}) `requestBody/content/application~1json/schema`: {`sp`: string},
-  `responses/200/content/application~1json/schema`: `SharedModel248`,
-  `responses/400/content/application~1json/schema`: `SharedModel248`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors81`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors81`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/saml2/discard-signing-certificate",
@@ -25214,9 +25214,9 @@ op `confirmSaml2SigningCertificate`(@js(#{`examples`:#[#{`sp`:"https://sp.exampl
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `discardSaml2SigningCertificate`(@js(#{`examples`:#[#{`sp`:"https://sp.example.com/saml"}]}) `requestBody/content/application~1json/schema`: {`sp`: string},
-  `responses/200/content/application~1json/schema`: `SharedModel248`,
-  `responses/400/content/application~1json/schema`: `SharedModel248`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors81`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors81`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/saml2/set-metadata-signing-certificate",
@@ -25247,9 +25247,9 @@ op `setSaml2MetadataSigningCertificate`(@js(#{`examples`:#[#{`sp`:"https://sp.ex
     `sp`: string;
     @js(#{`description`:"Base64 DER or PEM; empty clears it."}) `value`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel248`,
-  `responses/400/content/application~1json/schema`: `SharedModel248`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors81`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors81`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/saml2/refresh-metadata",
@@ -25277,9 +25277,9 @@ op `setSaml2MetadataSigningCertificate`(@js(#{`examples`:#[#{`sp`:"https://sp.ex
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `refreshSaml2Metadata`(@js(#{`examples`:#[#{`sp`:"https://sp.example.com/saml"}]}) `requestBody/content/application~1json/schema`: {`sp`: string},
-  `responses/200/content/application~1json/schema`: `SharedModel250`,
-  `responses/400/content/application~1json/schema`: `SharedModel250`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors82`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors82`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/saml2/mdq-import",
@@ -25307,9 +25307,9 @@ op `refreshSaml2Metadata`(@js(#{`examples`:#[#{`sp`:"https://sp.example.com/saml
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `importSaml2MetadataFromMdq`(@js(#{`examples`:#[#{`sp`:"https://sp.example.com/saml"}]}) `requestBody/content/application~1json/schema`: {`sp`: string},
-  `responses/200/content/application~1json/schema`: `SharedModel250`,
-  `responses/400/content/application~1json/schema`: `SharedModel250`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors82`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors82`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{`required`:#["document"]}) @hoisted model post_admin_api_saml2_upload_metadata_b_application_json_v0_h2706 {}
@@ -25378,9 +25378,9 @@ op `importSaml2MetadataFromMdq`(@js(#{`examples`:#[#{`sp`:"https://sp.example.co
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `uploadSaml2Metadata`(`requestBody/content/application~1json/schema`: post_admin_api_saml2_upload_metadata_b_application_json_h2708,
-  `responses/200/content/application~1json/schema`: `SharedModel250`,
-  `responses/400/content/application~1json/schema`: `SharedModel250`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors82`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors82`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/saml11",
@@ -25437,11 +25437,11 @@ op `getSaml11RelyingParties`(`parameters/0/schema`: string,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
   @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/3/schema`: integer,
   `responses/200/content/application~1json/schema`: {
-    `protocolEndpoints`?: `SharedModel49`;
+    `protocolEndpoints`?: `WithParamsDescriptionParams`;
     `relyingParties`?: (WithNameAuthenticationsSessionsEtc15)[];
-    `paging`?: `SharedModel247`;
+    `paging`?: `WithPagePagesPerPage3`;
     `unscopedMetadata`?: string;
-    `settings`?: `SharedModel196`;
+    `settings`?: `WithPageGroupsSettingCount2`;
     `artifactsAwaitingResolution`?: numeric;
     `assertionsHeldByReference`?: numeric;
     `flowsHeldForSignIn`?: numeric;
@@ -25460,7 +25460,7 @@ op `getSaml11RelyingParties`(`parameters/0/schema`: string,
     `ssoUrl`?: string;
     `responderUrl`?: string
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/saml-idp-initiated",
@@ -25501,12 +25501,12 @@ op `getSaml11RelyingParties`(`parameters/0/schema`: string,
 op `getSamlIdpInitiatedApplications`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: integer,
   @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/1/schema`: integer,
   `responses/200/content/application~1json/schema`: {
-    `protocolEndpoints`?: `SharedModel49`;
+    `protocolEndpoints`?: `WithParamsDescriptionParams`;
     `idpInitiated`?: (WithIdentifierNameEntityIdEtc9)[];
-    `idpInitiatedPaging`?: `SharedModel166`;
+    `idpInitiatedPaging`?: `WithPagePagesPerPage2`;
     `realmSwitches`?: (WithProtocolLabelSettingEtc5)[]
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/saml11/register",
@@ -25542,9 +25542,9 @@ op `registerSaml11RelyingParty`(@js(#{
       `description`:"The assertion consumer service URL registered on the relying party."
     }) `shire`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel248`,
-  `responses/400/content/application~1json/schema`: `SharedModel248`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors81`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors81`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/authorization-servers",
@@ -25593,7 +25593,7 @@ op `getAuthorizationServers`(`parameters/0/schema`: string,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
   @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/2/schema`: integer,
   `responses/200/content/application~1json/schema`: `AuthorizationServerList`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/authorization-servers/create",
@@ -25635,9 +25635,9 @@ op `createAuthorizationServer`(@js(#{
     @js(#{`description`:"Optional display name."}) `label`?: string;
     @js(#{`description`:"Optional note."}) `description`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel251`,
-  `responses/400/content/application~1json/schema`: `SharedModel251`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors83`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors83`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -25690,9 +25690,9 @@ op `createAuthorizationServer`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `setAuthorizationServerMember`(`requestBody/content/application~1json/schema`: post_admin_api_authorization_servers_set_b_application_json_h2717,
-  `responses/200/content/application~1json/schema`: `SharedModel251`,
-  `responses/400/content/application~1json/schema`: `SharedModel251`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors83`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors83`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -25738,9 +25738,9 @@ op `setAuthorizationServerMember`(`requestBody/content/application~1json/schema`
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `removeAuthorizationServerMember`(`requestBody/content/application~1json/schema`: post_admin_api_authorization_servers_remove_b_application_json_h2720,
-  `responses/200/content/application~1json/schema`: `SharedModel251`,
-  `responses/400/content/application~1json/schema`: `SharedModel251`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors83`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors83`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -25786,9 +25786,9 @@ op `removeAuthorizationServerMember`(`requestBody/content/application~1json/sche
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `resetAuthorizationServerMember`(`requestBody/content/application~1json/schema`: post_admin_api_authorization_servers_reset_b_application_json_h2723,
-  `responses/200/content/application~1json/schema`: `SharedModel251`,
-  `responses/400/content/application~1json/schema`: `SharedModel251`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors83`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors83`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -25832,9 +25832,9 @@ op `resetAuthorizationServerMember`(`requestBody/content/application~1json/schem
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `deleteAuthorizationServer`(`requestBody/content/application~1json/schema`: post_admin_api_authorization_servers_delete_b_application_json_h2726,
-  `responses/200/content/application~1json/schema`: `SharedModel251`,
-  `responses/400/content/application~1json/schema`: `SharedModel251`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors83`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors83`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications",
@@ -25986,7 +25986,7 @@ op `getApplications`(`parameters/0/schema`: string,
   @js(#{`minimum`:1}) `parameters/14/schema`: integer,
   `responses/200/content/application~1json/schema`: `ApplicationList`,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/new",
@@ -26009,7 +26009,7 @@ op `getApplications`(`parameters/0/schema`: string,
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getNewApplicationForm`(`responses/200/content/application~1json/schema`: `NewApplicationForm`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -26078,9 +26078,9 @@ op `createApplication`(@js(#{
     }) `fields`?: Record<unknown>;
     `lifetimeDays`?: post_admin_api_applications_create_b_application_json_lifetimeDays_h2727
   },
-  `responses/200/content/application~1json/schema`: `SharedModel254`,
-  `responses/400/content/application~1json/schema`: `SharedModel254`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors84`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors84`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/set",
@@ -26122,9 +26122,9 @@ op `setApplicationAttribute`(@js(#{
     }) `attribute`: "appName" | "appHomePageUrl" | "appLaunchProtocol" | "description" | "oauthClientSecret" | "oauthFrontchannelLogoutUri" | "oauthFrontchannelLogoutSessionRequired" | "oauthBackchannelLogoutUri" | "oauthBackchannelLogoutSessionRequired" | "oauthPermissionBaseUri" | "oauthResourceMetadata" | "oauthResourceMetadataUrl" | "oauthNativeSso" | "oauthNativeSsoGroup" | "oauthBackchannelTokenDeliveryMode" | "oauthBackchannelClientNotificationEndpoint" | "oauthCommandEndpoint" | "oauthBackchannelAuthenticationRequestSigningAlg" | "oauthBackchannelUserCodeParameter" | "oauthSubjectType" | "oauthSectorIdentifierUri" | "oauthDidClaimWithPairwise" | "oauthTokenEndpointAuthSigningAlg" | "oauthJwks" | "oauthJwksUri" | "oauthIntrospectionSignedResponseAlg" | "oauthIntrospectionEncryptedResponseAlg" | "oauthIntrospectionEncryptedResponseEnc" | "oauthRequestObjectSigningAlg" | "oauthRequestObjectEncryptionAlg" | "oauthRequestObjectEncryptionEnc" | "oauthRequireSignedRequestObject" | "oauthRequirePushedAuthorizationRequests" | "oauthHttpSignedRequests" | "oauthStepUpAcrValues" | "oauthStepUpMaxAge" | "oauthIdTokenSignedResponseAlg" | "oauthIdTokenEncryptedResponseAlg" | "oauthIdTokenEncryptedResponseEnc" | "oauthUserinfoSignedResponseAlg" | "oauthUserinfoEncryptedResponseAlg" | "oauthUserinfoEncryptedResponseEnc" | "oauthAuthorizationSignedResponseAlg" | "oauthAuthorizationEncryptedResponseAlg" | "oauthAuthorizationEncryptedResponseEnc" | "oauthDefaultAcrValues" | "oauthDefaultMaxAge" | "oauthAssertionJwks" | "oauthAssertionCertificate" | "oauthAssertionCertificateChain" | "oauthAssertionPrivateKey" | "oauthAssertionKid" | "oauthAssertionExpiresAt" | "oauthAssertionKeySource" | "oauthSamlAssertionSigningCertificate" | "oauthSamlAssertionCertificate" | "oauthSamlAssertionCertificateChain" | "oauthSamlAssertionPrivateKey" | "oauthSamlAssertionThumbprint" | "oauthSamlAssertionExpiresAt" | "oauthSamlAssertionKeySource" | "oauthIssuedSoftwareStatement" | "oauthTlsClientAuthSubjectDn" | "oauthTlsClientAuthSanDns" | "oauthTlsClientAuthSanUri" | "oauthTlsClientAuthSanIp" | "oauthTlsClientAuthSanEmail" | "oauthTlsClientCertificateBoundAccessTokens" | "oauthTlsClientCertificateThumbprint" | "samlSpMetadataUrl" | "samlSpMetadata" | "samlEncryptionCertificate" | "samlSpMetadataSigningCertificate" | "saml2EncryptAssertion" | "saml2EncryptionAlgorithm" | "saml2KeyTransportAlgorithm" | "saml2EncryptLogoutNameId" | "oauthAccessTokenTtlS" | "oauthIdTokenTtlS" | "oauthRefreshTokenTtlS" | "oauthRefreshIdleSeconds" | "oauthClaimsAccessToken" | "oauthClaimsIdToken" | "oauthClaimsUserinfo" | "oauthClaimAttributesAccessToken" | "oauthClaimAttributesIdToken" | "oauthClaimAttributesUserinfo" | "oauthClaimsCombineAccessToken" | "oauthClaimsCombineIdToken" | "oauthClaimsCombineUserinfo" | "oauthPermissionClaims" | "oauthAccessTokenClaimsCombine" | "oauthRevokeRefreshOnLogout" | "oauthThirdPartyInitiatedLogin" | "oauthSpInitiatedSso" | "oauthInitiateLoginUri" | "oauthLogoUri" | "oauthPolicyUri" | "oauthTosUri" | "oauthTokenExchangeRefreshToken" | "appDefaultDelegationSemantics" | "appNotDelegated" | "appMayAct" | "appGroupsClaim" | "appGroupsClaimName" | "appGroupsClaimValue" | "appGroupsClaimFromMemberOf" | "wsfedAssertionLifetimeMin" | "saml2CustomAttributes" | "saml11CustomAttributes" | "saml2ClaimAttributes" | "saml11ClaimAttributes" | "saml2ClaimsCombine" | "saml11ClaimsCombine" | "vcCredentialClaimAttributes" | "saml2AssertionLifetimeMin" | "saml2SignAssertion" | "saml2SignResponse" | "saml2NameIdFormat" | "saml2ArtifactTtlS" | "saml11AssertionLifetimeMin" | "saml11SignAssertion" | "saml11SignResponse" | "saml11NameIdFormat" | "saml11ArtifactTtlS" | "saml2IdpInitiatedSso" | "saml2SpInitiatedSso" | "saml11IdpInitiatedSso" | "saml11SpInitiatedSso" | "wsfedIdpInitiatedSso" | "wsfedSpInitiatedSso" | "krb5ClaimsPac" | "gnapClaimsAccessToken" | "krb5TrustedForDelegation" | "krb5ForeignTgtDelegation" | "appRegistrationAccessToken" | "acmeDefaultProfile" | "acmeCertificateLifetimeDays" | "estDefaultProfile" | "estCertificateLifetimeDays" | "scepDefaultProfile" | "scepCertificateLifetimeDays" | "estBasicAuthentication" | "estCertificateAuthentication" | "estServerKeyGeneration" | "enrollMaxCertificates" | "didPrivateKeys" | "secretDestProvider" | "secretDestPayload" | "secretDestRegion" | "secretDestProject" | "secretDestEndpoint" | "secretDestMount" | "secretDestField" | "secretDestDirectory" | "secretDestCaCertificates" | "secretDestCredential" | "scimClientBaseUrl" | "scimClientEnabled" | "scimClientAuthMethod" | "scimClientUsername" | "scimClientPassword" | "scimClientTokenEndpoint" | "scimClientOAuthClientId" | "scimClientOAuthClientSecret" | "scimClientOAuthClientAuth" | "scimClientOAuthScope" | "scimClientOAuthResource" | "scimClientTlsSource" | "scimClientTlsCertificate" | "scimClientTlsPrivateKey" | "scimClientCaCertificates" | "scimClientScopeMode" | "scimClientScopeFilter" | "scimClientGroupMode" | "scimClientDeprovision" | "scimClientReconcileMinutes" | "scimClientJurisdiction" | "scimClientMaxRequestsPerSecond" | "ssfCaepIncludeReasons" | "ssfCaepReasonLanguage" | "ssfCaepOmitEventTimestamp" | "ssfRiscIncludeReasons" | "ssfRiscReasonLanguage" | "ssfRiscOmitEventTimestamp" | "ssfSigningAlgorithm" | "ssfMinVerificationInterval" | "ssfInactivityTimeoutS" | "ssfInactivityAction" | "ssfVerificationEveryS" | "ssfStreamStatusOnCreate" | "ssfMaxStreams" | "ssfMaxSubjectsPerStream" | "ssfMaxQueuedEvents" | "ssfPollMaxEvents" | "ssfDeadLetterMaxPerStream" | "ssfPushTimeoutMs" | "ssfPushRetries" | "ssfPushRetryDelayMs" | "gnapInstanceId" | "gnapKey" | "gnapKeyReference" | "gnapKeyProof" | "gnapMtlsTrust" | "gnapSymmetricKey" | "gnapSymmetricAlg" | "gnapClassId" | "gnapDisplayUri" | "gnapLogoUri" | "gnapBearerTokens" | "gnapSkipInteraction" | "gnapAccessTokenFormat" | "gnapAccessTokenLifetimeS" | "gnapOwnerLookupUri" | "gnapJweKey" | "gnapScopedSignals" | "appFederationAutoRedirect" | "appAuthnPolicy" | "appPasskeyPolicy" | "appLocalePolicy" | "appPasswordPolicy" | "appPostLoginPolicy" | "umaOwnsResources";
     @js(#{`description`:"The new value; empty clears the attribute."}) `value`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel258`,
-  `responses/400/content/application~1json/schema`: `SharedModel258`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors85`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors85`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/add",
@@ -26160,9 +26160,9 @@ op `addApplicationValue`(@js(#{
       }
     ]
   }) `requestBody/content/application~1json/schema`: WithApplicationAttributeValue,
-  `responses/200/content/application~1json/schema`: `SharedModel258`,
-  `responses/400/content/application~1json/schema`: `SharedModel258`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors85`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors85`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/remove",
@@ -26198,9 +26198,9 @@ op `removeApplicationValue`(@js(#{
       }
     ]
   }) `requestBody/content/application~1json/schema`: WithApplicationAttributeValue,
-  `responses/200/content/application~1json/schema`: `SharedModel258`,
-  `responses/400/content/application~1json/schema`: `SharedModel258`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors85`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors85`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -26256,9 +26256,9 @@ op `updateApplicationFields`(@js(#{
     `protocolsPresent`?: post_admin_api_applications_update_fields_b_application_json_protocolsPresent_h2728;
     `present`?: Shape11
   },
-  `responses/200/content/application~1json/schema`: `SharedModel258`,
-  `responses/400/content/application~1json/schema`: `SharedModel258`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors85`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors85`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/confirm-address",
@@ -26298,9 +26298,9 @@ op `confirmApplicationReturnAddress`(@js(#{
     @js(#{`description`:"The return-address attribute the address is on."}) `attribute`: "oauthRedirectUri" | "samlAssertionConsumerService" | "wsfedReplyUrl" | "gnapFinishUri";
     @js(#{`description`:"The address, exactly as the entry holds it."}) `value`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel254`,
-  `responses/400/content/application~1json/schema`: `SharedModel254`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors84`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors84`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/discard-address",
@@ -26340,9 +26340,9 @@ op `discardApplicationReturnAddress`(@js(#{
     `attribute`: "oauthRedirectUri" | "samlAssertionConsumerService" | "wsfedReplyUrl" | "gnapFinishUri";
     `value`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel254`,
-  `responses/400/content/application~1json/schema`: `SharedModel254`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors84`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors84`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/add-owner",
@@ -26373,9 +26373,9 @@ op `addApplicationOwner`(@js(#{`examples`:#[#{`application`:"webapp1",`owner`:"a
     `application`: string;
     @js(#{`description`:"The person or group to add."}) `owner`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel259`,
-  `responses/400/content/application~1json/schema`: `SharedModel259`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors86`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors86`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/remove-owner",
@@ -26410,9 +26410,9 @@ op `removeApplicationOwner`(@js(#{
     `application`: string;
     @js(#{`description`:"The owner's DN."}) `owner`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel259`,
-  `responses/400/content/application~1json/schema`: `SharedModel259`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors86`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors86`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/regenerate-secret",
@@ -26440,9 +26440,9 @@ op `removeApplicationOwner`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `regenerateApplicationClientSecret`(@js(#{`examples`:#[#{`application`:"my-web-app"}]}) `requestBody/content/application~1json/schema`: {`application`: string},
-  `responses/200/content/application~1json/schema`: `SharedModel260`,
-  `responses/400/content/application~1json/schema`: `SharedModel260`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors87`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors87`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/rotate-secret",
@@ -26470,9 +26470,9 @@ op `regenerateApplicationClientSecret`(@js(#{`examples`:#[#{`application`:"my-we
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `rotateApplicationClientSecret`(@js(#{`examples`:#[#{`application`:"my-web-app"}]}) `requestBody/content/application~1json/schema`: {`application`: string},
-  `responses/200/content/application~1json/schema`: `SharedModel260`,
-  `responses/400/content/application~1json/schema`: `SharedModel260`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors87`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors87`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/add-secret",
@@ -26512,9 +26512,9 @@ op `addApplicationClientSecret`(@js(#{
     `lifetimeDays`?: Shape17;
     @js(#{`maxLength`:200}) `description`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel260`,
-  `responses/400/content/application~1json/schema`: `SharedModel260`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors87`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors87`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/remove-secret",
@@ -26542,9 +26542,9 @@ op `addApplicationClientSecret`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `removeApplicationClientSecret`(@js(#{`examples`:#[#{`application`:"my-web-app",`secret`:"cs-0123456789ab"}]}) `requestBody/content/application~1json/schema`: WithApplicationSecret,
-  `responses/200/content/application~1json/schema`: `SharedModel260`,
-  `responses/400/content/application~1json/schema`: `SharedModel260`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors87`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors87`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/reveal-secret",
@@ -26572,9 +26572,9 @@ op `removeApplicationClientSecret`(@js(#{`examples`:#[#{`application`:"my-web-ap
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `revealApplicationSecret`(@js(#{`examples`:#[#{`application`:"my-web-app",`secret`:"cs-0123456789ab"}]}) `requestBody/content/application~1json/schema`: WithApplicationSecret,
-  `responses/200/content/application~1json/schema`: `SharedModel261`,
-  `responses/400/content/application~1json/schema`: `SharedModel261`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors88`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors88`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/generate-did-key",
@@ -26606,9 +26606,9 @@ op `generateApplicationDidKey`(@js(#{`examples`:#[#{`application`:"my-web-app",`
     `algorithm`?: "ES256" | "ES384" | "EdDSA";
     `replace`?: boolean
   },
-  `responses/200/content/application~1json/schema`: `SharedModel262`,
-  `responses/400/content/application~1json/schema`: `SharedModel262`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors89`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors89`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/sign-domain-linkage",
@@ -26638,9 +26638,9 @@ op `generateApplicationDidKey`(@js(#{`examples`:#[#{`application`:"my-web-app",`
 op `signApplicationDomainLinkage`(@js(#{
     `examples`:#[#{`application`:"my-web-app",`origin`:"https://app.example.com"}]
   }) `requestBody/content/application~1json/schema`: {`application`: string; `origin`: string},
-  `responses/200/content/application~1json/schema`: `SharedModel263`,
-  `responses/400/content/application~1json/schema`: `SharedModel263`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors90`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors90`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/set-custom-claim",
@@ -26696,9 +26696,9 @@ op `setApplicationCustomClaim`(@js(#{
     `nameFormat`?: string;
     `namespace`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel265`,
-  `responses/400/content/application~1json/schema`: `SharedModel265`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors92`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors92`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/remove-custom-claim",
@@ -26732,9 +26732,9 @@ op `removeApplicationCustomClaim`(@js(#{
     `set`: "access_token" | "id_token" | "userinfo" | "saml2" | "saml11" | "kerberos-pac" | "gnap_access_token";
     `name`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel265`,
-  `responses/400/content/application~1json/schema`: `SharedModel265`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors92`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors92`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/set-claim-attributes",
@@ -26779,9 +26779,9 @@ op `setApplicationClaimAttributes`(@js(#{
     `set`: "access_token" | "id_token" | "userinfo" | "saml2" | "saml11" | "credential";
     `attributes`: (string)[]
   },
-  `responses/200/content/application~1json/schema`: `SharedModel268`,
-  `responses/400/content/application~1json/schema`: `SharedModel268`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors93`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors93`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/set-claim-selections",
@@ -26823,9 +26823,9 @@ op `setApplicationClaimSelections`(@js(#{
     `id_token`?: (string)[];
     `userinfo`?: (string)[]
   },
-  `responses/200/content/application~1json/schema`: `SharedModel269`,
-  `responses/400/content/application~1json/schema`: `SharedModel269`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors94`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors94`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/inherit-claim-attributes",
@@ -26856,9 +26856,9 @@ op `inheritApplicationClaimAttributes`(@js(#{`examples`:#[#{`application`:"my-we
     `application`: string;
     `set`: "access_token" | "id_token" | "userinfo" | "saml2" | "saml11" | "credential"
   },
-  `responses/200/content/application~1json/schema`: `SharedModel268`,
-  `responses/400/content/application~1json/schema`: `SharedModel268`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors93`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors93`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/set-permission-claims",
@@ -26894,9 +26894,9 @@ op `setApplicationPermissionClaims`(@js(#{
       }
     ]
   }) `requestBody/content/application~1json/schema`: {`application`: string; `permission`: string; `attributes`: (string)[]},
-  `responses/200/content/application~1json/schema`: `SharedModel270`,
-  `responses/400/content/application~1json/schema`: `SharedModel270`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors95`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors95`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/clear-permission-claims",
@@ -26924,9 +26924,9 @@ op `setApplicationPermissionClaims`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `clearApplicationPermissionClaims`(@js(#{`examples`:#[#{`application`:"hr-api",`permission`:"hr.read"}]}) `requestBody/content/application~1json/schema`: {`application`: string; `permission`: string},
-  `responses/200/content/application~1json/schema`: `SharedModel270`,
-  `responses/400/content/application~1json/schema`: `SharedModel270`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors95`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors95`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{`$types`:#["boolean","string"]}) @hoisted model post_admin_api_applications_set_access_type_b_application_json_bearer_h2737 {}
@@ -26994,9 +26994,9 @@ op `setApplicationAccessType`(@js(#{
     `xacml`?: post_admin_api_applications_set_access_type_b_application_json_xacml_h2743;
     `notForPolicy`?: Shape18
   },
-  `responses/200/content/application~1json/schema`: `SharedModel271`,
-  `responses/400/content/application~1json/schema`: `SharedModel271`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors96`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors96`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/remove-access-type",
@@ -27026,9 +27026,9 @@ op `setApplicationAccessType`(@js(#{
 op `removeApplicationAccessType`(@js(#{
     `examples`:#[#{`application`:"payments-api",`type`:"payment_initiation"}]
   }) `requestBody/content/application~1json/schema`: {`application`: string; `type`: string},
-  `responses/200/content/application~1json/schema`: `SharedModel271`,
-  `responses/400/content/application~1json/schema`: `SharedModel271`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors96`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors96`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/set-access-type-row",
@@ -27075,9 +27075,9 @@ op `setApplicationAccessTypeRow`(@js(#{
     `multiplicity`?: string;
     `description`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel271`,
-  `responses/400/content/application~1json/schema`: `SharedModel271`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors96`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors96`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/remove-access-type-row",
@@ -27113,9 +27113,9 @@ op `removeApplicationAccessTypeRow`(@js(#{
       }
     ]
   }) `requestBody/content/application~1json/schema`: {`application`: string; `type`: string; `path`: string},
-  `responses/200/content/application~1json/schema`: `SharedModel271`,
-  `responses/400/content/application~1json/schema`: `SharedModel271`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors96`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors96`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/set-not-for-policy",
@@ -27155,9 +27155,9 @@ op `setApplicationAccessTypeNotForPolicy`(@js(#{
     `type`: string;
     `notForPolicy`?: Shape18
   },
-  `responses/200/content/application~1json/schema`: `SharedModel271`,
-  `responses/400/content/application~1json/schema`: `SharedModel271`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors96`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors96`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/fga-enable",
@@ -27185,9 +27185,9 @@ op `setApplicationAccessTypeNotForPolicy`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `enableApplicationFga`(@js(#{`examples`:#[#{`application`:"payments-api"}]}) `requestBody/content/application~1json/schema`: {`application`: string},
-  `responses/200/content/application~1json/schema`: `SharedModel273`,
-  `responses/400/content/application~1json/schema`: `SharedModel273`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors97`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors97`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/fga-disable",
@@ -27215,9 +27215,9 @@ op `enableApplicationFga`(@js(#{`examples`:#[#{`application`:"payments-api"}]}) 
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `disableApplicationFga`(@js(#{`examples`:#[#{`application`:"payments-api"}]}) `requestBody/content/application~1json/schema`: {`application`: string},
-  `responses/200/content/application~1json/schema`: `SharedModel273`,
-  `responses/400/content/application~1json/schema`: `SharedModel273`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors97`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors97`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/fga-create-policy",
@@ -27245,9 +27245,9 @@ op `disableApplicationFga`(@js(#{`examples`:#[#{`application`:"payments-api"}]})
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `createApplicationFgaPolicy`(@js(#{`examples`:#[#{`application`:"payments-api"}]}) `requestBody/content/application~1json/schema`: {`application`: string},
-  `responses/200/content/application~1json/schema`: `SharedModel273`,
-  `responses/400/content/application~1json/schema`: `SharedModel273`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors97`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors97`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{`description`:"The rewrite is meant.",`$comb`:"oneOf"}) @hoisted union post_admin_api_applications_fga_reset_policy_b_application_json_confirm_h2746 {boolean, "true" | "false" | "on"}
@@ -27280,9 +27280,9 @@ op `resetApplicationFgaPolicy`(@js(#{`examples`:#[#{`application`:"payments-api"
     `application`: string;
     `confirm`?: post_admin_api_applications_fga_reset_policy_b_application_json_confirm_h2746
   },
-  `responses/200/content/application~1json/schema`: `SharedModel273`,
-  `responses/400/content/application~1json/schema`: `SharedModel273`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors97`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors97`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/issue-tls-client-certificate",
@@ -27319,9 +27319,9 @@ op `issueApplicationTlsClientCertificate`(@js(#{
       }
     ]
   }) `requestBody/content/application~1json/schema`: WithApplicationMinLengthMaxLengthEtc10,
-  `responses/200/content/application~1json/schema`: `SharedModel277`,
-  `responses/400/content/application~1json/schema`: `SharedModel277`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors98`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors98`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/revoke-tls-client-certificate",
@@ -27357,9 +27357,9 @@ op `revokeApplicationTlsClientCertificate`(@js(#{
       }
     ]
   }) `requestBody/content/application~1json/schema`: WithApplicationSerialHexReason,
-  `responses/200/content/application~1json/schema`: `SharedModel279`,
-  `responses/400/content/application~1json/schema`: `SharedModel279`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors99`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors99`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/issue-signing-certificate",
@@ -27396,9 +27396,9 @@ op `issueApplicationSigningCertificate`(@js(#{
       }
     ]
   }) `requestBody/content/application~1json/schema`: WithApplicationMinLengthMaxLengthEtc10,
-  `responses/200/content/application~1json/schema`: `SharedModel277`,
-  `responses/400/content/application~1json/schema`: `SharedModel277`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors98`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors98`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/revoke-signing-certificate",
@@ -27434,9 +27434,9 @@ op `revokeApplicationSigningCertificate`(@js(#{
       }
     ]
   }) `requestBody/content/application~1json/schema`: WithApplicationSerialHexReason,
-  `responses/200/content/application~1json/schema`: `SharedModel279`,
-  `responses/400/content/application~1json/schema`: `SharedModel279`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors99`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors99`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/add-certificate",
@@ -27476,9 +27476,9 @@ op `addApplicationCertificate`(@js(#{
     }) `application`: string;
     @js(#{`description`:"The leaf, as one PEM block or base64 DER."}) `certificate`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel282`,
-  `responses/400/content/application~1json/schema`: `SharedModel282`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors100`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors100`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/remove-certificate",
@@ -27518,9 +27518,9 @@ op `removeApplicationCertificate`(@js(#{
     }) `application`: string;
     @js(#{`description`:"The SHA-256 of the certificate's DER, hex."}) `sha256`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel282`,
-  `responses/400/content/application~1json/schema`: `SharedModel282`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors100`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors100`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -27581,9 +27581,9 @@ op `issueApplicationSoftwareStatement`(@js(#{
     `metadata`?: post_admin_api_applications_issue_software_statement_b_application_json_metadata_h2748;
     `lifetimeSeconds`?: post_admin_api_applications_issue_software_statement_b_application_json_lifetimeSeconds_h2749
   },
-  `responses/200/content/application~1json/schema`: `SharedModel283`,
-  `responses/400/content/application~1json/schema`: `SharedModel283`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors101`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors101`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/revoke-registration",
@@ -27611,9 +27611,9 @@ op `issueApplicationSoftwareStatement`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `revokeApplicationRegistration`(@js(#{`examples`:#[#{`application`:"sts-client-Ab12Cd34"}]}) `requestBody/content/application~1json/schema`: {`application`: string},
-  `responses/200/content/application~1json/schema`: `SharedModel254`,
-  `responses/400/content/application~1json/schema`: `SharedModel254`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors84`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors84`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/refresh-metadata",
@@ -27644,9 +27644,9 @@ op `refreshApplicationMetadata`(@js(#{
     `description`:"The application whose metadata should be refreshed.",
     `examples`:#[#{`application`:"https://sp.example.com"}]
   }) `requestBody/content/application~1json/schema`: {`application`: string},
-  `responses/200/content/application~1json/schema`: `SharedModel285`,
-  `responses/400/content/application~1json/schema`: `SharedModel285`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors102`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors102`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -27700,9 +27700,9 @@ op `loadProtectedResourceMetadata`(@js(#{
       `description`:"An uploaded document: its file name and its text, which is how the console sends the file it was given."
     }) `file`?: WithNameText
   },
-  `responses/200/content/application~1json/schema`: `SharedModel286`,
-  `responses/400/content/application~1json/schema`: `SharedModel286`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors103`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors103`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -27738,9 +27738,9 @@ op `exportApplicationLdif`(@js(#{`examples`:#[#{`application`:"my-web-app"}]}) `
     `application`: string;
     `credentials`?: post_admin_api_applications_export_ldif_b_application_json_credentials_h2752
   },
-  `responses/200/content/application~1json/schema`: `SharedModel296`,
-  `responses/400/content/application~1json/schema`: `SharedModel296`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors104`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors104`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/import-ldif",
@@ -27777,9 +27777,9 @@ op `importApplicationLdif`(@js(#{
     @js(#{`description`:"The LDIF document."}) `ldif`?: string;
     @js(#{`description`:"An uploaded LDIF file: its name and its text."}) `file`?: WithNameText
   },
-  `responses/200/content/application~1json/schema`: `SharedModel254`,
-  `responses/400/content/application~1json/schema`: `SharedModel254`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors84`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors84`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/applications/forget",
@@ -27807,9 +27807,9 @@ op `importApplicationLdif`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `deleteApplication`(@js(#{`examples`:#[#{`application`:"typo-clientt"}]}) `requestBody/content/application~1json/schema`: {`application`: string},
-  `responses/200/content/application~1json/schema`: `SharedModel254`,
-  `responses/400/content/application~1json/schema`: `SharedModel254`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors84`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors84`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml",
@@ -27840,9 +27840,9 @@ op `getXacml`(`responses/200/content/application~1json/schema`: {
     `root`?: NullableString;
     `pipAvailable`?: boolean;
     `settings`?: `SharedModel297`;
-    `protocolEndpoints`?: `SharedModel49`
+    `protocolEndpoints`?: `WithParamsDescriptionParams`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/policies",
@@ -27871,10 +27871,10 @@ op `getXacmlPolicies`(`responses/200/content/application~1json/schema`: {
     `policies`?: (WithNamePolicyIdKindEtc11)[];
     `applicationPolicies`?: (WithApplicationKnownEnforcedEtc4)[];
     `templates`?: (WithIdLabelBlurbEtc5)[];
-    `serviceOwn`?: `SharedModel302`;
-    `protocolEndpoints`?: `SharedModel49`
+    `serviceOwn`?: `WithKindTypeLexical`;
+    `protocolEndpoints`?: `WithParamsDescriptionParams`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -27896,8 +27896,8 @@ op `getXacmlPolicies`(`responses/200/content/application~1json/schema`: {
           `effect`:#{`type`:"string"},
           `ref`:#{`type`:"string"},
           `matchId`:#{`type`:"string"},
-          `value`:#{`$ref`:"#/components/schemas/SharedModel304"},
-          `reference`:#{`$ref`:"#/components/schemas/SharedModel304"},
+          `value`:#{`$ref`:"#/components/schemas/WithKindTypeLexical2"},
+          `reference`:#{`$ref`:"#/components/schemas/WithKindTypeLexical2"},
           `namespaces`:#{`type`:"object",`additionalProperties`:#{`type`:#["string","null"]}},
           `type`:#{`type`:"string"},
           `lexical`:#{`type`:"string"},
@@ -27973,7 +27973,7 @@ op `getXacmlEditor`(`parameters/0/schema`: string,
     `xacml`?: boolean;
     `message`?: string;
     `policies`?: (string)[];
-    `serviceOwn`?: `SharedModel302`;
+    `serviceOwn`?: `WithKindTypeLexical`;
     `policy`?: NullableObject96;
     `problem`?: NullableString;
     `tree`?: ({
@@ -27990,9 +27990,9 @@ op `getXacmlEditor`(`parameters/0/schema`: string,
     `xpathVersionGaps`?: (NullableString)[];
     `document`?: string;
     `alfa`?: NullableString;
-    `protocolEndpoints`?: `SharedModel49`
+    `protocolEndpoints`?: `WithParamsDescriptionParams`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/decide",
@@ -28054,9 +28054,9 @@ op `getXacmlDecision`(`parameters/0/schema`: string,
     `applicablePolicies`?: (StringOrKindStringIdStringVersionString)[];
     `enforcement`?: WithAllowedBiasWhy;
     `enforcements`?: (WithAllowedBiasWhy)[];
-    `protocolEndpoints`?: `SharedModel49`
+    `protocolEndpoints`?: `WithParamsDescriptionParams`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/gnap",
@@ -28121,7 +28121,7 @@ op `getGnap`(`parameters/0/schema`: string,
   @js(#{`minimum`:1}) `parameters/3/schema`: integer,
   @js(#{`minimum`:1}) `parameters/4/schema`: integer,
   `responses/200/content/application~1json/schema`: `GnapServer`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/gnap/monitor",
@@ -28162,7 +28162,7 @@ op `getGnap`(`parameters/0/schema`: string,
 op `getGnapMonitor`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
   @js(#{`minimum`:1,`maximum`:300}) `parameters/1/schema`: integer,
   `responses/200/content/application~1json/schema`: `GnapMonitor`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/gnap/revoke-grant",
@@ -28197,9 +28197,9 @@ op `revokeGnapGrant`(@js(#{`examples`:#[#{`grant`:"no-such-grant-example"}]}) `r
       `description`:"The person whose grant it must be (optional). A grant whose resource owner is somebody else is refused and nothing changes."
     }) `user`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel305`,
-  `responses/400/content/application~1json/schema`: `SharedModel305`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors105`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors105`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/gnap/delete-resource-set",
@@ -28231,7 +28231,7 @@ op `deleteGnapResourceSet`(@js(#{`examples`:#[#{`reference`:"no-such-reference"}
   },
   `responses/200/content/application~1json/schema`: WithOkMessageErrorsEtc49,
   `responses/400/content/application~1json/schema`: WithOkMessageErrorsEtc49,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/monitor",
@@ -28254,7 +28254,7 @@ op `deleteGnapResourceSet`(@js(#{`examples`:#[#{`reference`:"no-such-reference"}
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getXacmlMonitor`(`responses/200/content/application~1json/schema`: `XacmlMonitor`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/peps",
@@ -28289,9 +28289,9 @@ op `getXacmlPeps`(`responses/200/content/application~1json/schema`: {
     `listenerCertificates`?: WithUseCaseKeyAlgorithmsDefaultKeyAlg;
     `current`?: integer;
     `stale`?: integer;
-    `protocolEndpoints`?: `SharedModel49`
+    `protocolEndpoints`?: `WithParamsDescriptionParams`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/create-from-template",
@@ -28329,9 +28329,9 @@ op `createXacmlPolicy`(@js(#{
       `description`:"Names the DIRECTORY ENTRY. The PolicyId inside the document is a separate identifier and may be any URI."
     }) `name`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/import-alfa",
@@ -28371,9 +28371,9 @@ op `importXacmlAlfa`(@js(#{
     }) `alfa`: string;
     @js(#{`description`:"Names the directory entry."}) `name`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/enable",
@@ -28401,9 +28401,9 @@ op `importXacmlAlfa`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `enableXacmlPolicy`(@js(#{`examples`:#[#{`name`:"my-policy"}]}) `requestBody/content/application~1json/schema`: WithDescriptionName2,
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/disable",
@@ -28431,9 +28431,9 @@ op `enableXacmlPolicy`(@js(#{`examples`:#[#{`name`:"my-policy"}]}) `requestBody/
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `disableXacmlPolicy`(@js(#{`examples`:#[#{`name`:"my-policy"}]}) `requestBody/content/application~1json/schema`: WithDescriptionName2,
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/set-root",
@@ -28461,9 +28461,9 @@ op `disableXacmlPolicy`(@js(#{`examples`:#[#{`name`:"my-policy"}]}) `requestBody
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `setXacmlRootPolicy`(@js(#{`examples`:#[#{`name`:"my-policy"}]}) `requestBody/content/application~1json/schema`: WithDescriptionName2,
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/delete",
@@ -28491,9 +28491,9 @@ op `setXacmlRootPolicy`(@js(#{`examples`:#[#{`name`:"my-policy"}]}) `requestBody
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `deleteXacmlPolicy`(@js(#{`examples`:#[#{`name`:"my-policy"}]}) `requestBody/content/application~1json/schema`: WithDescriptionName2,
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/edit-policy",
@@ -28544,9 +28544,9 @@ op `editXacmlPolicy`(@js(#{
       `description`:"The document's <XPathVersion> in its defaults, a URI; empty removes it."
     }) `xpathVersion`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/add-rule",
@@ -28582,9 +28582,9 @@ op `addXacmlRule`(@js(#{`examples`:#[#{`policy`:"my-policy",`path`:"",`effect`:"
     }) `path`?: string;
     @js(#{`description`:"Permit or Deny. Defaults to Permit."}) `effect`?: "Permit" | "Deny"
   },
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/edit-match",
@@ -28645,9 +28645,9 @@ op `editXacmlMatch`(@js(#{
     @js(#{`description`:"A selector's ContextSelectorId."}) `contextSelectorId`?: string;
     @js(#{`description`:"A designator's Issuer; empty clears it."}) `issuer`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/remove",
@@ -28675,9 +28675,9 @@ op `editXacmlMatch`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `removeXacmlNode`(@js(#{`examples`:#[#{`policy`:"my-policy",`path`:"rules.0"}]}) `requestBody/content/application~1json/schema`: WithDescriptionPolicyDescriptionEtc4,
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/add-target-anyof",
@@ -28731,9 +28731,9 @@ op `addXacmlTargetClause`(@js(#{
       `description`:"The attribute to read. A bare name or the `urn:sts:xacml:attribute:` prefix reaches the directory through the PIP; anything else must be in the request."
     }) `attributeId`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/add-allof",
@@ -28771,9 +28771,9 @@ op `addXacmlAlternative`(@js(#{
       }
     ]
   }) `requestBody/content/application~1json/schema`: WithDescriptionPolicyDescriptionEtc12,
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/add-match",
@@ -28811,9 +28811,9 @@ op `addXacmlMatch`(@js(#{
       }
     ]
   }) `requestBody/content/application~1json/schema`: WithDescriptionPolicyDescriptionEtc12,
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/edit-rule",
@@ -28851,9 +28851,9 @@ op `editXacmlRule`(@js(#{`examples`:#[#{`policy`:"my-policy",`path`:"rules.0",`e
     @js(#{`description`:"Permit or Deny."}) `effect`?: "Permit" | "Deny";
     @js(#{`description`:"The rule's own description."}) `description`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/add-condition",
@@ -28881,9 +28881,9 @@ op `editXacmlRule`(@js(#{`examples`:#[#{`policy`:"my-policy",`path`:"rules.0",`e
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `addXacmlCondition`(@js(#{`examples`:#[#{`policy`:"my-policy",`path`:"rules.0"}]}) `requestBody/content/application~1json/schema`: WithDescriptionPolicyDescriptionEtc4,
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/set-expression-apply",
@@ -28929,9 +28929,9 @@ op `setXacmlApply`(@js(#{
       `description`:"The function to apply. Its arguments are PRE-BUILT to the declared arity and types, so the expression typechecks the moment it exists."
     }) `functionId`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/set-expression-value",
@@ -28977,9 +28977,9 @@ op `setXacmlValue`(@js(#{
     @js(#{`description`:"The datatype URI. Defaults to xs:string."}) `type`?: string;
     @js(#{`description`:"The value, in that datatype's lexical form."}) `lexical`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/set-expression-designator",
@@ -29027,9 +29027,9 @@ op `setXacmlDesignator`(@js(#{
     @js(#{`description`:"The attribute to read."}) `attributeId`?: string;
     @js(#{`description`:"The datatype URI. Defaults to xs:string."}) `dataType`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/set-expression-variable",
@@ -29075,9 +29075,9 @@ op `setXacmlVariable`(@js(#{
       `description`:"The VariableDefinition to reference. It must exist in the same policy — the reference is checked at write time."
     }) `variableId`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/add-argument",
@@ -29105,9 +29105,9 @@ op `setXacmlVariable`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `addXacmlArgument`(@js(#{`examples`:#[#{`policy`:"my-policy",`path`:"rules.0.condition"}]}) `requestBody/content/application~1json/schema`: WithDescriptionPolicyDescriptionEtc4,
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/edit-apply",
@@ -29153,9 +29153,9 @@ op `editXacmlApply`(@js(#{
       `description`:"The function to apply instead. The arguments are reshaped to the new signature."
     }) `functionId`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/edit-value",
@@ -29200,9 +29200,9 @@ op `editXacmlValue`(@js(#{
     @js(#{`description`:"A new datatype URI."}) `type`?: string;
     @js(#{`description`:"A new lexical form, parsed against that datatype."}) `lexical`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/edit-designator",
@@ -29252,9 +29252,9 @@ op `editXacmlDesignator`(@js(#{
       `description`:"False makes an absent attribute an empty bag; true makes the whole expression Indeterminate, which the combining algorithms treat quite differently from a Deny."
     }) `mustBePresent`?: boolean
   },
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/add-rule-obligation",
@@ -29292,9 +29292,9 @@ op `addXacmlRuleObligation`(@js(#{`examples`:#[#{`policy`:"my-policy",`path`:"ru
       `description`:"Permit or Deny — the effect this fires on. Defaults to Permit. An obligation attached to the wrong effect is silently never discharged."
     }) `on`?: "Permit" | "Deny"
   },
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/add-policy-obligation",
@@ -29322,9 +29322,9 @@ op `addXacmlRuleObligation`(@js(#{`examples`:#[#{`policy`:"my-policy",`path`:"ru
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `addXacmlPolicyObligation`(@js(#{`examples`:#[#{`policy`:"my-policy",`path`:"",`on`:"Deny"}]}) `requestBody/content/application~1json/schema`: WithDescriptionPolicyDescriptionEtc6,
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/add-rule-advice",
@@ -29360,9 +29360,9 @@ op `addXacmlRuleAdvice`(@js(#{`examples`:#[#{`policy`:"my-policy",`path`:"rules.
     }) `path`: string;
     @js(#{`description`:"Permit or Deny. Defaults to Permit."}) `on`?: "Permit" | "Deny"
   },
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/add-policy-advice",
@@ -29390,9 +29390,9 @@ op `addXacmlRuleAdvice`(@js(#{`examples`:#[#{`policy`:"my-policy",`path`:"rules.
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `addXacmlPolicyAdvice`(@js(#{`examples`:#[#{`policy`:"my-policy",`path`:"",`on`:"Permit"}]}) `requestBody/content/application~1json/schema`: WithDescriptionPolicyDescriptionEtc6,
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/edit-obligation",
@@ -29438,9 +29438,9 @@ op `editXacmlObligation`(@js(#{
     @js(#{`description`:"A new obligation or advice identifier."}) `id`?: string;
     @js(#{`description`:"Permit or Deny — the effect it fires on."}) `on`?: "Permit" | "Deny"
   },
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/add-assignment",
@@ -29468,9 +29468,9 @@ op `editXacmlObligation`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `addXacmlAssignment`(@js(#{`examples`:#[#{`policy`:"my-policy",`path`:"obligations.0"}]}) `requestBody/content/application~1json/schema`: WithDescriptionPolicyDescriptionEtc4,
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/add-policy",
@@ -29498,9 +29498,9 @@ op `addXacmlAssignment`(@js(#{`examples`:#[#{`policy`:"my-policy",`path`:"obliga
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `addXacmlPolicyToSet`(@js(#{`examples`:#[#{`policy`:"my-policy-set",`path`:""}]}) `requestBody/content/application~1json/schema`: WithDescriptionPolicyDescriptionEtc4,
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/add-policyset",
@@ -29528,9 +29528,9 @@ op `addXacmlPolicyToSet`(@js(#{`examples`:#[#{`policy`:"my-policy-set",`path`:""
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `addXacmlPolicySetToSet`(@js(#{`examples`:#[#{`policy`:"my-policy-set",`path`:""}]}) `requestBody/content/application~1json/schema`: WithDescriptionPolicyDescriptionEtc4,
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/add-policy-reference",
@@ -29569,9 +29569,9 @@ op `addXacmlPolicyReference`(@js(#{
     @js(#{`description`:"The PolicyId being referenced. Any URI."}) `ref`?: string;
     @js(#{`description`:"An optional version constraint. Omit for no constraint."}) `version`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/add-policyset-reference",
@@ -29610,9 +29610,9 @@ op `addXacmlPolicySetReference`(@js(#{
     @js(#{`description`:"The PolicySetId being referenced."}) `ref`?: string;
     @js(#{`description`:"An optional version constraint."}) `version`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/edit-reference",
@@ -29657,9 +29657,9 @@ op `editXacmlReference`(@js(#{
     @js(#{`description`:"The PolicyId or PolicySetId to name."}) `ref`?: string;
     @js(#{`description`:"A version constraint, or empty for none."}) `version`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/add-variable",
@@ -29699,9 +29699,9 @@ op `addXacmlVariable`(@js(#{
       `description`:"The name. Defaults to the next free `v<n>`. A duplicate is refused — the reader rejects a document defining one id twice, so allowing it here would write a policy this service cannot load back."
     }) `variableId`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/edit-variable",
@@ -29739,9 +29739,9 @@ op `renameXacmlVariable`(@js(#{
     }) `path`: string;
     @js(#{`description`:"The new name."}) `variableId`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/set-expression-selector",
@@ -29782,9 +29782,9 @@ op `setXacmlExpressionSelector`(@js(#{`examples`:#[#{`policy`:"my-policy",`path`
       `description`:"Sent as `path` — but `path` is already the node address on this endpoint, so set the XPath with edit-selector immediately afterwards. The selector arrives with `//*`, which is complete and valid."
     }) `path_xpath`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/edit-selector",
@@ -29841,9 +29841,9 @@ op `editXacmlSelector`(@js(#{
     @js(#{`description`:"A prefix to bind, rebind or remove."}) `namespacePrefix`?: string;
     @js(#{`description`:"What to bind it to. Empty removes it."}) `namespaceUri`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/set-expression-function",
@@ -29887,9 +29887,9 @@ op `setXacmlExpressionFunction`(@js(#{
     }) `path`: string;
     @js(#{`description`:"The function to name. Defaults to string-equal."}) `functionId`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/edit-function",
@@ -29933,9 +29933,9 @@ op `editXacmlFunctionReference`(@js(#{
     }) `path`: string;
     @js(#{`description`:"Any identifier in the function library."}) `functionId`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/edit-assignment",
@@ -29981,9 +29981,9 @@ op `editXacmlAssignment`(@js(#{
     @js(#{`description`:"An optional category. Empty removes it."}) `category`?: string;
     @js(#{`description`:"An optional issuer. Empty removes it."}) `issuer`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/disable-pep",
@@ -30011,9 +30011,9 @@ op `editXacmlAssignment`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `disableXacmlPep`(@js(#{`examples`:#[#{`name`:"pep-1"}]}) `requestBody/content/application~1json/schema`: WithDescriptionName,
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/enable-pep",
@@ -30045,9 +30045,9 @@ op `enableXacmlPep`(@js(#{`examples`:#[#{`name`:"pep-1"}]}) `requestBody/content
       `description`:"The registered PEP's name, which is the one its client certificate gave it."
     }) `name`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/forget-pep",
@@ -30075,9 +30075,9 @@ op `enableXacmlPep`(@js(#{`examples`:#[#{`name`:"pep-1"}]}) `requestBody/content
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `forgetXacmlPep`(@js(#{`examples`:#[#{`name`:"pep-1"}]}) `requestBody/content/application~1json/schema`: WithDescriptionName,
-  `responses/200/content/application~1json/schema`: `SharedModel308`,
-  `responses/400/content/application~1json/schema`: `SharedModel308`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors106`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -30136,9 +30136,9 @@ op `issueXacmlPepCertificate`(@js(#{
       `description`:"The lifetime. Defaults to `pki.leafLifetimeDays`, and is shortened to the Issuing CA's own expiry."
     }) `days`?: integer
   },
-  `responses/200/content/application~1json/schema`: `SharedModel309`,
-  `responses/400/content/application~1json/schema`: `SharedModel309`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors107`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors107`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/ssf",
@@ -30269,11 +30269,11 @@ op `getSsf`(@js(#{`maxLength`:256}) `parameters/0/schema`: string,
     `statuses`?: (string)[];
     `streamTotals`?: WithStreamsEnabledDeliveredEtc7;
     `streamFilter`?: NullableString;
-    `paging`?: {`streams`?: `SharedModel27`};
+    `paging`?: {`streams`?: `WithPagePagesPerPage`};
     `note`?: string;
-    `protocolEndpoints`?: `SharedModel49`
+    `protocolEndpoints`?: `WithParamsDescriptionParams`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/ssf/dead-letters",
@@ -30359,7 +30359,7 @@ op `getSsfDeadLetters`(@js(#{`maxLength`:256}) `parameters/0/schema`: string,
   @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/6/schema`: integer,
   `responses/200/content/application~1json/schema`: `SsfDeadLetters`,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/ssf/status",
@@ -30397,9 +30397,9 @@ op `setSsfStreamStatus`(@js(#{
       `description`:"Optional. Why, in words — it rides in the stream-updated event's `reason` member, which nothing parses."
     }) `reason`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel311`,
-  `responses/400/content/application~1json/schema`: `SharedModel311`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors108`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors108`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/ssf/transmit",
@@ -30453,9 +30453,9 @@ op `transmitSsfEvent`(@js(#{
       `description`:"Optional RFC 8417 `txn`, tying several events to one act."
     }) `txn`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel311`,
-  `responses/400/content/application~1json/schema`: `SharedModel311`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors108`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors108`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/ssf/delete",
@@ -30485,7 +30485,7 @@ op `transmitSsfEvent`(@js(#{
 op `deleteSsfStream`(@js(#{`examples`:#[#{`stream_id`:"ssf-0123456789ab"}]}) `requestBody/content/application~1json/schema`: WithDescriptionStreamId,
   `responses/200/content/application~1json/schema`: WithOkMessageErrors,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/ssf/revive",
@@ -30518,7 +30518,7 @@ op `reviveSsfStream`(@js(#{`examples`:#[#{`stream_id`:"ssf-0123456789ab"}]}) `re
   },
   `responses/200/content/application~1json/schema`: WithOkMessageErrors,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/ssf/verify",
@@ -30546,9 +30546,9 @@ op `reviveSsfStream`(@js(#{`examples`:#[#{`stream_id`:"ssf-0123456789ab"}]}) `re
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `verifySsfStream`(@js(#{`examples`:#[#{`stream_id`:"ssf-0123456789ab"}]}) `requestBody/content/application~1json/schema`: WithDescriptionStreamId,
-  `responses/200/content/application~1json/schema`: `SharedModel311`,
-  `responses/400/content/application~1json/schema`: `SharedModel311`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors108`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors108`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/ssf/clear-dead-letters",
@@ -30578,7 +30578,7 @@ op `verifySsfStream`(@js(#{`examples`:#[#{`stream_id`:"ssf-0123456789ab"}]}) `re
 op `clearSsfDeadLetters`(@js(#{`examples`:#[#{`stream_id`:"ssf-0123456789ab"}]}) `requestBody/content/application~1json/schema`: WithDescriptionStreamId,
   `responses/200/content/application~1json/schema`: WithOkMessageErrors,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/caep",
@@ -30601,7 +30601,7 @@ op `clearSsfDeadLetters`(@js(#{`examples`:#[#{`stream_id`:"ssf-0123456789ab"}]})
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getCaep`(`responses/200/content/application~1json/schema`: `Caep`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/caep/sessions",
@@ -30698,7 +30698,7 @@ op `getCaepSessions`(`parameters/0/schema`: string,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/7/schema`: integer,
   @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/8/schema`: integer,
   `responses/200/content/application~1json/schema`: `Caep`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/caep/emit",
@@ -30755,9 +30755,9 @@ op `emitCaepEvent`(@js(#{
     }) `reason_admin`?: string;
     @js(#{`description`:"The same, in words meant for the person."}) `reason_user`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel314`,
-  `responses/400/content/application~1json/schema`: `SharedModel314`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors110`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors110`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/caep/reset-session",
@@ -30787,7 +30787,7 @@ op `emitCaepEvent`(@js(#{
 op `resetCaepSession`(@js(#{`examples`:#[#{`session_id`:"abcdef0123456789abcdef01"}]}) `requestBody/content/application~1json/schema`: {@js(#{`description`:"The session."}) `session_id`: string},
   `responses/200/content/application~1json/schema`: WithOkMessageErrors,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/caep/clear",
@@ -30817,7 +30817,7 @@ op `resetCaepSession`(@js(#{`examples`:#[#{`session_id`:"abcdef0123456789abcdef0
 op `clearCaepSessions`(@js(#{`examples`:#[#{}]}) `requestBody/content/application~1json/schema`: {},
   `responses/200/content/application~1json/schema`: WithOkMessageErrors,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/risc",
@@ -30840,7 +30840,7 @@ op `clearCaepSessions`(@js(#{`examples`:#[#{}]}) `requestBody/content/applicatio
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getRisc`(`responses/200/content/application~1json/schema`: `Risc`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/risc/accounts",
@@ -30937,7 +30937,7 @@ op `getRiscAccounts`(`parameters/0/schema`: string,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/7/schema`: integer,
   @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/8/schema`: integer,
   `responses/200/content/application~1json/schema`: `Risc`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/risc/emit",
@@ -30998,9 +30998,9 @@ op `emitRiscEvent`(@js(#{
     }) `reason_admin`?: string;
     @js(#{`description`:"The same, in words meant for the person. Same one type."}) `reason_user`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel314`,
-  `responses/400/content/application~1json/schema`: `SharedModel314`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors110`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors110`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/risc/reset-account",
@@ -31030,7 +31030,7 @@ op `emitRiscEvent`(@js(#{
 op `resetRiscAccount`(@js(#{`examples`:#[#{`account_id`:"alice"}]}) `requestBody/content/application~1json/schema`: {@js(#{`description`:"The account."}) `account_id`: string},
   `responses/200/content/application~1json/schema`: WithOkMessageErrors,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/risc/clear",
@@ -31060,15 +31060,15 @@ op `resetRiscAccount`(@js(#{`examples`:#[#{`account_id`:"alice"}]}) `requestBody
 op `clearRiscAccounts`(@js(#{`examples`:#[#{}]}) `requestBody/content/application~1json/schema`: {},
   `responses/200/content/application~1json/schema`: WithOkMessageErrors,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
     `additionalProperties`:false,
     `properties`:#{
       `family`:#{`type`:"string"},
-      `clients`:#{`$ref`:"#/components/schemas/SharedModel320"},
-      `choices`:#{`$ref`:"#/components/schemas/SharedModel327"},
+      `clients`:#{`$ref`:"#/components/schemas/WithAuthMethodsOauthClientAuthTlsSources"},
+      `choices`:#{`$ref`:"#/components/schemas/WithAuthMethodsOauthClientAuthTlsSources2"},
       `httpAllowed`:#{`type`:"boolean"},
       `client`:#{`$ref`:"#/components/schemas/SharedModel328"},
       `missing`:#{`type`:"string"},
@@ -31107,7 +31107,7 @@ op `clearRiscAccounts`(@js(#{`examples`:#[#{}]}) `requestBody/content/applicatio
   })
 op `getScim`(@js(#{`maxLength`:512,`examples`:#["no-such-client"]}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: {
-    `protocolEndpoints`?: `SharedModel49`;
+    `protocolEndpoints`?: `WithParamsDescriptionParams`;
     `installed`?: boolean;
     `enabled`?: boolean;
     `baseUrl`?: NullableString;
@@ -31118,12 +31118,12 @@ op `getScim`(@js(#{`maxLength`:512,`examples`:#["no-such-client"]}) `parameters/
     `endpoints`?: (WithMethodPathWhat)[];
     `doesNotDo`?: (string)[];
     `reachableNegatives`?: (WithWhatAnswer)[];
-    `mapping`?: {`user`?: `SharedModel317`; `group`?: `SharedModel317`};
+    `mapping`?: {`user`?: `WithAdditionalPropertiesPropertiesPage3`; `group`?: `WithAdditionalPropertiesPropertiesPage3`};
     `counters`?: WithTotalOkFailedEtc13;
     `settings`?: `SharedModel319`;
     `scimClients`?: get_admin_api_scim_r200_application_json_scimClients_h2828
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/pki",
@@ -31202,7 +31202,7 @@ op `getPki`(@js(#{`minimum`:1,`maximum`:5}) `parameters/0/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `realm`?: string;
     `chain`?: `SharedModel331`;
-    `keyAlgorithms`?: `SharedModel334`;
+    `keyAlgorithms`?: `WithIdLabelKind`;
     `signatureAlgorithms`?: (WithIdLabelWeakEtc4)[];
     `tiers`?: ({
       `id`?: string;
@@ -31236,14 +31236,14 @@ op `getPki`(@js(#{`minimum`:1,`maximum`:5}) `parameters/0/schema`: integer,
           `held`?: boolean
         })[];
         `issuedTotal`?: integer;
-        `issuedPaging`?: `SharedModel27`;
+        `issuedPaging`?: `WithPagePagesPerPage`;
         `issuedSearch`?: NullableString;
         `orphansSearch`?: NullableString;
-        `revoked`?: `SharedModel335`;
+        `revoked`?: `WithIdLabelKid`;
         `revokedTotal`?: integer;
-        `revokedNotIssued`?: `SharedModel335`;
+        `revokedNotIssued`?: `WithIdLabelKid`;
         `revokedNotIssuedTotal`?: integer;
-        `orphansPaging`?: `SharedModel27`;
+        `orphansPaging`?: `WithPagePagesPerPage`;
         `crl`?: {
           `http`?: string;
           `ldap`?: NullableString
@@ -31309,8 +31309,8 @@ op `getPki`(@js(#{`minimum`:1,`maximum`:5}) `parameters/0/schema`: integer,
     })[];
     `persons`?: ({
       `username`?: string;
-      `jwt`?: `SharedModel337`;
-      `saml`?: `SharedModel337`
+      `jwt`?: `WithHasKeyPairKeysDeclaredIssuers2`;
+      `saml`?: `WithHasKeyPairKeysDeclaredIssuers2`
     })[];
     `personSigningKeyMax`?: numeric;
     `personRevocationReasons`?: (string)[];
@@ -31370,10 +31370,10 @@ op `getPki`(@js(#{`minimum`:1,`maximum`:5}) `parameters/0/schema`: integer,
         })[]
       })[]
     };
-    `workbench`?: `SharedModel341`;
+    `workbench`?: `WithFieldsProfilesPqModes2`;
     `settings`?: `SharedModel227`;
-    `issuedPaging`?: `SharedModel27`;
-    `personsPaging`?: `SharedModel27`;
+    `issuedPaging`?: `WithPagePagesPerPage`;
+    `personsPaging`?: `WithPagePagesPerPage`;
     `issuedSearch`?: NullableString;
     `personsSearch`?: NullableString;
     `issuedShown`?: (integer)[];
@@ -31386,10 +31386,10 @@ op `getPki`(@js(#{`minimum`:1,`maximum`:5}) `parameters/0/schema`: integer,
     };
     `tierLabels`?: (WithIdLabel)[];
     `serviceScope`?: string;
-    `protocolEndpoints`?: `SharedModel49`
+    `protocolEndpoints`?: `WithParamsDescriptionParams`
   },
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/certificates",
@@ -31470,7 +31470,7 @@ op `getCertificates`(`parameters/0/schema`: string,
     `appearances`?: (WithLabelWhere)[];
     `pqc`?: NullableObject38;
     `fingerprint`?: string;
-    `certificate`?: `SharedModel348`;
+    `certificate`?: `WithFingerprintPemSummary`;
     `chain`?: ({
       `position`?: integer;
       `fingerprint`?: string;
@@ -31483,14 +31483,14 @@ op `getCertificates`(`parameters/0/schema`: string,
       `notYetValid`?: boolean;
       `issuerMayCertify`?: NullableBoolean;
       `anchor`?: NullableString;
-      `certificate`?: `SharedModel348`
+      `certificate`?: `WithFingerprintPemSummary`
     })[];
     `chainStatus`?: string;
     `chainReason`?: NullableString;
     `chainTrusted`?: boolean
   },
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/pki/trust",
@@ -31561,7 +31561,7 @@ op `getPkiTrust`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
       `maxIntermediates`?: integer;
       `anchors`?: integer;
       `intermediates`?: integer;
-      `entries`?: `SharedModel358`
+      `entries`?: `WithOkMessageErrors111`
     };
     `assessedAt`?: numeric;
     `pins`?: ({
@@ -31580,11 +31580,11 @@ op `getPkiTrust`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
       `fingerprint256`?: string
     })[];
     `pinsTotal`?: integer;
-    `pinsPaging`?: `SharedModel27`;
+    `pinsPaging`?: `WithPagePagesPerPage`;
     `clientTruststore`?: {`href`?: string; `count`?: integer};
     `actions`?: (string)[]
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -31634,9 +31634,9 @@ op `addSignerTrustAnchors`(@js(#{
     }) `kind`?: "anchor" | "intermediate" | "accepted";
     `purposes`?: post_admin_api_pki_trust_add_b_application_json_purposes_h2857
   },
-  `responses/200/content/application~1json/schema`: `SharedModel360`,
-  `responses/400/content/application~1json/schema`: `SharedModel360`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors112`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors112`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/pki/trust/remove",
@@ -31672,7 +31672,7 @@ op `removeSignerTrustAnchor`(@js(#{
   }) `requestBody/content/application~1json/schema`: {`fingerprint`: string},
   `responses/200/content/application~1json/schema`: WithOkMessageErrors,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/pki/trust/recheck",
@@ -31700,9 +31700,9 @@ op `removeSignerTrustAnchor`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `recheckPinnedCertificates`(@js(#{`examples`:#[#{}]}) `requestBody/content/application~1json/schema`: {},
-  `responses/200/content/application~1json/schema`: `SharedModel361`,
-  `responses/400/content/application~1json/schema`: `SharedModel361`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors113`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors113`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{`$comb`:"oneOf"}) @hoisted union post_admin_api_pki_trust_set_row_b_application_json_value_h2858 {string, boolean}
@@ -31737,7 +31737,7 @@ op `setParanoidPkiRow`(@js(#{`examples`:#[#{`setting`:"pki.paranoidFidoMds",`val
   },
   `responses/200/content/application~1json/schema`: WithOkMessageErrorsEtc46,
   `responses/400/content/application~1json/schema`: WithOkMessageErrorsEtc46,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/pki/build",
@@ -31791,9 +31791,9 @@ op `buildPkiChain`(@js(#{
     @js(#{`description`:"Ten by default."}) `years_intermediate`?: integer;
     @js(#{`description`:"Five by default."}) `years_issuing`?: integer
   },
-  `responses/200/content/application~1json/schema`: `SharedModel362`,
-  `responses/400/content/application~1json/schema`: `SharedModel362`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors114`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors114`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/pki/issue",
@@ -31851,9 +31851,9 @@ op `issuePkiKeyPair`(@js(#{
       `description`:"How long the certificate is valid. Defaults to `pki.leafLifetimeDays`."
     }) `days`?: integer
   },
-  `responses/200/content/application~1json/schema`: `SharedModel363`,
-  `responses/400/content/application~1json/schema`: `SharedModel363`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors115`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors115`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/pki/revoke",
@@ -31915,9 +31915,9 @@ op `revokePkiKeyPair`(@js(#{
       `description`:"`target=person` only: why. Defaults to `cessationOfOperation`; `keyCompromise` also raises a RISC credential-compromise event."
     }) `reason`?: "cessationOfOperation" | "keyCompromise"
   },
-  `responses/200/content/application~1json/schema`: `SharedModel367`,
-  `responses/400/content/application~1json/schema`: `SharedModel367`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors116`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors116`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/pki/upload-certificate",
@@ -31976,9 +31976,9 @@ op `uploadPkiCertificate`(@js(#{
       `description`:"`target=person` only: what the person calls this key pair, at most 40 characters. Optional."
     }) `label`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel368`,
-  `responses/400/content/application~1json/schema`: `SharedModel368`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors117`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors117`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/pki/clear",
@@ -32006,9 +32006,9 @@ op `uploadPkiCertificate`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `clearPkiChain`(@js(#{`examples`:#[#{}]}) `requestBody/content/application~1json/schema`: {},
-  `responses/200/content/application~1json/schema`: `SharedModel369`,
-  `responses/400/content/application~1json/schema`: `SharedModel369`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors118`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors118`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/pki/issue-certificate",
@@ -32053,9 +32053,9 @@ op `issuePkiCertificate`(@js(#{
     ],
     `additionalProperties`:true
   }) `requestBody/content/application~1json/schema`: {},
-  `responses/200/content/application~1json/schema`: `SharedModel370`,
-  `responses/400/content/application~1json/schema`: `SharedModel370`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors119`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors119`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/pki/remove-object",
@@ -32086,9 +32086,9 @@ op `removePkiObject`(@js(#{
     `examples`:#[#{`objectId`:"leaf-1f2e3d4c5b6a7980"}],
     `additionalProperties`:true
   }) `requestBody/content/application~1json/schema`: WithDescriptionObjectId,
-  `responses/200/content/application~1json/schema`: `SharedModel369`,
-  `responses/400/content/application~1json/schema`: `SharedModel369`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors118`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors118`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/pki/clear-store",
@@ -32116,9 +32116,9 @@ op `removePkiObject`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `clearPkiObjects`(@js(#{`examples`:#[#{}],`additionalProperties`:true}) `requestBody/content/application~1json/schema`: {},
-  `responses/200/content/application~1json/schema`: `SharedModel369`,
-  `responses/400/content/application~1json/schema`: `SharedModel369`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors118`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors118`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/pki/export",
@@ -32160,9 +32160,9 @@ op `exportPkiKeyPair`(@js(#{
       `description`:"The object to write out. Omitted, the key pair in `pki_private_key` and `pki_public_key` is used."
     }) `objectId`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel371`,
-  `responses/400/content/application~1json/schema`: `SharedModel371`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors120`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors120`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/pki/build-root",
@@ -32203,9 +32203,9 @@ op `buildPkiRoot`(@js(#{`examples`:#[#{`keyAlg`:"ec-p384",`years`:30}]}) `reques
       `description`:"How long it is valid for. Defaults to the root-ca profile’s own twenty years."
     }) `years`?: integer
   },
-  `responses/200/content/application~1json/schema`: `SharedModel372`,
-  `responses/400/content/application~1json/schema`: `SharedModel372`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors121`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors121`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/pki/build-scope",
@@ -32244,9 +32244,9 @@ op `buildPkiScope`(@js(#{`examples`:#[#{`scope`:"*process",`keyAlg`:"ec-p256"}]}
     }) `altKeyAlg`?: "ml-dsa-44" | "ml-dsa-65" | "ml-dsa-87" | "slh-dsa-sha2-128s" | "slh-dsa-sha2-128f" | "slh-dsa-sha2-192s" | "slh-dsa-sha2-192f" | "slh-dsa-sha2-256s" | "slh-dsa-sha2-256f" | "slh-dsa-shake-128s" | "slh-dsa-shake-128f" | "slh-dsa-shake-192s" | "slh-dsa-shake-192f" | "slh-dsa-shake-256s" | "slh-dsa-shake-256f" | "none";
     @js(#{`description`:"Replace an imported authority too. Default false."}) `replaceImported`?: boolean
   },
-  `responses/200/content/application~1json/schema`: `SharedModel369`,
-  `responses/400/content/application~1json/schema`: `SharedModel369`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors118`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors118`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/pki/reissue-use-case",
@@ -32279,9 +32279,9 @@ op `reissuePkiUseCase`(@js(#{`examples`:#[#{`scope`:"",`useCase`:"jose"}]}) `req
       `description`:"One of `jose`, `xml`, `assertions`, `spiffe`, `pep-tls` (a realm) or `tls` (the process). Asking for one in the wrong scope is refused and the refusal says which scope it belongs to."
     }) `useCase`: "jose" | "xml" | "assertions" | "tls" | "cell" | "spiffe" | "pep-tls" | "realm-tls" | "kdc" | "acme" | "est" | "scep" | "tls-client" | "message-signing"
   },
-  `responses/200/content/application~1json/schema`: `SharedModel369`,
-  `responses/400/content/application~1json/schema`: `SharedModel369`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors118`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors118`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/pki/recertify",
@@ -32312,9 +32312,9 @@ op `recertifyPkiUseCase`(@js(#{`examples`:#[#{`scope`:"",`useCase`:"jose"}]}) `r
     @js(#{`description`:"A realm id or `*process`."}) `scope`?: string;
     @js(#{`description`:"The use case to renew."}) `useCase`: "jose" | "xml" | "assertions" | "tls" | "cell" | "spiffe" | "pep-tls" | "realm-tls" | "kdc" | "acme" | "est" | "scep" | "tls-client" | "message-signing"
   },
-  `responses/200/content/application~1json/schema`: `SharedModel369`,
-  `responses/400/content/application~1json/schema`: `SharedModel369`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors118`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors118`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/pki/import-ca",
@@ -32358,9 +32358,9 @@ op `importPkiCa`(@js(#{
     @js(#{`description`:"The CA certificate."}) `certificatePem`: string;
     @js(#{`description`:"Its private key."}) `privateKeyPem`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel369`,
-  `responses/400/content/application~1json/schema`: `SharedModel369`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors118`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors118`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/pki/pin-key",
@@ -32410,9 +32410,9 @@ op `pinPkiKeyPair`(@js(#{
       `description`:"Optional, with `certificatePem`: the certificates above it, the one that issued it first. A pinned signing key publishes them as its `x5c`; each must have issued the one before (STS-PKI-0209)."
     }) `chainPem`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel373`,
-  `responses/400/content/application~1json/schema`: `SharedModel373`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors122`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors122`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/pki/unpin-key",
@@ -32444,9 +32444,9 @@ op `unpinPkiKeyPair`(@js(#{`examples`:#[#{`scope`:"",`useCase`:"jose",`slot`:"ES
     @js(#{`description`:"The use case."}) `useCase`: "jose" | "xml" | "assertions" | "tls" | "cell" | "spiffe" | "pep-tls" | "realm-tls" | "kdc" | "acme" | "est" | "scep" | "tls-client" | "message-signing";
     @js(#{`description`:"The slot the key was pinned in."}) `slot`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel374`,
-  `responses/400/content/application~1json/schema`: `SharedModel374`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors123`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors123`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/pki/revoke-certificate",
@@ -32502,9 +32502,9 @@ op `revokePkiCertificate`(@js(#{
     }) `subject`?: string;
     @js(#{`description`:"Optional. Why, in your own words, for the same reader."}) `note`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel375`,
-  `responses/400/content/application~1json/schema`: `SharedModel375`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors124`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors124`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/pki/release-hold",
@@ -32540,9 +32540,9 @@ op `releasePkiCertificateHold`(@js(#{`examples`:#[#{`ca`:"intermediate",`serialH
     }) `ca`: string;
     @js(#{`description`:"The held certificate's serial, spelt however you like."}) `serialHex`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel369`,
-  `responses/400/content/application~1json/schema`: `SharedModel369`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors118`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors118`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/scim/monitor",
@@ -32565,7 +32565,7 @@ op `releasePkiCertificateHold`(@js(#{`examples`:#[#{`ca`:"intermediate",`serialH
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getScimMonitor`(`responses/200/content/application~1json/schema`: `ScimMonitor`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/signals",
@@ -32622,7 +32622,7 @@ op `getSignals`(`parameters/0/schema`: string,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
   @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/3/schema`: integer,
   `responses/200/content/application~1json/schema`: `Signals`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/signals/clear",
@@ -32652,7 +32652,7 @@ op `getSignals`(`parameters/0/schema`: string,
 op `clearSignalsInbox`(@js(#{`examples`:#[#{}],`additionalProperties`:true}) `requestBody/content/application~1json/schema`: {},
   `responses/200/content/application~1json/schema`: WithOkMessageErrorsEtc47,
   `responses/400/content/application~1json/schema`: WithOkMessageErrorsEtc47,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/tls/trust",
@@ -32697,9 +32697,9 @@ op `clearSignalsInbox`(@js(#{`examples`:#[#{}],`additionalProperties`:true}) `re
 op `getTruststore`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: integer,
   @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/1/schema`: integer,
   `responses/200/content/application~1json/schema`: {
-    `protocolEndpoints`?: `SharedModel49`;
+    `protocolEndpoints`?: `WithParamsDescriptionParams`;
     `installed`?: boolean;
-    `anchors`?: `SharedModel377`;
+    `anchors`?: `WithOkMessageErrors125`;
     `total`?: integer;
     `fromFile`?: integer;
     `atRuntime`?: integer;
@@ -32714,12 +32714,12 @@ op `getTruststore`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: in
     `page`?: integer;
     `pages`?: integer;
     `perPage`?: integer;
-    `paging`?: `SharedModel166`
+    `paging`?: `WithPagePagesPerPage2`
   },
   `responses/503/content/application~1json/schema`: {
     `protocolEndpoints`?: (WithNameMethodsUrlEtc6)[];
     `installed`?: boolean;
-    `anchors`?: `SharedModel377`;
+    `anchors`?: `WithOkMessageErrors125`;
     `total`?: integer;
     `fromFile`?: integer;
     `atRuntime`?: integer;
@@ -32734,9 +32734,9 @@ op `getTruststore`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: in
     `page`?: integer;
     `pages`?: integer;
     `perPage`?: integer;
-    `paging`?: `SharedModel166`
+    `paging`?: `WithPagePagesPerPage2`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/tls/trust/add",
@@ -32774,9 +32774,9 @@ op `addTrustAnchors`(@js(#{
       `description`:"One or more PEM certificates, concatenated. An array of PEM strings is accepted too."
     }) `certificates`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel379`,
-  `responses/400/content/application~1json/schema`: `SharedModel379`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors126`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors126`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/tls/trust/remove",
@@ -32814,9 +32814,9 @@ op `removeTrustAnchor`(@js(#{
       `description`:"The anchor's SHA-256 fingerprint, as `GET /admin-api/tls/trust` lists it in `fingerprint256`."
     }) `fingerprint`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel380`,
-  `responses/400/content/application~1json/schema`: `SharedModel380`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors127`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors127`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -33003,7 +33003,7 @@ op `getTlsConnection`(`responses/200/content/application~1json/schema`: {
       `proxyMustSanitize`?: string
     }
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/kerberos/principals",
@@ -33060,11 +33060,11 @@ op `getKerberosPrincipals`(@js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `p
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/3/schema`: integer,
   `responses/200/content/application~1json/schema`: {
-    `protocolEndpoints`?: `SharedModel49`;
+    `protocolEndpoints`?: `WithParamsDescriptionParams`;
     `installed`?: boolean;
     `realm`?: NullableString;
     `trustRealm`?: NullableString;
-    `kerberos`?: `SharedModel381`;
+    `kerberos`?: `WithTrustRealmKerberosRealmEnabled`;
     `productKdc`?: boolean;
     `personKeys`?: boolean;
     `enctypes`?: (integer)[];
@@ -33083,7 +33083,7 @@ op `getKerberosPrincipals`(@js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `p
     `krbtgt`?: `SharedModel193`;
     `actions`?: (string)[];
     `people`?: ({
-      `retained`?: `SharedModel194`;
+      `retained`?: `WithAdditionalPropertiesPropertiesPrincipal`;
       `username`?: string;
       `principal`?: string;
       `kvno`?: NullableNumber;
@@ -33094,9 +33094,9 @@ op `getKerberosPrincipals`(@js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `p
       `current`?: boolean
     })[];
     `peopleTotal`?: integer;
-    `peoplePaging`?: `SharedModel166`;
+    `peoplePaging`?: `WithPagePagesPerPage2`;
     `services`?: ({
-      `retained`?: `SharedModel194`;
+      `retained`?: `WithAdditionalPropertiesPropertiesPrincipal`;
       `principal`?: string;
       `spn`?: string;
       `kvno`?: NullableNumber;
@@ -33107,7 +33107,7 @@ op `getKerberosPrincipals`(@js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `p
       `held`?: boolean
     })[];
     `servicesTotal`?: integer;
-    `servicesPaging`?: `SharedModel166`;
+    `servicesPaging`?: `WithPagePagesPerPage2`;
     `fixtureAccounts`?: boolean;
     `realmsServed`?: (string)[];
     `database`?: ({
@@ -33125,7 +33125,7 @@ op `getKerberosPrincipals`(@js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `p
       `description`?: string
     })[];
     `databaseTotal`?: integer;
-    `databasePaging`?: `SharedModel166`;
+    `databasePaging`?: `WithPagePagesPerPage2`;
     `notes`?: {
       `keys`?: string;
       `mode`?: string;
@@ -33134,7 +33134,7 @@ op `getKerberosPrincipals`(@js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `p
       `previous`?: string
     }
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/kerberos/principals/create-service",
@@ -33166,9 +33166,9 @@ op `createKerberosServicePrincipal`(@js(#{`examples`:#[#{`spn`:"HTTP/app.example
       `description`:"The service principal name, e.g. `HTTP/web.example.com`, with or without `@<realm>`."
     }) `spn`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel382`,
-  `responses/400/content/application~1json/schema`: `SharedModel382`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors128`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors128`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/kerberos/principals/rotate-service",
@@ -33196,9 +33196,9 @@ op `createKerberosServicePrincipal`(@js(#{`examples`:#[#{`spn`:"HTTP/app.example
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `rotateKerberosServicePrincipal`(@js(#{`examples`:#[#{`spn`:"HTTP/app.example.com"}]}) `requestBody/content/application~1json/schema`: WithDescriptionSpn,
-  `responses/200/content/application~1json/schema`: `SharedModel382`,
-  `responses/400/content/application~1json/schema`: `SharedModel382`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors128`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors128`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/kerberos/principals/delete-service",
@@ -33226,9 +33226,9 @@ op `rotateKerberosServicePrincipal`(@js(#{`examples`:#[#{`spn`:"HTTP/app.example
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `deleteKerberosServicePrincipal`(@js(#{`examples`:#[#{`spn`:"HTTP/app.example.com"}]}) `requestBody/content/application~1json/schema`: WithDescriptionSpn,
-  `responses/200/content/application~1json/schema`: `SharedModel383`,
-  `responses/400/content/application~1json/schema`: `SharedModel383`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors129`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors129`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/kerberos/principals/clear-person-keys",
@@ -33256,9 +33256,9 @@ op `deleteKerberosServicePrincipal`(@js(#{`examples`:#[#{`spn`:"HTTP/app.example
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `clearKerberosPersonKeys`(@js(#{`examples`:#[#{`username`:"alice"}]}) `requestBody/content/application~1json/schema`: WithDescriptionUsername,
-  `responses/200/content/application~1json/schema`: `SharedModel384`,
-  `responses/400/content/application~1json/schema`: `SharedModel384`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors130`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors130`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/kerberos/principals/drop-previous-service-keys",
@@ -33286,9 +33286,9 @@ op `clearKerberosPersonKeys`(@js(#{`examples`:#[#{`username`:"alice"}]}) `reques
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `dropKerberosServicePreviousKeys`(@js(#{`examples`:#[#{`spn`:"HTTP/app.example.com"}]}) `requestBody/content/application~1json/schema`: WithDescriptionSpn,
-  `responses/200/content/application~1json/schema`: `SharedModel385`,
-  `responses/400/content/application~1json/schema`: `SharedModel385`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors131`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors131`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/kerberos/principals/drop-previous-person-keys",
@@ -33316,9 +33316,9 @@ op `dropKerberosServicePreviousKeys`(@js(#{`examples`:#[#{`spn`:"HTTP/app.exampl
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `dropKerberosPersonPreviousKeys`(@js(#{`examples`:#[#{`username`:"alice"}]}) `requestBody/content/application~1json/schema`: WithDescriptionUsername,
-  `responses/200/content/application~1json/schema`: `SharedModel385`,
-  `responses/400/content/application~1json/schema`: `SharedModel385`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors131`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors131`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/kerberos/principals/reset-person-keytab",
@@ -33359,9 +33359,9 @@ op `resetKerberosPersonKeytab`(@js(#{
       `description`:"A generated password under the password policy, never returned."
     }) `random`?: boolean
   },
-  `responses/200/content/application~1json/schema`: `SharedModel386`,
-  `responses/400/content/application~1json/schema`: `SharedModel386`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors132`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors132`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/kerberos/principals/rotate-krbtgt",
@@ -33389,9 +33389,9 @@ op `resetKerberosPersonKeytab`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `rotateKerberosKrbtgt`(@js(#{`examples`:#[#{}]}) `requestBody/content/application~1json/schema`: {},
-  `responses/200/content/application~1json/schema`: `SharedModel387`,
-  `responses/400/content/application~1json/schema`: `SharedModel387`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors133`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors133`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/kerberos/principals/rotate-krbtgt-invalidate",
@@ -33421,9 +33421,9 @@ op `rotateKerberosKrbtgt`(@js(#{`examples`:#[#{}]}) `requestBody/content/applica
 op `rotateKerberosKrbtgtInvalidate`(@js(#{`examples`:#[#{`confirm`:"invalidate"}]}) `requestBody/content/application~1json/schema`: {
     @js(#{`description`:"The word `invalidate`, because this cannot be undone."}) `confirm`: "invalidate"
   },
-  `responses/200/content/application~1json/schema`: `SharedModel387`,
-  `responses/400/content/application~1json/schema`: `SharedModel387`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors133`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors133`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/kerberos/trusts",
@@ -33472,10 +33472,10 @@ op `getKerberosTrusts`(@js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `param
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
   `parameters/2/schema`: string,
   `responses/200/content/application~1json/schema`: {
-    `protocolEndpoints`?: `SharedModel49`;
+    `protocolEndpoints`?: `WithParamsDescriptionParams`;
     `realm`?: NullableString;
     `trustRealm`?: NullableString;
-    `kerberos`?: `SharedModel381`;
+    `kerberos`?: `WithTrustRealmKerberosRealmEnabled`;
     `trusts`?: ({
       `partnerRealm`?: string;
       `netbiosName`?: NullableString;
@@ -33491,7 +33491,7 @@ op `getKerberosTrusts`(@js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `param
       `forestTrustInfo`?: `SharedModel388`;
       `claimsTransformation`?: string;
       `boundary`?: string;
-      `incoming`?: `SharedModel389`;
+      `incoming`?: `WithPreviousHeldKvno`;
       `outgoing`?: {
         `held`?: boolean;
         `kvno`?: numeric;
@@ -33504,10 +33504,10 @@ op `getKerberosTrusts`(@js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `param
       `updatedAt`?: NullableString;
       `enctypeNames`?: (WithIdName4)[];
       `lastKeyChangeAt`?: NullableString;
-      `health`?: `SharedModel390`
+      `health`?: `WithAdditionalPropertiesPropertiesPartnerRealm`
     })[];
     `total`?: integer;
-    `trustsPaging`?: `SharedModel166`;
+    `trustsPaging`?: `WithPagePagesPerPage2`;
     `trust`?: `SharedModel392`;
     `unknownTrust`?: string;
     `product`?: boolean;
@@ -33534,7 +33534,7 @@ op `getKerberosTrusts`(@js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `param
     };
     `actions`?: (string)[]
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/kerberos/trusts/add",
@@ -33604,9 +33604,9 @@ op `addKerberosTrust`(@js(#{
     }) `forestNames`?: string;
     @js(#{`description`:"Whether it is used; true by default."}) `enabled`?: boolean
   },
-  `responses/200/content/application~1json/schema`: `SharedModel393`,
-  `responses/400/content/application~1json/schema`: `SharedModel393`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors134`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors134`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/kerberos/trusts/update",
@@ -33676,9 +33676,9 @@ op `updateKerberosTrust`(@js(#{
     }) `forestNames`?: string;
     @js(#{`description`:"Whether it is used; true by default."}) `enabled`?: boolean
   },
-  `responses/200/content/application~1json/schema`: `SharedModel393`,
-  `responses/400/content/application~1json/schema`: `SharedModel393`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors134`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors134`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/kerberos/trusts/enable",
@@ -33706,9 +33706,9 @@ op `updateKerberosTrust`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `enableKerberosTrust`(@js(#{`examples`:#[#{`partnerRealm`:"PARTNER.EXAMPLE"}]}) `requestBody/content/application~1json/schema`: WithDescriptionPartnerRealm,
-  `responses/200/content/application~1json/schema`: `SharedModel393`,
-  `responses/400/content/application~1json/schema`: `SharedModel393`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors134`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors134`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/kerberos/trusts/disable",
@@ -33736,9 +33736,9 @@ op `enableKerberosTrust`(@js(#{`examples`:#[#{`partnerRealm`:"PARTNER.EXAMPLE"}]
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `disableKerberosTrust`(@js(#{`examples`:#[#{`partnerRealm`:"PARTNER.EXAMPLE"}]}) `requestBody/content/application~1json/schema`: WithDescriptionPartnerRealm,
-  `responses/200/content/application~1json/schema`: `SharedModel393`,
-  `responses/400/content/application~1json/schema`: `SharedModel393`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors134`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors134`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/kerberos/trusts/rotate-key",
@@ -33774,9 +33774,9 @@ op `rotateKerberosTrustKey`(@js(#{
     @js(#{`description`:"The new trust password, for `keySource: \"password\"`."}) `password`?: string;
     @js(#{`description`:"Rotate the partner trust realm's record too."}) `mirror`?: boolean
   },
-  `responses/200/content/application~1json/schema`: `SharedModel393`,
-  `responses/400/content/application~1json/schema`: `SharedModel393`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors134`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors134`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/kerberos/trusts/remove",
@@ -33809,9 +33809,9 @@ op `removeKerberosTrust`(@js(#{
     @js(#{`description`:"The partner Kerberos realm."}) `partnerRealm`: string;
     @js(#{`description`:"The partner realm again."}) `confirm`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel393`,
-  `responses/400/content/application~1json/schema`: `SharedModel393`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors134`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors134`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -33872,9 +33872,9 @@ op `pairKerberosTrust`(@js(#{
     `suffixes`?: post_admin_api_kerberos_trusts_pair_b_application_json_suffixes_h2898;
     `partnerSuffixes`?: post_admin_api_kerberos_trusts_pair_b_application_json_partnerSuffixes_h2899
   },
-  `responses/200/content/application~1json/schema`: `SharedModel393`,
-  `responses/400/content/application~1json/schema`: `SharedModel393`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors134`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors134`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/audit",
@@ -33976,7 +33976,7 @@ op `getAudit`(`parameters/0/schema`: "authentication" | "session" | "directory" 
   @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/8/schema`: integer,
   `responses/200/content/application~1json/schema`: `AuditList`,
   `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc52,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/error-codes",
@@ -34080,9 +34080,9 @@ op `getErrorCodes`(`parameters/0/schema`: string,
       `seen`?: integer;
       `lastSeenAt`?: numeric
     })[];
-    `paging`?: `SharedModel6`
+    `paging`?: `PageHowManyQueryParameter`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/used-assertions",
@@ -34187,7 +34187,7 @@ op `getUsedAssertions`(`parameters/0/schema`: string,
       `expiresAt`?: numeric;
       `origin`?: string
     })[];
-    `paging`?: `SharedModel27`;
+    `paging`?: `WithPagePagesPerPage`;
     `total`?: integer;
     `param`?: string;
     `noun`?: string;
@@ -34198,7 +34198,7 @@ op `getUsedAssertions`(`parameters/0/schema`: string,
     `lastRow`?: integer
   },
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/delegation",
@@ -34428,7 +34428,7 @@ op `getDelegation`(`parameters/0/schema`: "krb5-s4u2self" | "krb5-s4u2proxy-clas
   @js(#{`minimum`:1}) `parameters/24/schema`: integer,
   `responses/200/content/application~1json/schema`: `DelegationList`,
   `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc52,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -34707,7 +34707,7 @@ op `getDelegationUser`(@js(#{`examples`:#["alice"]}) `parameters/0/schema`: stri
     `user`?: get_admin_api_delegation_user_r200_application_json_user_h2903;
     `asked`?: NullableString;
     `key`?: NullableString;
-    `credentials`?: `SharedModel395`;
+    `credentials`?: `WithSeqOriginAt2`;
     `flows`?: ({
       `flow`?: string;
       `protocol`?: string;
@@ -34719,8 +34719,8 @@ op `getDelegationUser`(@js(#{`examples`:#["alice"]}) `parameters/0/schema`: stri
       `what`?: string
     })[];
     `onDelegationLines`?: integer;
-    `acts`?: `SharedModel397`;
-    `graph`?: `SharedModel399`;
+    `acts`?: `WithIdKindKey`;
+    `graph`?: `WithRealmIssuerNodes2`;
     `counts`?: NullableObject115;
     `users`?: ({
       `key`?: string;
@@ -34743,14 +34743,14 @@ op `getDelegationUser`(@js(#{`examples`:#["alice"]}) `parameters/0/schema`: stri
     })[];
     `usersComplete`?: boolean;
     `drawing`?: WithWidthHeightFailed;
-    `looks`?: `SharedModel407`;
+    `looks`?: `WithKeyNamesLabel`;
     `label`?: string;
     `svg`?: string;
-    `chooser`?: `SharedModel409`;
+    `chooser`?: `WithTotalEntriesSlice`;
     `mapKey`?: string;
-    `facts`?: `SharedModel411`
+    `facts`?: `WithUsersAppsName`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -35017,22 +35017,22 @@ op `getDelegationApplication`(@js(#{`examples`:#["no-such-application"]}) `param
     `key`?: NullableString;
     `registered`?: boolean;
     `registeredName`?: string;
-    `acts`?: `SharedModel397`;
-    `graph`?: `SharedModel399`;
+    `acts`?: `WithIdKindKey`;
+    `graph`?: `WithRealmIssuerNodes2`;
     `rolesBySeq`?: Record<(string)[]>;
     `applications`?: (WithKeyIdentifierSpellingsEtc13)[];
     `held`?: integer;
     `maxRecords`?: integer;
     `roles`?: (WithRoleLabelWhat)[];
     `drawing`?: WithWidthHeightFailed;
-    `looks`?: `SharedModel407`;
+    `looks`?: `WithKeyNamesLabel`;
     `label`?: string;
     `svg`?: string;
-    `chooser`?: `SharedModel409`;
+    `chooser`?: `WithTotalEntriesSlice`;
     `mapKey`?: string;
-    `facts`?: `SharedModel411`
+    `facts`?: `WithUsersAppsName`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/delegation/policy",
@@ -35093,13 +35093,13 @@ op `getDelegationPolicy`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schem
     `attributes`?: Record<string>;
     `protectedGroups`?: (string)[];
     `pairs`?: (WithMechanismIntermediaryTargetEtc11)[];
-    `pairsPaging`?: `SharedModel166`;
+    `pairsPaging`?: `WithPagePagesPerPage2`;
     `intermediaries`?: (WithApplicationImpersonatesSemanticsEtc6)[];
-    `intermediariesPaging`?: `SharedModel166`;
+    `intermediariesPaging`?: `WithPagePagesPerPage2`;
     `people`?: (WithUsernameDnNotDelegatedEtc6)[];
-    `peoplePaging`?: `SharedModel166`
+    `peoplePaging`?: `WithPagePagesPerPage2`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/permissions",
@@ -35123,12 +35123,12 @@ op `getDelegationPolicy`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schem
   })
 op `getPermissions`(`responses/200/content/application~1json/schema`: {
     `resources`?: (WithIdentifierNameBaseUriEtc6)[];
-    `permissions`?: `SharedModel412`;
-    `grants`?: `SharedModel414`;
+    `permissions`?: `WithClientClientNamePermissionId`;
+    `grants`?: `WithApplicationsGrantsLines`;
     `counts`?: WithResourcesPermissionsUnidentifiedEtc8;
-    `graph`?: `SharedModel399`
+    `graph`?: `WithRealmIssuerNodes2`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -35136,7 +35136,7 @@ op `getPermissions`(`responses/200/content/application~1json/schema`: {
     `properties`:#{
       `key`:#{`type`:"string"},
       `members`:#{`type`:"array",`items`:#{`type`:"string"}},
-      `counts`:#{`$ref`:"#/components/schemas/SharedModel416"}
+      `counts`:#{`$ref`:"#/components/schemas/WithApplicationsGrantsLines2"}
     },
     `$types`:#["object","null"]
   }) @hoisted model get_admin_api_permissions_groups_r200_application_json_group_h2924 {}
@@ -35200,16 +35200,16 @@ op `getPermissionGroups`(`parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `application`?: NullableString;
     `counts`?: WithClustersApplicationsLargestEtc5;
-    `groups`?: ({`key`?: string; `members`?: (string)[]; `counts`?: `SharedModel416`})[];
-    `paging`?: `SharedModel166`;
+    `groups`?: ({`key`?: string; `members`?: (string)[]; `counts`?: `WithApplicationsGrantsLines2`})[];
+    `paging`?: `WithPagePagesPerPage2`;
     `group`?: get_admin_api_permissions_groups_r200_application_json_group_h2924;
-    `grants`?: `SharedModel414`;
-    `grantsPaging`?: `SharedModel166`;
-    `permissions`?: `SharedModel412`;
-    `permissionsPaging`?: `SharedModel166`;
-    `graph`?: `SharedModel399`
+    `grants`?: `WithApplicationsGrantsLines`;
+    `grantsPaging`?: `WithPagePagesPerPage2`;
+    `permissions`?: `WithClientClientNamePermissionId`;
+    `permissionsPaging`?: `WithPagePagesPerPage2`;
+    `graph`?: `WithRealmIssuerNodes2`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/permissions/set-permission-base",
@@ -35242,9 +35242,9 @@ op `setPermissionBase`(@js(#{`examples`:#[#{`resource`:"api1",`baseUri`:"https:/
     }) `resource`: string;
     @js(#{`description`:"An absolute URI. Empty clears it."}) `baseUri`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel417`,
-  `responses/400/content/application~1json/schema`: `SharedModel417`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors135`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors135`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/permissions/define-permission",
@@ -35286,9 +35286,9 @@ op `definePermission`(@js(#{
     }) `name`: string;
     @js(#{`description`:"Optional prose, shown wherever the permission is."}) `description`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel417`,
-  `responses/400/content/application~1json/schema`: `SharedModel417`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors135`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors135`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/permissions/remove-permission",
@@ -35319,9 +35319,9 @@ op `removePermission`(@js(#{`examples`:#[#{`resource`:"api1",`name`:"write"}]}) 
     @js(#{`description`:"The application that exposes it."}) `resource`: string;
     @js(#{`description`:"The permission name."}) `name`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel417`,
-  `responses/400/content/application~1json/schema`: `SharedModel417`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors135`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors135`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/permissions/grant-permission",
@@ -35358,9 +35358,9 @@ op `grantPermission`(@js(#{
       `description`:"The whole permission identifier, base URI and name together."
     }) `permission`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel417`,
-  `responses/400/content/application~1json/schema`: `SharedModel417`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors135`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors135`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/permissions/revoke-permission",
@@ -35393,9 +35393,9 @@ op `revokePermission`(@js(#{
     @js(#{`description`:"The application holding it."}) `client`: string;
     @js(#{`description`:"The whole permission identifier."}) `permission`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel417`,
-  `responses/400/content/application~1json/schema`: `SharedModel417`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors135`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors135`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -35517,7 +35517,7 @@ op `getRoles`(`parameters/0/schema`: string,
     `gated`?: boolean;
     `policy`?: get_admin_api_roles_r200_application_json_policy_h2927;
     `builtIn`?: ({`name`?: string; `what`?: string; `builtIn`?: boolean})[];
-    `roles`?: `SharedModel420`;
+    `roles`?: `WithDescriptionOkMessage`;
     `permissions`?: ({
       `id`?: string;
       `application`?: string;
@@ -35538,16 +35538,16 @@ op `getRoles`(`parameters/0/schema`: string,
       `requiring`?: numeric;
       `unsatisfiable`?: numeric
     };
-    `requiringPaging`?: `SharedModel27`;
+    `requiringPaging`?: `WithPagePagesPerPage`;
     `matched`?: numeric;
     `shown`?: numeric;
-    `paging`?: `SharedModel27`;
+    `paging`?: `WithPagePagesPerPage`;
     `query`?: {`q`?: string};
     `memberKinds`?: ({`kind`?: string; `label`?: string; `field`?: string; `what`?: string})[];
     `issuanceKinds`?: (string)[];
     `actions`?: (string)[];
     `settings`?: `SharedModel153`;
-    `shownRoles`?: `SharedModel420`;
+    `shownRoles`?: `WithDescriptionOkMessage`;
     `applicationChoices`?: (WithIdentifierName)[];
     `role`?: {
       `name`?: string;
@@ -35578,8 +35578,8 @@ op `getRoles`(`parameters/0/schema`: string,
       `ownership`?: WithKindNameMarkedEtc5
     }
   },
-  `responses/400/content/application~1json/schema`: `SharedModel48`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors12`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -35729,11 +35729,11 @@ op `previewRoleIssuance`(`parameters/0/schema`: string,
     `transfer`?: get_admin_api_roles_preview_r200_application_json_transfer_h2934;
     `passkey`?: get_admin_api_roles_preview_r200_application_json_passkey_h2935;
     `deferred`?: boolean;
-    `exchange`?: `SharedModel422`;
-    `gnapRights`?: (`SharedModel422`)[]
+    `exchange`?: `ExchangePerRightVerdictRole`;
+    `gnapRights`?: (`ExchangePerRightVerdictRole`)[]
   },
-  `responses/400/content/application~1json/schema`: `SharedModel48`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors12`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/roles/create-role",
@@ -35786,7 +35786,7 @@ op `createRole`(@js(#{
   },
   `responses/200/content/application~1json/schema`: WithOkMessageErrorsEtc44,
   `responses/400/content/application~1json/schema`: WithOkMessageErrorsEtc44,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/roles/delete-role",
@@ -35814,9 +35814,9 @@ op `createRole`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `deleteRole`(@js(#{`examples`:#[#{`role`:"staff"}]}) `requestBody/content/application~1json/schema`: {@js(#{`description`:"The role to remove."}) `role`: string},
-  `responses/200/content/application~1json/schema`: `SharedModel423`,
-  `responses/400/content/application~1json/schema`: `SharedModel423`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors136`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors136`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/roles/describe-role",
@@ -35857,7 +35857,7 @@ op `describeRole`(@js(#{
   },
   `responses/200/content/application~1json/schema`: WithOkMessageErrorsEtc44,
   `responses/400/content/application~1json/schema`: WithOkMessageErrorsEtc44,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/roles/add-member",
@@ -35891,9 +35891,9 @@ op `addRoleMember`(@js(#{`examples`:#[#{`role`:"staff",`kind`:"user",`member`:"a
       `description`:"The person, group or application. Named `member` rather than `name` on purpose: `role` is the role's own name, and a body that confused the two would succeed and create something plausible."
     }) `member`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel424`,
-  `responses/400/content/application~1json/schema`: `SharedModel424`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors137`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors137`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/roles/remove-member",
@@ -35925,9 +35925,9 @@ op `removeRoleMember`(@js(#{`examples`:#[#{`role`:"staff",`kind`:"user",`member`
     @js(#{`description`:"Which list to remove it from."}) `kind`: "user" | "group" | "application";
     @js(#{`description`:"The person, group or application."}) `member`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel424`,
-  `responses/400/content/application~1json/schema`: `SharedModel424`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors137`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors137`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/roles/add-permission",
@@ -35960,9 +35960,9 @@ op `addRolePermission`(@js(#{
     @js(#{`description`:"The role."}) `role`: string;
     @js(#{`description`:"The permission identifier, base + name."}) `permission`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel425`,
-  `responses/400/content/application~1json/schema`: `SharedModel425`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors138`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors138`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/roles/remove-permission",
@@ -35995,9 +35995,9 @@ op `removeRolePermission`(@js(#{
     @js(#{`description`:"The role."}) `role`: string;
     @js(#{`description`:"The permission identifier."}) `permission`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel425`,
-  `responses/400/content/application~1json/schema`: `SharedModel425`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors138`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors138`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/roles/add-conferring-client",
@@ -36030,7 +36030,7 @@ op `addRoleConferringClient`(@js(#{`examples`:#[#{`role`:"ADMIN_CONSOLE",`client
   },
   `responses/200/content/application~1json/schema`: WithOkMessageErrorsEtc52,
   `responses/400/content/application~1json/schema`: WithOkMessageErrorsEtc52,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/roles/remove-conferring-client",
@@ -36063,7 +36063,7 @@ op `removeRoleConferringClient`(@js(#{`examples`:#[#{`role`:"ADMIN_CONSOLE",`cli
   },
   `responses/200/content/application~1json/schema`: WithOkMessageErrorsEtc52,
   `responses/400/content/application~1json/schema`: WithOkMessageErrorsEtc52,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/roles/add-owner",
@@ -36094,9 +36094,9 @@ op `addRoleOwner`(@js(#{`examples`:#[#{`role`:"staff",`owner`:"alice"}]}) `reque
     @js(#{`description`:"The role."}) `role`: string;
     @js(#{`description`:"The person or group to add."}) `owner`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel426`,
-  `responses/400/content/application~1json/schema`: `SharedModel426`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors139`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors139`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/roles/remove-owner",
@@ -36129,9 +36129,9 @@ op `removeRoleOwner`(@js(#{
     @js(#{`description`:"The role."}) `role`: string;
     @js(#{`description`:"The owner's DN."}) `owner`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel426`,
-  `responses/400/content/application~1json/schema`: `SharedModel426`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors139`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors139`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/ownership",
@@ -36185,8 +36185,8 @@ op `getOwnership`(@js(#{`examples`:#["application"]}) `parameters/0/schema`: "ro
     `reasons`?: (string)[];
     `marked`?: boolean
   },
-  `responses/400/content/application~1json/schema`: `SharedModel48`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors12`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -36223,9 +36223,9 @@ op `setOwnerProtected`(@js(#{`examples`:#[#{`kind`:"role",`name`:"staff",`protec
     @js(#{`description`:"The object, as GET /admin-api/ownership names it."}) `name`: string;
     `protected`: post_admin_api_ownership_set_protected_b_application_json_protected_h2936
   },
-  `responses/200/content/application~1json/schema`: `SharedModel427`,
-  `responses/400/content/application~1json/schema`: `SharedModel427`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors140`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors140`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/policies",
@@ -36312,19 +36312,19 @@ op `getPolicies`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: inte
       `dn`?: string;
       `problems`?: (string)[]
     })[];
-    `paging`?: `SharedModel166`;
+    `paging`?: `WithPagePagesPerPage2`;
     `actions`?: (string)[];
     `enforced`?: boolean;
     `enforcement`?: string;
     `password`?: {
-      `profile`?: `SharedModel428`;
+      `profile`?: `WithNamePrecedenceStored`;
       `rules`?: (string)[];
       `defaults`?: Record<StringOrNumericOrBooleanEtc8>;
-      `fields`?: `SharedModel429`;
-      `schema`?: `SharedModel431`;
+      `fields`?: `WithContainerDefinitionContainerObjectClasses`;
+      `schema`?: `WithContainerDefinitionContainerObjectClasses2`;
       `selectors`?: (string)[];
       `references`?: Record<string>;
-      `named`?: `SharedModel432`;
+      `named`?: `WithNamePrecedenceStored2`;
       `generator`?: {
         `module`?: string;
         `version`?: string;
@@ -36337,14 +36337,14 @@ op `getPolicies`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: inte
       `notDoors`?: string
     };
     `authn`?: {
-      `profile`?: `SharedModel435`;
+      `profile`?: `WithNamePrecedenceStored3`;
       `rules`?: (string)[];
       `defaults`?: Record<StringOrNumericOrBooleanEtc8>;
-      `fields`?: `SharedModel429`;
-      `schema`?: `SharedModel431`;
+      `fields`?: `WithContainerDefinitionContainerObjectClasses`;
+      `schema`?: `WithContainerDefinitionContainerObjectClasses2`;
       `selectors`?: (string)[];
       `references`?: Record<string>;
-      `named`?: `SharedModel432`;
+      `named`?: `WithNamePrecedenceStored2`;
       `from`?: string;
       `inherited`?: boolean;
       `mail`?: {`usable`?: boolean; `why`?: string};
@@ -36361,24 +36361,24 @@ op `getPolicies`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: inte
       `vocabulary`?: {`mechanisms`?: (string)[]; `secondFactors`?: (string)[]}
     };
     `serviceAccount`?: {
-      `profile`?: `SharedModel436`;
+      `profile`?: `WithNamePrecedenceStored4`;
       `rules`?: (string)[];
       `defaults`?: Record<StringOrNumericOrBooleanEtc8>;
-      `fields`?: `SharedModel429`;
-      `schema`?: `SharedModel431`;
+      `fields`?: `WithContainerDefinitionContainerObjectClasses`;
+      `schema`?: `WithContainerDefinitionContainerObjectClasses2`;
       `selectors`?: (string)[];
       `references`?: Record<string>;
-      `named`?: `SharedModel432`
+      `named`?: `WithNamePrecedenceStored2`
     };
     `passkey`?: {
-      `profile`?: `SharedModel437`;
+      `profile`?: `WithNamePrecedenceStored5`;
       `rules`?: (string)[];
       `defaults`?: Record<StringOrNumericOrBooleanEtc8>;
-      `fields`?: `SharedModel429`;
-      `schema`?: `SharedModel431`;
+      `fields`?: `WithContainerDefinitionContainerObjectClasses`;
+      `schema`?: `WithContainerDefinitionContainerObjectClasses2`;
       `selectors`?: (string)[];
       `references`?: Record<string>;
-      `named`?: `SharedModel432`;
+      `named`?: `WithNamePrecedenceStored2`;
       `clients`?: {
         `learning`?: boolean;
         `threshold`?: integer;
@@ -36399,24 +36399,24 @@ op `getPolicies`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: inte
       }
     };
     `locale`?: {
-      `profile`?: `SharedModel438`;
+      `profile`?: `WithNamePrecedenceStored6`;
       `rules`?: (string)[];
       `defaults`?: Record<StringOrNumericOrBooleanEtc8>;
-      `fields`?: `SharedModel429`;
-      `schema`?: `SharedModel431`;
+      `fields`?: `WithContainerDefinitionContainerObjectClasses`;
+      `schema`?: `WithContainerDefinitionContainerObjectClasses2`;
       `selectors`?: (string)[];
       `references`?: Record<string>;
-      `named`?: `SharedModel432`
+      `named`?: `WithNamePrecedenceStored2`
     };
     `attributes`?: {
-      `profile`?: `SharedModel439`;
+      `profile`?: `WithNamePrecedenceStored7`;
       `rules`?: (string)[];
       `defaults`?: Record<StringOrNumericOrBooleanEtc8>;
-      `fields`?: `SharedModel429`;
-      `schema`?: `SharedModel431`;
+      `fields`?: `WithContainerDefinitionContainerObjectClasses`;
+      `schema`?: `WithContainerDefinitionContainerObjectClasses2`;
       `selectors`?: (string)[];
       `references`?: Record<string>;
-      `named`?: `SharedModel432`;
+      `named`?: `WithNamePrecedenceStored2`;
       `enforced`?: boolean;
       `alwaysRequired`?: (string)[];
       `required`?: (string)[];
@@ -36446,18 +36446,18 @@ op `getPolicies`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: inte
       `actions`?: {`define`?: string; `update`?: string; `remove`?: string}
     };
     `postLogin`?: {
-      `profile`?: `SharedModel440`;
+      `profile`?: `WithNamePrecedenceStored8`;
       `rules`?: (string)[];
       `defaults`?: Record<StringOrNumericOrBooleanEtc8>;
-      `fields`?: `SharedModel429`;
-      `schema`?: `SharedModel431`;
+      `fields`?: `WithContainerDefinitionContainerObjectClasses`;
+      `schema`?: `WithContainerDefinitionContainerObjectClasses2`;
       `selectors`?: (string)[];
       `references`?: Record<string>;
-      `named`?: `SharedModel432`
+      `named`?: `WithNamePrecedenceStored2`
     }
   },
   `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc52,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
   
@@ -36646,9 +36646,9 @@ op `savePasswordPolicy`(@js(#{
     `scryptBlockSize`?: post_admin_api_policies_save_password_policy_b_application_json_scryptBlockSize_h2975;
     `scryptParallelism`?: post_admin_api_policies_save_password_policy_b_application_json_scryptParallelism_h2977
   },
-  `responses/200/content/application~1json/schema`: `SharedModel441`,
-  `responses/400/content/application~1json/schema`: `SharedModel441`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors141`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors141`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/policies/reset-password-policy",
@@ -36676,9 +36676,9 @@ op `savePasswordPolicy`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `resetPasswordPolicy`(@js(#{`examples`:#[#{`profile`:"default"}]}) `requestBody/content/application~1json/schema`: WithPatternDescriptionProfile,
-  `responses/200/content/application~1json/schema`: `SharedModel441`,
-  `responses/400/content/application~1json/schema`: `SharedModel441`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors141`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors141`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -36860,9 +36860,9 @@ op `saveAuthnPolicy`(@js(#{
     `rememberedBrowserSkipsSecondFactor`: post_admin_api_policies_save_authn_policy_b_application_json_rememberedBrowserSkipsSecondFactor_h3001;
     `rememberedBrowserDays`: post_admin_api_policies_save_authn_policy_b_application_json_rememberedBrowserDays_h3003
   },
-  `responses/200/content/application~1json/schema`: `SharedModel442`,
-  `responses/400/content/application~1json/schema`: `SharedModel442`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors142`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors142`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/policies/reset-authn-policy",
@@ -36892,9 +36892,9 @@ op `saveAuthnPolicy`(@js(#{
 op `resetAuthnPolicy`(@js(#{`examples`:#[#{`profile`:"default"}]}) `requestBody/content/application~1json/schema`: {
     @js(#{`description`:"Which profile. Only `default` exists."}) `profile`?: "default"
   },
-  `responses/200/content/application~1json/schema`: `SharedModel442`,
-  `responses/400/content/application~1json/schema`: `SharedModel442`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors142`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors142`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
   
@@ -36955,9 +36955,9 @@ op `saveNamedAuthnPolicy`(@js(#{
       `description`:"The second factors allowed: password, securityKey, totp, recoveryCode, emailCode, emailLink, wallet."
     }) `secondFactors`?: (string)[]
   },
-  `responses/200/content/application~1json/schema`: `SharedModel443`,
-  `responses/400/content/application~1json/schema`: `SharedModel443`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors143`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors143`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/policies/delete-named-authn-policy",
@@ -36985,9 +36985,9 @@ op `saveNamedAuthnPolicy`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `deleteNamedAuthnPolicy`(@js(#{`examples`:#[#{`name`:"passkeys-only"}]}) `requestBody/content/application~1json/schema`: {@js(#{`description`:"The policy's name."}) `name`: string},
-  `responses/200/content/application~1json/schema`: `SharedModel443`,
-  `responses/400/content/application~1json/schema`: `SharedModel443`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors143`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors143`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
   
@@ -37159,9 +37159,9 @@ op `saveServiceAccountPolicy`(@js(#{
     `requireOwner`: post_admin_api_policies_save_serviceAccount_policy_b_application_json_requireOwner_h3024;
     `rotationAlarmFailures`: post_admin_api_policies_save_serviceAccount_policy_b_application_json_rotationAlarmFailures_h3026
   },
-  `responses/200/content/application~1json/schema`: `SharedModel445`,
-  `responses/400/content/application~1json/schema`: `SharedModel445`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors144`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors144`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/policies/reset-serviceAccount-policy",
@@ -37189,9 +37189,9 @@ op `saveServiceAccountPolicy`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `resetServiceAccountPolicy`(@js(#{`examples`:#[#{`profile`:"default"}]}) `requestBody/content/application~1json/schema`: WithPatternDescriptionProfile,
-  `responses/200/content/application~1json/schema`: `SharedModel445`,
-  `responses/400/content/application~1json/schema`: `SharedModel445`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors144`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors144`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
   
@@ -37368,9 +37368,9 @@ op `savePasskeyPolicy`(@js(#{
     }) `adminEnrolment`?: "off" | "on";
     `deviceBoundRequired`?: post_admin_api_policies_save_passkey_policy_b_application_json_deviceBoundRequired_h3037
   },
-  `responses/200/content/application~1json/schema`: `SharedModel446`,
-  `responses/400/content/application~1json/schema`: `SharedModel446`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors145`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors145`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/policies/reset-passkey-policy",
@@ -37398,9 +37398,9 @@ op `savePasskeyPolicy`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `resetPasskeyPolicy`(@js(#{`examples`:#[#{`profile`:"default"}]}) `requestBody/content/application~1json/schema`: WithPatternDescriptionProfile,
-  `responses/200/content/application~1json/schema`: `SharedModel446`,
-  `responses/400/content/application~1json/schema`: `SharedModel446`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors145`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors145`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/policies/clear-passkey-client",
@@ -37430,9 +37430,9 @@ op `resetPasskeyPolicy`(@js(#{`examples`:#[#{`profile`:"default"}]}) `requestBod
 op `clearPasskeyClient`(@js(#{`examples`:#[#{`client`:"Chrome 141 on macOS 15"}]}) `requestBody/content/application~1json/schema`: {
     @js(#{`maxLength`:200,`description`:"The learned client, as listed."}) `client`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel447`,
-  `responses/400/content/application~1json/schema`: `SharedModel447`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors146`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors146`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/policies/clear-passkey-clients",
@@ -37460,9 +37460,9 @@ op `clearPasskeyClient`(@js(#{`examples`:#[#{`client`:"Chrome 141 on macOS 15"}]
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `clearPasskeyClients`(@js(#{`examples`:#[#{}]}) `requestBody/content/application~1json/schema`: {},
-  `responses/200/content/application~1json/schema`: `SharedModel447`,
-  `responses/400/content/application~1json/schema`: `SharedModel447`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors146`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors146`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
   
@@ -37516,9 +37516,9 @@ op `saveLocalePolicy`(@js(#{
     }) `defaultLocale`: string;
     `populatePreferredLanguage`: post_admin_api_policies_save_locale_policy_b_application_json_populatePreferredLanguage_h3040
   },
-  `responses/200/content/application~1json/schema`: `SharedModel448`,
-  `responses/400/content/application~1json/schema`: `SharedModel448`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors147`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors147`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/policies/reset-locale-policy",
@@ -37546,9 +37546,9 @@ op `saveLocalePolicy`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `resetLocalePolicy`(@js(#{`examples`:#[#{`profile`:"default"}]}) `requestBody/content/application~1json/schema`: WithPatternDescriptionProfile,
-  `responses/200/content/application~1json/schema`: `SharedModel448`,
-  `responses/400/content/application~1json/schema`: `SharedModel448`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors147`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors147`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
   
@@ -37593,9 +37593,9 @@ op `saveAttributesPolicy`(@js(#{
     `precedence`?: IntegerFrom1To1000OrString;
     `requiredAttributes`: post_admin_api_policies_save_attributes_policy_b_application_json_requiredAttributes_h3043
   },
-  `responses/200/content/application~1json/schema`: `SharedModel449`,
-  `responses/400/content/application~1json/schema`: `SharedModel449`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors148`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors148`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/policies/reset-attributes-policy",
@@ -37623,9 +37623,9 @@ op `saveAttributesPolicy`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `resetAttributesPolicy`(@js(#{`examples`:#[#{`profile`:"default"}]}) `requestBody/content/application~1json/schema`: WithPatternDescriptionProfile,
-  `responses/200/content/application~1json/schema`: `SharedModel449`,
-  `responses/400/content/application~1json/schema`: `SharedModel449`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors148`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors148`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -37682,9 +37682,9 @@ op `definePersonAttribute`(@js(#{
       `description`:"Whether a person may change their own values there (`POST /account-api/attributes`). Implies `portalVisible`, which is stored true with it. Default false."
     }) `portalEditable`?: boolean
   },
-  `responses/200/content/application~1json/schema`: `SharedModel450`,
-  `responses/400/content/application~1json/schema`: `SharedModel450`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors149`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors149`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -37746,9 +37746,9 @@ op `updatePersonAttribute`(@js(#{
     }) `syntax`?: string;
     `multiValued`?: post_admin_api_policies_update_person_attribute_b_application_json_multiValued_h3045
   },
-  `responses/200/content/application~1json/schema`: `SharedModel450`,
-  `responses/400/content/application~1json/schema`: `SharedModel450`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors149`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors149`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/policies/remove-person-attribute",
@@ -37776,9 +37776,9 @@ op `updatePersonAttribute`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `removePersonAttribute`(@js(#{`examples`:#[#{`name`:"employeeBadge"}]}) `requestBody/content/application~1json/schema`: {@js(#{`description`:"The attribute's name."}) `name`: string},
-  `responses/200/content/application~1json/schema`: `SharedModel450`,
-  `responses/400/content/application~1json/schema`: `SharedModel450`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors149`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors149`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
   
@@ -37877,9 +37877,9 @@ op `savePostLoginPolicy`(@js(#{
       `description`:"Ignored since #1135: a passkey has no role, so a person with none registers a passkey and nothing else is asked. Accepted so that an older body is not refused; not stored, not answered."
     }) `noPasskeyRole`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel452`,
-  `responses/400/content/application~1json/schema`: `SharedModel452`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors150`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors150`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/policies/reset-postLogin-policy",
@@ -37907,9 +37907,9 @@ op `savePostLoginPolicy`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `resetPostLoginPolicy`(@js(#{`examples`:#[#{`profile`:"default"}]}) `requestBody/content/application~1json/schema`: WithPatternDescriptionProfile,
-  `responses/200/content/application~1json/schema`: `SharedModel452`,
-  `responses/400/content/application~1json/schema`: `SharedModel452`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors150`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors150`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -38010,13 +38010,13 @@ op `getConsent`(`parameters/0/schema`: string,
     `matched`?: integer;
     `windowed`?: boolean;
     `search`?: get_admin_api_consent_r200_application_json_search_h3053;
-    `globalsPaging`?: `SharedModel166`;
-    `usersPaging`?: `SharedModel166`;
+    `globalsPaging`?: `WithPagePagesPerPage2`;
+    `usersPaging`?: `WithPagePagesPerPage2`;
     `query`?: {`q`?: string};
     `withdrawnAttribute`?: string;
     `applicationChoices`?: (WithIdentifierName)[]
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/consent/grant-global-consent",
@@ -38051,9 +38051,9 @@ op `grantGlobalConsent`(@js(#{`examples`:#[#{`client`:"webapp1",`scope`:"openid"
       `description`:"The scope, exactly as a client puts it in a `scope` parameter. A delegated permission is its WHOLE identifier."
     }) `scope`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel453`,
-  `responses/400/content/application~1json/schema`: `SharedModel453`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors151`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors151`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/consent/revoke-global-consent",
@@ -38084,9 +38084,9 @@ op `revokeGlobalConsent`(@js(#{`examples`:#[#{`client`:"webapp1",`scope`:"openid
     @js(#{`description`:"The application holding it."}) `client`: string;
     @js(#{`description`:"The scope to stop consenting."}) `scope`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel453`,
-  `responses/400/content/application~1json/schema`: `SharedModel453`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors151`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors151`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/consent/revoke-consent",
@@ -38120,9 +38120,9 @@ op `revokeConsent`(@js(#{`examples`:#[#{`username`:"alice",`client`:"webapp1",`s
     @js(#{`description`:"The application they consented it to."}) `client`: string;
     @js(#{`description`:"The scope they consented."}) `scope`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel453`,
-  `responses/400/content/application~1json/schema`: `SharedModel453`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors151`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors151`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/consent/revoke-application-consent",
@@ -38153,9 +38153,9 @@ op `revokeApplicationConsent`(@js(#{`examples`:#[#{`username`:"alice",`client`:"
     @js(#{`description`:"The person, exactly as /admin/users names them."}) `username`: string;
     @js(#{`description`:"The application whose every consent is withdrawn."}) `client`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel453`,
-  `responses/400/content/application~1json/schema`: `SharedModel453`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors151`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors151`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/consent/forget-user-consent",
@@ -38185,9 +38185,9 @@ op `revokeApplicationConsent`(@js(#{`examples`:#[#{`username`:"alice",`client`:"
 op `forgetUserConsent`(@js(#{`examples`:#[#{`username`:"alice"}]}) `requestBody/content/application~1json/schema`: {
     @js(#{`description`:"The person whose answers are forgotten."}) `username`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel453`,
-  `responses/400/content/application~1json/schema`: `SharedModel453`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors151`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors151`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -38300,12 +38300,12 @@ op `forgetUserConsent`(@js(#{`examples`:#[#{`username`:"alice"}]}) `requestBody/
         `maxRetained`?: numeric
       };
       `listeners`?: {
-        `workloadApi`?: `SharedModel454`;
-        `serverApi`?: `SharedModel454`;
-        `brokerApi`?: `SharedModel454`
+        `workloadApi`?: `WithTrustDomainTrustDomainIdX509Keys`;
+        `serverApi`?: `WithTrustDomainTrustDomainIdX509Keys`;
+        `brokerApi`?: `WithTrustDomainTrustDomainIdX509Keys`
       };
       `workloadAttestation`?: get_admin_api_spiffe_r200_application_json_v0_workloadAttestation_h3060;
-      `federated`?: `SharedModel456`;
+      `federated`?: `WithIdDnSpiffeId`;
       `counts`?: {
         `entries`?: integer;
         `agents`?: integer;
@@ -38354,11 +38354,11 @@ op `forgetUserConsent`(@js(#{`examples`:#[#{`username`:"alice"}]}) `requestBody/
           `alg`?: NullableString;
           `createdAt`?: NullOrStringOrNumeric2
         })[];
-        `federated`?: `SharedModel456`
+        `federated`?: `WithIdDnSpiffeId`
       };
       `serverApiAuthenticated`?: boolean;
       `settingsForms`?: `SharedModel227`;
-      `protocolEndpoints`?: `SharedModel49`
+      `protocolEndpoints`?: `WithParamsDescriptionParams`
     }
   }
 
@@ -38382,7 +38382,7 @@ op `forgetUserConsent`(@js(#{`examples`:#[#{`username`:"alice"}]}) `requestBody/
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getSpiffe`(`responses/200/content/application~1json/schema`: get_admin_api_spiffe_r200_application_json_h3069,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/spiffe/rotate",
@@ -38414,7 +38414,7 @@ op `rotateSpiffeAuthority`(@js(#{`examples`:#[#{`which`:"both"}]}) `requestBody/
   },
   `responses/200/content/application~1json/schema`: WithOkMessageErrors,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/spiffe/federation-set",
@@ -38469,7 +38469,7 @@ op `setSpiffeFederatedBundle`(@js(#{
   },
   `responses/200/content/application~1json/schema`: WithOkMessageErrors,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/spiffe/federation-remove",
@@ -38499,7 +38499,7 @@ op `setSpiffeFederatedBundle`(@js(#{
 op `removeSpiffeFederatedBundle`(@js(#{`examples`:#[#{`trustDomain`:"other.example"}]}) `requestBody/content/application~1json/schema`: {@js(#{`description`:"The trust domain name."}) `trustDomain`: string},
   `responses/200/content/application~1json/schema`: WithOkMessageErrors,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @hoisted union get_admin_api_spiffe_entries_r200_application_json_h3072 {
@@ -38508,22 +38508,22 @@ op `removeSpiffeFederatedBundle`(@js(#{`examples`:#[#{`trustDomain`:"other.examp
       `matched`?: integer;
       `filter`?: {`q`?: string; `origin`?: string};
       `origins`?: (string)[];
-      `paging`?: `SharedModel27`;
+      `paging`?: `WithPagePagesPerPage`;
       `max`?: numeric;
       `container`?: string;
       `serverApiAuthenticated`?: boolean;
       `trustDomain`?: string;
-      `entries`?: (`SharedModel458`)[];
+      `entries`?: (`WithIdDnSpiffeId2`)[];
       `found`?: boolean;
       `id`?: string;
       `error`?: string;
-      `entry`?: `SharedModel458`;
+      `entry`?: `WithIdDnSpiffeId2`;
       `editable`?: (string)[];
       `defaults`?: {
         `x509SvidTtl`?: NullableString;
         `jwtSvidTtl`?: NullableString
       };
-      `protocolEndpoints`?: `SharedModel49`
+      `protocolEndpoints`?: `WithParamsDescriptionParams`
     }
   }
 
@@ -38594,7 +38594,7 @@ op `getSpiffeEntries`(`parameters/0/schema`: string,
   @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/4/schema`: integer,
   `responses/200/content/application~1json/schema`: get_admin_api_spiffe_entries_r200_application_json_h3072,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/spiffe/entries/create",
@@ -38651,9 +38651,9 @@ op `createSpiffeEntry`(@js(#{
       `description`:"Operator guidance when a workload gets more than one SVID — `internal`, `external`. Passed through verbatim; nothing here reads it."
     }) `hint`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel459`,
-  `responses/400/content/application~1json/schema`: `SharedModel459`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors152`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors152`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/spiffe/entries/update",
@@ -38690,9 +38690,9 @@ op `updateSpiffeEntry`(@js(#{`examples`:#[#{`entry`:"0f5a…",`field`:"hint",`va
       `description`:"A list field takes comma-separated values and an empty value CLEARS it; a boolean takes true or false; a TTL takes seconds."
     }) `value`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel459`,
-  `responses/400/content/application~1json/schema`: `SharedModel459`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors152`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors152`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/spiffe/entries/delete",
@@ -38720,9 +38720,9 @@ op `updateSpiffeEntry`(@js(#{`examples`:#[#{`entry`:"0f5a…",`field`:"hint",`va
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `deleteSpiffeEntry`(@js(#{`examples`:#[#{`entry`:"0f5a…"}]}) `requestBody/content/application~1json/schema`: {@js(#{`description`:"The entry id."}) `entry`: string},
-  `responses/200/content/application~1json/schema`: `SharedModel459`,
-  `responses/400/content/application~1json/schema`: `SharedModel459`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors152`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors152`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @hoisted union get_admin_api_spiffe_brokers_r200_application_json_h3075 {
@@ -38730,18 +38730,18 @@ op `deleteSpiffeEntry`(@js(#{`examples`:#[#{`entry`:"0f5a…"}]}) `requestBody/c
       `total`?: integer;
       `matched`?: integer;
       `filter`?: {`q`?: string};
-      `paging`?: `SharedModel27`;
+      `paging`?: `WithPagePagesPerPage`;
       `trustDomain`?: string;
       `setting`?: string;
       `port`?: NullableString;
       `referenceTypes`?: (string)[];
-      `listeners`?: `SharedModel454`;
+      `listeners`?: `WithTrustDomainTrustDomainIdX509Keys`;
       `brokers`?: ({
         `id`?: string;
         `referenceTypes`?: (string)[];
         `problem`?: NullableString
       })[];
-      `protocolEndpoints`?: `SharedModel49`
+      `protocolEndpoints`?: `WithParamsDescriptionParams`
     }
   }
 
@@ -38791,7 +38791,7 @@ op `getSpiffeBrokers`(`parameters/0/schema`: string,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
   @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/2/schema`: integer,
   `responses/200/content/application~1json/schema`: get_admin_api_spiffe_brokers_r200_application_json_h3075,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/spiffe/brokers/set",
@@ -38829,9 +38829,9 @@ op `setSpiffeBroker`(@js(#{
     @js(#{`description`:"The broker's SPIFFE ID."}) `id`: string;
     @js(#{`description`:"What it may reference: one or more of pid, k8s and *."}) `referenceTypes`: ("pid" | "k8s" | "*")[]
   },
-  `responses/200/content/application~1json/schema`: `SharedModel460`,
-  `responses/400/content/application~1json/schema`: `SharedModel460`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors153`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors153`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/spiffe/brokers/remove",
@@ -38861,7 +38861,7 @@ op `setSpiffeBroker`(@js(#{
 op `removeSpiffeBroker`(@js(#{`examples`:#[#{`id`:"spiffe://example.org/ns/mesh/sa/node-proxy"}]}) `requestBody/content/application~1json/schema`: {@js(#{`description`:"The broker's SPIFFE ID."}) `id`: string},
   `responses/200/content/application~1json/schema`: WithOkMessageErrorsEtc4,
   `responses/400/content/application~1json/schema`: WithOkMessageErrorsEtc4,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @hoisted union get_admin_api_spiffe_agents_r200_application_json_h3076 {
@@ -38871,14 +38871,14 @@ op `removeSpiffeBroker`(@js(#{`examples`:#[#{`id`:"spiffe://example.org/ns/mesh/
       `filter`?: {`q`?: string};
       `max`?: numeric;
       `container`?: string;
-      `paging`?: `SharedModel27`;
+      `paging`?: `WithPagePagesPerPage`;
       `serverApiAuthenticated`?: boolean;
-      `agents`?: (`SharedModel461`)[];
+      `agents`?: (`WithIdDnAttestationType`)[];
       `found`?: boolean;
       `id`?: string;
       `error`?: string;
-      `agent`?: `SharedModel461`;
-      `protocolEndpoints`?: `SharedModel49`
+      `agent`?: `WithIdDnAttestationType`;
+      `protocolEndpoints`?: `WithParamsDescriptionParams`
     }
   }
 
@@ -38936,7 +38936,7 @@ op `getSpiffeAgents`(`parameters/0/schema`: string,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
   @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/3/schema`: integer,
   `responses/200/content/application~1json/schema`: get_admin_api_spiffe_agents_r200_application_json_h3076,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/spiffe/agents/ban",
@@ -38966,9 +38966,9 @@ op `getSpiffeAgents`(`parameters/0/schema`: string,
 op `banSpiffeAgent`(@js(#{
     `examples`:#[#{`agent`:"spiffe://example.org/spire/agent/k8s_psat/abc"}]
   }) `requestBody/content/application~1json/schema`: WithDescriptionAgent,
-  `responses/200/content/application~1json/schema`: `SharedModel462`,
-  `responses/400/content/application~1json/schema`: `SharedModel462`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors154`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors154`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/spiffe/agents/unban",
@@ -38998,9 +38998,9 @@ op `banSpiffeAgent`(@js(#{
 op `unbanSpiffeAgent`(@js(#{
     `examples`:#[#{`agent`:"spiffe://example.org/spire/agent/k8s_psat/abc"}]
   }) `requestBody/content/application~1json/schema`: WithDescriptionAgent,
-  `responses/200/content/application~1json/schema`: `SharedModel462`,
-  `responses/400/content/application~1json/schema`: `SharedModel462`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors154`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors154`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/spiffe/agents/delete",
@@ -39030,9 +39030,9 @@ op `unbanSpiffeAgent`(@js(#{
 op `deleteSpiffeAgent`(@js(#{
     `examples`:#[#{`agent`:"spiffe://example.org/spire/agent/k8s_psat/abc"}]
   }) `requestBody/content/application~1json/schema`: WithDescriptionAgent,
-  `responses/200/content/application~1json/schema`: `SharedModel462`,
-  `responses/400/content/application~1json/schema`: `SharedModel462`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors154`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors154`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/spiffe/agents/join-token",
@@ -39067,9 +39067,9 @@ op `createSpiffeJoinToken`(@js(#{`examples`:#[#{`ttl`:600}]}) `requestBody/conte
       `description`:"Optional alias SPIFFE ID, registered as an entry parented on the agent this token attests."
     }) `agentId`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel463`,
-  `responses/400/content/application~1json/schema`: `SharedModel463`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors155`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors155`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @hoisted union get_admin_api_acme_r200_application_json_h3087 {
@@ -39127,7 +39127,7 @@ op `createSpiffeJoinToken`(@js(#{`examples`:#[#{`ttl`:600}]}) `requestBody/conte
       };
       `eabLifetimeS`?: numeric;
       `eabKeys`?: {
-        `paging`?: `SharedModel27`;
+        `paging`?: `WithPagePagesPerPage`;
         `rows`?: ({
           `kid`?: string;
           `entry`?: WithKindId;
@@ -39140,13 +39140,13 @@ op `createSpiffeJoinToken`(@js(#{`examples`:#[#{`ttl`:600}]}) `requestBody/conte
           `boundAccount`?: NullableString
         })[]
       };
-      `accounts`?: {`paging`?: `SharedModel27`; `rows`?: (`SharedModel464`)[]};
-      `certificates`?: `SharedModel465`;
-      `hostNames`?: {`paging`?: `SharedModel27`; `rows`?: `SharedModel468`};
+      `accounts`?: {`paging`?: `WithPagePagesPerPage`; `rows`?: (`WithIdStatusEntry`)[]};
+      `certificates`?: `WithPagingRowsEntry2`;
+      `hostNames`?: {`paging`?: `WithPagePagesPerPage`; `rows`?: `WithAtOperationOutcome`};
       `revocationReasons`?: (string)[];
       `actions`?: (string)[];
       `settings`?: `SharedModel227`;
-      `protocolEndpoints`?: `SharedModel49`
+      `protocolEndpoints`?: `WithParamsDescriptionParams`
     }
   }
 
@@ -39212,7 +39212,7 @@ op `getAcme`(@js(#{`minimum`:1,`maximum`:1000,`examples`:#[10]}) `parameters/0/s
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/3/schema`: integer,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/4/schema`: integer,
   `responses/200/content/application~1json/schema`: get_admin_api_acme_r200_application_json_h3087,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/acme/monitor",
@@ -39273,10 +39273,10 @@ op `getAcmeMonitor`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: i
     `errorCodes`?: (WithNameCount)[];
     `statuses`?: (WithNameCount)[];
     `lastAt`?: NullOrStringOrNumeric;
-    `paging`?: `SharedModel27`;
-    `recent`?: `SharedModel470`
+    `paging`?: `WithPagePagesPerPage`;
+    `recent`?: `WithOkMessageErrors156`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/acme/create-eab",
@@ -39318,9 +39318,9 @@ op `createAcmeEab`(@js(#{`examples`:#[#{`kind`:"person",`identifier`:"alice"}]})
       `description`:"How long it may wait before binding an account; at most acme.eabLifetimeS, which is also the default."
     }) `lifetimeS`?: integer
   },
-  `responses/200/content/application~1json/schema`: `SharedModel472`,
-  `responses/400/content/application~1json/schema`: `SharedModel472`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors157`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors157`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/acme/delete-eab",
@@ -39356,7 +39356,7 @@ op `deleteAcmeEab`(@js(#{`examples`:#[#{`kid`:"eab-p-YWxpY2U-0123456789abcdef"}]
   },
   `responses/200/content/application~1json/schema`: WithOkMessageErrorsEtc43,
   `responses/400/content/application~1json/schema`: WithOkMessageErrorsEtc43,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/acme/deactivate-account",
@@ -39389,9 +39389,9 @@ op `deactivateAcmeAccount`(@js(#{`examples`:#[#{`account`:"AbCdEfGhIjKlMnOp"}]})
       `description`:"The account id, from GET /admin-api/acme."
     }) `account`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel473`,
-  `responses/400/content/application~1json/schema`: `SharedModel473`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors158`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors158`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/acme/revoke-certificate",
@@ -39427,9 +39427,9 @@ op `revokeAcmeCertificate`(@js(#{`examples`:#[#{`serial`:"0a1b2c3d4e5f",`reason`
     }) `serial`: string;
     @js(#{`description`:"The RFC 5280 reason; unspecified by default."}) `reason`?: "unspecified" | "keyCompromise" | "cACompromise" | "affiliationChanged" | "superseded" | "cessationOfOperation" | "certificateHold" | "privilegeWithdrawn" | "aACompromise"
   },
-  `responses/200/content/application~1json/schema`: `SharedModel474`,
-  `responses/400/content/application~1json/schema`: `SharedModel474`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors159`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors159`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/acme/add-host-name",
@@ -39475,9 +39475,9 @@ op `addAcmeHostName`(@js(#{
       `description`:"A DNS name (a leading *. is a wildcard registered exactly so) or an IP address."
     }) `hostName`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel475`,
-  `responses/400/content/application~1json/schema`: `SharedModel475`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors160`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors160`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/acme/remove-host-name",
@@ -39523,9 +39523,9 @@ op `removeAcmeHostName`(@js(#{
       `description`:"The registered name to remove."
     }) `hostName`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel475`,
-  `responses/400/content/application~1json/schema`: `SharedModel475`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors160`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors160`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -39584,8 +39584,8 @@ op `removeAcmeHostName`(@js(#{
       })[];
       `defaultProfile`?: NullableString;
       `refusedProfiles`?: (WithIdWhy)[];
-      `hostNames`?: `SharedModel468`;
-      `certificates`?: `SharedModel465`;
+      `hostNames`?: `WithAtOperationOutcome`;
+      `certificates`?: `WithPagingRowsEntry2`;
       `keyAlgorithms`?: (string)[];
       `revocationReasons`?: (string)[];
       `csrAttributes`?: {`signatureAlgorithms`?: ({`oid`?: string; `name`?: string})[]};
@@ -39598,7 +39598,7 @@ op `removeAcmeHostName`(@js(#{
       `actions`?: (string)[];
       `settings`?: `SharedModel227`;
       `monitor`?: string;
-      `protocolEndpoints`?: `SharedModel49`
+      `protocolEndpoints`?: `WithParamsDescriptionParams`
     }
   }
 
@@ -39640,7 +39640,7 @@ op `removeAcmeHostName`(@js(#{
 op `getEst`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: integer,
   @js(#{`minimum`:1,`examples`:#[10]}) `parameters/1/schema`: integer,
   `responses/200/content/application~1json/schema`: get_admin_api_est_r200_application_json_h3097,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/est/monitor",
@@ -39703,10 +39703,10 @@ op `getEstMonitor`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: in
     `errorCodes`?: (WithNameCount)[];
     `statuses`?: (WithNameCount)[];
     `lastAt`?: NullOrStringOrNumeric;
-    `paging`?: `SharedModel27`;
-    `recent`?: `SharedModel470`
+    `paging`?: `WithPagePagesPerPage`;
+    `recent`?: `WithOkMessageErrors156`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/est/issue-server-key",
@@ -39758,9 +39758,9 @@ op `issueEstServerKey`(@js(#{
       `description`:"A key algorithm id from GET /admin-api/est `keyAlgorithms`; ec-p256 when omitted."
     }) `keyAlg`?: "rsa-2048" | "rsa-3072" | "rsa-4096" | "ec-p256" | "ec-p384" | "ec-p521" | "ed25519" | "ml-dsa-44" | "ml-dsa-65" | "ml-dsa-87" | "slh-dsa-sha2-128s" | "slh-dsa-sha2-128f" | "slh-dsa-sha2-192s" | "slh-dsa-sha2-192f" | "slh-dsa-sha2-256s" | "slh-dsa-sha2-256f" | "slh-dsa-shake-128s" | "slh-dsa-shake-128f" | "slh-dsa-shake-192s" | "slh-dsa-shake-192f" | "slh-dsa-shake-256s" | "slh-dsa-shake-256f" | "mldsa44-rsa2048-pss-sha256" | "mldsa44-rsa2048-pkcs15-sha256" | "mldsa44-ed25519-sha512" | "mldsa44-ecdsa-p256-sha256" | "mldsa65-rsa3072-pss-sha512" | "mldsa65-rsa3072-pkcs15-sha512" | "mldsa65-rsa4096-pss-sha512" | "mldsa65-rsa4096-pkcs15-sha512" | "mldsa65-ecdsa-p256-sha512" | "mldsa65-ecdsa-p384-sha512" | "mldsa65-ed25519-sha512" | "mldsa87-ecdsa-p384-sha512" | "mldsa87-ed448-shake256" | "mldsa87-rsa3072-pss-sha512" | "mldsa87-rsa4096-pss-sha512" | "mldsa87-ecdsa-p521-sha512" | "ml-kem-512" | "ml-kem-768" | "ml-kem-1024"
   },
-  `responses/200/content/application~1json/schema`: `SharedModel476`,
-  `responses/400/content/application~1json/schema`: `SharedModel476`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors161`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors161`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/est/revoke-certificate",
@@ -39797,9 +39797,9 @@ op `revokeEstCertificate`(@js(#{`examples`:#[#{`serial`:"00",`reason`:"keyCompro
       `description`:"The RFC 5280 section 5.3.1 reason; unspecified when omitted."
     }) `reason`?: "unspecified" | "keyCompromise" | "cACompromise" | "affiliationChanged" | "superseded" | "cessationOfOperation" | "certificateHold" | "privilegeWithdrawn" | "aACompromise"
   },
-  `responses/200/content/application~1json/schema`: `SharedModel477`,
-  `responses/400/content/application~1json/schema`: `SharedModel477`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors162`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors162`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/est/add-host-name",
@@ -39849,9 +39849,9 @@ op `addEstHostName`(@js(#{
       `description`:"A DNS name or an IP address."
     }) `hostName`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel478`,
-  `responses/400/content/application~1json/schema`: `SharedModel478`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors163`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors163`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/est/remove-host-name",
@@ -39897,9 +39897,9 @@ op `removeEstHostName`(@js(#{
     }) `identifier`: string;
     @js(#{`minLength`:1,`maxLength`:253,`description`:"The name to remove."}) `hostName`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel478`,
-  `responses/400/content/application~1json/schema`: `SharedModel478`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors163`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors163`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -39970,7 +39970,7 @@ op `removeEstHostName`(@js(#{
       `authority`?: get_admin_api_scep_r200_application_json_v0_authority_h3102;
       `hierarchyBuilt`?: boolean;
       `authorityNote`?: string;
-      `ra`?: `SharedModel479`;
+      `ra`?: `WithPresentStatusSubject`;
       `profiles`?: ({
         `id`?: string;
         `allowed`?: boolean;
@@ -39981,7 +39981,7 @@ op `removeEstHostName`(@js(#{
       `refusedProfiles`?: (WithIdWhy)[];
       `defaultProfile`?: NullableString;
       `challenges`?: {
-        `paging`?: `SharedModel27`;
+        `paging`?: `WithPagePagesPerPage`;
         `rows`?: ({
           `id`?: string;
           `entry`?: WithKindId;
@@ -39995,8 +39995,8 @@ op `removeEstHostName`(@js(#{
           `url`?: string
         })[]
       };
-      `hostNames`?: `SharedModel468`;
-      `certificates`?: `SharedModel465`;
+      `hostNames`?: `WithAtOperationOutcome`;
+      `certificates`?: `WithPagingRowsEntry2`;
       `exceptions`?: ({`what`?: string; `why`?: string})[];
       `mode`?: {
         `mode`?: string;
@@ -40006,7 +40006,7 @@ op `removeEstHostName`(@js(#{
       `revokeReasons`?: (string)[];
       `actions`?: (string)[];
       `settings`?: `SharedModel227`;
-      `protocolEndpoints`?: `SharedModel49`
+      `protocolEndpoints`?: `WithParamsDescriptionParams`
     }
   }
 
@@ -40056,7 +40056,7 @@ op `getScep`(@js(#{`minimum`:1,`maximum`:1000,`examples`:#[10]}) `parameters/0/s
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
   `responses/200/content/application~1json/schema`: get_admin_api_scep_r200_application_json_h3111,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/scep/monitor",
@@ -40117,10 +40117,10 @@ op `getScepMonitor`(@js(#{`minimum`:1,`maximum`:1000,`examples`:#[10]}) `paramet
     `failInfo`?: Record<numeric>;
     `issuedCertificates`?: integer;
     `lastAt`?: NullOrStringOrNumeric;
-    `paging`?: `SharedModel27`;
-    `recent`?: `SharedModel470`
+    `paging`?: `WithPagePagesPerPage`;
+    `recent`?: `WithOkMessageErrors156`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/scep/create-challenge",
@@ -40168,9 +40168,9 @@ op `createScepChallenge`(@js(#{
       `description`:"Seconds it may wait, at most scep.challengeLifetimeS."
     }) `lifetimeS`?: integer
   },
-  `responses/200/content/application~1json/schema`: `SharedModel480`,
-  `responses/400/content/application~1json/schema`: `SharedModel480`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors164`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors164`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/scep/delete-challenge",
@@ -40205,7 +40205,7 @@ op `deleteScepChallenge`(@js(#{`examples`:#[#{`id`:"scep-p-bm9ib2R5-000000000000
   },
   `responses/200/content/application~1json/schema`: WithOkMessageErrorsEtc53,
   `responses/400/content/application~1json/schema`: WithOkMessageErrorsEtc53,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/scep/reissue-ra",
@@ -40233,9 +40233,9 @@ op `deleteScepChallenge`(@js(#{`examples`:#[#{`id`:"scep-p-bm9ib2R5-000000000000
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `reissueScepRa`(@js(#{`examples`:#[#{}]}) `requestBody/content/application~1json/schema`: {},
-  `responses/200/content/application~1json/schema`: `SharedModel481`,
-  `responses/400/content/application~1json/schema`: `SharedModel481`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors165`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors165`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/scep/revoke-certificate",
@@ -40266,9 +40266,9 @@ op `revokeScepCertificate`(@js(#{`examples`:#[#{`serial`:"0badc0de",`reason`:"ke
     @js(#{`maxLength`:128,`description`:"The serial, hexadecimal."}) `serial`: string;
     @js(#{`description`:"The RFC 5280 reason."}) `reason`?: "unspecified" | "keyCompromise" | "affiliationChanged" | "superseded" | "cessationOfOperation" | "privilegeWithdrawn"
   },
-  `responses/200/content/application~1json/schema`: `SharedModel482`,
-  `responses/400/content/application~1json/schema`: `SharedModel482`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors166`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors166`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/scep/add-host-name",
@@ -40304,9 +40304,9 @@ op `addScepHostName`(@js(#{
       }
     ]
   }) `requestBody/content/application~1json/schema`: WithDescriptionKindMaxLengthEtc8,
-  `responses/200/content/application~1json/schema`: `SharedModel483`,
-  `responses/400/content/application~1json/schema`: `SharedModel483`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors167`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors167`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/scep/remove-host-name",
@@ -40342,9 +40342,9 @@ op `removeScepHostName`(@js(#{
       }
     ]
   }) `requestBody/content/application~1json/schema`: WithDescriptionKindMaxLengthEtc8,
-  `responses/200/content/application~1json/schema`: `SharedModel483`,
-  `responses/400/content/application~1json/schema`: `SharedModel483`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors167`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors167`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -40474,7 +40474,7 @@ op `getOidfed`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: intege
       `publishedUntil`?: NullableString;
       `revokedAt`?: NullableString;
       `revokedReason`?: NullableString;
-      `publicJwk`?: `SharedModel366`
+      `publicJwk`?: `WithKtyUseAlg`
     })[];
     `subordinates`?: ({
       `entityId`?: string;
@@ -40482,8 +40482,8 @@ op `getOidfed`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: intege
       `implicit`?: boolean;
       `entityTypes`?: (string)[];
       `intermediate`?: boolean;
-      `metadataPolicy`?: `SharedModel484`;
-      `constraints`?: `SharedModel484`;
+      `metadataPolicy`?: `JWKSetMetadataDocumentMetadata`;
+      `constraints`?: `JWKSetMetadataDocumentMetadata`;
       `createdAt`?: NullableString;
       `updatedAt`?: NullableString;
       `kids`?: (NullableString)[];
@@ -40497,7 +40497,7 @@ op `getOidfed`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: intege
       `events`?: (WithIatEventEventDescriptionEtc4)[];
       `eventsTotal`?: integer
     })[];
-    `collection`?: `SharedModel485`;
+    `collection`?: `WithCrawlCrawlEverySJobOff`;
     `trustAnchors`?: ({
       `entityId`?: string;
       `localRealm`?: NullableString;
@@ -40524,7 +40524,7 @@ op `getOidfed`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: intege
       `iss`?: string;
       `expiresAt`?: NullableString
     })[];
-    `resolutions`?: (`SharedModel487`)[];
+    `resolutions`?: (`WithSubjectAnchorExpiresAt`)[];
     @js(#{
       `x-free-form`:"This realm's Entity Configuration, the claims of a signed statement (OpenID Federation 1.1 section 3.1): its `metadata` is one document per entity type, and each is the document that protocol publishes.",
       `description`:"This realm's Entity Configuration, the claims of a signed statement (OpenID Federation 1.1 section 3.1): its `metadata` is one document per entity type, and each is the document that protocol publishes."
@@ -40542,17 +40542,17 @@ op `getOidfed`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: intege
       `markPolicies`?: integer
     };
     `paging`?: {
-      `keys`?: `SharedModel27`;
-      `subordinates`?: `SharedModel27`;
-      `formerSubordinates`?: `SharedModel27`;
-      `trustAnchors`?: `SharedModel27`;
-      `issuedMarks`?: `SharedModel27`;
-      `heldMarks`?: `SharedModel27`;
-      `markPolicies`?: `SharedModel27`
+      `keys`?: `WithPagePagesPerPage`;
+      `subordinates`?: `WithPagePagesPerPage`;
+      `formerSubordinates`?: `WithPagePagesPerPage`;
+      `trustAnchors`?: `WithPagePagesPerPage`;
+      `issuedMarks`?: `WithPagePagesPerPage`;
+      `heldMarks`?: `WithPagePagesPerPage`;
+      `markPolicies`?: `WithPagePagesPerPage`
     };
-    `protocolEndpoints`?: `SharedModel49`
+    `protocolEndpoints`?: `WithParamsDescriptionParams`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/oidfed/add-subordinate",
@@ -40609,9 +40609,9 @@ op `addOidfedSubordinate`(@js(#{`examples`:#[#{`entityId`:"https://rp.example.or
       `description`:"An http or https URL of a page about the event, recorded as its information_uri."
     }) `informationUri`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel488`,
-  `responses/400/content/application~1json/schema`: `SharedModel488`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors168`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors168`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/oidfed/remove-subordinate",
@@ -40643,7 +40643,7 @@ op `removeOidfedSubordinate`(@js(#{
   }) `requestBody/content/application~1json/schema`: WithMaxLengthDescriptionEntityIdEtc9,
   `responses/200/content/application~1json/schema`: WithOkMessageErrors,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/oidfed/suspend-subordinate",
@@ -40675,7 +40675,7 @@ op `suspendOidfedSubordinate`(@js(#{
   }) `requestBody/content/application~1json/schema`: WithMaxLengthDescriptionEntityIdEtc9,
   `responses/200/content/application~1json/schema`: WithOkMessageErrors,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/oidfed/reinstate-subordinate",
@@ -40705,7 +40705,7 @@ op `suspendOidfedSubordinate`(@js(#{
 op `reinstateOidfedSubordinate`(@js(#{`examples`:#[#{`entityId`:"https://rp.example.org"}]}) `requestBody/content/application~1json/schema`: WithMaxLengthDescriptionEntityIdEtc9,
   `responses/200/content/application~1json/schema`: WithOkMessageErrors,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/oidfed/crawl-collection",
@@ -40733,9 +40733,9 @@ op `reinstateOidfedSubordinate`(@js(#{`examples`:#[#{`entityId`:"https://rp.exam
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `crawlOidfedCollection`(@js(#{`examples`:#[#{}],`required`:#[]}) `requestBody/content/application~1json/schema`: {},
-  `responses/200/content/application~1json/schema`: `SharedModel490`,
-  `responses/400/content/application~1json/schema`: `SharedModel490`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors169`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors169`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/oidfed/add-trust-anchor",
@@ -40772,9 +40772,9 @@ op `addOidfedTrustAnchor`(@js(#{
     @js(#{`description`:"Its JWK Set, as a JSON object or its text."}) `jwks`?: unknown;
     @js(#{`description`:"Read its keys from its Entity Configuration."}) `fetchJwks`?: boolean
   },
-  `responses/200/content/application~1json/schema`: `SharedModel491`,
-  `responses/400/content/application~1json/schema`: `SharedModel491`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors170`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors170`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/oidfed/remove-trust-anchor",
@@ -40809,7 +40809,7 @@ op `removeOidfedTrustAnchor`(@js(#{`examples`:#[#{`entityId`:"https://anchor.exa
   },
   `responses/200/content/application~1json/schema`: WithOkMessageErrors,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/oidfed/add-mark-type",
@@ -40853,9 +40853,9 @@ op `addOidfedMarkType`(@js(#{
     @js(#{`maxLength`:2048}) `ref`?: string;
     @js(#{`maxLength`:16384,`description`:"A trust-mark-delegation+jwt."}) `delegation`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel492`,
-  `responses/400/content/application~1json/schema`: `SharedModel492`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors171`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors171`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/oidfed/remove-mark-type",
@@ -40885,7 +40885,7 @@ op `addOidfedMarkType`(@js(#{
 op `removeOidfedMarkType`(@js(#{`examples`:#[#{`type`:"https://federation.example.org/marks/audited"}]}) `requestBody/content/application~1json/schema`: WithMaxLengthType,
   `responses/200/content/application~1json/schema`: WithOkMessageErrors,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/oidfed/set-mark-policy",
@@ -40931,9 +40931,9 @@ op `setOidfedMarkPolicy`(@js(#{
     }) `ownerSub`?: string;
     @js(#{`description`:"The owner's JWK Set, as a JSON object or its text."}) `ownerJwks`?: unknown
   },
-  `responses/200/content/application~1json/schema`: `SharedModel493`,
-  `responses/400/content/application~1json/schema`: `SharedModel493`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors172`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors172`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/oidfed/remove-mark-policy",
@@ -40963,7 +40963,7 @@ op `setOidfedMarkPolicy`(@js(#{
 op `removeOidfedMarkPolicy`(@js(#{`examples`:#[#{`type`:"https://federation.example.org/marks/audited"}]}) `requestBody/content/application~1json/schema`: WithMaxLengthType,
   `responses/200/content/application~1json/schema`: WithOkMessageErrors,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/oidfed/issue-trust-mark",
@@ -41006,7 +41006,7 @@ op `issueOidfedTrustMark`(@js(#{
   },
   `responses/200/content/application~1json/schema`: WithOkMessageErrorsEtc54,
   `responses/400/content/application~1json/schema`: WithOkMessageErrorsEtc54,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/oidfed/revoke-trust-mark",
@@ -41042,7 +41042,7 @@ op `revokeOidfedTrustMark`(@js(#{`examples`:#[#{`id`:"im-0123456789abcdef0123456
   },
   `responses/200/content/application~1json/schema`: WithOkMessageErrors,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/oidfed/add-held-mark",
@@ -41077,7 +41077,7 @@ op `addOidfedHeldMark`(@js(#{`examples`:#[#{`trustMark`:"eyJ0eXAiOiJ0cnVzdC1tYXJ
   },
   `responses/200/content/application~1json/schema`: WithOkMessageErrors,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/oidfed/remove-held-mark",
@@ -41107,7 +41107,7 @@ op `addOidfedHeldMark`(@js(#{`examples`:#[#{`trustMark`:"eyJ0eXAiOiJ0cnVzdC1tYXJ
 op `removeOidfedHeldMark`(@js(#{`examples`:#[#{`id`:"hm-0123456789abcdef0123456789abcdef"}]}) `requestBody/content/application~1json/schema`: {@js(#{`maxLength`:64}) `id`: string},
   `responses/200/content/application~1json/schema`: WithOkMessageErrors,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/oidfed/resolve",
@@ -41144,9 +41144,9 @@ op `resolveOidfedEntity`(@js(#{`examples`:#[#{`sub`:"https://rp.example.org"}]})
       `description`:"The anchor to resolve to; any of the realm's when absent."
     }) `trustAnchor`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel496`,
-  `responses/400/content/application~1json/schema`: `SharedModel496`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors173`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors173`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/oidfed/rotate-key",
@@ -41176,7 +41176,7 @@ op `resolveOidfedEntity`(@js(#{`examples`:#[#{`sub`:"https://rp.example.org"}]})
 op `rotateOidfedKey`(@js(#{`examples`:#[#{}],`required`:#[]}) `requestBody/content/application~1json/schema`: {`emergency`?: boolean; @js(#{`maxLength`:32}) `confirm`?: "compromised"},
   `responses/200/content/application~1json/schema`: WithOkMessageErrorsEtc410,
   `responses/400/content/application~1json/schema`: WithOkMessageErrorsEtc410,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/oidfed/revoke-key",
@@ -41216,7 +41216,7 @@ op `revokeOidfedKey`(@js(#{
   },
   `responses/200/content/application~1json/schema`: WithOkMessageErrors,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/oauth2/monitor",
@@ -41325,7 +41325,7 @@ op `getOauth2Monitor`(@js(#{`minimum`:0,`examples`:#[0]}) `parameters/0/schema`:
       `lastAt`?: NullableString;
       `lastEvent`?: NullableString;
       `errors`?: (WithNameCount2)[];
-      `clientsPaging`?: `SharedModel27`;
+      `clientsPaging`?: `WithPagePagesPerPage`;
       `clientsParam`?: string;
       `clients`?: ({
         `client_id`?: string;
@@ -41386,7 +41386,7 @@ op `getOauth2Monitor`(@js(#{`minimum`:0,`examples`:#[0]}) `parameters/0/schema`:
     `actions`?: (string)[]
   },
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/oauth2/monitor/delete-pushed-request",
@@ -41422,9 +41422,9 @@ op `deletePushedRequest`(@js(#{
       `description`:"The request's handle: the base64url SHA-256 of its whole request_uri, as listed by GET /admin-api/oauth2/monitor."
     }) `request_uri_digest`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel497`,
-  `responses/400/content/application~1json/schema`: `SharedModel497`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors174`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors174`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -41506,9 +41506,9 @@ op `getGrants`(@js(#{`maxLength`:256,`examples`:#["no-such-client"]}) `parameter
       `q`?: NullableString;
       `clientId`?: NullableString
     };
-    `paging`?: {`grants`?: `SharedModel27`}
+    `paging`?: {`grants`?: `WithPagePagesPerPage`}
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/grants/revoke-grant",
@@ -41544,7 +41544,7 @@ op `revokeGrant`(@js(#{`examples`:#[#{`grantId`:"TSdqirmAxDa0_-DB_1bASQ"}]}) `re
   },
   `responses/200/content/application~1json/schema`: WithOkMessageErrorsEtc48,
   `responses/400/content/application~1json/schema`: WithOkMessageErrorsEtc48,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/claim-providers",
@@ -41601,7 +41601,7 @@ op `getClaimProviders`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
   @js(#{`minimum`:1,`examples`:#[10]}) `parameters/3/schema`: integer,
   `responses/200/content/application~1json/schema`: {
-    `protocolEndpoints`?: `SharedModel49`;
+    `protocolEndpoints`?: `WithParamsDescriptionParams`;
     `redirectUri`?: string;
     `callbackPath`?: string;
     `providers`?: ({
@@ -41635,9 +41635,9 @@ op `getClaimProviders`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`
     `filter`?: {
       `links`?: NullableString
     };
-    `paging`?: {`providers`?: `SharedModel27`; `links`?: `SharedModel27`}
+    `paging`?: {`providers`?: `WithPagePagesPerPage`; `links`?: `WithPagePagesPerPage`}
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
   
@@ -41704,7 +41704,7 @@ op `addClaimProvider`(@js(#{
   },
   `responses/200/content/application~1json/schema`: WithOkMessageErrors,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
   
@@ -41759,7 +41759,7 @@ op `updateClaimProvider`(@js(#{`examples`:#[#{`id`:"bank",`delivery`:"distribute
   },
   `responses/200/content/application~1json/schema`: WithOkMessageErrors,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/claim-providers/remove-provider",
@@ -41794,7 +41794,7 @@ op `removeClaimProvider`(@js(#{`examples`:#[#{`id`:"bank"}]}) `requestBody/conte
   },
   `responses/200/content/application~1json/schema`: WithOkMessageErrors,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/claim-providers/revoke-link",
@@ -41830,7 +41830,7 @@ op `revokeClaimSourceLink`(@js(#{`examples`:#[#{`username`:"alice",`provider`:"b
   },
   `responses/200/content/application~1json/schema`: WithOkMessageErrors,
   `responses/400/content/application~1json/schema`: WithOkMessageErrors,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/attribute-sources",
@@ -41926,7 +41926,7 @@ op `getAttributeSources`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schem
       `onFailure`?: string;
       `enabled`?: boolean
     })[];
-    `sourcesPaging`?: `SharedModel166`;
+    `sourcesPaging`?: `WithPagePagesPerPage2`;
     `dialects`?: (string)[];
     `modes`?: (string)[];
     `onFailure`?: (string)[];
@@ -41936,7 +41936,7 @@ op `getAttributeSources`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schem
     `job`?: string;
     `settings`?: `SharedModel319`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/attribute-sources/add-source",
@@ -42039,9 +42039,9 @@ op `addAttributeSource`(@js(#{
     }) `onFailure`?: "keep" | "refuse";
     `enabled`?: boolean
   },
-  `responses/200/content/application~1json/schema`: `SharedModel498`,
-  `responses/400/content/application~1json/schema`: `SharedModel498`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors175`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors175`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/attribute-sources/update-source",
@@ -42127,9 +42127,9 @@ op `updateAttributeSource`(@js(#{`examples`:#[#{`id`:"hr-db",`onFailure`:"refuse
     }) `onFailure`?: "keep" | "refuse";
     `enabled`?: boolean
   },
-  `responses/200/content/application~1json/schema`: `SharedModel498`,
-  `responses/400/content/application~1json/schema`: `SharedModel498`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors175`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors175`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/attribute-sources/remove-source",
@@ -42157,9 +42157,9 @@ op `updateAttributeSource`(@js(#{`examples`:#[#{`id`:"hr-db",`onFailure`:"refuse
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `removeAttributeSource`(@js(#{`examples`:#[#{`id`:"hr-db"}]}) `requestBody/content/application~1json/schema`: WithPatternDescriptionId,
-  `responses/200/content/application~1json/schema`: `SharedModel498`,
-  `responses/400/content/application~1json/schema`: `SharedModel498`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors175`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors175`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/attribute-sources/test-source",
@@ -42194,9 +42194,9 @@ op `testAttributeSource`(@js(#{`examples`:#[#{`id`:"hr-db",`username`:"alice"}]}
     @js(#{`maxLength`:256}) `username`?: string;
     @js(#{`maxLength`:1024}) `key`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel498`,
-  `responses/400/content/application~1json/schema`: `SharedModel498`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors175`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors175`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/attribute-sources/refresh-source",
@@ -42224,9 +42224,9 @@ op `testAttributeSource`(@js(#{`examples`:#[#{`id`:"hr-db",`username`:"alice"}]}
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `refreshAttributeSource`(@js(#{`examples`:#[#{`id`:"hr-db"}]}) `requestBody/content/application~1json/schema`: WithPatternDescriptionId,
-  `responses/200/content/application~1json/schema`: `SharedModel498`,
-  `responses/400/content/application~1json/schema`: `SharedModel498`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors175`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors175`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/attribute-sources/refresh-person",
@@ -42260,9 +42260,9 @@ op `refreshAttributeSourcePerson`(@js(#{`examples`:#[#{`username`:"alice"}]}) `r
       `description`:"The source's id in this realm."
     }) `id`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel498`,
-  `responses/400/content/application~1json/schema`: `SharedModel498`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors175`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors175`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/secret-destinations",
@@ -42319,11 +42319,11 @@ op `getSecretDestinations`(@js(#{`maxLength`:256,`examples`:#["vault"]}) `parame
       `payload`?: string;
       `usable`?: boolean;
       `problems`?: (string)[];
-      `location`?: `SharedModel501`;
+      `location`?: `WithProviderPayloadRegion`;
       `credentialSet`?: boolean;
       `credentialShape`?: string
     })[];
-    `destinationsPaging`?: `SharedModel166`;
+    `destinationsPaging`?: `WithPagePagesPerPage2`;
     `matched`?: integer;
     `providers`?: (string)[];
     `payloads`?: (string)[];
@@ -42331,7 +42331,7 @@ op `getSecretDestinations`(@js(#{`maxLength`:256,`examples`:#["vault"]}) `parame
     `fileAllowed`?: boolean;
     `family`?: string
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/secret-destinations/add-destination",
@@ -42414,9 +42414,9 @@ op `addSecretDestination`(@js(#{
       `description`:"The WRITE credential, write-only: never returned, drawn or logged. aws: JSON {accessKeyId, secretAccessKey[, sessionToken]}; gcp: a service account key's JSON; azure: JSON {tenantId, clientId, clientSecret}; vault: a token. On a change, empty keeps the one set."
     }) `credential`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel502`,
-  `responses/400/content/application~1json/schema`: `SharedModel502`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors176`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors176`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/secret-destinations/update-destination",
@@ -42486,9 +42486,9 @@ op `updateSecretDestination`(@js(#{`examples`:#[#{`id`:"vault-prod",`payload`:"p
       `description`:"The WRITE credential, write-only: never returned, drawn or logged. aws: JSON {accessKeyId, secretAccessKey[, sessionToken]}; gcp: a service account key's JSON; azure: JSON {tenantId, clientId, clientSecret}; vault: a token. On a change, empty keeps the one set."
     }) `credential`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel502`,
-  `responses/400/content/application~1json/schema`: `SharedModel502`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors176`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors176`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/secret-destinations/remove-destination",
@@ -42521,9 +42521,9 @@ op `removeSecretDestination`(@js(#{`examples`:#[#{`id`:"vault-prod"}]}) `request
       `description`:"The destination: its entry's DN, as the register answers it, or its identifier."
     }) `id`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel502`,
-  `responses/400/content/application~1json/schema`: `SharedModel502`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors176`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors176`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/secret-destinations/test-push",
@@ -42557,9 +42557,9 @@ op `testSecretDestination`(@js(#{`examples`:#[#{`id`:"vault-prod",`secretName`:"
     }) `id`: string;
     @js(#{`minLength`:1,`maxLength`:512,`description`:"The test secret."}) `secretName`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel502`,
-  `responses/400/content/application~1json/schema`: `SharedModel502`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors176`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors176`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -42617,7 +42617,7 @@ op `getXacmlAuthzen`(`parameters/0/schema`: string,
     `group`?: string;
     `settings`?: `SharedModel297`;
     `catalogue`?: {
-      `rows`?: (`SharedModel504`)[];
+      `rows`?: (`WithKeyObjectProperty`)[];
       `problems`?: (string)[];
       `objects`?: (string)[];
       `categories`?: (string)[];
@@ -42626,17 +42626,17 @@ op `getXacmlAuthzen`(`parameters/0/schema`: string,
       `reservedPrefix`?: string;
       `reservedContext`?: (string)[]
     };
-    `callers`?: (`SharedModel505`)[];
+    `callers`?: (`WithDnNameKind`)[];
     `callersTotal`?: integer;
     `looked`?: get_admin_api_xacml_authzen_r200_application_json_looked_h3168;
     `accessRequests`?: {
       `enabled`?: boolean;
-      `rows`?: (`SharedModel506`)[];
+      `rows`?: (`WithIdStatusRequester`)[];
       `maxCallbacks`?: integer
     };
-    `protocolEndpoints`?: `SharedModel49`
+    `protocolEndpoints`?: `WithParamsDescriptionParams`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/authzen/set-attribute",
@@ -42696,9 +42696,9 @@ op `setAuthzenAttribute`(@js(#{
     }) `multiplicity`?: "single" | "bag";
     @js(#{`maxLength`:500,`description`:"Free text for administrators."}) `description`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel509`,
-  `responses/400/content/application~1json/schema`: `SharedModel509`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors177`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors177`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/authzen/remove-attribute",
@@ -42733,9 +42733,9 @@ op `removeAuthzenAttribute`(@js(#{`examples`:#[#{`object`:"resource",`property`:
       `description`:"The property's name, or a dotted path into a nested object (owner.country). For context, the member's name; context.application is reserved."
     }) `property`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel509`,
-  `responses/400/content/application~1json/schema`: `SharedModel509`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors177`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors177`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
   
@@ -42784,9 +42784,9 @@ op `setAuthzenScope`(@js(#{`examples`:#[#{`caller`:"todo-pep",`applications`:#["
     }) `caller`: string;
     `applications`?: post_admin_api_xacml_authzen_set_scope_b_application_json_applications_h3172
   },
-  `responses/200/content/application~1json/schema`: `SharedModel510`,
-  `responses/400/content/application~1json/schema`: `SharedModel510`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors178`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors178`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
   
@@ -42843,9 +42843,9 @@ op `setAuthzenCallbacks`(@js(#{
     }) `caller`: string;
     `callbacks`?: post_admin_api_xacml_authzen_set_callbacks_b_application_json_callbacks_h3176
   },
-  `responses/200/content/application~1json/schema`: `SharedModel510`,
-  `responses/400/content/application~1json/schema`: `SharedModel510`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors178`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors178`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/authzen/approve-access-request",
@@ -42873,9 +42873,9 @@ op `setAuthzenCallbacks`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `approveAuthzenAccessRequest`(@js(#{`examples`:#[#{`request`:"arq_EXAMPLE"}]}) `requestBody/content/application~1json/schema`: WithMinLengthMaxLengthDescriptionEtc42,
-  `responses/200/content/application~1json/schema`: `SharedModel511`,
-  `responses/400/content/application~1json/schema`: `SharedModel511`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors179`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors179`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/authzen/deny-access-request",
@@ -42903,9 +42903,9 @@ op `approveAuthzenAccessRequest`(@js(#{`examples`:#[#{`request`:"arq_EXAMPLE"}]}
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `denyAuthzenAccessRequest`(@js(#{`examples`:#[#{`request`:"arq_EXAMPLE"}]}) `requestBody/content/application~1json/schema`: WithMinLengthMaxLengthDescriptionEtc42,
-  `responses/200/content/application~1json/schema`: `SharedModel511`,
-  `responses/400/content/application~1json/schema`: `SharedModel511`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors179`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors179`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/authzen/revoke-access-request",
@@ -42933,9 +42933,9 @@ op `denyAuthzenAccessRequest`(@js(#{`examples`:#[#{`request`:"arq_EXAMPLE"}]}) `
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `revokeAuthzenAccessRequest`(@js(#{`examples`:#[#{`request`:"arq_EXAMPLE"}]}) `requestBody/content/application~1json/schema`: WithMinLengthMaxLengthDescriptionEtc42,
-  `responses/200/content/application~1json/schema`: `SharedModel511`,
-  `responses/400/content/application~1json/schema`: `SharedModel511`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors179`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors179`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/xacml/authzen/cancel-access-request",
@@ -42963,9 +42963,9 @@ op `revokeAuthzenAccessRequest`(@js(#{`examples`:#[#{`request`:"arq_EXAMPLE"}]})
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `cancelAuthzenAccessRequest`(@js(#{`examples`:#[#{`request`:"arq_EXAMPLE"}]}) `requestBody/content/application~1json/schema`: WithMinLengthMaxLengthDescriptionEtc42,
-  `responses/200/content/application~1json/schema`: `SharedModel511`,
-  `responses/400/content/application~1json/schema`: `SharedModel511`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors179`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors179`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -42977,7 +42977,7 @@ op `cancelAuthzenAccessRequest`(@js(#{`examples`:#[#{`request`:"arq_EXAMPLE"}]})
       `owner`:#{`type`:"string"},
       `ownsResources`:#{`type`:"boolean"},
       `editable`:#{`type`:"boolean"},
-      `resources`:#{`$ref`:"#/components/schemas/SharedModel514"},
+      `resources`:#{`$ref`:"#/components/schemas/WithIdStateOwner"},
       `document`:#{
         `type`:"object",
         `additionalProperties`:false,
@@ -42987,7 +42987,7 @@ op `cancelAuthzenAccessRequest`(@js(#{`examples`:#[#{`request`:"arq_EXAMPLE"}]})
           `stored`:#{`type`:"boolean"},
           `version`:#{`anyOf`:#[#{`type`:"string"},#{`type`:"number"}]},
           `rules`:#{`type`:"integer"},
-          `shares`:#{`type`:"array",`items`:#{`$ref`:"#/components/schemas/SharedModel518"}},
+          `shares`:#{`type`:"array",`items`:#{`$ref`:"#/components/schemas/WithIdResourceIdScopes2"}},
           `custom`:#{
             `type`:"array",
             `items`:#{
@@ -43005,7 +43005,7 @@ op `cancelAuthzenAccessRequest`(@js(#{`examples`:#[#{`request`:"arq_EXAMPLE"}]})
         }
       },
       `documentXml`:#{`type`:"string"},
-      `pending`:#{`$ref`:"#/components/schemas/SharedModel516"}
+      `pending`:#{`$ref`:"#/components/schemas/WithIdResourceIdScopes"}
     },
     `$types`:#["object","null"]
   }) @hoisted model get_admin_api_uma_r200_application_json_owner_h3177 {}
@@ -43164,12 +43164,12 @@ op `getUma`(`parameters/0/schema`: string,
       `x-free-form`:"The realm's RFC 8414 authorization server metadata with UMA's members added (`oauth2.asMetadata()`), or nothing when UMA is off. Its members are an IANA registry's and each is conditional on a setting, and GET /.well-known/uma2-configuration is where it is specified.",
       `description`:"The realm's RFC 8414 authorization server metadata with UMA's members added (`oauth2.asMetadata()`), or nothing when UMA is off. Its members are an IANA registry's and each is conditional on a setting, and GET /.well-known/uma2-configuration is where it is specified."
     }) `endpoints`?: unknown;
-    `resourceServers`?: `SharedModel512`;
+    `resourceServers`?: `WithIdNameType`;
     `filter`?: {`resourceServer`?: string; `owner`?: string};
     `resources`?: {
       `total`?: integer;
-      `rows`?: `SharedModel514`;
-      `paging`?: `SharedModel166`
+      `rows`?: `WithIdStateOwner`;
+      `paging`?: `WithPagePagesPerPage2`
     };
     `tickets`?: {
       `total`?: integer;
@@ -43183,7 +43183,7 @@ op `getUma`(`parameters/0/schema`: string,
         `issuedAt`?: numeric;
         `expiresAt`?: numeric
       })[];
-      `paging`?: `SharedModel166`
+      `paging`?: `WithPagePagesPerPage2`
     };
     `rpts`?: {
       `total`?: integer;
@@ -43197,12 +43197,12 @@ op `getUma`(`parameters/0/schema`: string,
         `createdAt`?: numeric;
         `exp`?: numeric
       })[];
-      `paging`?: `SharedModel166`
+      `paging`?: `WithPagePagesPerPage2`
     };
     `pending`?: {
       `total`?: integer;
-      `rows`?: `SharedModel516`;
-      `paging`?: `SharedModel166`
+      `rows`?: `WithIdResourceIdScopes`;
+      `paging`?: `WithPagePagesPerPage2`
     };
     `owner`?: get_admin_api_uma_r200_application_json_owner_h3177;
     `whatIf`?: get_admin_api_uma_r200_application_json_whatIf_h3178;
@@ -43211,7 +43211,7 @@ op `getUma`(`parameters/0/schema`: string,
     `settings`?: `SharedModel297`;
     `protocolEndpoints`?: (WithNameMethodsUrlEtc7)[]
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/uma/monitor",
@@ -43235,7 +43235,7 @@ op `getUma`(`parameters/0/schema`: string,
   })
 op `getUmaMonitor`(`responses/200/content/application~1json/schema`: {
     `pep`?: `SharedModel519`;
-    `resourceServers`?: `SharedModel512`;
+    `resourceServers`?: `WithIdNameType`;
     `totals`?: {
       `resources`?: integer;
       `tickets`?: integer;
@@ -43243,7 +43243,7 @@ op `getUmaMonitor`(`responses/200/content/application~1json/schema`: {
       `pending`?: integer
     }
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/uma/enable-resource-server",
@@ -43271,9 +43271,9 @@ op `getUmaMonitor`(`responses/200/content/application~1json/schema`: {
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `enableUmaResourceServer`(@js(#{`examples`:#[#{`application`:"photos-api"}]}) `requestBody/content/application~1json/schema`: WithMinLengthMaxLengthDescriptionEtc4,
-  `responses/200/content/application~1json/schema`: `SharedModel521`,
-  `responses/400/content/application~1json/schema`: `SharedModel521`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors180`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors180`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/uma/disable-resource-server",
@@ -43301,9 +43301,9 @@ op `enableUmaResourceServer`(@js(#{`examples`:#[#{`application`:"photos-api"}]})
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `disableUmaResourceServer`(@js(#{`examples`:#[#{`application`:"photos-api"}]}) `requestBody/content/application~1json/schema`: WithMinLengthMaxLengthDescriptionEtc4,
-  `responses/200/content/application~1json/schema`: `SharedModel521`,
-  `responses/400/content/application~1json/schema`: `SharedModel521`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors180`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors180`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/uma/set-owns-resources",
@@ -43338,9 +43338,9 @@ op `setUmaOwnsResources`(@js(#{`examples`:#[#{`application`:"photos-api",`value`
     }) `application`: string;
     @js(#{`description`:"TRUE, or FALSE to clear it."}) `value`: "TRUE" | "FALSE"
   },
-  `responses/200/content/application~1json/schema`: `SharedModel521`,
-  `responses/400/content/application~1json/schema`: `SharedModel521`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors180`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors180`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/uma/delete-resource",
@@ -43370,9 +43370,9 @@ op `setUmaOwnsResources`(@js(#{`examples`:#[#{`application`:"photos-api",`value`
 op `deleteUmaResource`(@js(#{`examples`:#[#{`resource`:"no-such-resource-example"}]}) `requestBody/content/application~1json/schema`: {
     @js(#{`minLength`:1,`maxLength`:128,`description`:"The resource's _id."}) `resource`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel522`,
-  `responses/400/content/application~1json/schema`: `SharedModel522`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors181`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors181`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/uma/revoke-rpt",
@@ -43404,7 +43404,7 @@ op `revokeUmaRpt`(@js(#{`examples`:#[#{`rpt`:"no-such-rpt-example"}]}) `requestB
   },
   `responses/200/content/application~1json/schema`: WithOkMessageErrorsEtc55,
   `responses/400/content/application~1json/schema`: WithOkMessageErrorsEtc55,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
   
@@ -43473,9 +43473,9 @@ op `shareUmaResource`(@js(#{
     }) `acr`?: string;
     @js(#{`maxLength`:8,`description`:"on: ask the owner each time."}) `askMe`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel523`,
-  `responses/400/content/application~1json/schema`: `SharedModel523`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors182`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors182`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/uma/owner-unshare",
@@ -43510,9 +43510,9 @@ op `unshareUmaResource`(@js(#{`examples`:#[#{`owner`:"photos-api",`share`:"no-su
     }) `owner`: string;
     @js(#{`minLength`:1,`maxLength`:128,`description`:"The share's id."}) `share`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel523`,
-  `responses/400/content/application~1json/schema`: `SharedModel523`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors182`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors182`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/uma/owner-approve",
@@ -43540,9 +43540,9 @@ op `unshareUmaResource`(@js(#{`examples`:#[#{`owner`:"photos-api",`share`:"no-su
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `approveUmaRequest`(@js(#{`examples`:#[#{`owner`:"photos-api",`pending`:"no-such-example"}]}) `requestBody/content/application~1json/schema`: WithMinLengthMaxLengthDescriptionEtc8,
-  `responses/200/content/application~1json/schema`: `SharedModel524`,
-  `responses/400/content/application~1json/schema`: `SharedModel524`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors183`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors183`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/uma/owner-refuse",
@@ -43570,9 +43570,9 @@ op `approveUmaRequest`(@js(#{`examples`:#[#{`owner`:"photos-api",`pending`:"no-s
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `refuseUmaRequest`(@js(#{`examples`:#[#{`owner`:"photos-api",`pending`:"no-such-example"}]}) `requestBody/content/application~1json/schema`: WithMinLengthMaxLengthDescriptionEtc8,
-  `responses/200/content/application~1json/schema`: `SharedModel524`,
-  `responses/400/content/application~1json/schema`: `SharedModel524`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors183`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors183`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -43705,7 +43705,7 @@ op `getPasskeyReport`(@js(#{`maxLength`:1024}) `parameters/0/schema`: string,
     `realm`?: string;
     `generatedAt`?: string;
     `filter`?: WithScopeGroupProfileEtc4;
-    `profiles`?: (`SharedModel526`)[];
+    `profiles`?: (`WithNamePostQuantumRequiredPrecedence`)[];
     `lists`?: (string)[];
     `kinds`?: (string)[];
     `limits`?: {
@@ -43728,7 +43728,7 @@ op `getPasskeyReport`(@js(#{`maxLength`:1024}) `parameters/0/schema`: string,
       `read`?: numeric;
       `complete`?: boolean
     };
-    `profile`?: `SharedModel526`;
+    `profile`?: `WithNamePostQuantumRequiredPrecedence`;
     `application`?: {
       `identifier`?: string;
       `named`?: string;
@@ -43768,7 +43768,7 @@ op `getPasskeyReport`(@js(#{`maxLength`:1024}) `parameters/0/schema`: string,
       `algorithm`?: NullableString;
       `lane`?: NullableString;
       `aaguid`?: string;
-      `rows`?: `SharedModel527`;
+      `rows`?: `WithOkMessageErrors184`;
       `paging`?: {
         `page`?: integer;
         `perPage`?: integer;
@@ -43786,7 +43786,7 @@ op `getPasskeyReport`(@js(#{`maxLength`:1024}) `parameters/0/schema`: string,
     }
   },
   `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc52,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/passkey-report/export",
@@ -43884,10 +43884,10 @@ op `exportPasskeyReport`(@js(#{`maxLength`:1024}) `parameters/0/schema`: string,
     `list`?: string;
     `filter`?: WithScopeGroupProfileEtc4;
     `truncated`?: boolean;
-    `rows`?: `SharedModel527`
+    `rows`?: `WithOkMessageErrors184`
   },
   `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc52,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/passkey-report/evidence",
@@ -43938,7 +43938,7 @@ op `exportPasskeyAttestationEvidence`(@js(#{`maxLength`:256,`examples`:#["alice"
     }) `evidence`?: unknown
   },
   `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc52,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/passkey-report/recount",
@@ -43966,9 +43966,9 @@ op `exportPasskeyAttestationEvidence`(@js(#{`maxLength`:256,`examples`:#["alice"
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `recountPasskeyReport`(@js(#{`examples`:#[#{}]}) `requestBody/content/application~1json/schema`: {},
-  `responses/200/content/application~1json/schema`: `SharedModel531`,
-  `responses/400/content/application~1json/schema`: `SharedModel531`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors185`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors185`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/post-login-activities",
@@ -44073,7 +44073,7 @@ op `getPostLoginActivities`(@js(#{`maxLength`:256,`examples`:#["staff"]}) `param
       `endedAt`?: NumericOrStringOrNull
     })[]
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
   
@@ -44133,9 +44133,9 @@ op `startPostLoginActivity`(@js(#{
       `description`:"People read per run of the job (default 1000)."
     }) `perRun`?: integer
   },
-  `responses/200/content/application~1json/schema`: `SharedModel532`,
-  `responses/400/content/application~1json/schema`: `SharedModel532`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors186`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors186`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/post-login-activities/pause",
@@ -44163,9 +44163,9 @@ op `startPostLoginActivity`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `pausePostLoginActivity`(@js(#{`examples`:#[#{`id`:"pla-AbCdEfGhIjKl"}]}) `requestBody/content/application~1json/schema`: WithMaxLengthDescriptionId,
-  `responses/200/content/application~1json/schema`: `SharedModel532`,
-  `responses/400/content/application~1json/schema`: `SharedModel532`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors186`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors186`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/post-login-activities/resume",
@@ -44193,9 +44193,9 @@ op `pausePostLoginActivity`(@js(#{`examples`:#[#{`id`:"pla-AbCdEfGhIjKl"}]}) `re
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `resumePostLoginActivity`(@js(#{`examples`:#[#{`id`:"pla-AbCdEfGhIjKl"}]}) `requestBody/content/application~1json/schema`: WithMaxLengthDescriptionId,
-  `responses/200/content/application~1json/schema`: `SharedModel532`,
-  `responses/400/content/application~1json/schema`: `SharedModel532`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors186`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors186`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/post-login-activities/end",
@@ -44223,9 +44223,9 @@ op `resumePostLoginActivity`(@js(#{`examples`:#[#{`id`:"pla-AbCdEfGhIjKl"}]}) `r
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `endPostLoginActivity`(@js(#{`examples`:#[#{`id`:"pla-AbCdEfGhIjKl"}]}) `requestBody/content/application~1json/schema`: WithMaxLengthDescriptionId,
-  `responses/200/content/application~1json/schema`: `SharedModel532`,
-  `responses/400/content/application~1json/schema`: `SharedModel532`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors186`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors186`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/audit-export",
@@ -44251,7 +44251,7 @@ op `getAuditExport`(`responses/200/content/application~1json/schema`: {
     `thisProcess`?: boolean;
     `enabled`?: boolean;
     `job`?: {`id`?: string; `kind`?: string; `scope`?: string};
-    `destinations`?: (`SharedModel534`)[];
+    `destinations`?: (`WithIdNameType3`)[];
     `stats`?: {
       `delivered`?: numeric;
       `awaiting`?: numeric;
@@ -44262,9 +44262,9 @@ op `getAuditExport`(`responses/200/content/application~1json/schema`: {
       `availability`?: numeric;
       `generated`?: numeric
     };
-    `settings`?: `SharedModel10`
+    `settings`?: `SettingsPageDrawsDescribedSame`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/audit-export/add",
@@ -44369,9 +44369,9 @@ op `addAuditExportDestination`(@js(#{
       `description`:"Splunk HEC: wait for the indexer ack before the cursor moves. One event is in flight."
     }) `ack`?: boolean
   },
-  `responses/200/content/application~1json/schema`: `SharedModel535`,
-  `responses/400/content/application~1json/schema`: `SharedModel535`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors187`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors187`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/audit-export/update",
@@ -44474,9 +44474,9 @@ op `updateAuditExportDestination`(@js(#{`examples`:#[#{`id`:"siem",`enabled`:fal
       `description`:"Splunk HEC: wait for the indexer ack before the cursor moves. One event is in flight."
     }) `ack`?: boolean
   },
-  `responses/200/content/application~1json/schema`: `SharedModel535`,
-  `responses/400/content/application~1json/schema`: `SharedModel535`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors187`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors187`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/audit-export/remove",
@@ -44504,9 +44504,9 @@ op `updateAuditExportDestination`(@js(#{`examples`:#[#{`id`:"siem",`enabled`:fal
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `removeAuditExportDestination`(@js(#{`examples`:#[#{`id`:"siem"}]}) `requestBody/content/application~1json/schema`: WithMinLengthMaxLengthPatternEtc5,
-  `responses/200/content/application~1json/schema`: `SharedModel535`,
-  `responses/400/content/application~1json/schema`: `SharedModel535`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors187`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors187`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/audit-export/enable",
@@ -44534,9 +44534,9 @@ op `removeAuditExportDestination`(@js(#{`examples`:#[#{`id`:"siem"}]}) `requestB
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `enableAuditExportDestination`(@js(#{`examples`:#[#{`id`:"siem"}]}) `requestBody/content/application~1json/schema`: WithMinLengthMaxLengthPatternEtc5,
-  `responses/200/content/application~1json/schema`: `SharedModel535`,
-  `responses/400/content/application~1json/schema`: `SharedModel535`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors187`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors187`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/audit-export/disable",
@@ -44564,9 +44564,9 @@ op `enableAuditExportDestination`(@js(#{`examples`:#[#{`id`:"siem"}]}) `requestB
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `disableAuditExportDestination`(@js(#{`examples`:#[#{`id`:"siem"}]}) `requestBody/content/application~1json/schema`: WithMinLengthMaxLengthPatternEtc5,
-  `responses/200/content/application~1json/schema`: `SharedModel535`,
-  `responses/400/content/application~1json/schema`: `SharedModel535`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors187`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors187`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/audit-export/test",
@@ -44594,9 +44594,9 @@ op `disableAuditExportDestination`(@js(#{`examples`:#[#{`id`:"siem"}]}) `request
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `testAuditExportDestination`(@js(#{`examples`:#[#{`id`:"siem"}]}) `requestBody/content/application~1json/schema`: WithMinLengthMaxLengthPatternEtc5,
-  `responses/200/content/application~1json/schema`: `SharedModel535`,
-  `responses/400/content/application~1json/schema`: `SharedModel535`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors187`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors187`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -44661,9 +44661,9 @@ op `getBranding`(`responses/200/content/application~1json/schema`: {
     `preview`?: string;
     `realm`?: string;
     `previewUrl`?: string;
-    `settings`?: `SharedModel10`
+    `settings`?: `SettingsPageDrawsDescribedSame`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/branding/logo",
@@ -44720,11 +44720,11 @@ op `uploadBrandingLogo`(@js(#{`maxLength`:160,`examples`:#["Our company logo"]})
   @js(#{`format`:"binary"}) `requestBody/content/image~1jpeg/schema`: string,
   @js(#{`format`:"binary"}) `requestBody/content/image~1webp/schema`: string,
   @js(#{`format`:"binary"}) `requestBody/content/application~1octet-stream/schema`: string,
-  `responses/200/content/application~1json/schema`: `SharedModel536`,
-  `responses/400/content/application~1json/schema`: `SharedModel536`,
-  `responses/413/content/application~1json/schema`: `SharedModel536`,
-  `responses/415/content/application~1json/schema`: `SharedModel536`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors188`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors188`,
+  `responses/413/content/application~1json/schema`: `WithOkMessageErrors188`,
+  `responses/415/content/application~1json/schema`: `WithOkMessageErrors188`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/branding/save",
@@ -44792,9 +44792,9 @@ op `saveBranding`(@js(#{
       `description`:"An absolute https URL the logo links to, or empty for no link."
     }) `branding.logoLinkUrl`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel538`,
-  `responses/400/content/application~1json/schema`: `SharedModel538`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors189`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors189`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/branding/remove-logo",
@@ -44822,9 +44822,9 @@ op `saveBranding`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `removeBrandingLogo`(@js(#{`examples`:#[#{}]}) `requestBody/content/application~1json/schema`: {},
-  `responses/200/content/application~1json/schema`: `SharedModel538`,
-  `responses/400/content/application~1json/schema`: `SharedModel538`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors189`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors189`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/scim/clients",
@@ -44858,15 +44858,15 @@ op `removeBrandingLogo`(@js(#{`examples`:#[#{}]}) `requestBody/content/applicati
 op `getScimClients`(@js(#{`maxLength`:512,`examples`:#["no-such-client"]}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `family`?: string;
-    `clients`?: `SharedModel320`;
-    `choices`?: `SharedModel327`;
+    `clients`?: `WithAuthMethodsOauthClientAuthTlsSources`;
+    `choices`?: `WithAuthMethodsOauthClientAuthTlsSources2`;
     `httpAllowed`?: boolean;
     `client`?: `SharedModel328`;
     `missing`?: string;
     `cellId`?: NullableString;
-    `protocolEndpoints`?: `SharedModel49`
+    `protocolEndpoints`?: `WithParamsDescriptionParams`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
   
@@ -45004,9 +45004,9 @@ op `addScimClient`(@js(#{
     }) `jurisdiction`?: string;
     `cells`?: StringMax8192OrListOfStringMax20483
   },
-  `responses/200/content/application~1json/schema`: `SharedModel539`,
-  `responses/400/content/application~1json/schema`: `SharedModel539`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors190`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors190`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
   
@@ -45125,9 +45125,9 @@ op `updateScimClient`(@js(#{`examples`:#[#{`id`:"partner-idp",`enabled`:"false"}
     }) `jurisdiction`?: string;
     `cells`?: StringMax8192OrListOfStringMax20483
   },
-  `responses/200/content/application~1json/schema`: `SharedModel539`,
-  `responses/400/content/application~1json/schema`: `SharedModel539`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors190`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors190`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/scim/clients/remove-client",
@@ -45155,9 +45155,9 @@ op `updateScimClient`(@js(#{`examples`:#[#{`id`:"partner-idp",`enabled`:"false"}
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `removeScimClient`(@js(#{`examples`:#[#{`id`:"partner-idp"}]}) `requestBody/content/application~1json/schema`: WithMaxLengthDescriptionId2,
-  `responses/200/content/application~1json/schema`: `SharedModel539`,
-  `responses/400/content/application~1json/schema`: `SharedModel539`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors190`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors190`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/scim/clients/issue-certificate",
@@ -45185,9 +45185,9 @@ op `removeScimClient`(@js(#{`examples`:#[#{`id`:"partner-idp"}]}) `requestBody/c
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `issueScimClientCertificate`(@js(#{`examples`:#[#{`id`:"partner-idp"}]}) `requestBody/content/application~1json/schema`: WithMaxLengthDescriptionId2,
-  `responses/200/content/application~1json/schema`: `SharedModel539`,
-  `responses/400/content/application~1json/schema`: `SharedModel539`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors190`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors190`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/scim/clients/test-connection",
@@ -45215,9 +45215,9 @@ op `issueScimClientCertificate`(@js(#{`examples`:#[#{`id`:"partner-idp"}]}) `req
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `testScimClient`(@js(#{`examples`:#[#{`id`:"partner-idp"}]}) `requestBody/content/application~1json/schema`: WithMaxLengthDescriptionId2,
-  `responses/200/content/application~1json/schema`: `SharedModel539`,
-  `responses/400/content/application~1json/schema`: `SharedModel539`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors190`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors190`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/scim/clients/reconcile",
@@ -45245,9 +45245,9 @@ op `testScimClient`(@js(#{`examples`:#[#{`id`:"partner-idp"}]}) `requestBody/con
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `reconcileScimClient`(@js(#{`examples`:#[#{`id`:"partner-idp"},#{`id`:"partner-idp",`cell`:"euc1"}]}) `requestBody/content/application~1json/schema`: WithMaxLengthDescriptionIdEtc6,
-  `responses/200/content/application~1json/schema`: `SharedModel539`,
-  `responses/400/content/application~1json/schema`: `SharedModel539`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors190`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors190`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/scim/clients/deliver-now",
@@ -45272,9 +45272,9 @@ op `reconcileScimClient`(@js(#{`examples`:#[#{`id`:"partner-idp"},#{`id`:"partne
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `deliverScimClientNow`(@js(#{`examples`:#[#{`id`:"partner-idp"},#{`id`:"partner-idp",`cell`:"euc1"}]}) `requestBody/content/application~1json/schema`: WithMaxLengthDescriptionIdEtc6,
-  `responses/200/content/application~1json/schema`: `SharedModel539`,
-  `responses/400/content/application~1json/schema`: `SharedModel539`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors190`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors190`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/scim/clients/retry-delivery",
@@ -45310,9 +45310,9 @@ op `retryScimDelivery`(@js(#{
       `description`:"A service deployed as cells (#553): the cell the act is sent to. Without it the act goes to every cell that pushes to the client, and the answer lists each cell's result. Refused in a service that is one cell."
     }) `cell`?: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel539`,
-  `responses/400/content/application~1json/schema`: `SharedModel539`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors190`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors190`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/scim/clients/retry-dead",
@@ -45340,9 +45340,9 @@ op `retryScimDelivery`(@js(#{
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `retryScimDeadLetters`(@js(#{`examples`:#[#{`id`:"partner-idp"},#{`id`:"partner-idp",`cell`:"euc1"}]}) `requestBody/content/application~1json/schema`: WithMaxLengthDescriptionIdEtc6,
-  `responses/200/content/application~1json/schema`: `SharedModel539`,
-  `responses/400/content/application~1json/schema`: `SharedModel539`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors190`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors190`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/scim/clients/purge-dead",
@@ -45370,9 +45370,9 @@ op `retryScimDeadLetters`(@js(#{`examples`:#[#{`id`:"partner-idp"},#{`id`:"partn
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `purgeScimDeadLetters`(@js(#{`examples`:#[#{`id`:"partner-idp"},#{`id`:"partner-idp",`cell`:"euc1"}]}) `requestBody/content/application~1json/schema`: WithMaxLengthDescriptionIdEtc6,
-  `responses/200/content/application~1json/schema`: `SharedModel539`,
-  `responses/400/content/application~1json/schema`: `SharedModel539`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors190`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors190`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @js(#{
@@ -45475,7 +45475,7 @@ op `getProviderCommands`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schem
   @js(#{`maxLength`:256,`examples`:#["alice"]}) `parameters/5/schema`: string,
   @js(#{`minimum`:1,`examples`:#[10]}) `parameters/6/schema`: integer,
   `responses/200/content/application~1json/schema`: {
-    `protocolEndpoints`?: `SharedModel49`;
+    `protocolEndpoints`?: `WithParamsDescriptionParams`;
     `enabled`?: boolean;
     `automatic`?: boolean;
     `issuer`?: string;
@@ -45520,7 +45520,7 @@ op `getProviderCommands`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schem
       `awaitingCallback`?: boolean
     })[];
     `counts`?: WithPendingSentDead;
-    `runs`?: (`SharedModel546`)[];
+    `runs`?: (`WithIdClientIdCommand`)[];
     `accountCommands`?: (string)[];
     `tenantCommands`?: (string)[];
     `clientIds`?: (string)[];
@@ -45531,13 +45531,13 @@ op `getProviderCommands`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schem
       `deliveries`?: integer
     };
     `paging`?: {
-      `clients`?: `SharedModel27`;
-      `accounts`?: `SharedModel27`;
-      `runs`?: `SharedModel27`;
-      `deliveries`?: `SharedModel27`
+      `clients`?: `WithPagePagesPerPage`;
+      `accounts`?: `WithPagePagesPerPage`;
+      `runs`?: `WithPagePagesPerPage`;
+      `deliveries`?: `WithPagePagesPerPage`
     }
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/commands/send-account",
@@ -45569,9 +45569,9 @@ op `sendAccountCommand`(@js(#{`examples`:#[#{`clientId`:"app",`username`:"alice"
     @js(#{`maxLength`:256}) `username`: string;
     `command`: "activate" | "maintain" | "suspend" | "reactivate" | "archive" | "restore" | "delete" | "audit" | "invalidate" | "migrate" | "activate_async" | "maintain_async" | "suspend_async" | "reactivate_async" | "archive_async" | "restore_async" | "delete_async" | "audit_async" | "invalidate_async" | "migrate_async"
   },
-  `responses/200/content/application~1json/schema`: `SharedModel547`,
-  `responses/400/content/application~1json/schema`: `SharedModel547`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors191`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors191`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/commands/send-tenant",
@@ -45602,9 +45602,9 @@ op `sendTenantCommand`(@js(#{`examples`:#[#{`clientId`:"app",`command`:"metadata
     @js(#{`maxLength`:512}) `clientId`: string;
     `command`: "metadata" | "audit_tenant" | "suspend_tenant" | "archive_tenant" | "delete_tenant" | "invalidate_tenant"
   },
-  `responses/200/content/application~1json/schema`: `SharedModel547`,
-  `responses/400/content/application~1json/schema`: `SharedModel547`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors191`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors191`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/commands/retry-delivery",
@@ -45632,9 +45632,9 @@ op `sendTenantCommand`(@js(#{`examples`:#[#{`clientId`:"app",`command`:"metadata
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `retryCommandDelivery`(@js(#{`examples`:#[#{`delivery`:"abc123"}]}) `requestBody/content/application~1json/schema`: {@js(#{`maxLength`:64}) `delivery`: string},
-  `responses/200/content/application~1json/schema`: `SharedModel547`,
-  `responses/400/content/application~1json/schema`: `SharedModel547`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors191`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors191`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/deliveries",
@@ -45771,11 +45771,11 @@ op `getOutboundDeliveries`(@js(#{`maxLength`:16,`examples`:#["pending"]}) `param
         }) `body`?: unknown
       })[];
       `matched`?: integer;
-      `paging`?: `SharedModel6`
+      `paging`?: `PageHowManyQueryParameter`
     })[];
     `states`?: (string)[]
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/deliveries/retry",
@@ -45806,9 +45806,9 @@ op `retryOutboundDelivery`(@js(#{`examples`:#[#{`kind`:"provider-commands",`deli
     `kind`: "backchannel-logout" | "ciba" | "provider-commands";
     @js(#{`maxLength`:64}) `delivery`: string
   },
-  `responses/200/content/application~1json/schema`: `SharedModel549`,
-  `responses/400/content/application~1json/schema`: `SharedModel549`,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/200/content/application~1json/schema`: `WithOkMessageErrors192`,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors192`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/ssf/transmitters",
@@ -45873,19 +45873,19 @@ op `getPartnerSignals`(@js(#{`examples`:#["no-such-relationship"]}) `parameters/
   @js(#{`minimum`:1,`examples`:#[1]}) `parameters/3/schema`: integer,
   @js(#{`minimum`:1,`examples`:#[10]}) `parameters/4/schema`: integer,
   `responses/200/content/application~1json/schema`: {
-    `relationships`?: (`SharedModel245`)[];
-    `received`?: `SharedModel236`;
-    `blocks`?: `SharedModel235`;
+    `relationships`?: (`WithRelationshipNameKind`)[];
+    `received`?: `WithAdditionalPropertiesPropertiesKty`;
+    `blocks`?: `WithRelationshipUsernameAt`;
     `locks`?: ({`username`?: string; `relationship`?: string; `at`?: string})[];
     `observeOnly`?: boolean;
     `counts`?: {`received`?: integer; `blocks`?: integer; `locks`?: integer};
     `paging`?: {
-      `received`?: `SharedModel27`;
-      `blocks`?: `SharedModel27`;
-      `locks`?: `SharedModel27`
+      `received`?: `WithPagePagesPerPage`;
+      `blocks`?: `WithPagePagesPerPage`;
+      `locks`?: `WithPagePagesPerPage`
     }
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
 @endpoint("/admin-api/malware-scanning",
@@ -45911,9 +45911,9 @@ op `getMalwareScanning`(`responses/200/content/application~1json/schema`: {
     `enabled`: boolean;
     `url`: string;
     `scanning`: boolean;
-    `settings`?: `SharedModel10`
+    `settings`?: `SettingsPageDrawsDescribedSame`
   },
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
 
 @endpoint("/admin-api/malware-scanning/test",
   "post",
@@ -45935,7 +45935,7 @@ op `getMalwareScanning`(`responses/200/content/application~1json/schema`: {
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `testMalwareScanning`(`responses/200/content/application~1json/schema`: WithOkMessage,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
 
 @endpoint("/admin-api/sessions/end-all",
   "post",
@@ -45957,5 +45957,5 @@ op `testMalwareScanning`(`responses/200/content/application~1json/schema`: WithO
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `endAllSessions`(`responses/200/content/application~1json/schema`: WithOkMessage,
-  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
 }
