@@ -250,7 +250,7 @@ api oidfed/add-held-mark '{"trustMark":"eyJ0eXAiOiJ0cnVzdC1tYXJrK2p3dCJ9..."}'
 may issue a type**, fill in the type, the issuers (comma-separated; none
 means anybody) and optionally the owner and its JWK Set, then **Set the
 policy**. Through the API, `oidfed/set-mark-policy` with `{type, issuers,
-ownerSub, ownerJwks}`. The examples in the API's operation table are
+ownerSub, ownerJwks}`. The examples in the Management API OpenAPI document are
 `https://federation.example.org/marks/audited` issued by
 `https://tmi.example.org`; no test job sets a mark policy or carries a foreign
 mark.
