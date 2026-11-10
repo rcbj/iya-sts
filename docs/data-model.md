@@ -133,6 +133,15 @@ A name it uses is a name `common/applications.js` already publishes,
 except a derived name, which must not be an attribute.
 [Applications](applications.md) is the page for what those fields mean.
 
+## Domain concepts
+
+`models/domain/` says what each thing MEANS, separately from how it is stored. A
+concept such as `User`, `Credential`, `Application`, `OAuthClient` or `Session`
+names each field and where it is held, and the build refuses a directory
+attribute that no concept reads. A credential is its own concept, so passing a
+`User` around cannot carry one. Classes for the concepts and types for every
+API request and response are generated from the model.
+
 ## API
 
 The API namespace is the service's five OpenAPI documents, written as TypeSpec
@@ -163,8 +172,9 @@ script an owner runs from them.
 To change a table, edit its model and run
 `tests/tools/regenerate-model-docs.sh`, which writes `postgres/schema.sql` and
 `mariadb/schema.sql`. Everything else in those scripts is in the templates
-beside the models. An upgrade to an existing database is still written in the
-driver.
+beside the models. A column added after a table first shipped is marked in the model, and the
+statement giving an existing database that column is generated. Other upgrades,
+such as a change of key, are steps between two versions and stay in the driver.
 
 Directory attributes do not become columns. One directory entry is one row
 of `sts_ldap_entries`, with the attributes sealed in `attrs`. Four lookup
