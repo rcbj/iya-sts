@@ -318,7 +318,7 @@ Every `scep.*` setting is runtime and per trust realm, on **Protocols → Cert i
 | `scep.attemptsPerIdentity` | `STS_SCEP_ATTEMPTS_PER_IDENTITY` | `10` | yes | Refused PKIOperations one challenge may cause in a web-security window before 429. |
 | `scep.attemptsPerAddress` | `STS_SCEP_ATTEMPTS_PER_ADDRESS` | `60` | yes | Refused requests one client address may make in a web-security window before 429. |
 | `scep.challengeLifetimeS` | `STS_SCEP_CHALLENGE_LIFETIME_S` | `3600` | yes | How long a challenge password may wait before it is redeemed; each is redeemed once. |
-| `scep.raKeyAlgorithm` | `STS_SCEP_RA_KEY_ALGORITHM` | `rsa-2048` | yes | The RA certificate's RSA key size (`rsa-2048`, `rsa-3072`, `rsa-4096`); changing it re-issues the RA certificate on its next use. |
+| `scep.raKeyAlgorithm` | `STS_SCEP_RA_KEY_ALGORITHM` | `rsa-2048` (`rsa-3072` in product) | yes | The RA certificate's RSA key size (`rsa-2048`, `rsa-3072`, `rsa-4096`); changing it re-issues the RA certificate on its next use. |
 
 How many certificates one entry may hold across ACME, EST and SCEP is
 `pki.enrollmentMaxCertificatesPerEntry` ([PKI](pki.md#configuration)). See

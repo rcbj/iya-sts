@@ -543,8 +543,9 @@ The client has to manage without these. [LDAP](ldap.md) says why for each.
 * **StartTLS.** Use `ldaps://` on 636.
 * **SASL**, including EXTERNAL and GSSAPI. Only a simple bind.
 * **Controls and extended operations.** No paged results, no Who am I? (so
-  `ldapwhoami` does not work), and no Password Modify (`ldappasswd`). Change
-  a password with an `ldapmodify` of `userPassword`.
+  `ldapwhoami` does not work), and no Password Modify (`ldappasswd`). An
+  administrator changes a password with an `ldapmodify` of `userPassword`; a
+  person changes their own on the portal, which asks for the current one.
 * **A schema.** No object class or syntax is checked.
 * **Referential integrity.** Deleting a person leaves their DN in every group.
 * **Replication.** There is no LDAP replication protocol. Several nodes share
