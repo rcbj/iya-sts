@@ -55,11 +55,11 @@ function schema(scim, name) {
   })[0];
 }
 
-// An attribute of a schema, by name.
+// An attribute of a schema, or a sub-attribute of an attribute, by name.
 function attribute(owner, name) {
   log.debug("Entering attribute().");
   log.debug("Leaving attribute().");
-  return owner.attributes.filter(function (one) {
+  return (owner.attributes || owner.subAttributes).filter(function (one) {
     return one.name === name;
   })[0];
 }
