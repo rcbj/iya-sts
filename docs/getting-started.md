@@ -674,19 +674,62 @@ build look like a release.
 
 
 ## First-Time Admin Login
-Go to: ```https://localhost:8081```
 
-Enter ```admin``` as the username.
+The console is at `https://localhost:8081/admin`. Who signs in first depends
+on the mode the service is running in.
 
-Search the through startup logs for the following line:
-```sts               | {"name":"sts","hostname":"sts","pid":1,"level":40,"msg":"=======================================================\nPRODUCT MODE BOOTSTRAP — THIS IS SHOWN ONCE AND NEVER AGAIN.\n\n  username: admin\n  password: *****************\n\nNobody in this realm's directory held a credential, so this one was generated so that the service is reachable. It is stored as a scrypt hash and CANNOT be recovered — only reset.\n\nCHANGE IT. Sign in at /admin, or POST /admin-api/users/set-password.\n=======================================================","time":"2026-09-25T21:39:17.999Z","v":0}```
+### In development mode
 
-Take note of the temporary password. 
+A plain `docker run` (*In a container*, above) starts in development mode. The
+first account is `admin`, and development mode checks no password, so any
+password signs it in.
 
-Remember the admin password. 
+### In product mode
 
-Enter the temporary password into the password field.
+The compose stack (*With PostgreSQL and OpenBao*, above) starts in product
+mode, where a default account name such as `admin` is not allowed (ASVS 5.0.0
+6.3.2). On the first start, with nobody in the directory holding a credential,
+the service makes the first administrator with:
 
-Click the Login button.
+* **A generated username**, `admin-` followed by 16 hexadecimal characters,
+  for example `admin-3f9c2a71d04e8b65`. It is derived from the cluster's shared
+  key, so every node and every restart arrives at the same name.
+* **A generated password**, written to the file `bootstrap-admin-password` in
+  the data directory, readable only by the service. It is not written to the
+  log.
 
-You will be prompted to change the password. The password must comply with the default password policy, which can be changed later.
+The file holds both, as `username:password`. Read it with:
+
+```bash
+docker compose exec sts cat data/bootstrap-admin-password
+```
+
+Everything after the first colon is the password. The startup log names the
+account and the file, once:
+
+```text
+PRODUCT MODE BOOTSTRAP — THIS IS SHOWN ONCE AND NEVER AGAIN.
+
+  username: admin-3f9c2a71d04e8b65
+  password: in the file /usr/src/sts/data/bootstrap-admin-password
+```
+
+Then:
+
+1. Go to `https://localhost:8081/admin` and enter the username and the
+   password from the file.
+2. Change the password when asked. The new one must meet the password policy,
+   which you can change later under Directory → Policies.
+3. Enrol a second factor when asked: product mode requires one.
+
+The file is written once and never updated, so it holds the generated password
+even after you change it. Delete it once you have signed in.
+
+Four settings change this, and each must be set before the first start:
+
+| Setting | Environment variable | Effect |
+|---|---|---|
+| `admin.bootstrapUsername` | `STS_ADMIN_BOOTSTRAP_USERNAME` | A name that is not a default one (`admin`, `root`, `sa`, `administrator`) is used as given. |
+| `admin.allowDefaultUsername` | `STS_ADMIN_ALLOW_DEFAULT_USERNAME` | On, a default name is used as given instead of a generated one. |
+| `admin.bootstrapPassword` | `STS_ADMIN_BOOTSTRAP_PASSWORD` | The password is yours instead of generated; no file is written and the log does not print it. |
+| `admin.logBootstrapPassword` | `STS_ADMIN_LOG_BOOTSTRAP_PASSWORD` | On, the generated password is printed in the log instead of written to the file. |
