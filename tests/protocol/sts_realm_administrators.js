@@ -118,17 +118,38 @@ async function call(method, url, options) {
 }
 
 // The chooser's `sts_realm` line, or "" when the answer set none.
+// IN PRODUCT THE WIRE NAME IS `__Host-sts_realm` (#1441, ASVS 5.0.0 3.3.1:
+// `common/cookie_wire.ts` prefixes every `sts_*` cookie on a TLS answer and
+// drops an unprefixed one on the way in). The line is answered with the
+// prefix taken off, so the assertions read the same in both modes, and
+// `realmCookieName()` says which name to send it back under.
 function realmCookie(reply) {
   log.debug("Entering realmCookie().");
   const cookies = (reply && reply.cookies) || [];
   let found = "";
   cookies.forEach(function (line) {
-    if (!found && String(line).indexOf("sts_realm=") === 0) {
-      found = String(line);
+    const text = String(line).replace(/^__Host-/, "");
+    if (!found && text.indexOf("sts_realm=") === 0) {
+      found = text;
     }
   });
   log.debug("Leaving realmCookie().");
   return found;
+}
+
+// The name the answer set the realm cookie under: `sts_realm`, or
+// `__Host-sts_realm` where cookies are prefixed. `sts_realm` when it set none.
+function realmCookieName(reply) {
+  log.debug("Entering realmCookieName().");
+  const cookies = (reply && reply.cookies) || [];
+  let name = "sts_realm";
+  cookies.forEach(function (line) {
+    if (/^__Host-sts_realm=/.test(String(line))) {
+      name = "__Host-sts_realm";
+    }
+  });
+  log.debug("Leaving realmCookieName(). " + name);
+  return name;
 }
 
 // The management API with the run's token, which the preload attaches.
@@ -269,7 +290,7 @@ async function theChooserAsksWhichRealm() {
         "it stored " + cookie);
     });
     const remembered = await call("GET", base + surface, {
-      headers: { Cookie: "sts_realm=" + REALM }
+      headers: { Cookie: realmCookieName(chosen) + "=" + REALM }
     });
     check("a remembered " + REALM + " is the next bare " + surface,
       function () {

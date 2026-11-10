@@ -31,7 +31,9 @@
 //      token: no caller, and both read and write;
 //   7. what it costs (2026-10-21): /me builds no statistics snapshot and asks
 //      no directory tally; /status asks the register's rows and the tally
-//      asynchronously, and keeps the totals for a few seconds.
+//      asynchronously, and keeps the totals for a few seconds;
+//   8. product (2026-11-10): a service token whose `sub` is a default-realm
+//      `urn:uuid:` is still its person under another realm's prefix.
 // ===========================================================================
 
 const fs = require('fs');
@@ -383,6 +385,48 @@ function childMain() {
          '7d. past the hold the kept totals answer at once, and one rebuild ' +
          'runs behind them', JSON.stringify({ rebuilt: rebuilt,
                                               ms: staleMs }));
+
+    // --- 8. a service token under a realm's prefix, in product (2026-11-10) --
+    // The console reaches another realm's pages with the service token. Its
+    // `sub` is a `urn:uuid:` of the DEFAULT realm's directory, and the gate
+    // resolved it in the realm the call arrived in, where it names nobody —
+    // so in product (#1536's gone-subject rule) every call was 403
+    // STS-API-0125 and the realm's console never drew
+    // (sts_admin_console, single-node).
+    const helpersModule = require(ROOT_DIR + '/common/helpers');
+    const readerSub = inDefault(function () {
+      return helpersModule.subjectForName(READER);
+    });
+    note(/^urn:uuid:/.test(readerSub),
+         'precondition: the reader has a subject in the default realm',
+         readerSub);
+    const subjectToken = await mint({ client_id: 'sts-admin-console',
+                                      username: READER, sub: readerSub });
+    const rolePermissions = require(ROOT_DIR + '/common/role_permissions');
+    config.setOverride('global.mode', 'product');
+    try {
+      const fromRealm = realms.run(realms.get(R), function () {
+        return rolePermissions.effectiveRoles(
+          { client_id: 'sts-admin-console', sub: readerSub,
+            username: READER, scope: 'admin:read' },
+          ['admin:read'], realms.DEFAULT_ID);
+      });
+      note(fromRealm.subject.name === READER &&
+           fromRealm.withdrawn.length === 0 &&
+           has(fromRealm.roles, 'ADMIN_READ'),
+           '8a. product: a default-realm token\'s subject, asked about ' +
+           'under another realm, is the person the default realm names, ' +
+           'holding Admin Read', JSON.stringify(fromRealm));
+      r = await call(port, 'GET', '/realm/' + R + '/admin-api/me',
+                     subjectToken);
+      j = r.json || {};
+      note(r.status === 200 && j.authority === 'service' &&
+           j.caller && j.caller.name === READER && j.read === true,
+           '8b. product: the service token reads a realm\'s console under ' +
+           'its prefix', brief(r));
+    } finally {
+      config.clearOverride('global.mode');
+    }
 
     // --- 6. the control ------------------------------------------------------
     config.setOverride('adminApi.authRequired', false);

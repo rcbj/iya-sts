@@ -1524,6 +1524,12 @@ const PEER_CERT_HEADER = 'x-sts-peer-certificate';
  */
 const LDAP_DROP_HEADER = 'x-sts-ldap-drop';
 
+// The headers `app.js`'s enterRealm() writes on a response before this module
+// sees it, which a dispatched answer replaces whole — present or ABSENT. See
+// proxy(); `tests/proxy_early_headers.js` holds this list to that function.
+const WORKER_DECIDES = ['x-content-type-options', 'x-frame-options',
+                        'content-security-policy'];
+
 // THE TICKET THIS REQUEST WAS DISPATCHED UNDER, told to the worker so that the
 // worker can say which tickets its flush covered — see receiveCommitted().
 // Stripped from what the client sent, exactly like the two above: nothing a
@@ -7301,6 +7307,17 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
     // `rawHeaders`; the values are still `answer.headers`', merged as
     // before. A name the worker did not send (the pin's `set-cookie` on an
     // answer that set none) keeps its lower-case key.
+    // THE HEADERS THIS PROCESS WROTE BEFORE DISPATCHING ARE THE WORKER'S TO
+    // DECIDE (2026-11-10). `app.js`'s enterRealm() writes the early security
+    // headers on every response before anything else runs, so they are on
+    // this `res` already; the worker ran the same middleware and its answer
+    // carries what the route decided. A header the route REMOVED was absent
+    // from the answer and so stayed here: the OP iframe answered
+    // `X-Frame-Options: DENY` in every dispatching mode, overruling the
+    // narrower `frame-ancestors` it had chosen. Cleared, then the answer's.
+    WORKER_DECIDES.forEach(function (name) {
+      res.removeHeader(name);
+    });
     const spelled = {};
     const raw = answer.rawHeaders || [];
     for (let i = 0; i + 1 < raw.length; i += 2) {
@@ -8777,6 +8794,7 @@ module.exports = {
   // catch a rename is a test holding them side by side. tests/ldap_logout.js
   // does exactly that.
   LDAP_DROP_HEADER: LDAP_DROP_HEADER,
+  WORKER_DECIDES: WORKER_DECIDES,
   // THIS PROCESS'S OWN WRITES MOVING THE GENERATION, exported so that
   // tests/front_process_writes.js can drive it without a store, a fork or a
   // socket: it takes the count rather than reading it, precisely so that the
