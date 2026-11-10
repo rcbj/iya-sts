@@ -212,8 +212,15 @@ async function test() {
     const signers = await tabText(driver, "signers");
     const pins = await tabText(driver, "pins");
     const client = await tabText(driver, "client");
+    // THE MASTER AS THE API ANSWERS IT, not a literal (2026-11-10): every
+    // appconfig file this repository packages forces it `off`
+    // (env/local.js), and a stack on another file may say `auto`.
+    const trustView = await api("GET", "/admin-api/pki/trust");
+    assert.strictEqual(trustView.status, 200, trustView.raw.slice(0, 300));
+    const master = JSON.parse(trustView.raw).master.value;
     check("Paranoid PKI draws the master and every use case", function () {
-      assert.ok(/auto/.test(paranoid), paranoid.slice(0, 300));
+      assert.ok(paranoid.indexOf(master) >= 0,
+                master + " in " + paranoid.slice(0, 300));
       ["tls-client", "saml-signer", "fido-mds"].forEach(function (id) {
         assert.ok(paranoid.indexOf(id) >= 0, id);
       });

@@ -400,6 +400,22 @@ var config = {
     attemptsPerAddress: 5000
   },
 
+  // --- Paranoid PKI mode ----------------------------------------------------
+  // FORCED OFF IN EVERY APPCONFIG FILE WE PACKAGE (rcbj, 2026-11-10).
+  // `pki.paranoid` ships `auto`, which is on in product mode (#1360) and holds
+  // every certificate this service relies on to the full set of checks, a
+  // revocation check that never ran counting as a refusal. The first product
+  // node built after #1360 (test-idp.iyasec.io, develop 39c8248c8, revocation
+  // off there by #371) refused Secrets Manager's own TLS certificate
+  // (STS-KEYS-0044) and did not start (STS-CORE-0036). Off, every use case
+  // behaves exactly as it did before #1360; a product node logs STS-PKI-0239
+  // once and /admin/pki/trust draws it red. It is a LAYER, not the setting:
+  // `env/defaults.js` still ships `auto`, and STS_PKI_PARANOID or a runtime
+  // override still sets it back.
+  pki: {
+    paranoid: "off"
+  },
+
   // --- SPIFFE / SPIRE ------------------------------------------------------
   //
   // The bundle endpoint, the Workload API and the SPIRE Server API. Four of
