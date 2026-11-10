@@ -319,11 +319,15 @@ const OPT_STATES = ['opt-in', 'opt-out-initiated', 'opt-out'];
 // only one this register enforces anything on — see applyToState().
 const LIFECYCLE_STATES = ['active', 'disabled', 'purged'];
 
-// The directory attributes this file reads, LOWER-CASED, because that is how
-// `ldap_server.js`'s store keys them. Naming them here rather than inline is
-// what keeps `identifierChanges()` from being four copies of one comparison.
+// The directory attributes the identifier events compare, LOWER-CASED,
+// because that is how `ldap_server.js`'s store keys them. Naming them here
+// rather than inline is what keeps `identifierChanges()` from being four
+// copies of one comparison. They are a table of which attributes hold each
+// kind of identifier, read by name on purpose (#1579): a kind is the set of
+// attributes named here, compared before and after the write. The lock is
+// read through the Credential.
 //
-// `pwdaccountlockedtime` is draft-behera-ldap-password-policy's
+// `pwdAccountLockedTime` is draft-behera-ldap-password-policy's
 // `pwdAccountLockedTime`, and SINCE 2026-09-17 IT IS WHAT A DISABLED ACCOUNT
 // IS HERE: an administrator's disable writes it (`common/account_state.ts`),
 // SCIM's `active: false` writes it, and every door refuses the account while
@@ -331,7 +335,6 @@ const LIFECYCLE_STATES = ['active', 'disabled', 'purged'];
 // and nothing read — so an `account-disabled` sent over RISC used to report a
 // deprovisioning that disabled nobody, and now reports one that did. A
 // transmitter still only REPORTS; what the receiver does is the receiver's.
-const LOCK_ATTRIBUTE = 'pwdaccountlockedtime';
 const EMAIL_ATTRIBUTES = ['mail'];
 const PHONE_ATTRIBUTES = ['telephonenumber', 'mobile'];
 // The two kinds of identifier RISC's identifier events name, each with the
@@ -2105,8 +2108,9 @@ class RiscRegister {
       log.debug("Leaving RiscRegister.activeIn(). No entry.");
       return null;
     }
-    const values = attrs[LOCK_ATTRIBUTE];
-    const out = !(Array.isArray(values) && values.length);
+    // A lock is the Credential's (#1579).
+    const out = DomainMap.fieldOf('Credential', 'lockedSince', attrs) ===
+      undefined;
     log.debug("Leaving RiscRegister.activeIn(). " + out);
     return out;
   }
