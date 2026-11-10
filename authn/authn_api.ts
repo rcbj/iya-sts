@@ -87,7 +87,6 @@ import ModelZod = require('../common/model_zod');
 type Json = any;
 
 const vz = validation.z;
-const vt = validation.types;
 
 // The header an act's CSRF token travels in.
 const CSRF_HEADER = 'x-csrf-token';
@@ -138,8 +137,11 @@ const MFA_PAGES = ['totp', 'webauthn', 'backup-code', 'password', 'setup',
 
 const MFA_QUERY = ModelZod.query('authn', 'getStep');
 
+// THE `{id}` OF EVERY PATH HERE is the model's `SignInId` (#1579): one
+// component every such operation's path parameter names, so the shape a
+// caller reads and the check are one declaration.
 const ID_PARAMS = vz.object({
-  id: vt.base64url
+  id: ModelZod.component('authn', 'SignInId')
 });
 
 // WHAT THE WALLET'S START VIEW IS ASKED WITH (#1483, the names this door has
@@ -164,12 +166,6 @@ const SHAPE_CODES: Record<string, string> = {
 // back with (OpenID4VP section 8.2); `response` the DigitalCredential the
 // browser's API answered, as `{ protocol, data }` or its JSON text.
 // ---------------------------------------------------------------------------
-const WALLET_IDS = {
-  authn: vt.opt(vt.opaque),
-  mfa: vt.opt(vt.opaque),
-  enrol: vt.opt(vt.oneOf(['1']))
-};
-
 const WALLET_START_BODY = ModelZod.body('authn', 'startWalletSignIn');
 
 const WALLET_STATUS_BODY = ModelZod.body('authn', 'walletStatus');
@@ -462,14 +458,10 @@ OPERATIONS.push.apply(OPERATIONS, ACCOUNT_OPERATIONS);
 // receiver's boxes as an array. Nothing else is taken.
 // ---------------------------------------------------------------------------
 
-// A limit control's name, and what it may hold: `common/web_limits_form.ts`
-// draws one detail's controls as `lim_t0r<r>_<member>`.
-const LIMIT_FIELD = /^lim_t0r\d{1,3}_(amount|count|receiver|receiverShown|interval|notBefore|notAfter)$/;
-const LIMIT_VALUE = vz.union([vz.string().max(1024),
-                              vz.array(vz.string().max(1024)).max(64)]);
-
-// The answer itself, checked closed once the limit controls are taken off.
-// Documented open, since the controls are beside it.
+// The answer and its limit controls are one model (#1579): `action`, and the
+// `lim_t0r<r>_<member>` controls `common/web_limits_form.ts` draws, which the
+// operation names as `patternProperties` with what each may hold. Nothing
+// else is taken.
 const CONSENT_BODY = ModelZod.body('authn', 'answerConsent');
 
 const CONSENT_OPERATIONS: Operation[] = [
@@ -1507,26 +1499,30 @@ class AuthnApi {
     const raw = helpers.parseBody(req) || {};
     const answer: Json = {};
     const limits: Json = {};
-    let problem = '';
     Object.keys(raw).forEach(function (name: string): void {
-      if (!/^lim_/.test(name)) {
+      if (/^lim_/.test(name)) {
+        limits[name] = raw[name];
+      } else {
         answer[name] = raw[name];
-        return;
       }
-      if (!LIMIT_FIELD.test(name)) {
-        problem = problem || 'The body has a field this operation does not ' +
-          'take: ' + name + '.';
-        return;
-      }
-      if (!LIMIT_VALUE.safeParse(raw[name]).success) {
-        problem = problem || 'The limit ' + name + ' is not a string or a ' +
-          'list of strings of a reasonable size.';
-        return;
-      }
-      limits[name] = raw[name];
     });
-    const posted = validation.checkParsed(answer, 'body',
-                                          CONSENT_BODY.strict());
+    // The limit controls are held to the model whole, because a receiver's
+    // repeat is a list the request wrapper would refuse; the answer goes
+    // through the wrapper, which also refuses what is not a scalar.
+    const shaped = CONSENT_BODY.safeParse(raw);
+    const limitIssue = (shaped.success ? [] : shaped.error.issues).filter(
+      function (one: Json): boolean {
+        return /^lim_/.test(String(one.path[0] || ''));
+      })[0];
+    let problem = '';
+    if (limitIssue && limitIssue.params && limitIssue.params.unrecognized) {
+      problem = 'The body has a field this operation does not take: ' +
+        String(limitIssue.path[0]) + '.';
+    } else if (limitIssue) {
+      problem = 'The limit ' + String(limitIssue.path[0]) + ' is not a ' +
+        'string or a list of strings of a reasonable size.';
+    }
+    const posted = validation.checkParsed(answer, 'body', CONSENT_BODY);
     if (problem || !posted.ok) {
       errorCodes.mark(res, 'STS-OAUTH-0148');
       this.refuse(res, 400, problem || String(posted.detail ||

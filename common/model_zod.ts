@@ -276,6 +276,7 @@ class ModelZod {
           });
           if (!matched.length && closed) {
             ctx.addIssue({ code: 'custom', path: [name],
+                           params: { unrecognized: true },
                            message: 'Unrecognized key: "' + name + '"' });
           }
           matched.forEach(function (one: Json) {
