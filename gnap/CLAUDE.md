@@ -71,8 +71,9 @@ Route-free libraries, each require-able from an in-process test:
 | ~~`gnap_sf.ts`~~, ~~`gnap_httpsig.ts`~~ | **Moved out of `gnap/` by #178 (2026-10-05)**. RFC 8941 is `common/structured_fields.ts`; RFC 9421 and RFC 9530 are `common/crypto.js` section 14, shared with the FAPI 2.0 HTTP Signatures profile at the OAuth resource servers. `tests/http_signatures.js` holds them to the RFC's vectors. The codes they raised, STS-GNAP-0200 to 0246, are retired as STS-KEYS-0107 to 0153 |
 | `gnap_keys.ts` | key formats, proof method normalisation, thumbprints, the key descriptor every other module takes |
 | `gnap_proof.ts` | verifies a request's proof — httpsig, mtls, jwsd, jws, and the nested proofs of a key rotation |
-| `gnap_schemas.ts` | the six ajv 2020-12 JSON Schemas. Types, bounds, URI formats, and **no control character in any string**. No `required` or `enum`: those are the walker's, so a refusal names the RFC section |
-| `gnap_request.ts` | `checkEnvelope()` (depth/key bounds, then the schema, then the walker) and one parser per document |
+| `gnap_model.ts` | **the model, as the endpoints read it (#1579)**: the request schemas with `common/validation.js`'s caps put in, the paths' zod validators, the registries, and the holding of every answer and error code — see *The documents, answers and codes are the model's* below |
+| `gnap_schemas.ts` | compiles the six JSON Schemas the model renders (ajv 2020-12) and names the most useful error. Types, bounds, URI formats, and **no control character in any string**. No `required` or `enum`: those are the walker's, so a refusal names the RFC section |
+| `gnap_request.ts` | `checkEnvelope()` (depth/key bounds, then the schema, then the walker) and one parser per document; its registries are the model's |
 | `gnap_access.ts` | access rights: covers, intersect, the RFC 9767 token model and its presentation checks |
 | `token_macaroon.ts`, `token_biscuit.ts`, `token_zcap.ts` | the three library formats |
 | `gnap_tokens.ts` | the format dispatcher; the two JWT formats go through `helpers.signJwt` and `common/crypto.js` |
@@ -1049,6 +1050,7 @@ back. Reserved names are the JWT list plus `access`, `flags`, `label` and
 | 0902–0904 | #496, #505 and #593: an unregistered application in product (0902), a location naming no registered resource server in product (0903), an access token request naming no resource server at all, in every mode (0904) — see *A token for nobody in particular* below |
 | 0905 | #738: `interact.acr` of only `phr` and/or `phrh` was unmet after the one interaction (`request_denied`). A skip that never starts that interaction stays 0893 |
 | 0908 | #1250: the custom claims configured for an access-token JWT could not be read. The token is still minted, without them |
+| 0910–0911 | #1579: an answer that is not its model's (0910), an error code the model does not declare (0911). Recorded only; the answer is sent unchanged |
 
 `tests/error_codes.js` carries `gnapError(res`, `interactionError(res` and
 `apiRefusal(res` as failure patterns.
@@ -1059,6 +1061,8 @@ back. Reserved names are the JWT list plus `access`, `flags`, `label` and
 |---|---|
 | `tests/http_signatures.js` | RFC 9421 / 9530 / 8941, including the Appendix B and section 2.4 vectors (it was `tests/gnap_httpsig.js` until #178) |
 | `tests/gnap_token_formats.js` | one matrix over all five formats (the JWT two through an adapter), and attenuation for the three that attenuate; since #432 the full model carries a two-link `act` chain every format round-trips, an `act` appended to a macaroon by a holder is refused (0316), and the chain's grammar; since phase 5 a right with every kind of limit and the model's `grant` round-trip too |
+| `tests/gnap_model_wire.js` | #1579: what every GNAP endpoint answers — discovery, the grant endpoint's answers and refusals, continuation, token management, introspection, registration, the start modes and `/gnap-api` — in development and product mode, byte for byte against `gnap_model_wire.snapshot.json`, recorded from the hand-written schemas before the switch; and no answer of that conversation recorded a model gap |
+| `tests/model_gnap.js` | #1579: the build's refusals (a TypeSpec copy broken one way at a time, and the generated table), no JSON Schema, zod object or registry left written in `gnap/`, the recorded answers and error codes held to the model, and the holding itself |
 | `tests/gnap_request.js` | which layer refuses what — the schemas, control characters, the walkers — RFC 7638's thumbprint and RFC 9635's two interaction hash vectors; `interact.acr` (#738) as a string or an array, a mixed list kept and not a demand |
 | `tests/realm_isolation.js` | the GNAP stores are per realm and purged with it, and no module-scope Map |
 | `tests/protocol/sts_gnap_core.js` | the client instance's whole protocol over HTTP, every refusal by its error code — and since #432 phase 7 a reference refused from another client, the subject released once (section 7), and `/portal/gnap` and the per-person `/admin-api` operations (section 15). Its section 6 push listener presents a certificate from a CA the job makes at run time and sets `gnap.pushCaFile` to it (#171; skipped with no directory shared with the service), so the push is VERIFIED in both modes |
@@ -1094,6 +1098,60 @@ the published key. The default suite is now `eddsa-jcs-2022` and the job checks
 the proof itself: RFC 8785, two SHA-256 hashes, node's Ed25519. The
 compatibility suite is still checked only by the service, which is one of the
 reasons it is not the default.
+
+## The documents, answers and codes are the model's (#1579, 2026-11-10)
+
+rcbj's decision on #1579: every protocol family comes into the model, and a
+specification's endpoint does not change — the model DESCRIBES and
+VALIDATES it. `models/gnap/gnap.tsp` (decorators `models/lib/gnap_lib.*`) is
+the source of:
+
+* **The six request documents** (`@document`) and the types they share
+  (`@definitions`, every document's `$defs` in that order). The build renders
+  each as JSON Schema 2020-12 into `models/generated/gnap.json`; a string's
+  cap is written `"$cap:NAME"` and `gnap_model.ts` puts `CAP[NAME]` in at
+  load, because `common/validation.js` is the one table of the caps and the
+  build cannot load it. The rendered schemas were compared with the
+  hand-written ones before those were deleted: byte-identical, all six.
+  **Note:** this file's old header said the continuation and rotation bodies
+  were CLOSED; the code had them open, and the model keeps the code's
+  behaviour (only `finish` is closed). Whether they should close is a wire
+  change, rcbj's to decide.
+* **The paths' parameters** (`@pathParams`: `as`, `continue`, `manage`).
+* **The registries the walk reads** (`@registry`): the request and
+  response-only flags, start modes, finish methods, assertion formats, proof
+  methods, key formats, and RFC 9493's subject identifier formats with the
+  members each carries. `gnap_request.ts` and `gnap_keys.ts` read them.
+* **Every answer's members** (`@members`, `closed` or `open`, nested sets
+  followed): the grant response and what it nests, the error response, both
+  discovery documents, introspection (open: a type's `introspectionClaims`
+  are added), registration, `/gnap/keys`, the revoked biscuits, the ZCAP
+  controller document and `/gnap-api`'s two shapes. `gnap.ts`'s
+  `sendResult()`, `gnapError()`, the discovery and material senders and
+  `gnap_interact.ts`'s `answer()` hold each answer and record a gap under
+  STS-GNAP-0910 (an error code the model does not declare, 0911) — **the
+  answer is sent unchanged**, as OAuth's are. `GnapModel.gaps()` keeps the
+  last hundred for a test.
+* **The error codes**: RFC 9635 section 3.6's thirteen, and
+  `invalid_resource_server` and `invalid_access`, this service's own.
+* **The access-type catalogue's definition** (rule 3bz):
+  `AccessTypeDefinition`'s members are `common/applications.js`'s
+  `AUTHORIZATION_DETAILS_DEFINITION_MEMBERS` and the `interaction` values its
+  `ACCESS_TYPE_INTERACTIONS`.
+
+**What stays in code, and why.** Everything that needs state or more than
+one member: the walk's semantics (a flag twice, a label missing from a
+multi-token request, a key in two formats, the interaction hash), each
+refused with the GNAP code the RFC names — which is also why `required` and
+enumerations are not in the schemas; the catalogue's meaning checks (a
+list's grammar, `consentActions` within `actions`, a reserved introspection
+claim, each with the sentence the console shows); `HASH_METHODS` (each name
+is node's digest and its bit count, an algorithm mapping, not a shape);
+`gnap_subject.ts`'s supported formats (what this implementation does, a
+subset of the registry); `gnap_interact.ts`'s `OPERATIONS` (routing rows of
+`/gnap-api`); and everything the engine decides from registrations, keys,
+policy and mode. The interaction pages' browser bundle is not a protocol
+endpoint and is unchanged.
 
 ## Mutual TLS: pinned or a PKI, and revocation in both (#107, 2026-09-23)
 
