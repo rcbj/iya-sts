@@ -126,11 +126,27 @@ resource "aws_wafv2_web_acl" "allowlist" {
   count       = local.cloudfront ? 1 : 0
   provider    = aws.us_east_1
   name        = "${local.prefix}-allowlist"
-  description = "iya-sts ${var.environment}: allowed_cidrs and nobody else"
+  description = var.waf_report_only ? "iya-sts ${var.environment}: REPORT ONLY - counts what is outside allowed_cidrs, blocks nothing" : "iya-sts ${var.environment}: allowed_cidrs and nobody else"
   scope       = "CLOUDFRONT"
 
-  default_action {
-    block {}
+  # REPORT-ONLY MODE (rcbj, 2026-11-10, `waf_report_only`): a WAF default
+  # action cannot be Count, so the default ALLOWS and the `outside-allowed-
+  # cidrs` rule below COUNTS everything the allowlist would have blocked. Its
+  # CountedRequests metric and sampled requests are the report. Anyone can
+  # then reach the public name through CloudFront; the direct name is still
+  # held to allowed_cidrs by the load balancer's security group.
+  dynamic "default_action" {
+    for_each = [var.waf_report_only]
+    content {
+      dynamic "allow" {
+        for_each = default_action.value ? [1] : []
+        content {}
+      }
+      dynamic "block" {
+        for_each = default_action.value ? [] : [1]
+        content {}
+      }
+    }
   }
 
   rule {
@@ -151,6 +167,35 @@ resource "aws_wafv2_web_acl" "allowlist" {
       cloudwatch_metrics_enabled = true
       metric_name                = "${local.prefix}-allowed-cidrs"
       sampled_requests_enabled   = true
+    }
+  }
+
+  # What the allowlist WOULD have blocked, counted rather than blocked.
+  dynamic "rule" {
+    for_each = var.waf_report_only ? [1] : []
+    content {
+      name     = "outside-allowed-cidrs"
+      priority = 1
+
+      action {
+        count {}
+      }
+
+      statement {
+        not_statement {
+          statement {
+            ip_set_reference_statement {
+              arn = aws_wafv2_ip_set.allowed[0].arn
+            }
+          }
+        }
+      }
+
+      visibility_config {
+        cloudwatch_metrics_enabled = true
+        metric_name                = "${local.prefix}-outside-allowed-cidrs"
+        sampled_requests_enabled   = true
+      }
     }
   }
 

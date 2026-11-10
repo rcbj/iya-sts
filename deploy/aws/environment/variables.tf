@@ -262,6 +262,18 @@ variable "bootstrap_admin_username" {
   sensitive   = true
 }
 
+variable "waf_report_only" {
+  description = <<-EOT
+    With CloudFront on, the web ACL in REPORT-ONLY mode: it blocks nothing,
+    and a Count rule records every request from outside allowed_cidrs (the
+    `outside-allowed-cidrs` metric and its sampled requests). Off (the
+    default), the allowlist blocks them. The direct name stays restricted by
+    the security group either way.
+  EOT
+  type        = bool
+  default     = false
+}
+
 variable "vpc_cidr" {
   description = "The environment's own VPC. Clear of the account's existing 10.0.0.0/24 and 172.31.0.0/16. A cell's is `cells[cell].vpc_cidr` (#98)."
   type        = string
