@@ -18,6 +18,7 @@ client, a person or a password is known or correct is a separate question, and
 | **Parameter names that pollute objects** | `__proto__` and similar names are refused everywhere. |
 | **Unknown parameters** | Ignored on protocol endpoints, because RFC 6749 and OpenID Connect require it. On the [management](management-api.md#query-parameters-and-headers), [account](account-api.md#what-a-request-may-name), [sign-in](authn-api.md#what-a-request-may-name) and [report](reporting.md#what-a-request-may-name) APIs, a query parameter the operation does not list, a value that does not fit its declared type, and a custom header nothing declares are each refused with a 400, and so is an unknown member of a JSON body the operation's schema closes. |
 | **Body size** | 5 MB at most, and less wherever a field states a limit. |
+| **Request line and headers** | A request line or headers longer than the HTTP parser accepts get `431`, and a request it cannot parse gets `400`. The answer is written before the connection closes, so a client reads the status rather than a reset connection. |
 
 ## Limits by kind of value
 
