@@ -1593,14 +1593,31 @@ class UsersPage {
       'maxlength="500"></label></div>';
   }
 
+  /**
+   * The risk badge's rules, for the console's stylesheet (2026-11-10).
+   */
+  static readonly CSS = '.risk-badge{display:flex;align-items:center;' +
+    'gap:28px;margin:14px 0 18px;padding:20px 28px;border-radius:14px}' +
+    '.rb-LOW{background:#188038;color:#ffffff}' +
+    '.rb-MEDIUM{background:#f9ab00;color:#202124}' +
+    '.rb-HIGH{background:#d93025;color:#ffffff}' +
+    '.rb-UNSCORED{background:#5f6368;color:#ffffff}' +
+    '.rb-UNKNOWN{background:#dadce0;color:#202124}' +
+    '.rb-level{font-size:3em;font-weight:800;letter-spacing:.05em;' +
+    'line-height:1}' +
+    '.rb-facts{font-size:1.05em;line-height:1.5}' +
+    '.rb-title{font-size:1.3em;font-weight:700}' +
+    '.rb-more{margin-top:6px}' +
+    '.rb-more a{color:inherit;font-weight:600}';
+
   static riskBadge(t: any, standing: any): string {
     const level = standing ? String(standing.level || 'UNSCORED')
                            : 'UNKNOWN';
-    const palette: Record<string, string[]> = {
-      LOW: ['#188038', '#ffffff'], MEDIUM: ['#f9ab00', '#202124'],
-      HIGH: ['#d93025', '#ffffff'], UNSCORED: ['#5f6368', '#ffffff'],
-      UNKNOWN: ['#dadce0', '#202124'] };
-    const colours = palette[level] || palette.UNKNOWN;
+    // The level's colours are `.risk-badge.rb-LOW` and the rest in the
+    // console's stylesheet (`UsersPage.CSS`), not a `style=""`: the policy
+    // allows no inline style (2026-11-10).
+    const known = ['LOW', 'MEDIUM', 'HIGH', 'UNSCORED', 'UNKNOWN'];
+    const tone = known.indexOf(level) >= 0 ? level : 'UNKNOWN';
     const when = function (ms: number): string {
       return ms ? new Date(ms).toISOString().replace('T', ' ').slice(0, 16) +
                   ' UTC' : '';
@@ -1617,15 +1634,12 @@ class UsersPage {
         (standing.reason ? '<br>' + t.html('consoleUsers.riskBadge.because',
                                            { reason: standing.reason }) : '')
       : t.html('consoleUsers.riskBadge.notAssessed');
-    return '<div class="risk-badge" style="display:flex;align-items:center;' +
-      'gap:28px;margin:14px 0 18px;padding:20px 28px;border-radius:14px;' +
-      'background:' + colours[0] + ';color:' + colours[1] + '">' +
-      '<div style="font-size:3em;font-weight:800;letter-spacing:.05em;' +
-      'line-height:1">' + kit.esc(level) + '</div>' +
-      '<div style="font-size:1.05em;line-height:1.5"><div style="font-size:' +
-      '1.3em;font-weight:700">' + t.html('consoleUsers.riskBadge.current') +
+    return '<div class="risk-badge rb-' + tone + '">' +
+      '<div class="rb-level">' + kit.esc(level) + '</div>' +
+      '<div class="rb-facts"><div class="rb-title">' +
+      t.html('consoleUsers.riskBadge.current') +
       '</div>' + facts +
-      '<div style="margin-top:6px"><a style="color:inherit;font-weight:600" ' +
+      '<div class="rb-more"><a ' +
       'href="' + kit.esc(standing && standing.subject
         ? '/admin/risk?subject=' + encodeURIComponent(standing.subject) +
           '#risk-assessments'

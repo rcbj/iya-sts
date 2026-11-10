@@ -20,12 +20,10 @@ type Json = any;
 type PortalPage = import('../types/account-api').PortalPage;
 
 // A level's colours: the badge a person reads at a glance.
-const LEVEL_STYLE: Record<string, string> = {
-  LOW: 'background:#e6f4ea;color:#137333',
-  MEDIUM: 'background:#fef7e0;color:#b06000',
-  HIGH: 'background:#fce8e6;color:#a50e0e',
-  UNSCORED: 'background:#f1f3f4;color:#3c4043'
-};
+// The level's colours are `.level-LOW` and the rest in portal.css
+// (`web_portal_kit.ts`), not a `style=""`: the portal's policy allows no
+// inline style (2026-11-10).
+const LEVELS = ['LOW', 'MEDIUM', 'HIGH', 'UNSCORED'];
 
 const PATH = kit.BASE + '/sign-ins';
 
@@ -45,7 +43,7 @@ class SignInsPages {
             ['deny', t.html('portalSignIns.no')]]
       .map(function (pair: string[]): string {
         return '<form method="post" action="' + PATH + '" ' +
-          'style="display:inline">' +
+          'class="inline-form">' +
           '<input type="hidden" name="action" value="' + pair[0] + '">' +
           '<input type="hidden" name="assessment" value="' + kit.esc(id) +
           '"><button type="submit">' + pair[1] + '</button></form>';
@@ -81,7 +79,8 @@ class SignInsPages {
             ? t.text('portalSignIns.deviceOn',
                      { family: a.uaFamily, os: a.uaOs })
             : (a.uaFamily || a.uaOs || t.text('portalSignIns.noDevice'));
-          const style = LEVEL_STYLE[String(a.level)] || LEVEL_STYLE.UNSCORED;
+          const level = LEVELS.indexOf(String(a.level)) >= 0
+            ? String(a.level) : 'UNSCORED';
           const answer = a.feedback === 'confirmed'
             ? t.html('portalSignIns.saidYes')
             : a.feedback === 'denied' ? t.html('portalSignIns.saidNo')
@@ -92,8 +91,7 @@ class SignInsPages {
             '</td><td>' + kit.esc(where) + '<br><small>' + kit.esc(network) +
             '</small></td><td>' + kit.esc(device) + '</td><td>' +
             kit.esc(a.door || '') + '</td><td>' + application +
-            '</td><td><span style="' + style +
-            ';padding:2px 8px;border-radius:10px;font-weight:600">' +
+            '</td><td><span class="level level-' + level + '">' +
             t.html('portalSignIns.level', { level: String(a.level) }) +
             '</span>' + (a.id && a.id === view.thisSession ? '<br><small>' +
               t.html('portalSignIns.thisSession') + '</small>' : '') +

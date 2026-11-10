@@ -359,7 +359,11 @@ class ShellDocument {
     const directives = Object.assign({
       'script-src': "'self'",
       'connect-src': ["'self'"].concat(asked.connect || []).join(' '),
-      'style-src': "'self' 'unsafe-inline'"
+      // NO 'unsafe-inline' (2026-11-10, Qualys QID 150207): the console's and
+      // the portal's inline styles are rules in their stylesheets now, so a
+      // `style=""` an injection got into the markup is not applied. A
+      // surface's own `csp` may still set `style-src`.
+      'style-src': "'self'"
     }, ShellDocument.imageSources(asked.images), asked.csp || {});
     const out = app.contentSecurityPolicy(directives);
     log.debug("Leaving ShellDocument.policy().");

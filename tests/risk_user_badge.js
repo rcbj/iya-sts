@@ -60,6 +60,14 @@ function childMain() {
     // THE PAGE AS THE STATIC CONSOLE DRAWS IT (#446): GET /admin-api/users
     // (which reads the person's standing first) drawn by its renderer.
     const WebPages = require(ROOT + '/admin-ui/web_pages');
+    // THE COLOUR IS THE STYLESHEET'S SINCE 2026-11-10: the badge carries its
+    // level as a class (`rb-HIGH`), and `UsersPage.CSS` paints the class, so
+    // "drawn in red" is the class in the markup AND the colour on its rule.
+    const usersCss = require(ROOT + '/admin-ui/web_users').CSS;
+    const toned = function (html, level, colour) {
+      return new RegExp('class="risk-badge rb-' + level + '"').test(html) &&
+        usersCss.indexOf('.rb-' + level + '{background:' + colour) >= 0;
+    };
     const WebKit = require(ROOT + '/admin-ui/web_kit');
     const drawer = require(ROOT + '/tests/tools/console_page.js')
       .consolePage(ROOT);
@@ -78,8 +86,7 @@ function childMain() {
 
     // --- A. never assessed ---------------------------------------------------
     const none = await draw();
-    t.check(/class="risk-badge"/.test(none.page.inner) &&
-            /background:#dadce0/.test(none.page.inner) &&
+    t.check(toned(none.page.inner, 'UNKNOWN', '#dadce0') &&
             />UNKNOWN</.test(none.page.inner) &&
             /has not been assessed/.test(none.page.inner),
             'A1. a person never assessed gets the grey UNKNOWN badge, which ' +
@@ -94,21 +101,23 @@ function childMain() {
       score: 0.12, level: 'LOW', reason: 'the model', lastAssessment: 'a-1',
       updatedAt: at - 60000 }, false);
     const low = await draw();
-    t.check(/background:#188038/.test(low.page.inner) &&
+    t.check(toned(low.page.inner, 'LOW', '#188038') &&
             />LOW</.test(low.page.inner),
             'B1. LOW is drawn in green');
     await riskStore.upsertSubject({ realm: 'default', subject: sub,
       score: 0.91, level: 'HIGH', reason: 'tor-exit, new-country',
       lastAssessment: 'a-2', updatedAt: at }, false);
     const high = await draw();
-    const badge = (/<div class="risk-badge"[\s\S]*?<\/div><\/div>/
+    const badge = (/<div class="risk-badge[^"]*"[\s\S]*?<\/div><\/div>/
       .exec(high.page.inner) || [''])[0];
-    t.check(/background:#d93025/.test(badge) && />HIGH</.test(badge) &&
-            /font-size:3em/.test(badge) && /score 0\.910/.test(badge) &&
+    t.check(toned(badge, 'HIGH', '#d93025') && />HIGH</.test(badge) &&
+            /class="rb-level"/.test(badge) &&
+            usersCss.indexOf('.rb-level{font-size:3em') >= 0 &&
+            /score 0\.910/.test(badge) &&
             /was LOW/.test(badge) && /tor-exit, new-country/.test(badge),
             'B2. HIGH is drawn large in red, with the score, the level it ' +
             'came from and what moved it', badge);
-    t.check(high.page.inner.indexOf('class="risk-badge"') <
+    t.check(high.page.inner.indexOf('class="risk-badge ') <
             high.page.inner.indexOf('class="tiles"'),
             'B3. the badge is the first thing on the page');
     const risk = jsonOf(high.json).risk || {};
@@ -119,7 +128,7 @@ function childMain() {
     await riskStore.upsertSubject({ realm: 'default', subject: sub,
       score: 0.5, level: 'MEDIUM', reason: 'new-asn', lastAssessment: 'a-3',
       updatedAt: at + 1 }, false);
-    t.check(/background:#f9ab00/.test((await draw()).page.inner),
+    t.check(toned((await draw()).page.inner, 'MEDIUM', '#f9ab00'),
             'B5. MEDIUM is drawn in amber');
 
     // --- C. the link -------------------------------------------------------

@@ -59,6 +59,19 @@ const PORTAL_ICONS = {
 // The stylesheet as written, in the portal's own palette; `PortalKit.STYLE`
 // is what is served, every colour a realm may set read through a custom
 // property (`themed()`, #717).
+// WHAT WAS A `style=""` (2026-11-10). The portal's policy is `style-src
+// 'self'` with no 'unsafe-inline', so a style attribute in the markup is not
+// applied; these classes carry what the attributes did. A sign-in's level is
+// a chip in the level's colours (`web_sign_ins.ts`), and a one-button form
+// sits inline beside the text it acts on.
+const NO_INLINE_STYLE =
+  '.inline-form{display:inline}' +
+  '.level{padding:2px 8px;border-radius:10px;font-weight:600}' +
+  '.level-LOW{background:#e6f4ea;color:#137333}' +
+  '.level-MEDIUM{background:#fef7e0;color:#b06000}' +
+  '.level-HIGH{background:#fce8e6;color:#a50e0e}' +
+  '.level-UNSCORED{background:#f1f3f4;color:#3c4043}';
+
 const STYLE_AS_WRITTEN =
   'body{font-family:system-ui,-apple-system,"Segoe ' +
   'UI",Arial,sans-serif;background:#f4f4f7;margin:0;padding:2rem ' +
@@ -648,7 +661,7 @@ class PortalKit {
    * as written, themed, and the realm's brand rules last (#717).
    */
   static readonly STYLE = PortalKit.themed(STYLE_AS_WRITTEN) +
-    PortalKit.BRAND_CSS;
+    NO_INLINE_STYLE + PortalKit.BRAND_CSS;
   /**
    * The icons a page draws, by name.
    */

@@ -177,11 +177,12 @@ function childMain() {
     const consoleBefore = app.contentSecurityPolicy({
       'script-src': "'self'",
       'connect-src': "'self' https://as.example",
-      'style-src': "'self' 'unsafe-inline'" });
+      // No 'unsafe-inline' since 2026-11-10 (shell_document.ts).
+      'style-src': "'self'" });
     const portalPolicy = app.contentSecurityPolicy({
       'script-src': "'self'",
       'connect-src': "'self' https://as.example",
-      'style-src': "'self' 'unsafe-inline'",
+      'style-src': "'self'",
       'img-src': "'self' data:" });
     const tried = ShellDocument.policy(app, {
       connect: ShellDocument.originsOf(['https://as.example/realm/a',

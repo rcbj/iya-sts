@@ -41,7 +41,7 @@ class AccessRequestPages {
   static form(action: string, id: string, label: string,
               danger: boolean): string {
     return '<form method="post" action="' + PATH + '" ' +
-      'style="display:inline">' +
+      'class="inline-form">' +
       '<input type="hidden" name="action" value="' + action + '">' +
       '<input type="hidden" name="request" value="' + kit.esc(id) + '">' +
       '<button type="submit"' + (danger ? ' class="danger"' : '') +

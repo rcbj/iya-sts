@@ -797,6 +797,13 @@ import GroupsPage = require('./web_groups');
 import AuditPage = require('./web_audit');
 import FederationPage = require('../federation/web_federation');
 import UsersPage = require('./web_users');
+// THE RULES THAT WERE `style=""` AND `<style>` (2026-11-10), each owned by the
+// page that draws them, read into the console's stylesheet: the console's
+// policy is `style-src 'self'`, with no 'unsafe-inline'.
+import CertificateDialogView = require('./web_certificate_dialog');
+import ExplorerPage = require('./web_explorer');
+import PqcBadgeView = require('./web_pqc_badge');
+import RiskPage = require('./web_risk');
 import WebShell = require('./web_shell');
 import RealmsPage = require('./web_realms');
 import ClaimsPage = require('./web_claims');
@@ -4647,8 +4654,22 @@ class AdminConsole {
                '#prm-tab-' + tab + ':focus-visible~.prm-tablist ' +
                'label[for="prm-tab-' + tab + '"]{outline:2px solid #12107c}';
       }).join('');
-    log.debug("Leaving AdminConsole.stylesheet(). " + css.length + " bytes.");
-    return css;
+    // NO INLINE STYLE ANYWHERE IN THE CONSOLE (2026-11-10): what were
+    // `style=""` attributes and `<style>` blocks drawn with a page are rules
+    // here, so the shell's policy can drop 'unsafe-inline'.
+    const noInline = CertificateDialogView.CSS + ExplorerPage.scoped(
+      '.api-explorer') + PqcBadgeView.CSS + UsersPage.CSS + RiskPage.CSS +
+      '#geo-map{max-width:960px}' +
+      '.geo-swatch{display:inline-block;vertical-align:middle;' +
+      'margin:0 4px 0 12px}' +
+      'input.rank{width:4.5em}' +
+      [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(function (n) {
+        return '.indent-' + n + '{padding-left:' + (n * 1.4).toFixed(1) +
+               'rem}';
+      }).join('');
+    log.debug("Leaving AdminConsole.stylesheet(). " +
+              (css.length + noInline.length) + " bytes.");
+    return css + noInline;
   }
   // THE SHELL: the one document every console path answers. It carries no
   // fact and no credential — the static files are public — and its assets

@@ -72,7 +72,7 @@ class DevicePages {
   static answer(record: Json, action: string, label: string,
                 danger: boolean): string {
     return '<form method="post" action="' + PATH + '" ' +
-      'style="display:inline">' +
+      'class="inline-form">' +
       '<input type="hidden" name="action" value="' + action + '">' +
       '<input type="hidden" name="user_code" value="' +
       kit.esc(record.userCode) + '">' +

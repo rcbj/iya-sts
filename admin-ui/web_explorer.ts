@@ -124,8 +124,10 @@ class ExplorerPage {
     const t = ctx.t;
     const spec = String(json.realmPrefix || '') + json.api + '/openapi.json';
     // `(no scope)` is drawn in <code> and stays as it is (#539).
-    return '<style>' +
-      ExplorerPage.STYLE.replace(/(^|})body\{[^}]*\}/g, '$1') + '</style>' +
+    // ITS RULES ARE THE CONSOLE'S STYLESHEET'S, scoped under `.api-explorer`
+    // (`ExplorerPage.scoped()`), not a `<style>` drawn with the page: the
+    // console's policy allows no inline style (2026-11-10).
+    return '<div class="api-explorer">' +
       '<p class="lede">' + t.html('consoleExplorer.lede', {
         who: json.who || t.text('consoleExplorer.you'),
         scope: json.scope || '(no scope)' }) + '</p>' +
@@ -135,7 +137,33 @@ class ExplorerPage {
       'data-token="" data-console-fetch="1" ' +
       'data-script="' + kit.esc(json.script) + '">' +
       '<p class="lede">' + t.html('consoleExplorer.reading', { spec: spec }) +
-      '</p></div>';
+      '</p></div></div>';
+  }
+
+  /**
+   * The explorer's rules for a page that is not the explorer's alone: each
+   * selector under `prefix`, and `body`'s rule left out (the console's
+   * stylesheet, 2026-11-10). STYLE has no at-rule, so a rule is
+   * `selectors{declarations}` and nothing else.
+   *
+   * @param prefix - the container, `.api-explorer`
+   * @returns the scoped CSS
+   */
+  static scoped(prefix: string): string {
+    return ExplorerPage.STYLE.split('}').filter(function (rule: string) {
+      return rule.indexOf('{') > 0;
+    }).map(function (rule: string): string {
+      const at = rule.indexOf('{');
+      const selectors = rule.slice(0, at).split(',').map(function (one) {
+        return one.trim();
+      });
+      if (selectors.length === 1 && selectors[0] === 'body') {
+        return '';
+      }
+      return selectors.map(function (one: string): string {
+        return prefix + ' ' + one;
+      }).join(',') + rule.slice(at) + '}';
+    }).join('');
   }
 }
 
