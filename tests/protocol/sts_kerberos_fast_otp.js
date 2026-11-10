@@ -254,6 +254,16 @@ async function enrolAuthenticator(who) {
     .replace(/\s+/g, "");
   assert.ok(secret.length >= 32, "no secret on /portal/mfa: " +
             String(page.text).slice(0, 400));
+  // THE CONFIRMATION SPENDS A STEP THAT SECTION 5 REPLAYS AT THE KDC, and
+  // the replay can only be refused as "already been used" while that step
+  // is still the current one: product's `totp.window` is 0, so a step the
+  // clock has left is refused as a wrong code instead. Cluster mode on
+  // 2026-11-10 confirmed at :29.858 and replayed at :30.5. So the
+  // confirmation starts with at least fifteen seconds of its step left, which
+  // sections 3 to 5 (about a second) fit inside.
+  while (30000 - (Date.now() % 30000) < 15000) {
+    await pause(1000);
+  }
   const step = stepNow();
   r = await p.act("/portal/mfa", { action: "confirm",
                                    code: codeAtStep(secret, step) });
