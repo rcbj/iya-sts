@@ -131,16 +131,49 @@ What is checked on the way in, in every mode:
 * the **audience**: every `AudienceRestriction` must name this service (several
   audiences in one restriction are an OR, several restrictions an AND). A
   SAML 2.0 assertion with no restriction is refused, because the Web Browser SSO
-  profile requires one; SAML 1.1 and WS-Federation, whose profiles make it
-  optional, are accepted with a warning. An assertion a partner minted for any
+  profile requires one. SAML 1.1 and WS-Federation, whose profiles make it
+  optional, are accepted with a warning in development mode and refused in
+  product mode (`STS-FED-0241`) unless
+  `federation.allowAssertionWithoutAudience` is on. An assertion a partner minted for any
   other of its relying parties verifies against the same key, names the same
   issuer and is inside its window, so this is what stops anybody holding one
   from signing in here;
 * the validity window, and that the response answers a request this service
   sent (`InResponseTo`, or the handle in `RelayState` / `wctx` / `state`),
   unless `fedAllowUnsolicited` is on;
+* that an OAuth 2.0 or OpenID Connect answer belongs to the partner the
+  sign-in was started for: its `state` must have been minted for the
+  relationship whose endpoint received it, and an `iss` parameter (RFC 9207),
+  wherever the partner sends one, must be the partner's issuer
+  (`STS-FED-0238`);
+* that a SAML or WS-Federation assertion is used once. Its ID is claimed for as
+  long as it is valid, whether or not it answered a request, so a captured
+  assertion cannot be replayed (`STS-FED-0239`);
+* how long ago the partner authenticated the person, when
+  `federation.maxPartnerAuthAgeS` is set (see
+  [When the partner authenticated the person](#when-the-partner-authenticated-the-person));
 * the partner's signing certificate for **revocation**, under
   `pki.revocationCheck`.
+
+### When the partner authenticated the person
+
+A federated session's authentication time is the one the partner states: an ID
+Token's `auth_time`, or a SAML or WS-Federation assertion's `AuthnInstant`. An
+application's `max_age` is judged on it, not on when the person arrived here.
+A partner that states no time is taken to have authenticated the person when
+its answer arrived, unless `federation.maxPartnerAuthAgeS` is set (below).
+
+When an application's `max_age` or `prompt=login` sends a federated person back
+to sign in, the partner is asked for a fresh authentication: `prompt=login` to
+an OpenID Connect or OAuth 2.0 partner, `ForceAuthn="true"` in a SAML 2.0
+AuthnRequest, and `wfresh=0` to a WS-Federation partner. A partner that ignores
+the request and answers with an authentication from before it was asked is
+refused (`STS-FED-0242`), so the person is not sent round in a loop.
+
+`federation.maxPartnerAuthAgeS` sets an upper limit of its own on that age, for
+every sign-in through a partner. It is 0, off, by default. While it is set, a
+sign-in whose partner authenticated the person longer ago is refused
+(`STS-FED-0240`), and so is one whose partner states no time at all.
 
 ### OpenID Connect as the relying party
 
@@ -637,9 +670,9 @@ WS-Federation relationship is refused them.
 
 ### Not implemented
 
-* Refreshing a partner's tokens, or re-checking a federated person with the
-  partner while the session lasts — beyond the partner's own sign-out and its
-  `SessionNotOnOrAfter`, above.
+* Re-checking a federated person with the partner while the session lasts —
+  beyond the partner's own sign-out, its `SessionNotOnOrAfter`, and an OpenID
+  Connect relationship's `fedRefreshTokens` (off by default), above.
 * Validating the partner's certificate against a CA or its validity dates — it
   is a pinned key; only its revocation is checked.
 
@@ -736,13 +769,18 @@ Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mo
 
 Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, a back channel to a partner the certificate of whoever answers is checked before anything is sent: extendedKeyUsage serverAuth and revocation, stapled first, as the `tls-server-outbound` row of the [use cases](pki-use-cases.md) says. A CA in the realm's [signer truststore](signer-truststore.md) is trusted beside the setting that names a CA file.
 
-The refusals above are the same in both modes — federation is not permissive in
-development. What the mode changes:
+The refusals above are the same in both modes, except that a SAML 1.1 or
+WS-Federation assertion with no audience is accepted with a warning in
+development — federation is not permissive in development. What the mode
+changes:
 
 | | Development | Product |
 |---|---|---|
 | A person with no directory entry | under `link-at-first-sign-in` and `jit-namespaced`, created on first sign-in as `<relationship>~<subject>`, linked, unless `fedAutocreateUsers` is off. A new relationship is created with the switch on. `any-existing` creates under the confirm-lookup name instead | created when `fedAutocreateUsers` is on, as `<relationship>~<subject>`, linked. A new relationship is created with the switch off, and a sign-in for somebody with no entry is then refused `STS-FED-0090`. A relationship that already stores TRUE keeps creating. `any-existing` cannot be set |
 | `fedSubjectPolicy` `any-existing` | the name match of old | refused, when set and at the sign-in |
+| The browser the answer arrives in | any | the browser that started the sign-in: a cookie set when the person is sent to the partner must come back with the answer, or it is refused (`STS-FED-0237`) |
+| A SAML 1.1 or WS-Federation assertion with no audience restriction | accepted, with a warning | refused (`STS-FED-0241`) unless `federation.allowAssertionWithoutAudience` is on |
+| An untyped Logout Token from an OpenID Connect partner | accepted when it is typed `jwt` or carries no type | accepted only typed `logout+jwt`, unless `federation.allowUntypedLogoutToken` is on |
 | The password at the linking sign-in | not checked (the reserved `invalid` is refused) | verified, with the second factor |
 | Revocation of the partner's signing certificate (`pki.revocationCheck=auto`) | soft-fail: a status that cannot be fetched is accepted | hard-fail: a status that cannot be established is refused |
 | `fedRequireSignedLogout` off | an **unsigned** SAML logout message from the partner is accepted — a warning: anybody who can name a partner session can then end it | refused on the relationship (`STS-FED-0132`), and an unsigned logout message is refused whatever it says |
@@ -797,6 +835,9 @@ this*.
 | `federation.jwtAlgorithms` | `STS_FEDERATION_JWT_ALGORITHMS` | `RS256,RS384,RS512,PS256,PS384,PS512,ES256,ES384,ES512` | yes | The JWS algorithms a partner's ID Token or JWT access token may use; it only narrows, never admitting `none` or an HMAC. |
 | `federation.spNameIdFormat` | `STS_FEDERATION_SP_NAMEID_FORMAT` | `urn:oasis:names:tc:SAML:2.0:nameid-format:unspecified` | yes | The `<md:NameIDFormat>` published in `/federation/metadata/{id}`. |
 | `federation.encryptionKeyGraceS` | `STS_FEDERATION_ENCRYPTION_KEY_GRACE_S` | `86400` | yes | How long a relationship's encryption key still decrypts after a rotation replaced it; `0` ends it at the rotation (#168). |
+| `federation.maxPartnerAuthAgeS` | `STS_FEDERATION_MAX_PARTNER_AUTH_AGE_S` | `0` | yes | Refuses a federated sign-in whose partner says the person authenticated longer ago than this many seconds, by `auth_time` or `AuthnInstant`. While it is set, a partner that does not say when is refused. `0`, the default, does not ask. |
+| `federation.allowAssertionWithoutAudience` | `STS_FEDERATION_ALLOW_ASSERTION_WITHOUT_AUDIENCE` | `false` | yes | Product mode only. On, a partner's SAML 1.1 or WS-Federation assertion with no audience restriction is accepted with a warning, for a partner that cannot send one; off, the default, it is refused. |
+| `federation.allowUntypedLogoutToken` | `STS_FEDERATION_ALLOW_UNTYPED_LOGOUT_TOKEN` | `false` | yes | Product mode only. On, a partner's Logout Token typed `jwt` or carrying no type is accepted as well as one typed `logout+jwt`. The OpenID specification only recommends the type. |
 
 What this service calls itself to a partner is derived from the URL the browser
 reached it at; `global.publicBaseUrl` pins it for everything, and

@@ -14,7 +14,7 @@ client, a person or a password is known or correct is a separate question, and
 | Rule | What happens |
 |---|---|
 | **Control characters** | None are allowed in a query parameter, path parameter or header. In a body field, tab, newline and carriage return are allowed, and nothing else below U+0020. |
-| **A repeated parameter** | Refused, unless that parameter is defined as repeatable (RFC 8707's `resource` and RFC 8693's `audience`, for example). This service never picks one value and discards the rest. |
+| **A repeated parameter** | Refused, unless that parameter is defined as repeatable (RFC 8707's `resource` and RFC 8693's `audience`, for example). This service never picks one value and discards the rest. In product mode, SAML 2.0, SAML 1.1 and WS-Federation also refuse a parameter given in both the query string and the body. |
 | **Parameter names that pollute objects** | `__proto__` and similar names are refused everywhere. |
 | **Unknown parameters** | Ignored in a query string and on protocol endpoints, because RFC 6749 and OpenID Connect require it. An unknown member of a JSON body on the management API is refused. |
 | **Body size** | 5 MB at most, and less wherever a field states a limit. |

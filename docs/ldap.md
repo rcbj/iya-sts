@@ -372,9 +372,10 @@ and `security.rateLimitPerAddress` inside `security.rateLimitWindowS`. **Only
 failures count**, so a connection pool that binds fifty times at once is not
 locked out. On a cluster the count is shared across nodes.
 
-Product mode logs a warning at startup while `ldap.plainListener` is on. A
-verified bind on 389 is a real password sent in the clear, so turn 389 off in
-production. With 389 on, product mode answers only the root DSE there.
+Product mode leaves the plain listener off unless `ldap.plainListener` is set
+on, because a client's password can cross 389 in the clear even when the bind is
+refused. Set on, it logs a warning at startup, refuses every bind there and
+answers only the root DSE.
 
 ### What a bound identity may read (product mode)
 
@@ -406,7 +407,7 @@ provisioning client must.
 |---|---|---|---|---|
 | `ldap.port` | `LDAP_PORT` | `389` | restart | The plain LDAP listener. A host run that is not root fails to bind 389; the failure is recorded, not thrown. |
 | `ldap.tlsPort` | `LDAPS_PORT` | `636` | restart | The LDAPS listener, presenting the service's TLS certificate; it binds independently of 389. |
-| `ldap.plainListener` | `LDAP_PLAIN_LISTENER` | `true` | restart | Whether the plain listener starts at all; off leaves LDAPS as the only way in, which product mode wants. |
+| `ldap.plainListener` | `LDAP_PLAIN_LISTENER` | `true` (`false` in product) | restart | Whether the plain listener starts at all; off leaves LDAPS as the only way in. Product mode leaves it off unless it is set. |
 | `ldap.autocreateUsers` | `LDAP_AUTOCREATE_USERS` | `true` | yes | Creates `uid=<name>,ou=users,<base>` the first time somebody authenticates through a protocol with no switch of its own. A federation relationship follows `fedAutocreateUsers` instead. |
 | `ldap.maxEntries` | `LDAP_MAX_ENTRIES` | `2000` | yes | How large the directory may grow, across every realm in the process. |
 | `ldap.sizeLimit` | `LDAP_SIZE_LIMIT` | `500` | yes | The server-side search size limit, past which a search ends with `sizeLimitExceeded`. |

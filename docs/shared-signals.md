@@ -298,7 +298,11 @@ host), only `https` with the receiver's certificate verified is used — plain
 http only with `ssf.pushAllowHttp` and verification off only with
 `ssf.pushSkipTlsVerification`, **both in development mode only** (#171);
 product reaches a privately certified receiver through `ssf.pushCaFile` — and
-every push has a timeout, a cap on the response size and **no redirects**. With push
+every push has a timeout, a cap on the response size and **no redirects**. In
+product mode the receiver's host is also held to the rules every outbound
+request follows: it must be in `security.outboundAllowedHosts` when that is set,
+it must not resolve to an internal address, and the push goes to the address
+that was checked (`STS-SSF-0158` otherwise). With push
 turned off, SSF still works in full over poll, and `delivery_methods_supported`
 lists only poll.
 
@@ -660,6 +664,13 @@ Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mo
 | Subjects of automatic events | a person with no `mail` gets an invented `@example.com` address | a real value from the directory entry, or the issuer/subject pair. RISC's two identifier events are not sent when there is no real value |
 | Streams, queues, CAEP and RISC registers | in memory, lost on restart | persisted with other minted state (product mode on postgres) |
 
+**HTTP Basic in product mode.** A password carries no scope, and Basic grants
+both the read and the write scope. In product mode the person must therefore
+hold Admin Write, or the request is refused with 403 (`STS-SSF-0157`). Use an
+OAuth access token for a receiver or a transmitter.
+`security.allowUnscopedPeople` lifts the check, and ASVS 5.0.0 requirements
+8.2.1 and 8.2.2 are then not met.
+
 See [What is not checked](what-is-not-checked.md).
 
 **Running several nodes.** Every node needs the same `global.port`, because
@@ -884,10 +895,3 @@ Every failure is recorded under an `STS-SSF-NNNN` code. See
 * [OAuth 2.0 & OpenID Connect](oauth-oidc.md): getting an `ssf:*` token
 * [Trust realms](trust-realms.md), [What is not checked](what-is-not-checked.md),
   [Configuration](configuration.md)
-
-## HTTP Basic in product mode
-
-A password carries no scope, and Basic grants both the read and the write scope.
-In product mode the person must therefore hold Admin Write, or the request is
-refused with 403. Use an OAuth access token for a receiver or a transmitter.
-`security.allowUnscopedPeople` lifts the check.

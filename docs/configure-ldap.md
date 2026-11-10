@@ -47,7 +47,7 @@ succeeds (any DN, any password, anonymous, on 389 and 636), except the
 password `invalid` and a disabled account. Any connection may read and write
 anything. Product mode does none of this:
 * A bind is verified against the entry's `userPassword`, and only an entry under `ou=users` may bind.
-* An anonymous bind is refused (48), and so is any bind on 389 (13, `confidentialityRequired`). Use LDAPS on 636.
+* An anonymous bind is refused (48). Port 389 is not opened unless `ldap.plainListener` is set on, and then any bind there is refused (13, `confidentialityRequired`). Use LDAPS on 636.
 * A read needs a bind (50). The root DSE is the one exception.
 * A person reads their own entry and nothing of anybody else's, unless `ldap.directoryReadableAttributes` says otherwise.
 * Only Admin Write writes. A person may change only the attributes in `ldap.selfWritableAttributes`, on their own entry.
@@ -141,10 +141,11 @@ ldapsearch ... -b "uid=ldaps-run1,ou=users,dc=example,dc=com" -s base '(objectCl
 
 ## Turn off the plain listener
 
-A verified bind on 389 would send a real password in the clear, so product
-mode refuses every bind there, answers only the root DSE, and logs a warning
-at startup while 389 is on. Turn it off. `ldap.plainListener` takes effect at
-the next restart.
+A verified bind on 389 would send a real password in the clear. Product mode
+therefore does not start the plain listener unless `ldap.plainListener` is set
+on. If it is set on, product mode refuses every bind there, answers only the
+root DSE, and logs a warning at startup. Development mode starts it unless the
+setting is off. `ldap.plainListener` takes effect at the next restart.
 
 **Console:** on **Protocols → LDAP / LDAPS**, set **Plain LDAP listener** to
 off, click **Save LDAP**, and restart the service.
