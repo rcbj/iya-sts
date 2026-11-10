@@ -290,9 +290,16 @@ function answered(t) {
     return one.family === 'est' && one.status === 200 &&
            /^nonce/.test(one.step);
   });
-  t.check(nonces.length >= 2 && nonces.every(function (one) {
-    return EnrollmentModel.undeclared('est', 'nonce', one.body).length === 0;
-  }), 'C. every recorded EST nonce answer is the model\'s');
+  // Recorded as the text it was sent as: its media type is not `json`.
+  const nonceProblems = nonces.map(function (one) {
+    return EnrollmentModel.undeclared('est', 'nonce',
+                                      JSON.parse(one.body)).join('; ');
+  }).filter(function (one) {
+    return one !== '';
+  });
+  t.check(nonces.length >= 2 && nonceProblems.length === 0,
+          'C. every recorded EST nonce answer is the model\'s',
+          nonceProblems.join(' | '));
   const caps = wire.filter(function (one) {
     return one.family === 'scep' && one.status === 200 &&
            /GetCACaps/.test(one.step);

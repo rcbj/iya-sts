@@ -1245,7 +1245,7 @@ class Acme {
     }
     if (csr.commonName) {
       const cn = String(csr.commonName);
-      const match = ['dns', 'ip', 'email', 'permanent-identifier']
+      const match = IDENTIFIER_TYPES
         .map(function (type) { return keyOf(type, cn); })
         .filter(function (key) { return want[key]; })[0];
       if (match) {
