@@ -889,9 +889,8 @@ names `default` or another policy.
 Three behaviours are the directory being consistent with itself:
 
 * **A member that names nothing is refused.** A group lists only people,
-  groups and applications that exist, and deleting one takes it out of every
-  group that listed it. This page still reports a *dangling* member that an
-  older store holds.
+  groups and applications that exist, deleting one takes it out of every group
+  that listed it, and renaming one moves it in every group.
 * **An empty group is allowed**, although RFC 4519 makes `member` MUST on a
   `groupOfNames`: SCIM already creates one, and the two doors should not
   disagree about what the directory holds.
@@ -951,21 +950,17 @@ each row.
 
 **Membership is read from `member`, `uniqueMember` and `memberUid` together.**
 `memberUid` holds a bare user name where the other two hold a DN, so it is
-resolved under `ou=users`. Three disagreements are reported rather than smoothed
-over, and each is a state a client can reach in two operations:
+resolved under `ou=users`. Every member names an entry this directory holds:
+a member that names nothing is refused, and a delete or a rename keeps every
+group in step. Two things are shown rather than smoothed over:
 
-* a **dangling** member — a value naming an entry this directory does not
-  hold. Deleting a user does not remove its DN from the groups that list it,
-  so the count of membership values and the count that resolve are shown
-  separately: a group whose seven members resolve to five is not seven members
-  with nothing wrong.
 * a member that is itself a **group**. Nesting is shown and never expanded: the
   row links to that group's page and nobody inside it is counted, because
   nothing in this service walks a group tree.
 * an entry whose own **`memberOf`** names a group that does not list it back.
   In directories that have `memberOf` the server keeps it in step with
-  `member`; this one keeps nothing in step. Those entries are listed under their
-  own heading.
+  `member`; this one does not keep `memberOf` (#1622). Those entries are listed
+  under their own heading.
 
 **A member links to `/admin/users` only for somebody this service has seen
 authenticate**, and is marked *never here* otherwise. The directory holds an

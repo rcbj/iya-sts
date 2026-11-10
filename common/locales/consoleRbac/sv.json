@@ -57,8 +57,6 @@
   "body.renaming": "<strong>Att byta namn på en rollgrupp flyttar ingen.</strong> Medlemmarna stannar i gruppen de sattes i, som slutar ge något i samma stund som namnet ändras — och det nya namnet ger inget förrän någon sätts i den. <code>/admin-api</code> styrs avsiktligt inte av någon av de fyra: det är vägen tillbaka in när ingen med en roll kan logga in, och det är därför det inte förstör en testsvit som driver hanterings-API:t att slå på spärren.",
   "rbacMemberCell.neverHereTitle": "Den här personen har en post i katalogen, men inget här har autentiserat sig som dem ännu, så det finns ingen sida om dem under Users.",
   "rbacMemberCell.neverHere": "aldrig här",
-  "rbacMemberCell.danglingTitle": "Det finns inget på det här DN:et. Rollen gäller ändå — den löses upp så snart någon autentiserar sig under namnet eller posten skapas — men fram till dess kan ingen katalogklient se vem den pekar på.",
-  "rbacMemberCell.dangling": "hänger löst",
   "rbacClaimedMark.title": "Deras egen posts memberOf pekar på den här gruppen och gruppen listar inte dem tillbaka. Inget här underhåller memberOf — en klient skrev det — och det ger rollen ändå, så det står på listan. Knappen Återkalla kan inte ta bort det: värdet finns på personen, och den här konsolen skriver bara till grupper.",
   "rbacClaimedMark.mark": "via deras egen memberOf",
   "rbacCaveat.before": "<strong>De här två grupperna är de enda grupperna i tjänsten som ger något, och det de ger är den här konsolen.</strong> Alla andra grupper här ger fortfarande ingenting alls — se ",

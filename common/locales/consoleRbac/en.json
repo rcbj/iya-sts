@@ -57,8 +57,6 @@
   "body.renaming": "<strong>Renaming a role group does not move anybody.</strong> The members stay in the group they were put in, which stops granting anything the moment the name changes — and the new name grants nothing until somebody is put in it. <code>/admin-api</code> is not gated by any of these four, on purpose: it is the way back in when nobody who holds a role can sign in, and it is why turning the gate on does not break a test suite driving the management API.",
   "rbacMemberCell.neverHereTitle": "This person has an entry in the directory, but nothing here has authenticated as them yet, so there is no page about them on Users.",
   "rbacMemberCell.neverHere": "never here",
-  "rbacMemberCell.danglingTitle": "Nothing is at this DN. The role still counts — it resolves the moment somebody authenticates under this name or the entry is created — but until then no directory client can see who it names.",
-  "rbacMemberCell.dangling": "dangling",
   "rbacClaimedMark.title": "Their own entry&#39;s memberOf names this group and the group does not list them back. Nothing here maintains memberOf — a client wrote it — and it grants the role all the same, so it is on this list. The Revoke button cannot remove it: the value is on the person, and this console writes only to groups.",
   "rbacClaimedMark.mark": "via their own memberOf",
   "rbacCaveat.before": "<strong>These two groups are the only groups in this service that grant anything, and what they grant is this console.</strong> Every other group here still grants nothing at all — see ",

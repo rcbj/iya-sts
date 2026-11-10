@@ -369,17 +369,12 @@ class RbacPage {
              '">' +
              name + '</a>';
     }
-    if (row.present) {
-      // In the directory, but this service has never seen them authenticate.
-      // The same distinction /admin/groups draws on its member rows, and drawn
-      // the same way so the two pages cannot be read as disagreeing.
-      return name + ' <span class="state-none" title="' +
-             t.html('consoleRbac.rbacMemberCell.neverHereTitle') + '">' +
-             t.html('consoleRbac.rbacMemberCell.neverHere') + '</span>';
-    }
-    return name + ' <span class="state-expired" title="' +
-           t.html('consoleRbac.rbacMemberCell.danglingTitle') + '">' +
-           t.html('consoleRbac.rbacMemberCell.dangling') + '</span>';
+    // In the directory, but this service has never seen them authenticate.
+    // Every member is in the directory since 2026-11-10 (a group lists only
+    // entries that exist), so there is no "dangling" mark any more.
+    return name + ' <span class="state-none" title="' +
+           t.html('consoleRbac.rbacMemberCell.neverHereTitle') + '">' +
+           t.html('consoleRbac.rbacMemberCell.neverHere') + '</span>';
   }
 
   // The mark on a row whose membership is on the PERSON'S entry rather than in
