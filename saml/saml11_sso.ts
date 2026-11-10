@@ -208,6 +208,7 @@
 // registers no route, so its position is not a position at all.
 import realms = require('../common/realms');
 import xmldom = require('../common/xml_parser');
+import ClosedSets = require('../common/closed_sets');
 const { DOMParser } = xmldom;
 // One signer and one verifier for the whole service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
@@ -892,8 +893,10 @@ class Saml11Sso {
     res.status(404)
        .type('text/plain')
        .set('Cache-Control', 'no-store')
-       .send('There is no SAML 1.1 relying party registered here as "' +
-             scoped.id + '", so ' + path + ' has nothing to answer for it. ' +
+       // The name as ClosedSets.saidName() says one (saml2_sso.ts).
+       .send('There is no SAML 1.1 relying party registered here as ' +
+             ClosedSets.saidName(scoped.id) + ', so ' + path +
+             ' has nothing to answer for it. ' +
              'This identity provider publishes itself only to a relying ' +
              'party an operator registered (product mode).\n');
     log.debug("Leaving Saml11Sso.refusedUnregistered(). 404.");

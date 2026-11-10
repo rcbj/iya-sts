@@ -2512,6 +2512,16 @@ function actionOf(req) {
 function outcomeOfStatus(status) {
   log.debug("Entering outcomeOfStatus().");
   const code = parseInt(status, 10) || 0;
+  // 501 IS A REFUSAL, NOT A FAILURE (2026-11-10): this service answers it for
+  // a feature switched off in the realm (`vcApi.enabled`, `scim.enabled`, …),
+  // which is this service working correctly and saying no. Recorded as
+  // `error`, a scanner probing three switched-off paths wrote 531 error lines
+  // in one Qualys scan of test-idp, every one of them the row OUTCOMES says
+  // nobody should be paged for.
+  if (code === 501) {
+    log.debug("Leaving outcomeOfStatus(). Not implemented here.");
+    return 'refused';
+  }
   if (code >= 500) {
     log.debug("Leaving outcomeOfStatus().");
     return 'error';

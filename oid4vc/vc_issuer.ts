@@ -70,6 +70,7 @@ import realms = require('../common/realms');
 // any more; the require keeps the load order of this module unchanged.
 // One signer, one verifier and one JWE for the whole service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
+import ClosedSets = require('../common/closed_sets');
 import app = require('../common/app');
 import config = require('../common/config');
 import helpers = require('../common/helpers');
@@ -1018,8 +1019,10 @@ class VcIssuer {
       res.status(404).type('application/json')
          .set('Cache-Control', 'no-store')
          .send(JSON.stringify({ error: 'not_found', error_description:
-           'No credential issuer here has an identifier whose path is "' +
-           asked + '". Its document is at ' + wellKnown + ' followed by ' +
+           // The path as ClosedSets.saidName() says a name (2026-11-10).
+           'No credential issuer here has an identifier whose path is ' +
+           ClosedSets.saidName(asked) + '. Its document is at ' + wellKnown +
+           ' followed by ' +
            'that path (OpenID4VCI 1.0 section 12.2.2); a realm\'s is ' +
            wellKnown + '/realm/<id>.' }));
       log.debug("Leaving VcIssuer.inInsertedPathRealm(). No such issuer.");

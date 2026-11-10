@@ -469,6 +469,33 @@ class ClosedSets {
   // An object (`?page[a]=1`, qs's nesting) fits nothing but an object.
   // -------------------------------------------------------------------------
   /**
+   * A name the CALLER sent, as a refusal sentence says it: quoted, and
+   * percent-encoded where it carries a character markup or a string is made
+   * of (2026-11-10). A sentence that repeats `"><script>` verbatim is
+   * harmless in JSON or plain text with `nosniff`, and still sets off every
+   * scanner that looks for its probe in the answer (Qualys QID 150084, 29
+   * times in one scan); `%22%3E%3Cscript%3E` names the same thing and
+   * reflects nothing. An ordinary name is left exactly as it was.
+   *
+   * @param name - what the caller sent
+   * @returns the quoted name, at most MAX_NAME_SAID characters before
+   *   encoding
+   */
+  static saidName(name: unknown): string {
+    log.debug("Entering ClosedSets.saidName().");
+    const text = String(name === null || name === undefined ? ''
+                                                            : name)
+      .slice(0, MAX_NAME_SAID);
+    // Encoded only when it holds a character markup or a string is made
+    // of: a quote, an angle bracket, a backtick, a backslash, a control.
+    // A URL with a query, the usual SAML entity id, is left as it was.
+    const plain = !/["'<>`\\\u0000-\u001f\u007f]/.test(text);
+    log.debug("Leaving ClosedSets.saidName(). " + (plain ? 'plain'
+                                                         : 'encoded'));
+    return JSON.stringify(plain ? text : encodeURIComponent(text));
+  }
+
+  /**
    * Whether one query value fits a parameter's declared type.
    *
    * @param schema - the parameter's schema
@@ -547,7 +574,7 @@ class ClosedSets {
     const names = Object.keys(query || {});
     for (let i = 0; i < names.length; i++) {
       const name = names[i];
-      const said = JSON.stringify(name.slice(0, MAX_NAME_SAID));
+      const said = ClosedSets.saidName(name);
       const p = declared[name];
       if (!p) {
         log.debug("Leaving ClosedSets.checkQueryDeclared(). Unknown name.");
