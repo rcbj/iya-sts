@@ -11096,8 +11096,8 @@
     "text": "Máximo de ejecuciones simultáneas"
   },
   "scheduler.maxConcurrentRuns|description": {
-    "en": "2f1ce9da6481ae58",
-    "text": "Cuántas ejecuciones programadas o manuales tiene en marcha el líder a la vez, entre todos los trabajos y dominios de confianza. 0, el valor predeterminado, es una ejecución, o una menos que los hilos de trabajo de solicitudes (workers.requestCount) cuando eso es más, de modo que siempre queda un hilo respondiendo solicitudes sin ningún trabajo. Un valor de 1 o más se usa en su lugar. Un intervalo es un múltiplo de su periodo, así que cada trabajo horario de cada dominio vence en el mismo segundo; el resto espera, primero el Run now de una persona, y empieza a medida que terminan las ejecuciones. Nunca es más que una menos de las conexiones que tiene el pool del almacén, sea cual sea su valor, para que el planificador no pueda quitar todas las conexiones a las solicitudes."
+    "en": "dc2ba3cac81ad956",
+    "text": "Cuántas ejecuciones programadas o manuales tiene en marcha el líder a la vez, entre todos los trabajos y dominios de confianza. 0, el valor predeterminado, son dos ejecuciones, o una menos que los hilos de trabajo de solicitudes (workers.requestCount) cuando eso es más, de modo que queda un hilo respondiendo solicitudes sin ningún trabajo. Un valor de 1 o más se usa en su lugar. Un intervalo es un múltiplo de su periodo, así que cada trabajo horario de cada dominio vence en el mismo segundo; el resto espera, primero el Run now de una persona, y empieza a medida que terminan las ejecuciones. Nunca es más que una menos de las conexiones que tiene el pool del almacén, sea cual sea su valor, para que el planificador no pueda quitar todas las conexiones a las solicitudes."
   },
   "scheduler.niceBusyThreshold|label": {
     "en": "115ae6125244b30a",

@@ -1481,22 +1481,18 @@ function serialBytes(serialHex) {
  * @param caId - the authority's CA id
  */
 function publishSoon(scopeId, caId) {
-  log.debug("Entering publishSoon().");
-  if (!directory) {
-    log.debug("Leaving publishSoon().");
-    return;
-  }
-  setImmediate(function () {
-    Promise.resolve(buildCrl(scopeId, caId)).then(function (made) {
-      if (made.ok) {
-        directory.publishCrl(scopeId, caId, made.der);
-      }
-    }).catch(function (e) {
-      log.error(errorCodes.tag('STS-PKI-0064') + 'pki_revocation: the "' +
-                caId + '" ' +
-                'CRL could not be published into the directory: ' + e.message);
-    });
-  });
+  log.debug("Entering publishSoon(). " + scopeId + "/" + caId);
+  // ONE PUBLICATION PER CHANGE, NOT TWO (2026-11-10). A revocation and a
+  // release both save the scope's row, and `pki.saveRow()` already asks
+  // publishScopeSoon() for that scope, which re-signs every list of it that
+  // changed and leaves the rest. This signed the same authority's list a
+  // second time beside it: under the fuzz gate's rebuilds, every superseded
+  // certificate was two signings and two directory writes of a list that
+  // grows, which every other process then applied from the change log
+  // (STS-STORE-0039, STS-WORKER-0027). So it asks for the same coalesced
+  // publication of the scope: a burst of revocations is one list per
+  // authority that changed.
+  publishScopeSoon(scopeId);
   log.debug("Leaving publishSoon().");
 }
 
@@ -1704,6 +1700,11 @@ async function publishAll(scopeIds, options) {
 // and the directory's own replication carries the entries everywhere else.
 // ---------------------------------------------------------------------------
 const scopesToPublish = new Map();
+// A SCOPE BEING PUBLISHED NOW, and whether another call asked meanwhile
+// (2026-11-10): at most one publication of a scope runs at a time in a
+// process, and calls made while it runs become ONE more after it, so a burst
+// of saves during a long publication is not a publication each.
+const scopesPublishing = new Map();
 
 /**
  * Publishes every CRL of one scope shortly, coalescing repeated calls.
@@ -1717,6 +1718,12 @@ function publishScopeSoon(scopeId) {
   const id = String(scopeId === undefined || scopeId === null ? '' : scopeId);
   if (!directory || scopesToPublish.has(id)) {
     log.debug("Leaving publishScopeSoon(). Nothing to do.");
+    return;
+  }
+  const running = scopesPublishing.get(id);
+  if (running) {
+    running.again = true;
+    log.debug("Leaving publishScopeSoon(). Once more after the one running.");
     return;
   }
   const timer = setTimeout(function () {
@@ -1736,11 +1743,18 @@ function publishScopeSoon(scopeId) {
     // current certificate, fresh for over half its lifetime — is left alone;
     // a branch just built or rebuilt does not verify under its old list, and
     // a revocation changes the list, so both are still published at once.
+    const state = { again: false };
+    scopesPublishing.set(id, state);
     publishAll(id === pki.SERVICE_SCOPE ? [] : [id],
                { unlessCurrent: true }).catch(function (e) {
       log.error(errorCodes.tag('STS-PKI-0064') + 'pki_revocation: the CRLs ' +
                 'of the "' + (id || 'default') + '" scope could not be ' +
                 'published into the directory: ' + ((e && e.message) || e));
+    }).then(function () {
+      scopesPublishing.delete(id);
+      if (state.again) {
+        publishScopeSoon(id);
+      }
     });
   }, 50);
   if (typeof timer.unref === 'function') {

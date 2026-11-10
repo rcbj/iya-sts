@@ -11096,8 +11096,8 @@
     "text": "Flest samtidiga körningar"
   },
   "scheduler.maxConcurrentRuns|description": {
-    "en": "2f1ce9da6481ae58",
-    "text": "Hur många schemalagda eller manuella körningar ledaren har igång samtidigt, över alla jobb och förtroendedomäner. 0, standardvärdet, är en körning, eller en färre än antalet arbetstrådar för förfrågningar (workers.requestCount) när det är fler, så att en tråd alltid lämnas kvar för att besvara förfrågningar utan något jobb. Ett värde på 1 eller mer används i stället. En plats är en multipel av sitt intervall, så varje timjobb i varje domän förfaller samma sekund; resten väntar, en persons Run now först, och startar när körningar avslutas. Det är aldrig mer än en färre än lagrets anslutningspool rymmer, vad det än är inställt på, så att schemaläggaren inte kan ta alla anslutningar från förfrågningarna."
+    "en": "dc2ba3cac81ad956",
+    "text": "Hur många schemalagda eller manuella körningar ledaren har igång samtidigt, över alla jobb och förtroendedomäner. 0, standardvärdet, är två körningar, eller en färre än antalet arbetstrådar för förfrågningar (workers.requestCount) när det är fler, så att en tråd lämnas kvar för att besvara förfrågningar utan något jobb. Ett värde på 1 eller mer används i stället. En plats är en multipel av sitt intervall, så varje timjobb i varje domän förfaller samma sekund; resten väntar, en persons Run now först, och startar när körningar avslutas. Det är aldrig mer än en färre än lagrets anslutningspool rymmer, vad det än är inställt på, så att schemaläggaren inte kan ta alla anslutningar från förfrågningarna."
   },
   "scheduler.niceBusyThreshold|label": {
     "en": "115ae6125244b30a",

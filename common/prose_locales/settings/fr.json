@@ -11096,8 +11096,8 @@
     "text": "Nombre maximal d’exécutions simultanées"
   },
   "scheduler.maxConcurrentRuns|description": {
-    "en": "2f1ce9da6481ae58",
-    "text": "Combien d'exécutions planifiées ou manuelles le leader mène à la fois, tous travaux et domaines de confiance confondus. 0, la valeur par défaut, signifie une exécution, ou une de moins que le nombre de threads de travail des requêtes (workers.requestCount) lorsque c'est davantage, de sorte qu'un thread reste toujours disponible pour répondre aux requêtes sans travail en cours. Une valeur de 1 ou plus est utilisée à la place. Un créneau est un multiple de son intervalle, si bien que chaque travail horaire de chaque domaine est dû à la même seconde ; les autres attendent, le Run now d'une personne en premier, et démarrent à mesure que les exécutions se terminent. Elle n'est jamais supérieure au nombre de connexions du pool du stockage moins une, quelle que soit sa valeur, afin que le planificateur ne puisse pas prendre toutes les connexions aux requêtes."
+    "en": "dc2ba3cac81ad956",
+    "text": "Combien d'exécutions planifiées ou manuelles le leader mène à la fois, tous travaux et domaines de confiance confondus. 0, la valeur par défaut, signifie deux exécutions, ou une de moins que le nombre de threads de travail des requêtes (workers.requestCount) lorsque c'est davantage, de sorte qu'un thread reste disponible pour répondre aux requêtes sans travail en cours. Une valeur de 1 ou plus est utilisée à la place. Un créneau est un multiple de son intervalle, si bien que chaque travail horaire de chaque domaine est dû à la même seconde ; les autres attendent, le Run now d'une personne en premier, et démarrent à mesure que les exécutions se terminent. Elle n'est jamais supérieure au nombre de connexions du pool du stockage moins une, quelle que soit sa valeur, afin que le planificateur ne puisse pas prendre toutes les connexions aux requêtes."
   },
   "scheduler.niceBusyThreshold|label": {
     "en": "115ae6125244b30a",

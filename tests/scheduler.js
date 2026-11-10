@@ -987,16 +987,17 @@ async function run(t) {
     pooled.settings['scheduler.maxConcurrentRuns'] = 2;
     t.equal(small.scheduler.maxConcurrentRuns(), 2,
             'with no pool the setting is the cap');
-    // THE DEFAULT, 0 (rcbj, 2026-11-10): one run, or one fewer than the
+    // THE DEFAULT, 0 (rcbj, 2026-11-10): two runs, or one fewer than the
     // node's protocol request workers when that is more, so one worker is
-    // always left with no job body on it.
+    // left with no job body on it. The floor is the old cap of two: at one,
+    // the memory mode's partner refresh queued until it timed out.
     pooled.settings['scheduler.maxConcurrentRuns'] = 0;
     const byWorkers = [0, 1, 2, 3, 6].map(function (n) {
       pooled.requestWorkers = n;
       return small.scheduler.maxConcurrentRuns();
     });
-    t.equal(JSON.stringify(byWorkers), JSON.stringify([1, 1, 1, 2, 5]),
-            'at 0 the cap is the larger of 1 and the request workers less ' +
+    t.equal(JSON.stringify(byWorkers), JSON.stringify([2, 2, 2, 2, 5]),
+            'at 0 the cap is the larger of 2 and the request workers less ' +
             'one (0, 1, 2, 3 and 6 workers)');
     pooled.requestWorkers = 6;
     pooled.storeConnections = 4;
