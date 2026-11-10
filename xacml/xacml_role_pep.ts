@@ -1778,6 +1778,32 @@ class XacmlRolePep {
         'already registered meets phr; phrh needs one whose attestation ' +
         'this realm trusts and that is not backup-eligible.';
     }
+    // A DENY FROM ANOTHER RULE (2026-11-10, fuzz run 8). The role sentence
+    // was written for a role Deny, and it was also drawn for a Deny some
+    // other rule made. The fuzz person's console session was refused 130
+    // times with "requires EVERYBODY and ... holds EVERYBODY, ...", naming
+    // a requirement already met. When the subject holds a required role,
+    // the role rule did not refuse. The answer does not name the rule that
+    // did, so this says so and names the obligations the Deny carried.
+    const met = answer.decision === model.DECISION.DENY &&
+      required.some(function (one) {
+        return held.indexOf(one) >= 0;
+      });
+    if (met) {
+      const carried = (answer.obligations || []).map(function (o) {
+        return o && o.id ? String(o.id) : '';
+      }).filter(function (id) {
+        return id.length > 0;
+      });
+      log.debug("Leaving XacmlRolePep.reasonFor(). Another rule.");
+      return 'the issuance policy denied it with a rule other than the ' +
+        'role requirement: "' + asked.application + '" requires ' +
+        required.join(' or ') + ', which ' + who + ' holds. ' +
+        (carried.length
+          ? 'The Deny carried ' + carried.join(', ') + '.'
+          : 'The Deny carried no obligation naming the rule; ' +
+            '/admin/xacml/decide shows which rule applies.');
+    }
     if (answer.decision === model.DECISION.DENY ||
         answer.decision === model.DECISION.NOT_APPLICABLE) {
       log.debug("Leaving XacmlRolePep.reasonFor().");

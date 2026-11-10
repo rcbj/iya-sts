@@ -657,6 +657,52 @@ function strictRequestSection(t) {
   t.check(new RegExp("if \\(session\\.csrf && req\\.method !== \"GET\" && " +
     "req\\.method !== \"HEAD\"\\)")
     .test(proxy), "the proxy adds X-CSRF-Token to a POST and not to a GET");
+  // The sign-in policy guard (rcbj, 2026-11-10): what the proxy refuses to
+  // forward that names nobody and still reaches the run's own sign-in.
+  // The proxy reads its service base at load; a placeholder is enough for
+  // its two predicates, which dial nothing.
+  if (!process.env.STS_SCHEMA_SERVICE_BASE) {
+    process.env.STS_SCHEMA_SERVICE_BASE = "https://sts:8081";
+  }
+  const guard = require("./schemathesis/auth_proxy.js");
+  const base = "https://sts:8081/realm/fuzz-base/admin-api/";
+  const body = function (o) {
+    return Buffer.from(JSON.stringify(o), "utf8");
+  };
+  const refused = [
+    [base + "policies/save-authn-policy", body({ firstFactors: ["x"] })],
+    [base + "policies/save-authn-policy", body({ profile: "default",
+      name: "anything" })],
+    [base + "policies/reset-passkey-policy", body({ profile: " Default " })],
+    [base + "policies/delete-authn-policy", body({})],
+    [base + "xacml/edit-match", body({ policy: "role-issuance" })],
+    [base + "xacml/create-from-template", body({ template: "x",
+      name: "access-control" })],
+    [base + "xacml/delete?name=role-issuance", null],
+    [base + "config/set", body({ key: "xacml.issuancePolicy", value: "x" })],
+    [base + "config/set-many", body({ values: { "roles.enforceIssuance":
+      "false" } })]
+  ];
+  const forwarded = [
+    [base + "policies/save-authn-policy", body({ profile: "fuzz-named" })],
+    [base + "policies/delete-authn-policy", body({ name: "fuzz-named" })],
+    [base + "xacml/edit-match", body({ policy: "seeded-rbac" })],
+    [base + "config/set", body({ key: "saml.clockSkewS", value: "30" })],
+    [base + "users/clear-totp", body({ user: "alice" })]
+  ];
+  t.check(refused.every(function (one) {
+    return !!guard.touchesSignInPolicy(one[0], one[1]);
+  }), "the proxy refuses a write to a default policy profile, an edit of " +
+    "either built-in XACML policy and a change to the settings that point " +
+    "at them", JSON.stringify(refused.map(function (one) {
+      return guard.touchesSignInPolicy(one[0], one[1]);
+    })));
+  t.check(forwarded.every(function (one) {
+    return guard.touchesSignInPolicy(one[0], one[1]) === null;
+  }), "and forwards a named profile, another policy, another setting and " +
+    "another door", JSON.stringify(forwarded.map(function (one) {
+      return guard.touchesSignInPolicy(one[0], one[1]);
+    })));
   t.log.debug("Leaving strictRequestSection().");
 }
 
