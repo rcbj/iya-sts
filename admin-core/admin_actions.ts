@@ -8159,7 +8159,8 @@ class AdminActions {
    * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
    *   with the sentence naming every action
    */
-  saml2Action(body): any {
+  saml2Action(body: IyaApi.AdminActionBody<'/admin-api/saml2'> &
+    IyaApi.NotInModel<'actor' | 'document' | 'serviceProvider'>): any {
     const { log, applications, saml2 } = this.deps;
     const self = this;
     log.debug("Entering AdminActions.saml2Action(). action=" + (body.action ||
@@ -8396,7 +8397,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  saml11Action(body) {
+  saml11Action(body: IyaApi.AdminActionBody<'/admin-api/saml11'> &
+    IyaApi.NotInModel<'relyingParty'>) {
     const { log, applications, saml11 } = this.deps;
     log.debug("Entering AdminActions.saml11Action(). action=" + (body.action ||
                                                                  '(none)'));

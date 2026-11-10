@@ -102,6 +102,45 @@ const CASES = [
     edit: "go: authn.LOGIN_PATH + '?authn=' + " +
           'encodeURIComponent(record.id), modelHasNoSuchMember: 1 });',
     code: 'TS2353', word: 'modelHasNoSuchMember' },
+  { api: 'Management', file: 'admin-core/admin_views.ts',
+    what: 'an answer member, in the view an operation answers with',
+    anchor: 'return { installed: false, enabled: false, streamDetail: [],',
+    edit: 'return { installed: false, enabled: false, streamDetail: [], ' +
+          'modelHasNoSuchMember: 1,',
+    code: 'TS2353', word: 'modelHasNoSuchMember' },
+  { api: 'Management', file: 'admin-core/admin_actions.ts',
+    what: 'a body member no operation of the action\'s table takes',
+    anchor: "const id = String(body.id || body.relationship || '').trim();",
+    edit: "const id = String(body.id || body.relationship || '').trim() + " +
+          'body.modelHasNoSuchField;',
+    code: 'TS2339', word: 'modelHasNoSuchField' },
+  { api: 'Authentication', file: 'authn/authn.ts',
+    what: 'an answer member, in the step answer the sign-in acts share',
+    anchor: 'this.answerJson(res, 200, { ok: true, next: next, step: step, ' +
+            'id: id,',
+    edit: 'this.answerJson(res, 200, { ok: true, next: next, step: step, ' +
+          'id: id, modelHasNoSuchMember: 1,',
+    code: 'TS2353', word: 'modelHasNoSuchMember' },
+  { api: 'Authentication', file: 'authn/email_factor.ts',
+    what: 'an answer member, in an emailed factor\'s act',
+    anchor: "authn.answerJson(res, 200, { ok: true, next: 'stay', " +
+            "notice: 'resent' });",
+    edit: "authn.answerJson(res, 200, { ok: true, next: 'stay', " +
+          "notice: 'resent', modelHasNoSuchMember: 1 });",
+    code: 'TS2353', word: 'modelHasNoSuchMember' },
+  { api: 'Authentication', file: 'oid4vc/vc_signin.ts',
+    what: 'an answer member, in a wallet sign-in\'s act',
+    anchor: "authn.answerJson(res, 200, { ok: true, next: 'wait', " +
+            'state: tx.state,',
+    edit: "authn.answerJson(res, 200, { ok: true, next: 'wait', " +
+          'state: tx.state, modelHasNoSuchMember: 1,',
+    code: 'TS2353', word: 'modelHasNoSuchMember' },
+  { api: 'Authentication', file: 'oauth-oidc/consent_screen.ts',
+    what: 'an answer member, in the consent screen\'s act',
+    anchor: "authn.answerJson(res, 200, { ok: true, next: 'redirect',",
+    edit: "authn.answerJson(res, 200, { ok: true, next: 'redirect', " +
+          'modelHasNoSuchMember: 1,',
+    code: 'TS2353', word: 'modelHasNoSuchMember' },
   { api: 'Reports', file: 'report/report_api.ts',
     what: 'an answer member the operation does not declare',
     anchor: "reportJson(res, 200, { photo: who && who.kind === 'user'",
@@ -222,6 +261,54 @@ function everyHandlerBound(t) {
   t.equal(untyped.join(', '), '', 'authn/authn_api.ts: each of the ' +
           Object.keys(names).length + ' handlers its rows name is typed by ' +
           'the operations that name it');
+  // THE ACTS THE AUTHENTICATION API HANDS ITS RESPONSE TO, in the modules
+  // that answer them: each is typed by its operations.
+  const handedTo = {
+    'authn/authn.ts': /\bauthn\.(\w+)\(req,\s*res\b/g,
+    'authn/email_factor.ts': /\bef\.(\w+)\(req,\s*res\b/g,
+    'oauth-oidc/consent_screen.ts': /\bscreen\.(\w+)\(req,\s*res\b/g
+  };
+  Object.keys(handedTo).forEach(function (rel) {
+    const target = read(rel);
+    const acts = {};
+    let one = null;
+    while ((one = handedTo[rel].exec(authn)) !== null) {
+      acts[one[1]] = true;
+    }
+    const loose = Object.keys(acts).filter(function (name) {
+      return !new RegExp('\\n  (async |private )*' + name +
+        '\\(\\s*req(: \\w+)?,\\s*res: IyaApi\\.AuthnAnswering<').test(target);
+    });
+    t.equal(loose.join(', '), '', rel + ': each of the ' +
+            Object.keys(acts).length + ' acts /authn-api hands its response ' +
+            'to is typed by its operations');
+  });
+  const wallet = read('oid4vc/vc_signin.ts');
+  const walletActs = {};
+  (authn.match(/walletAct: '\w+'/g) || []).forEach(function (one) {
+    walletActs[one.slice(12, -1)] = true;
+  });
+  const looseWallet = Object.keys(walletActs).filter(function (name) {
+    return !new RegExp('\\n  (async )?' + name +
+      '\\(req: any, res: IyaApi\\.AuthnAnswering<').test(wallet);
+  });
+  t.equal(looseWallet.join(', '), '', 'oid4vc/vc_signin.ts: each of the ' +
+          Object.keys(walletActs).length + ' wallet acts is typed by its ' +
+          'operation');
+  // THE ADMIN-CORE ACTIONS the management API's rows of actions call: each
+  // is handed the bodies of the model's operations at its path.
+  const actions = read('admin-core/admin_actions.ts');
+  const called = {};
+  (admin.match(/adminActions\.\w+Action\(/g) || []).forEach(function (one) {
+    called[one.slice(13, -1)] = true;
+  });
+  const untypedActions = Object.keys(called).filter(function (name) {
+    return !new RegExp('\\n  (async )?' + name +
+      '\\(body: IyaApi\\.AdminActionBody<').test(actions);
+  });
+  t.equal(untypedActions.join(', '), '', 'admin-core/admin_actions.ts: each ' +
+          'of the ' + Object.keys(called).length + ' actions the management ' +
+          'API calls reads the bodies its operations declare');
   // The Reports API: every function its router hands a response to.
   const report = read('report/report_api.ts');
   const route = report.slice(report.indexOf('async function reportRoute('),

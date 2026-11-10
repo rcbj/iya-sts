@@ -1138,53 +1138,77 @@ class AuthnApi {
     }
     res.locals.authnStep = true;
     const ef = AuthnApi.emailFactor();
+    // Each case answers its own operation, so the response is handed on
+    // typed by that one (#1579): the switch is what narrows it.
     switch (op.operationId) {
       case 'checkCode':
-        await authn.mfaTotpAct(req, res, id, body);
+        await authn.mfaTotpAct(req,
+          res as IyaApi.AuthnAnswering<'checkCode'>, id, body);
         break;
       case 'spendRecoveryCode':
-        await authn.mfaBackupCodeAct(req, res, id, body);
+        await authn.mfaBackupCodeAct(req,
+          res as IyaApi.AuthnAnswering<'spendRecoveryCode'>, id, body);
         break;
       case 'checkFactorPassword':
-        await authn.mfaPasswordAct(req, res, id, body);
+        await authn.mfaPasswordAct(req,
+          res as IyaApi.AuthnAnswering<'checkFactorPassword'>, id, body);
         break;
       case 'passkeyStepOptions':
-        authn.mfaWebauthnOptions(req, res, id, String(body.key || ''),
-                                 String(body.lane || ''),
-                                 String(body.algorithms || ''));
+        authn.mfaWebauthnOptions(req,
+          res as IyaApi.AuthnAnswering<'passkeyStepOptions'>,
+          id, String(body.key || ''), String(body.lane || ''),
+          String(body.algorithms || ''));
         break;
       case 'finishPasskeyStep':
-        authn.mfaWebauthnAct(req, res, id, body);
+        authn.mfaWebauthnAct(req,
+          res as IyaApi.AuthnAnswering<'finishPasskeyStep'>, id, body);
         break;
       case 'beginAppEnrolment':
-        await authn.mfaSetupAct(req, res, id, 'totp', body);
+        await authn.mfaSetupAct(req,
+          res as IyaApi.AuthnAnswering<'beginAppEnrolment'>,
+        await   id, 'totp', body);
         break;
       case 'confirmAppEnrolment':
-        await authn.mfaSetupAct(req, res, id, 'confirm', body);
+        await authn.mfaSetupAct(req,
+          res as IyaApi.AuthnAnswering<'confirmAppEnrolment'>,
+        await   id, 'confirm', body);
         break;
       case 'beginKeyEnrolment':
-        await authn.mfaSetupAct(req, res, id, 'webauthn', body);
+        await authn.mfaSetupAct(req,
+          res as IyaApi.AuthnAnswering<'beginKeyEnrolment'>,
+        await   id, 'webauthn', body);
         break;
       case 'ignoreOffer':
-        await authn.mfaSetupAct(req, res, id, 'skip', body);
+        await authn.mfaSetupAct(req,
+          res as IyaApi.AuthnAnswering<'ignoreOffer'>, id, 'skip', body);
         break;
       case 'registerPostLoginPasskey':
-        authn.postLoginAct(req, res, id, 'register');
+        authn.postLoginAct(req,
+          res as IyaApi.AuthnAnswering<'registerPostLoginPasskey'>,
+          id, 'register');
         break;
       case 'skipPostLoginActivity':
-        authn.postLoginAct(req, res, id, 'skip');
+        authn.postLoginAct(req,
+          res as IyaApi.AuthnAnswering<'skipPostLoginActivity'>, id, 'skip');
         break;
       case 'sendEmailedFactor':
-        await ef.sendAct(req, res, id, body.kind);
+        await ef.sendAct(req,
+          res as IyaApi.AuthnAnswering<'sendEmailedFactor'>,
+        await   id, body.kind);
         break;
       case 'startOver':
-        authn.mfaStartOver(req, res, id);
+        authn.mfaStartOver(req,
+          res as IyaApi.AuthnAnswering<'startOver'>, id);
         break;
       case 'checkEmailedCode':
-        await ef.codeAct(req, res, id, String(body.code || ''));
+        await ef.codeAct(req,
+          res as IyaApi.AuthnAnswering<'checkEmailedCode'>,
+        await   id, String(body.code || ''));
         break;
       default:
-        await ef.openAct(req, res, id, String(body.t || ''));
+        await ef.openAct(req,
+          res as IyaApi.AuthnAnswering<'spendEmailedLink'>,
+        await   id, String(body.t || ''));
         break;
     }
     log.debug("Leaving AuthnApi.mfaAct().");

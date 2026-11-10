@@ -136,6 +136,12 @@ declare namespace IyaApi {
   // of them to check against.
   type NotInModel<N extends string> = { [K in N]?: any };
 
+  // A response to one or more of the Authentication API's operations, for
+  // the acts `/authn-api` hands its response to (`authn/authn.ts` and the
+  // other sign-in modules).
+  type AuthnAnswering<K extends keyof IyaApi.Authn.Operations> =
+    Answering<IyaApi.Authn.Operations[K]>;
+
   // ONE ROW OF A ROUTE TABLE, discriminated by its operationId: the row's
   // `handler` is typed by the operation the same row names. `Extra` is what
   // a table hands a handler after the request and the response. Every other
