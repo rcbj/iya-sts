@@ -103,6 +103,15 @@ async function call(who, method, url, opts) {
            setCookie: setCookie || [] };
 }
 
+// A step's parameter, from the query or, in product mode, the fragment, where
+// the whole of a step's query moves (#1454).
+function stepOf(u, name) {
+  log.debug("Entering stepOf(). " + name);
+  log.debug("Leaving stepOf().");
+  return u.searchParams.get(name) ||
+    new URLSearchParams(u.hash.slice(1)).get(name) || "";
+}
+
 /**
  * An act's answer read as the page it replaced: an address it names is the
  * 303 it was.
@@ -202,9 +211,9 @@ async function start(base, who, query) {
   out.state = door.answer.json.state;
   out.waitUrl = door.location;
   const u = new URL(out.waitUrl);
-  out.authn = u.searchParams.get("authn") || "";
-  out.mfa = u.searchParams.get("mfa") || "";
-  out.enrol = u.searchParams.get("enrol") || "";
+  out.authn = stepOf(u, "authn");
+  out.mfa = stepOf(u, "mfa");
+  out.enrol = stepOf(u, "enrol");
   out.waiting = await view(base, who, out.state);
   out.view = (out.waiting.json && out.waiting.json.view) || null;
   out.walletUrl = out.view && out.view.sameDevice
@@ -243,12 +252,11 @@ function fromWaitUrl(url) {
   log.debug("Entering fromWaitUrl().");
   const u = new URL(String(url), "http://x");
   log.debug("Leaving fromWaitUrl().");
-  return { state: u.searchParams.get("state") || "",
-           authn: u.searchParams.get("authn") || "",
-           mfa: u.searchParams.get("mfa") || "",
-           enrol: u.searchParams.get("enrol") || "",
-           responseCode: u.searchParams.has("response_code")
-             ? u.searchParams.get("response_code") : undefined };
+  return { state: stepOf(u, "state"),
+           authn: stepOf(u, "authn"),
+           mfa: stepOf(u, "mfa"),
+           enrol: stepOf(u, "enrol"),
+           responseCode: stepOf(u, "response_code") || undefined };
 }
 
 /**

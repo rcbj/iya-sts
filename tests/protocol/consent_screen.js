@@ -75,7 +75,8 @@ const log = bunyan.createLogger({ name: "consent_screen",
 // whole URL, because a job may be driving a trust realm — `/realm/acme/oauth2/consent`
 // is the same screen — and because the location may be relative or absolute
 // depending on which hop produced it.
-const CONSENT_PATH = /\/oauth2\/consent(\?|$)/;
+// `#` as well: product mode moves a step's id into the fragment (#1454).
+const CONSENT_PATH = /\/oauth2\/consent(\?|#|$)/;
 
 // And the authorization endpoint, which is where the screen sends the browser
 // back to. `settleAuthorization()` has to follow that hop as well: the answer to
