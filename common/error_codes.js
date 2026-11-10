@@ -25106,6 +25106,11 @@ const CODES = [
     summary: 'A passkey an administrator enrolled was recorded, and the ' +
       'account signal about it could not be sent (ASVS 5.0.0 2.3.3).',
     spec: '' },
+  { code: 'STS-ADMIN-0919',
+    summary: 'A deleted application, person or group could not be taken out ' +
+      'of a role that named it, so the role still names it, and anything ' +
+      'made again under that name would hold the role (roles.forgetMember()).',
+    spec: '' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5407** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5408** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -91,7 +91,7 @@ is an ordinary outcome.
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 92
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 267
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 268
 * [Management API (`STS-API`)](#sts-api) — 95
 * [User portal (`STS-PORTAL`)](#sts-portal) — 122
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 23
@@ -5536,6 +5536,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0916` | A second factor was not cleared because the administrator did not say how the person was verified. | HTTP 400 |
 | `STS-ADMIN-0917` | An application was not created because the metadata document given with it was refused. | HTTP 400 |
 | `STS-ADMIN-0918` | A passkey an administrator enrolled was recorded, and the account signal about it could not be sent (ASVS 5.0.0 2.3.3). | — |
+| `STS-ADMIN-0919` | A deleted application, person or group could not be taken out of a role that named it, so the role still names it, and anything made again under that name would hold the role (roles.forgetMember()). | — |
 
 ## STS-API
 

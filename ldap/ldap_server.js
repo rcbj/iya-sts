@@ -9230,8 +9230,9 @@ function consoleKeyFor(dn, stored) {
 //
 // A member that names nothing is reported as DANGLING rather than dropped, and
 // that is the whole reason this resolution exists: this directory does not
-// enforce referential integrity (deleting a user leaves its DN in every group
-// that listed it — see the header), so a dangling member is a state a client
+// enforce referential integrity on a WRITE (a member that names nothing is
+// accepted; a DELETE has taken its DN out of every group since 2026-11-10,
+// forgetGroupMemberships()), so a dangling member is a state a client
 // can reach in two operations and a page that quietly showed six members where
 // the entry lists seven would be hiding the very thing it was built to show.
 function resolveMember(value, attribute) {
@@ -20804,6 +20805,9 @@ server.del('', function (req, res, next) {
   // A person's delete was noted by removePersonEntry().
   if (!deletedPerson && deletedGroup) {
     noteMembershipChange(stored.dn, deletedAttributes, {});
+    // Out of every role that named it, as deleteGroupEntry() does (its groups
+    // are below, with every other kind's).
+    roles.forgetMember('groups', String((deletedAttributes.cn || [])[0] || ''));
   } else if (!deletedPerson && isRoleEntry(stored)) {
     noteRoleChange(stored.dn, deletedAttributes, {});
   } else if (!deletedPerson && isUnder(stored.dn, applicationsDn()) &&
@@ -20815,22 +20819,20 @@ server.del('', function (req, res, next) {
     // is reported as the registry reports its own (P5's gap).
     spiffeRegistry.noteEntryRemovedOutside(stored, boundDnOf(req));
   }
-  // Note what is NOT done here: the DN is left in any group that lists it as a
-  // member. See the header — referential integrity is a directory feature and
-  // not a protocol rule, and hiding the dangling member would hide the thing a
-  // reader should see.
-  log.info('ldap: deleted ' + dn + '. Any group listing it as a member still ' +
-           'does; this server does not do referential integrity.');
+  // OUT OF EVERY GROUP THAT LISTED IT, whatever kind of entry it was
+  // (forgetGroupMemberships(), #1612): a person's was done by
+  // removePersonEntry() and an application's by noteApplicationRemoved(), and
+  // asking again finds nothing; a group's and anything else's is done here.
+  const membershipsRemoved = deletedPerson ? 0
+    : forgetGroupMemberships(dn, 'an LDAP delete');
+  log.info('ldap: deleted ' + dn + '.');
   // The kind is worked out from the DN and not from `stored`, so that a delete
   // and the add that preceded it produce the same word for the same entry.
   //
-  // `danglingLeft` is on the row on purpose and is the most useful fact on it:
-  // this directory does not enforce referential integrity, so a delete leaves
-  // the DN in every group that listed it, and the audit row is the only place
-  // the moment that happened is recorded. /admin/groups shows the resulting
-  // state and cannot say when it arrived. Counted AFTER the delete, so it is
-  // the number of memberships that are dangling now rather than the number that
-  // were about to be.
+  // `danglingLeft` is what is left listing the DN after the delete took it out
+  // of its groups (#1612): 0 unless a group write failed, which is then
+  // STS-ADMIN-0919 in the log as well. `membershipsRemoved` is how many groups
+  // this delete rewrote.
   const dangling = membershipsNaming(dn);
   auditLdap(req, {
     action: audit.directoryActionFor('delete', dn,
@@ -20839,9 +20841,8 @@ server.del('', function (req, res, next) {
     summary: 'deleted ' + dn,
     detail: { attributeCount: Object.keys(stored.attributes).length,
               danglingLeft: dangling,
-              entriesNow: totalEntries(),
-              note: 'any group listing this DN as a member still does; this ' +
-                    'directory does not do referential integrity' }
+              membershipsRemoved: membershipsRemoved,
+              entriesNow: totalEntries() }
   });
   res.end();
   log.debug('Leaving the LDAP delete handler. The entry was deleted.');
@@ -27017,6 +27018,14 @@ function noteApplicationRemoved(stored, via) {
     log.debug('Leaving noteApplicationRemoved(). No identifier.');
     return;
   }
+  // ITS GROUPS AND ROLES GO WITH IT (2026-11-10, #1612): a role names an
+  // application by identifier, a group by DN, and the identifier comes back —
+  // made again by an administrator or, in development, by the next protocol
+  // that accepts it (`applications.js` deleteApplication()) — and would
+  // otherwise hold every role this one did. Here, because both doors reach
+  // here.
+  forgetGroupMemberships(String(stored.dn), via);
+  roles.forgetMember('applications', identifier);
   try {
     require('../ssf/account_signals').applicationPurged({
       application: identifier, dn: String(stored.dn), via: via,
@@ -27534,6 +27543,95 @@ function batchForgetEntry(batch, key, before) {
   log.debug('Leaving batchForgetEntry().');
 }
 
+// ---------------------------------------------------------------------------
+// A DELETED ENTRY LEAVES EVERY GROUP THAT LISTED IT (rcbj, 2026-11-10, #1612).
+//
+// "Deleting any person, group, or application object that is then recreated
+// should not automatically inherit any roles. It all has to be readded. That
+// is the common, expected pattern for an IdP." A DN left in a group is
+// inherited by whatever is made again at that DN — a person re-created under
+// the same username is uid=<name>,ou=users again — and with it every role the
+// group holds. So a delete takes the DN out of each group that lists it, by
+// `member`, `uniqueMember` or (for a person) `memberUid`. This REVERSES the
+// decision that stood here until today (a dangling member left for
+// /admin/groups to report); a member ADDED that names nothing is still
+// accepted, so that state can still be produced and is still reported.
+//
+// Through the group index (`byMember`), not a walk of the directory: the
+// groups that list a DN are a lookup, and only those are rewritten, each
+// through writeGroupEntry() as the console's membership edits are.
+// ---------------------------------------------------------------------------
+/**
+ * Takes a deleted entry's DN out of every group in the ambient realm that
+ * lists it.
+ *
+ * @param dn - the deleted entry's DN
+ * @param origin - who deleted it, for the group writes
+ * @returns how many groups were rewritten
+ */
+function forgetGroupMemberships(dn, origin) {
+  log.debug('Entering forgetGroupMemberships().');
+  const key = normalizeDn(dn);
+  const listed = groupIndexNow().byMember.get(key);
+  if (!listed || !listed.size) {
+    log.debug('Leaving forgetGroupMemberships(). In no group.');
+    return 0;
+  }
+  let changed = 0;
+  Array.from(listed.keys()).forEach(function (groupKey) {
+    const existing = getEntry(groupKey);
+    if (!existing || !groupRuleFor(existing)) {
+      return;
+    }
+    const attributes = {};
+    Object.keys(existing.attributes).forEach(function (name) {
+      // entryObject()'s synthesised attributes are never written back
+      // (addGroupMember()'s reason).
+      if (OPERATIONAL.indexOf(name.toLowerCase()) >= 0) {
+        return;
+      }
+      attributes[name] = existing.attributes[name].slice(0);
+    });
+    let removed = 0;
+    MEMBER_ATTRIBUTES.forEach(function (attribute) {
+      const name = Object.keys(attributes).filter(function (one) {
+        return one.toLowerCase() === attribute.name;
+      })[0];
+      if (!name) {
+        return;
+      }
+      attributes[name] = attributes[name].filter(function (value) {
+        const raw = String(value == null ? '' : value);
+        const means = normalizeDn(attribute.holds === 'uid'
+          ? 'uid=' + raw + ',' + usersDn() : raw);
+        if (means === key) {
+          removed += 1;
+          return false;
+        }
+        return true;
+      });
+    });
+    if (!removed) {
+      return;
+    }
+    const written = writeGroupEntry(existing.dn, attributes,
+                                    origin || 'a delete');
+    if (written.ok) {
+      changed += 1;
+    } else {
+      log.error(errorCodes.tag('STS-ADMIN-0919') + 'ldap: could not take ' +
+                dn + ' out of the group ' + existing.dn + ' after it was ' +
+                'deleted (' + written.reason + ').');
+    }
+  });
+  if (changed) {
+    log.info('ldap: the deleted ' + dn + ' was taken out of ' + changed +
+             ' group(s).');
+  }
+  log.debug('Leaving forgetGroupMemberships(). ' + changed + '.');
+  return changed;
+}
+
 // THE ONE PLACE A PERSON'S ENTRY LEAVES THE DIRECTORY BY A DELETE — SCIM's,
 // the LDAP delete handler's, a re-homing's. The entry goes, the write is
 // marked BY ITS DN (a DN-less touch invalidates every cached listing and makes
@@ -27565,16 +27663,22 @@ function removePersonEntry(stored, door) {
   // canonicalUsernameOfDn() can no longer read an entry that is not there.
   noteAccountChange('deleted:' + goneName, stored.dn, goneAttributes, {},
                     { door: door });
+  // AND OUT OF EVERY GROUP AND ROLE THAT NAMED THEM (2026-11-10, #1612):
+  // somebody made again under the username would otherwise be in the same
+  // groups and hold the same roles (forgetGroupMemberships(),
+  // `roles.forgetMember()`). Every door's person delete comes here (#351).
+  forgetGroupMemberships(stored.dn, door);
+  roles.forgetMember('users', goneName);
   log.debug('Leaving removePersonEntry().');
 }
 
-// Delete a person's entry. It leaves that DN behind in every group that lists
-// it, which is deliberate and is the same non-feature `GET /admin/ldap/service`
-// documents: referential integrity is a directory feature and not a protocol
-// rule, and a dangling member is exactly what /admin/groups exists to report. A
-// SCIM client that means to remove somebody from their groups has to say so.
+// Delete a person's entry. Since 2026-11-10 (#1612, rcbj) it takes that DN out
+// of every group and role that named it (removePersonEntry()), so somebody made
+// again under the username inherits nothing and has to be added back. Until
+// then the DN was left behind on purpose, as a dangling member for
+// /admin/groups to report; a member ADDED that names nothing still is.
 /**
- * Deletes a person's entry, leaving its DN in any group that lists it.
+ * Deletes a person's entry, taking its DN out of every group and role.
  *
  * Inside `inPersonBatch()` what the person held is ended with the batch;
  * outside one, as a batch of one.
@@ -27845,6 +27949,11 @@ function deleteGroupEntry(dn) {
   entries.delete(normalizeDn(stored.dn));
   touchDirectory();
   noteMembershipChange(stored.dn, stored.attributes, {});
+  // OUT OF EVERY GROUP AND ROLE THAT NAMED IT (2026-11-10, #1612),
+  // removePersonEntry()'s reason: a group may be another group's member, and a
+  // role names a group by name. The LDAP delete does the same.
+  forgetGroupMemberships(stored.dn, 'a group delete');
+  roles.forgetMember('groups', String((stored.attributes.cn || [])[0] || ''));
   log.debug('Leaving deleteGroupEntry(). ' + entries.size + ' entry/entries ' +
       'left.');
   return { ok: true, dn: stored.dn };
@@ -28112,9 +28221,10 @@ function memberDnFor(nameOrDn) {
 //
 //   * **IT DOES NOT REFUSE A MEMBER THAT NAMES NOTHING.** The SCIM ingress
 //     gives the argument in full and it is the same one: this directory does no
-//     referential integrity — a delete leaves the DN in every group that listed
-//     it — so refusing a dangling member here would make it impossible to
-//     produce, from this door, the state /admin/groups exists to report. It is
+//     referential integrity on a write, so refusing a dangling member here would
+//     make it impossible to produce, from this door, the state /admin/groups
+//     exists to report. (A DELETE takes the DN out of every group since
+//     2026-11-10, forgetGroupMemberships().) It is
 //     LOGGED and it is on the answer, so it is visible rather than silent.
 //   * **IT DOES NOT WRITE `memberOf` ONTO THE PERSON.** Nothing in this service
 //     maintains that attribute — it is not even standard — and `admin_rbac.js`
