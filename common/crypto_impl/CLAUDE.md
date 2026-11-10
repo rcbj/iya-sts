@@ -185,8 +185,11 @@ different things by different modules and must stay that way —
 `pqc_x509.js`'s byte layout) is precisely the class of defect the independence
 exists to expose, introduced to save a console button a few seconds.
 `common/pki_authoring.js`'s header says the same thing from the other end, and
-says what it costs instead: an SLH-DSA key generation takes seconds and takes
-them on this thread.
+says what it costs instead: an SLH-DSA key generation takes seconds. **Since
+#1464 those seconds are on libuv's thread pool**, not this thread:
+`pqc_x509.js`'s `generateKeyPair()` and `sign()` call the SAME primitive's
+`keygenAsync()` and `signAsync()` (`pq_native.js`), so the independence above is
+untouched and only the waiting moved.
 
 **WHAT *DID* CROSS ON 2026-09-13 IS A PUBLIC KEY, AND THE RULE ABOVE STANDS.**
 A realm's eleven post-quantum signing keys became leaves of `common/pki.js`'s
