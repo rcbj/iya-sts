@@ -314,6 +314,22 @@ aws secretsmanager get-secret-value --region us-west-2 \
   --query SecretString --output text
 ```
 
+**AND ITS NAME IS A SIXTH (rcbj, 2026-11-10)** —
+`iya-sts/<environment>/bootstrap-admin-username`, injected as
+`STS_ADMIN_BOOTSTRAP_USERNAME`. Product mode refuses a default account name
+(`admin`, `root`, `sa`; #1447, ASVS 5.0.0 6.3.2) and derives one from a key in
+the database (`common/bootstrap_name.ts`), so the first product build after
+#1447 had a password in Secrets Manager and an account name that was in one
+log line and nowhere else. Terraform generates `admin-` and sixteen hex
+digits, which is not a default name and is used as it is. **Read once and
+kept** (`terraform_data`, `ignore_changes`), because the account it names is
+created once and cannot be renamed. An environment whose account predates the
+secret names it on the apply that first creates it, with
+`TF_VAR_bootstrap_admin_username` (`terraform-local.sh` passes it by name, so
+it is in no argument list); never in a tfvars file. **Neither value is written
+inside the container**: ECS injects both, and the service writes its
+bootstrap file only for a password it generated.
+
 Three things follow. **It must satisfy the password policy** — a supplied
 password is held to it where a generated one is not — so `random_password`
 names four minimums rather than `special = false` like the three beside it; a
