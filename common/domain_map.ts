@@ -176,6 +176,49 @@ class DomainMap {
   }
 
   /**
+   * ONE FIELD of a concept from an entry (#1579), for a reader that needs a
+   * single fact: a filter over every entry of a walk, or one setting of an
+   * application. It reads that field's attribute exactly as `fromEntry()`
+   * would, without making the rest of the concept, so a walk costs what it
+   * cost when it read the attribute by name. Naming the field is asking for
+   * it: a secret field is answered here because the caller named it.
+   *
+   * @param name - the concept
+   * @param field - the field, by its name in the concept
+   * @param attributes - the entry's attributes
+   * @param options - what the entry alone cannot say
+   * @returns the field's value, or undefined when the entry holds none
+   */
+  static fieldOf<K extends keyof IyaDomain.Concepts,
+      F extends keyof IyaDomain.Concepts[K] & string>(name: K, field: F,
+      attributes: Record<string, unknown>,
+      options?: FromOptions): IyaDomain.Concepts[K][F] {
+    log.debug("Entering DomainMap.fieldOf().");
+    const concept = DomainMap.catalogue().get(name);
+    const found = concept && concept.fields.find(function (one: any) {
+      return one.name === field;
+    });
+    if (!found || !found.from) {
+      log.debug("Leaving DomainMap.fieldOf(). No such stored field.");
+      throw new TypeError('No stored field ' + field + ' in ' + name);
+    }
+    const source = found.from.on ?
+      (options && options.on && options.on[found.from.on]) || {} : attributes;
+    const values = DomainMap.valuesOf(source, found.from.attr)
+      .map(function (one) {
+        return DomainMap.typed(found.type, one);
+      }).filter(function (one) {
+        return one !== undefined;
+      });
+    let out: any;
+    if (values.length > 0) {
+      out = found.array ? values : values[0];
+    }
+    log.debug("Leaving DomainMap.fieldOf().");
+    return out;
+  }
+
+  /**
    * A concept from a record this service's own code keeps. Unlike an entry a
    * record already holds typed values, so a value of another type is left out
    * and nothing is converted.

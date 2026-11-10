@@ -346,6 +346,12 @@ model Group {
 
   @fromAttr(#{attr: "federationRelationship"})
   `federationRelationship`?: string[];
+
+  @fromAttr(#{attr: "mail", transform: "first"})
+  email?: string;
+
+  @fromAttr(#{attr: "displayName"})
+  displayName?: string;
 }
 
 @domain(#{

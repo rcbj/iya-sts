@@ -31,7 +31,7 @@ Do not edit it by hand.
 | [Claims provider](#claims-provider) | `ClaimProvider` | ou=claimproviders | 2 |
 | [Device](#device) | `Device` | ou=devices | 24 |
 | [Federation relationship](#federation-relationship) | `FederationRelationship` | ou=federations | 89 |
-| [Group](#group) | `Group` | ou=groups | 12 |
+| [Group](#group) | `Group` | ou=groups | 14 |
 | [Kerberos trust](#kerberos-trust) | `KerberosTrust` | ou=kerberosTrusts | 8 |
 | [OpenID Federation entry](#openid-federation-entry) | `Oidfed` | ou=oidfed | 5 |
 | [Operational attributes](#operational-attributes) | `Operational` |  | 6 |
@@ -641,7 +641,9 @@ No SCHEMA export. A group grants nothing by being a group.
 |---|---|---|---|---|
 | `cn` | several | RFC | `2.5.4.3` | Named on the Groups section. |
 | `description` | several | RFC | `2.5.4.13` | Named on the Groups section. |
+| `displayName` | one | RFC | `2.16.840.1.113730.3.1.241` | The name OpenID Provider Commands metadata shows for the group, where it differs from cn. |
 | `federationRelationship` | not stated | this service | `1.3.6.1.4.1.67607.1.1.172` | Named on the Groups section. |
+| `mail` | several | RFC | `0.9.2342.19200300.100.1.3` | The address a notice to the group is sent to (#989). The operator's to set; nothing verifies it. |
 | `member` | several | RFC | `2.5.4.31` | Named on the Groups section. |
 | `memberUid` | several | RFC | `1.3.6.1.1.1.1.12` | Named on the Groups section. |
 | `stsAttributePolicy` | not stated | this service | `1.3.6.1.4.1.67607.1.1.495` | Named on the Groups section. |

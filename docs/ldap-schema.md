@@ -222,6 +222,10 @@ It is set on the group's page or with
 holds. The holder names the policy; the policy lists nobody. See
 [Policies](policies.md#who-names-which-kind).
 
+A group may also carry `mail`, the address a notice to the group is sent
+to, and `displayName`, the name OpenID Provider Commands metadata shows for
+it in place of `cn`.
+
 A group `fedProvisionGroups` creates also carries `federationRelationship`,
 the relationship id that created it. A later sign-in through that
 relationship may add people only to groups carrying that mark. A token that

@@ -80,4 +80,8 @@ model Group {
   @attr(#{what: "Named on the Groups section."})
   @link(#{to: "federationRelationship", cardinality: "multi", owns: false, what: "The relationships this group is tied to."})
   federationRelationship?: (string)[];
+  @attr(#{what: "The address a notice to the group is sent to (#989). The operator's to set; nothing verifies it."})
+  mail?: (string)[];
+  @attr(#{what: "The name OpenID Provider Commands metadata shows for the group, where it differs from cn."})
+  displayName?: string;
 }
