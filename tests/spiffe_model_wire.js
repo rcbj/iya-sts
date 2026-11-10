@@ -949,6 +949,10 @@ function normalise(record) {
       });
       return out;
     }
+    // An uptime is seconds since start, which may be zero.
+    if (key === 'uptime') {
+      return '<uptime>';
+    }
     if (typeof value === 'number' && /^1[789]\d{8}$/.test(String(value))) {
       return '<epoch>';
     }
