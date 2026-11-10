@@ -2636,8 +2636,10 @@ class VcVerifier {
   // STS-VC-0032 for what the schema refuses, 500 with the builder's own
   // code for a request that cannot be built (a Verifier Attestation this
   // realm cannot use, an x509 Client Identifier with nothing to certify —
-  // STS-VC-0092, STS-VC-0110 to STS-VC-0113), and 400 STS-VC-0033 for a
-  // wallet this realm will not send a request to.
+  // STS-VC-0092, STS-VC-0110 to STS-VC-0113) — but 400 with that code
+  // when the caller NAMED the prefix and the name it needs is refused
+  // (STS-VC-0110, STS-VC-0111) — and 400 STS-VC-0033 for a wallet this
+  // realm will not send a request to.
   // ---------------------------------------------------------------------------
   /**
    * Builds a presentation request as `POST /admin-api/verifications/start`
@@ -2697,9 +2699,19 @@ class VcVerifier {
       // it is found, with its code.
       log.debug("Caught in VcVerifier.startVerification(): " +
                 ((e && e.message) || e));
+      const code = String((e && e.code) || 'STS-VC-0092');
+      // A PREFIX THE CALLER NAMED THAT THIS REALM CANNOT SERVE IS A REFUSAL
+      // OF WHAT WAS ASKED, NOT A FAILURE: an `x509_san_dns` start when no
+      // DNS name can be certified (STS-VC-0110) or the configured one is not
+      // the Response URI's host (STS-VC-0111). It is 400 with its reason,
+      // which product mode keeps (it hides only a 500's detail), and
+      // `x509_hash` is still there to ask for. The realm's own default
+      // prefix failing to build is the realm's fault, so it stays a 500.
+      const refusedAsked = !!clientIdPrefix &&
+        (code === 'STS-VC-0110' || code === 'STS-VC-0111');
       log.debug("Leaving VcVerifier.startVerification(). Not built.");
-      return { ok: false, status: 500,
-               code: String((e && e.code) || 'STS-VC-0092'),
+      return { ok: false, status: refusedAsked ? 400 : 500,
+               code: code,
                error: String((e && e.message) || e) };
     }
     const query = this.vpRequestQuery(req, record);

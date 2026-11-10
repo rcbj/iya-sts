@@ -558,8 +558,10 @@ async function signIn(wallet, siop, approve, subject) {
       code_challenge: crypto.createHash("sha256").update(verifier)
         .digest("base64url"),
       code_challenge_method: "S256" }).toString());
-  const authnId = new URL(authorized.location || base, base).searchParams
-    .get("authn") || "";
+  // The step id is in the query in development and in the fragment in
+  // product (`mode.hidesStepIds()`, `#authn=`), so it is read from either.
+  const authnId = decodeURIComponent((/[?&#]authn=([^&#]+)/
+    .exec(String(authorized.location || "")) || [])[1] || "");
   await hop(who, "GET", authorized.location);
   const query = { authn: authnId };
   if (siop) {

@@ -210,7 +210,10 @@ const POOL_COOKIE = (function () {
 })();
 
 // What a document actually set, with the pool's routing pin taken out. A
-// document that set nothing else answers "".
+// document that set nothing else answers "". The pin is matched with or
+// without a `__Host-` / `__Secure-` prefix: product mode prefixes every
+// `sts_` cookie on the wire (common/cookie_wire.ts, ASVS 5.0.0 3.3.1), the
+// pin included, so the bare name alone exempted it only in development.
 function applicationCookies(header) {
   log.debug("Entering applicationCookies().");
   const list = String(header || "").split(/,(?=[^;]+=)/)
@@ -219,7 +222,9 @@ function applicationCookies(header) {
       if (!one) {
         return false;
       }
-      return !(POOL_COOKIE && one.indexOf(POOL_COOKIE + "=") === 0);
+      const name = one.slice(0, Math.max(one.indexOf("="), 0))
+        .replace(/^__(Host|Secure)-/, "");
+      return !(POOL_COOKIE && name === POOL_COOKIE);
     });
   log.debug("Leaving applicationCookies().");
   return list.join(", ");

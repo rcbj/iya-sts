@@ -187,7 +187,11 @@ async function theRestart(cells, realm) {
                     pin.indexOf(cells.ids.a) < 0, pin);
         });
   check("and no session was started at cell A", function () {
-    assert.deepStrictEqual(posted.set, ["sts_cell"],
+    // A name is read without the `__Host-` / `__Secure-` prefix product
+    // mode puts on every `sts_` cookie (common/cookie_wire.ts).
+    assert.deepStrictEqual(posted.set.map(function (n) {
+      return n.replace(/^__(Host|Secure)-/, "");
+    }), ["sts_cell"],
       "the restart set " + JSON.stringify(posted.set));
   });
 
@@ -223,7 +227,7 @@ async function theRestart(cells, realm) {
           assert.ok(signedIn.status >= 300 && signedIn.status < 400,
             signedIn.status + " " + kit.said(signedIn.text));
           assert.ok(signedIn.set.filter(function (n) {
-            return n !== "sts_cell";
+            return n.replace(/^__(Host|Secure)-/, "") !== "sts_cell";
           }).length > 0, "no session cookie: " +
             JSON.stringify(signedIn.set));
         });
