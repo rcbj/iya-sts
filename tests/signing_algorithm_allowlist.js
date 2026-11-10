@@ -473,8 +473,8 @@ function childMain() {
     note(JSON.stringify(product.doc.id_token_signing_alg_values_supported) ===
          '["RS256","ES256"]' &&
          product.doc.token_endpoint_auth_signing_alg_values_supported
-           .indexOf('ES256K') >= 0,
-         'F5. what it signs loses ES256K and what it accepts keeps it',
+           .indexOf('ES256K') < 0,
+         'F5. what it signs and what it accepts both lose ES256K (11.6.1)',
          JSON.stringify(product.doc));
     note(product.usable !== 'ES256K',
          'F6. a setting naming ES256K signs with the default instead',
@@ -520,6 +520,72 @@ function childMain() {
          'F9. and its discovery names ES256K for nothing it signs',
          k1Disc.status + ' ' + JSON.stringify(
            (k1Disc.json || {}).id_token_signing_alg_values_supported));
+    // ==== ES256K ACCEPTED IN PRODUCT ONLY WHERE A LIST NAMES IT (11.6.1) ===
+    note(k1Disc.status === 200 &&
+         ['dpop', 'token_endpoint_auth', 'request_object']
+           .every(function (what) {
+             const list = k1Disc.json[what + '_signing_alg_values_supported'];
+             return !Array.isArray(list) || list.indexOf('ES256K') < 0;
+           }) &&
+         Array.isArray(k1Disc.json.dpop_signing_alg_values_supported) &&
+         k1Disc.json.dpop_signing_alg_values_supported.indexOf('ES256') >= 0,
+         'F10. and names ES256K for nothing it accepts, DPoP among them',
+         JSON.stringify((k1Disc.json || {}).dpop_signing_alg_values_supported));
+    const policy = stsCrypto.signaturePolicy;
+    const accepts = function () {
+      const cause = policy.acceptCause('jose', 'ES256K');
+      return cause ? cause.code : 'accepted';
+    };
+    const accepting = await asProduct(async function () {
+      const out = { bare: accepts(),
+                    es256: policy.acceptCause('jose', 'ES256') === null,
+                    cose: (policy.acceptCause('cose', '-47') || {}).code ||
+                          'accepted' };
+      config.setOverride('keys.acceptedSigningAlgorithms',
+                         'RS256,ES256,ES256K');
+      out.acceptList = accepts();
+      config.clearOverride('keys.acceptedSigningAlgorithms');
+      config.setOverride(KEY, 'RS256,ES256K');
+      out.signList = accepts();
+      config.clearOverride(KEY);
+      return out;
+    });
+    note(accepting.bare === 'STS-KEYS-0179' && accepting.es256 &&
+         accepting.cose === 'STS-KEYS-0181',
+         'F11. product with no list refuses a JWS or COSE signature in ' +
+         'ES256K before any key operation, and still accepts ES256',
+         JSON.stringify(accepting));
+    note(accepting.acceptList === 'accepted' &&
+         accepting.signList === 'accepted' && accepts() === 'accepted',
+         'F12. it is accepted where keys.acceptedSigningAlgorithms or ' +
+         'keys.signingAlgorithms names it, and in development',
+         JSON.stringify(accepting));
+    const nodeCrypto = require('crypto');
+    const k1 = nodeCrypto.generateKeyPairSync('ec',
+                                              { namedCurve: 'secp256k1' });
+    const p256 = nodeCrypto.generateKeyPairSync('ec',
+                                                { namedCurve: 'prime256v1' });
+    const ECDSA = 'http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256';
+    const octets = Buffer.from('<SignedInfo/>');
+    const xmlVerifies = function (pair) {
+      const sig = nodeCrypto.sign('sha256', octets,
+        { key: pair.privateKey, dsaEncoding: 'ieee-p1363' });
+      return stsCrypto.verifyXmlSignatureValue(ECDSA, pair.publicKey, octets,
+                                               sig);
+    };
+    const xml = await asProduct(async function () {
+      const out = { k1: xmlVerifies(k1), p256: xmlVerifies(p256) };
+      config.setOverride('keys.acceptedSigningAlgorithms',
+                         'RS256,ES256,ES256K');
+      out.listed = xmlVerifies(k1);
+      config.clearOverride('keys.acceptedSigningAlgorithms');
+      return out;
+    });
+    note(xml.k1 === false && xml.p256 === true && xml.listed === true &&
+         xmlVerifies(k1) === true,
+         'F13. an XML signature on secp256k1 verifies in product only ' +
+         'where ES256K is listed, P-256 always, and secp256k1 in development',
+         JSON.stringify(xml));
     realms.run(realms.get(K1REALM), function () {
       config.clearOverride('global.mode');
     });
@@ -582,6 +648,7 @@ module.exports = {
             'signing algorithms publishes, advertises and signs only those, ' +
             'accepts what it always did from clients, and empty changes ' +
             'nothing; keys.jwksCertificateUrl (#1351) names a key\'s chain by ' +
-            'x5u; product leaves ES256K out unless listed (#1533)',
+            'x5u; product leaves ES256K out unless listed, signing (#1533) ' +
+            'and verifying (ASVS 5.0.0 11.6.1)',
   run: run
 };

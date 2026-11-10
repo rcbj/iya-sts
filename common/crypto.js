@@ -815,6 +815,17 @@ function xmlEcdsaCurveProblem(key) {
   log.debug("Entering xmlEcdsaCurveProblem().");
   const curve = String(((key && key.asymmetricKeyDetails) || {})
     .namedCurve || '');
+  // secp256k1 is at least 256 bits and still not an approved curve (ASVS
+  // 5.0.0 11.6.1): in product it verifies an XML signature only where JOSE's
+  // ES256K is accepted, which is where keys.acceptedSigningAlgorithms or
+  // keys.signingAlgorithms names it (signature_policy.ts).
+  if (curve === 'secp256k1' &&
+      signaturePolicy.acceptCause('jose', 'ES256K') !== null) {
+    log.debug("Leaving xmlEcdsaCurveProblem(). secp256k1 refused.");
+    return 'an ECDSA key on secp256k1, which is not an approved curve and ' +
+      'verifies an XML signature in product mode only where ' +
+      'keys.acceptedSigningAlgorithms lists ES256K';
+  }
   if (XML_ECDSA_CURVES.indexOf(curve) >= 0 || mode.usesBrokenAlgorithms()) {
     log.debug("Leaving xmlEcdsaCurveProblem(). " + curve + " allowed.");
     return '';

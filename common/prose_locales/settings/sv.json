@@ -1772,8 +1772,8 @@
     "text": "Accepterade JWS-algoritmer"
   },
   "keys.acceptedSigningAlgorithms|description": {
-    "en": "c09dd7c2c5ff488b",
-    "text": "JWS-algoritmerna den här sfären accepterar från vem som helst: klientpåståenden, DPoP-bevis, begäranobjekt, plånboksbevis, federationsutsagor, sina egna token. **Tom, standardvärdet, accepterar allt varje användningsfall annars accepterar.** En signatur med en algoritm som inte finns i listan vägras före varje nyckeloperation. En lista måste innehålla allt `keys.signingAlgorithms` listar, och RS256 om den är tom, annars vägrar sfären sina egna token. HS-raderna är vad `client_secret_jwt` använder; utelämna dem bara om ingen klient gör det."
+    "en": "861a2aba4650fdfa",
+    "text": "JWS-algoritmerna den här sfären accepterar från vem som helst: klientpåståenden, DPoP-bevis, begäranobjekt, plånboksbevis, federationsutsagor, sina egna token. **Tom, standardvärdet, accepterar allt varje användningsfall annars accepterar.** Undantag: i produktläge godtas ES256K bara där den här listan eller `keys.signingAlgorithms` nämner den, eftersom secp256k1 inte är en godkänd kurva; en XML-signatur på den kurvan följer samma regel. En signatur med en algoritm som inte finns i listan vägras före varje nyckeloperation. En lista måste innehålla allt `keys.signingAlgorithms` listar, och RS256 om den är tom, annars vägrar sfären sina egna token. HS-raderna är vad `client_secret_jwt` använder; utelämna dem bara om ingen klient gör det."
   },
   "cose.algorithms|label": {
     "en": "fe94cc0994dab40b",
@@ -1788,8 +1788,8 @@
     "text": "Accepterade COSE-algoritmer"
   },
   "cose.acceptedAlgorithms|description": {
-    "en": "3c809e701d0ecee5",
-    "text": "COSE-algoritmerna den här sfären accepterar i en mdocs IssuerAuth och DeviceAuth, en CWT för statuslista och en `vc+cose`-autentiseringsuppgift. **Tom, standardvärdet, accepterar det var och en redan accepterar**, vilket en specifikation kan begränsa ytterligare: en mdoc tar aldrig RSA. Lösennycklar styrs inte här."
+    "en": "74f312f7ccddc9ff",
+    "text": "COSE-algoritmerna den här sfären accepterar i en mdocs IssuerAuth och DeviceAuth, en CWT för statuslista och en `vc+cose`-autentiseringsuppgift. **Tom, standardvärdet, accepterar det var och en redan accepterar**, vilket en specifikation kan begränsa ytterligare: en mdoc tar aldrig RSA. I produktläge godtas ES256K (-47) bara där den här listan nämner den, eftersom secp256k1 inte är en godkänd kurva. Lösennycklar styrs inte här."
   },
   "saml.signatureAlgorithms|label": {
     "en": "fd4f436bdda0de4a",

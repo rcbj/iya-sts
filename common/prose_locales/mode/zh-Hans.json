@@ -383,6 +383,18 @@
     "en": "d1fb3763f55efbde",
     "text": "两者都会在签名检查时被拒绝，包括在共享验证器、verifyJws() 中，以及（RSA）对 WebAuthn 密钥。生成的 client_secret 默认为 48 个随机字节（oauth2.registeredSecretBytes），足够 HS512 使用。在两种模式下，空 HMAC 密钥、小于 3 或为偶数的 RSA 指数（这是伪造而不是弱密钥）、带有 ROCA 指纹的 RSA 模数（CVE-2017-15361）、use 不是 \"sig\" 或 key_ops 缺少 \"verify\" 的 JWK，以及不是规范 base64url 的段，都会被拒绝。"
   },
+  "mode.requirements.unapproved-curves.what": {
+    "en": "3103323f7fdc6789",
+    "text": "只有列表列出时才使用 secp256k1"
+  },
+  "mode.requirements.unapproved-curves.development": {
+    "en": "f33b22ffc3de7a2c",
+    "text": "ES256K 像其他任何算法一样用于签名、被提供并被接受。"
+  },
+  "mode.requirements.unapproved-curves.product": {
+    "en": "0334054d89fd0997",
+    "text": "除非 keys.signingAlgorithms 列出 ES256K，否则不用它签名也不提供它；除非 keys.acceptedSigningAlgorithms 或 keys.signingAlgorithms 列出它（COSE 为 cose.acceptedAlgorithms），否则拒绝使用它的签名。发布的算法列表（包括 DPoP 的）不包含它。"
+  },
   "mode.requirements.xml-ecdsa-curves.what": {
     "en": "858a80a68d7c0582",
     "text": "XML ECDSA 签名只在至少 256 位的曲线上进行验证"
@@ -392,8 +404,8 @@
     "text": "node 能读取的任何曲线上的密钥都能通过验证——其中包括 secp160、secp192、secp224——以便测试使用这些曲线的伙伴。对于其中最小的曲线，这弱于 NIST SP 800-57 的 112 位下限。"
   },
   "mode.requirements.xml-ecdsa-curves.product": {
-    "en": "cdb3f7be9fda1083",
-    "text": "只有 P-256、P-384、P-521、secp256k1 以及 brainpoolP256r1 及更大的曲线能通过验证；其他任何曲线都会被拒绝（STS-KEYS-0077），使用这些曲线的证书不会被注册。"
+    "en": "83ca2ed6f0591c63",
+    "text": "只有 P-256、P-384、P-521 以及 brainpoolP256r1 及更大的曲线可以验证，secp256k1 仅在 keys.acceptedSigningAlgorithms 或 keys.signingAlgorithms 列出 ES256K 时可以；其他任何曲线都会被拒绝（STS-KEYS-0077），使用这类曲线的证书不会被登记。"
   },
   "mode.requirements.kerberos-deprecated-enctypes.what": {
     "en": "d0088e020fb9a13e",

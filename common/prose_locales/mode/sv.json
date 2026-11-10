@@ -383,6 +383,18 @@
     "en": "d1fb3763f55efbde",
     "text": "Båda avvisas vid signaturkontrollen, i den delade verifieraren, i verifyJws() och (RSA) för en WebAuthn-nyckel. En skapad client_secret är 48 slumpmässiga byte som standard (oauth2.registeredSecretBytes), tillräckligt lång för HS512. I BÅDA lägena avvisas en tom HMAC-nyckel, en RSA-exponent under 3 eller jämn (en förfalskning, inte en svag nyckel), en RSA-modul med ROCA-fingeravtrycket (CVE-2017-15361), en JWK vars use inte är \"sig\" eller vars key_ops saknar \"verify\", och ett segment som inte är kanonisk base64url."
   },
+  "mode.requirements.unapproved-curves.what": {
+    "en": "3103323f7fdc6789",
+    "text": "secp256k1 används bara där en lista nämner den"
+  },
+  "mode.requirements.unapproved-curves.development": {
+    "en": "f33b22ffc3de7a2c",
+    "text": "ES256K används för signering, erbjuds och godtas som vilken annan algoritm som helst."
+  },
+  "mode.requirements.unapproved-curves.product": {
+    "en": "0334054d89fd0997",
+    "text": "ES256K används inte för signering och erbjuds inte om inte keys.signingAlgorithms listar den, och en signatur i den avvisas om inte keys.acceptedSigningAlgorithms eller keys.signingAlgorithms listar den (cose.acceptedAlgorithms för COSE). De publicerade algoritmlistorna, DPoP:s bland dem, utelämnar den."
+  },
   "mode.requirements.xml-ecdsa-curves.what": {
     "en": "858a80a68d7c0582",
     "text": "En XML ECDSA-signatur verifieras bara på en kurva med minst 256 bitar"
@@ -392,8 +404,8 @@
     "text": "En nyckel på vilken kurva som helst som node läser verifieras — secp160, secp192, secp224 bland dem — så att en partner på en sådan kan testas. SVAGARE ÄN NIST SP 800-57:s golv på 112 bitar för den minsta av dem."
   },
   "mode.requirements.xml-ecdsa-curves.product": {
-    "en": "cdb3f7be9fda1083",
-    "text": "Bara P-256, P-384, P-521, secp256k1 och brainpoolP256r1 och större verifieras; varje annan kurva avvisas (STS-KEYS-0077) och ett certifikat på en sådan registreras inte."
+    "en": "83ca2ed6f0591c63",
+    "text": "Bara P-256, P-384, P-521 och brainpoolP256r1 och större verifierar, och secp256k1 där keys.acceptedSigningAlgorithms eller keys.signingAlgorithms nämner ES256K; alla andra kurvor avvisas (STS-KEYS-0077) och ett certifikat på en sådan registreras inte."
   },
   "mode.requirements.kerberos-deprecated-enctypes.what": {
     "en": "d0088e020fb9a13e",

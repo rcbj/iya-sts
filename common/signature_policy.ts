@@ -336,7 +336,37 @@ class SignaturePolicy {
                message: 'this signature is in ' + row.id + ', which ' +
                  lists.accept + ' does not list.' };
     }
+    if (SignaturePolicy.refusesUnapprovedCurve(surface, row.id, accepted)) {
+      return { code: lists.acceptCode,
+               message: 'this signature is in ' + row.id + ': secp256k1 is ' +
+                 'not an approved curve, and in product mode a signature on ' +
+                 'it is accepted only where ' + lists.accept + ' lists it.' };
+    }
     return null;
+  }
+
+  // -------------------------------------------------------------------------
+  // ES256K IS ACCEPTED IN PRODUCT ONLY WHERE A LIST NAMES IT (ASVS 5.0.0
+  // 11.6.1), the verifying half of `unapprovedCurve()`. With an accept list
+  // the list decides, as for every other row. Without one, product refuses
+  // it, unless `keys.signingAlgorithms` lists it for JOSE: a realm that signs
+  // with it has to accept its own tokens.
+  // -------------------------------------------------------------------------
+  /**
+   * @param surface - the surface
+   * @param id - the row id
+   * @param accepted - the surface's accept list, parsed
+   * @returns whether a signature in that row is refused for its curve
+   */
+  static refusesUnapprovedCurve(surface: Surface, id: string,
+                                accepted: string[]): boolean {
+    if (id !== 'ES256K' || accepted.length ||
+        !mode.omitsUnapprovedSigningCurves()) {
+      return false;
+    }
+    const signing = surface === 'jose' ? SignaturePolicy.joseSignList()
+      : null;
+    return !(signing && signing.indexOf('ES256K') >= 0);
   }
 
   /**
@@ -532,7 +562,11 @@ class SignaturePolicy {
     log.debug("Entering SignaturePolicy.narrowAcceptedLists().");
     const jose = SignaturePolicy.parsed(config.value(LISTS.jose.accept));
     const cose = SignaturePolicy.parsed(config.value(LISTS.cose.accept));
-    if (!doc || typeof doc !== 'object' || (!jose.length && !cose.length)) {
+    // Product narrows with no list too: ES256K comes out of what it accepts
+    // (`refusesUnapprovedCurve()`).
+    if (!doc || typeof doc !== 'object' ||
+        (!jose.length && !cose.length &&
+         !mode.omitsUnapprovedSigningCurves())) {
       log.debug("Leaving SignaturePolicy.narrowAcceptedLists(). Unchanged.");
       return doc;
     }

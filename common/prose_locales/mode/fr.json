@@ -383,6 +383,18 @@
     "en": "d1fb3763f55efbde",
     "text": "Les deux sont refusées lors de la vérification de signature, dans le vérificateur partagé, dans verifyJws() et (RSA) pour une clé WebAuthn. Un client_secret créé fait 48 octets aléatoires par défaut (oauth2.registeredSecretBytes), assez long pour HS512. Dans LES DEUX modes, une clé HMAC vide, un exposant RSA inférieur à 3 ou pair (une falsification, pas une clé faible), un module RSA présentant l’empreinte ROCA (CVE-2017-15361), une JWK dont use n’est pas \"sig\" ou dont key_ops ne contient pas \"verify\", et un segment qui n’est pas du base64url canonique sont refusés."
   },
+  "mode.requirements.unapproved-curves.what": {
+    "en": "3103323f7fdc6789",
+    "text": "secp256k1 n’est utilisé que là où une liste le nomme"
+  },
+  "mode.requirements.unapproved-curves.development": {
+    "en": "f33b22ffc3de7a2c",
+    "text": "ES256K est utilisé pour signer, proposé et accepté comme n’importe quel autre algorithme."
+  },
+  "mode.requirements.unapproved-curves.product": {
+    "en": "0334054d89fd0997",
+    "text": "ES256K n’est ni utilisé pour signer ni proposé sauf si keys.signingAlgorithms le liste, et une signature dans cet algorithme est refusée sauf si keys.acceptedSigningAlgorithms ou keys.signingAlgorithms le liste (cose.acceptedAlgorithms pour COSE). Les listes d’algorithmes publiées, dont celle de DPoP, l’omettent."
+  },
   "mode.requirements.xml-ecdsa-curves.what": {
     "en": "858a80a68d7c0582",
     "text": "Une signature XML ECDSA n’est vérifiée que sur une courbe d’au moins 256 bits"
@@ -392,8 +404,8 @@
     "text": "Une clé sur n’importe quelle courbe que lit node se vérifie — secp160, secp192, secp224 parmi elles — afin qu’un partenaire qui en utilise une puisse être exercé. PLUS FAIBLE QUE LE PLANCHER DE 112 BITS de NIST SP 800-57 pour la plus petite d’entre elles."
   },
   "mode.requirements.xml-ecdsa-curves.product": {
-    "en": "cdb3f7be9fda1083",
-    "text": "Seules P-256, P-384, P-521, secp256k1 et brainpoolP256r1 et plus grandes se vérifient ; toute autre courbe est refusée (STS-KEYS-0077) et un certificat sur l’une d’elles n’est pas enregistré."
+    "en": "83ca2ed6f0591c63",
+    "text": "Seules P-256, P-384, P-521, brainpoolP256r1 et plus grandes vérifient, et secp256k1 là où keys.acceptedSigningAlgorithms ou keys.signingAlgorithms nomme ES256K ; toute autre courbe est refusée (STS-KEYS-0077) et un certificat sur l’une d’elles n’est pas enregistré."
   },
   "mode.requirements.kerberos-deprecated-enctypes.what": {
     "en": "d0088e020fb9a13e",
