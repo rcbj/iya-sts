@@ -266,6 +266,9 @@ class GnapSubject {
     }
     let phone = null;
     try {
+      // BY NAME ON PURPOSE (#1579): these are the claim catalogue's values,
+      // which an attribute source may supply as well as the entry, keyed by
+      // the attribute the catalogue maps; a concept reads only the entry.
       const byLdap = loadClaimAttributes().catalogueValuesFor(
           username).byLdap || {};
       const item = byLdap.telephonenumber || byLdap.mobile || null;

@@ -159,6 +159,7 @@
 
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
+import DomainMap = require('../common/domain_map');
 import vcClaims = require('../oid4vc/vc_claims');
 
 // The logger the two row functions in USER_ATTRIBUTES use — see above.
@@ -855,7 +856,9 @@ class ScimMap {
   private scimIdOf(entry: EntryObject | null | undefined): string {
     const { log } = this.deps;
     log.debug("Entering ScimMap.scimIdOf().");
-    const uuid = this.firstOf((entry && entry.attributes) || {}, 'entryUUID');
+    // DirectoryEntry's (#1579).
+    const uuid = DomainMap.fieldOf('DirectoryEntry', 'entryUuid',
+      (entry && entry.attributes) || {});
     log.debug("Leaving ScimMap.scimIdOf().");
     return uuid ? String(uuid) : String((entry && entry.dn) || '');
   }
@@ -893,9 +896,11 @@ class ScimMap {
       meta: {
         resourceType: 'User',
         created: this.isoFromGeneralizedTime(
-          this.firstOf(attributes, 'createTimestamp') || entry.createdAt),
+          DomainMap.fieldOf('DirectoryEntry', 'createTimestamp', attributes) ||
+          entry.createdAt),
         lastModified: this.isoFromGeneralizedTime(
-          this.firstOf(attributes, 'modifyTimestamp') || entry.modifiedAt),
+          DomainMap.fieldOf('DirectoryEntry', 'modifyTimestamp', attributes) ||
+          entry.modifiedAt),
         location: (ctx.location || '') +
           encodeURIComponent(this.scimIdOf(entry))
       }
@@ -1219,18 +1224,23 @@ class ScimMap {
     const resource: any = {
       schemas: [GROUP_SCHEMA],
       id: this.scimIdOf(entry),
-      displayName: this.firstOf(attributes, 'cn') || entry.dn,
+      displayName: DomainMap.fieldOf('Group', 'name', attributes) || entry.dn,
       members: [],
       meta: {
         resourceType: 'Group',
         created: this.isoFromGeneralizedTime(
-          this.firstOf(attributes, 'createTimestamp') || entry.createdAt),
+          DomainMap.fieldOf('DirectoryEntry', 'createTimestamp', attributes) ||
+          entry.createdAt),
         lastModified: this.isoFromGeneralizedTime(
-          this.firstOf(attributes, 'modifyTimestamp') || entry.modifiedAt),
+          DomainMap.fieldOf('DirectoryEntry', 'modifyTimestamp', attributes) ||
+          entry.modifiedAt),
         location: (ctx.location || '') +
           encodeURIComponent(this.scimIdOf(entry))
       }
     };
+    // BY NAME ON PURPOSE (#1579): SCIM writes `scimExternalId` onto a group,
+    // and no group object of the model declares it, so no concept can read
+    // it there yet.
     const externalId = this.firstOf(attributes, 'scimExternalId');
     if (externalId) {
       resource.externalId = externalId;
