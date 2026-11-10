@@ -41,7 +41,11 @@ A LIBRARY with six routes on the main app. Nothing here binds anything.
   so every reader of `socket.authorized` — sign-in, RFC 8705, the XACML gate,
   SCIM, the request pool's forwarded flag — sees the answer. A demoted
   certificate still binds a token, as any unverified one does (RFC 8705 section
-  3).
+  3). **Since #1360 it asks the door's `holdPeer('tls-client', …)`** with the
+  DEFAULT realm's rows, which out of force is the path rules alone; under
+  paranoid PKI mode the hold adds the leaf's fields and the resumed verdict, and
+  a throw inside it demotes rather than leaving OpenSSL's answer.
+  `common/CLAUDE.md` (3dd, *Phase 1*) has the hold's shapes on each listener.
 * **The JA4 reader** (`client_hello.ts`, #62 P0) — see *THE CLIENT'S JA4
   FINGERPRINT*, below.
 * **Two routes**, both on the main app and visible to
