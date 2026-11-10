@@ -235,6 +235,11 @@ import sessionWindow = require('./session_window');
 // LIBRARY that requires only `common/` leaves and nothing of this file, so
 // the require closes no cycle and moves no route.
 import AccountSets = require('./account_sets');
+// THE SESSION AS THE MODEL SAYS IT MEANS (#1579): `models/domain/session.tsp`
+// is the one statement of a session's shape, so the readers below that
+// project a session onto a page, an answer or a decision read it through
+// `Session.fromRecord()` rather than off the raw record.
+import DomainClasses = require('../common/domain_classes');
 
 // The path a caller sends the browser to. Exported, because the two callers
 // build a URL out of it and a string spelled twice is a string that drifts.
@@ -2912,7 +2917,7 @@ class Authn {
                displayName: account.displayName || entry.displayName,
                state: 'signed-in',
                signedInAt: self.sessionStartedAt(session) || 0,
-               authTime: Number(session.authTime) || 0,
+               authTime: Authn.sessionView(session).authTime || 0,
                current: !!(own && own.id === sid) };
     });
     const remembered = Object.keys(row.remembered || {}).map(function (key) {
@@ -6308,10 +6313,41 @@ class Authn {
   sessionStartedAt(session) {
     const { log } = this.deps;
     log.debug("Entering Authn.sessionStartedAt().");
-    const first = session && Array.isArray(session.events) &&
-                  session.events.length ? session.events[0] : null;
+    const view = Authn.sessionView(session);
+    const first = view.events && view.events.length ? view.events[0] : null;
     log.debug("Leaving Authn.sessionStartedAt().");
-    return ((first && first.at) || (session && session.authTime) || 0) * 1000;
+    return ((first && first.at) || view.authTime || 0) * 1000;
+  }
+
+  /**
+   * A session as the `Session` concept, or an empty one for no session.
+   *
+   * @param session - the session record, or nothing
+   * @returns the concept
+   */
+  static sessionView(session): IyaDomain.Session {
+    helpers.log.debug("Entering Authn.sessionView().");
+    const view = session && typeof session === 'object'
+      ? DomainClasses.Session.fromRecord(session)
+      : {} as IyaDomain.Session;
+    helpers.log.debug("Leaving Authn.sessionView().");
+    return view;
+  }
+
+  /**
+   * When a session's person last authenticated, in seconds: its latest
+   * event, else its `authTime`.
+   *
+   * @param session - the session record, or nothing
+   * @returns the instant in seconds, or 0
+   */
+  static lastAuthenticatedAt(session): number {
+    helpers.log.debug("Entering Authn.lastAuthenticatedAt().");
+    const view = Authn.sessionView(session);
+    const events = view.events || [];
+    const latest = events.length ? events[events.length - 1] : null;
+    helpers.log.debug("Leaving Authn.lastAuthenticatedAt().");
+    return Number((latest && latest.at) || view.authTime || 0);
   }
 
   // HOW A PERSON IS SIGNED IN, READ THROUGH A RELYING-PARTY SESSION
@@ -6347,14 +6383,15 @@ class Authn {
         fromParent = true;
       }
     }
-    const events = Array.isArray(source.events) ? source.events.length : 1;
+    const view = Authn.sessionView(source);
+    const events = view.events ? view.events.length : 1;
     log.debug("Leaving Authn.signOnFactsFor(). fromParent=" + fromParent);
     return {
       startedAt: this.sessionStartedAt(source),
-      authTime: (source.authTime || 0) * 1000,
-      amr: (source.amr || []).slice(),
-      acr: source.acr || '',
-      authentications: events + (source.eventsDropped || 0),
+      authTime: (view.authTime || 0) * 1000,
+      amr: (view.methods || []).slice(),
+      acr: view.assuranceLevel || '',
+      authentications: events + (view.eventsDropped || 0),
       fromParent: fromParent,
       // Whether the sign-on session is bound to a browser key (#725).
       deviceBound: deviceBound.bindingOf(source)
@@ -20165,6 +20202,11 @@ export = {
   // itself would be a second place to get the handle check wrong.
   sessionStartedAt: slot.forward('sessionStartedAt'),
   signOnFactsFor: slot.forward('signOnFactsFor'),
+  // A session read through the `Session` concept (#1579), and when its
+  // person last authenticated: what every reader outside this module that
+  // projects a session asks, so none of them reads the raw record.
+  sessionView: Authn.sessionView,
+  lastAuthenticatedAt: Authn.lastAuthenticatedAt,
   // A session's binding to a browser key (#725), for the session rows the
   // sign-out and the console draw.
   deviceBindingOf: deviceBound.bindingOf,

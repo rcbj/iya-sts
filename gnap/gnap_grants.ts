@@ -162,6 +162,8 @@ import gnapApproval = require('./gnap_approval');
 // a registered target, shared with RFC 8707's `resource`. A static library
 // that reaches what it reads lazily, so the require closes no cycle.
 import RegisteredTargets = require('../common/registered_targets');
+// A session as the model says it means (#1579).
+import DomainClasses = require('../common/domain_classes');
 
 const PROTOCOL = 'GNAP';
 const STATE = store.STATE;
@@ -2845,6 +2847,26 @@ class GnapGrants {
     return { ok: true, status: 200, body: body, grant: grant };
   }
 
+  // WHO DECIDED, AND HOW THEY HAD SIGNED IN (#1579): the session read
+  // through the `Session` concept, so what a grant remembers of its resource
+  // owner is the model's statement of the session.
+  /**
+   * The resource owner a grant records, from the session they decided on.
+   *
+   * @param username - the resource owner, normalised
+   * @param session - their sign-on session
+   * @returns `{ username, sessionId, authTime, amr, acr }`
+   */
+  private resourceOwnerOf(username, session) {
+    const { log } = this.deps;
+    log.debug("Entering GnapGrants.resourceOwnerOf().");
+    const view = DomainClasses.Session.fromRecord(session);
+    log.debug("Leaving GnapGrants.resourceOwnerOf().");
+    return { username: username, sessionId: view.id,
+             authTime: view.authTime,
+             amr: view.methods, acr: view.assuranceLevel };
+  }
+
   // ---------------------------------------------------------------------------
   // THE RESOURCE OWNER'S DECISION, from `gnap_interact.ts`.
   //
@@ -2895,9 +2917,7 @@ class GnapGrants {
       // remembered approval made without drawing it (`gnap_interact.ts`).
       grant.approval = selection.remembered ? 'remembered' : 'interaction';
       grant.subjectAuthorizedBy = selection.subject ? 'interaction' : null;
-      grant.ro = { username: username, sessionId: session.id,
-                   authTime: session.authTime,
-                   amr: session.amr, acr: session.acr };
+      grant.ro = this.resourceOwnerOf(username, session);
       if (config.value('gnap.rememberApprovals') !== false) {
         const digests = [];
         selection.tokens.forEach((one) => {
@@ -2912,9 +2932,7 @@ class GnapGrants {
       signals.noteApprover(grant.client.identifier, username);
     } else {
       grant.decision = { approved: false, error: 'user_denied' };
-      grant.ro = { username: username, sessionId: session.id,
-                   authTime: session.authTime,
-                   amr: session.amr, acr: session.acr };
+      grant.ro = this.resourceOwnerOf(username, session);
     }
     monitor.record(grant.client.identifier,
                    grant.decision.approved ? 'grant.approved' : 'grant.denied',
@@ -3085,9 +3103,7 @@ class GnapGrants {
                            'resource owner\'s sign-in did not meet (RFC ' +
                            '9470).' };
     const username = subject.normaliseName(session.user.username);
-    grant.ro = { username: username, sessionId: session.id,
-                 authTime: session.authTime, amr: session.amr,
-                 acr: session.acr };
+    grant.ro = this.resourceOwnerOf(username, session);
     monitor.record(grant.client.identifier, 'grant.denied',
                    { gnapError: 'request_denied' });
     audit.failure(recorded, { protocol: PROTOCOL, channel: 'http',
@@ -3123,9 +3139,7 @@ class GnapGrants {
     grant.ownerApproval.answered = true;
     grant.ownerApproval.answeredAt = this.deps.nowSec();
     grant.subjectAuthorizedBy = null;
-    grant.ro = { username: username, sessionId: session.id,
-                 authTime: session.authTime, amr: session.amr,
-                 acr: session.acr };
+    grant.ro = this.resourceOwnerOf(username, session);
     if (selection.approve) {
       grant.decision = { approved: true, tokens: selection.tokens,
                          subject: !!selection.subject };

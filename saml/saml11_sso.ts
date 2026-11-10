@@ -1430,7 +1430,9 @@ class Saml11Sso {
     const format = ctx.nameIdFormat ||
       String(this.settingFor(ctx.rpId, 'saml11.nameIdFormat') ||
              NAMEID_FORMAT_UNSPECIFIED);
-    const authnInstant = new Date((session.authTime || 0) * 1000).toISOString();
+    // When they authenticated, read through the `Session` concept (#1579).
+    const authnInstant = new Date((authn.sessionView(session).authTime || 0) *
+                                  1000).toISOString();
     const assertion = buildSaml11Assertion({
       subject: user.username,
       audience: ctx.rpId,
@@ -3217,7 +3219,8 @@ class Saml11Sso {
                                             'saml11.assertionLifetimeMin')) ||
                      60,
         authnMethod: how.method,
-        authnInstant: new Date((live.authTime || 0) * 1000).toISOString(),
+        authnInstant: new Date((authn.sessionView(live).authTime || 0) *
+                               1000).toISOString(),
         issuer: providerId,
         nameQualifier: providerId,
         // A query's answer is confirmed by neither browser profile: it did

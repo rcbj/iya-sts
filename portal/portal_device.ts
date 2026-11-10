@@ -48,6 +48,8 @@ import config = require('../common/config');
 import validation = require('../common/validation');
 import deviceAuthorization = require('../oauth-oidc/device_authorization');
 import ModelZod = require('../common/model_zod');
+// A session as the model says it means (#1579).
+import DomainClasses = require('../common/domain_classes');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -259,10 +261,10 @@ class PortalDevice {
     // What the approval proves is the sign-on session the token was issued
     // on: its id, so the device's tokens end with it, and its acr, amr and
     // when it signed in, which the ID Token reports.
-    const signOn = caller.signOn || {};
+    const signOn = DomainClasses.Session.fromRecord(caller.signOn || {});
     const answered = deviceAuthorization.enabled()
       ? deviceAuthorization.answer(body.user_code, who, approve,
-          { acr: signOn.acr || '', amr: signOn.amr || [],
+          { acr: signOn.assuranceLevel || '', amr: signOn.methods || [],
             authTime: signOn.authTime, sessionId: signOn.id || '' })
       : { ok: false, why: 'signing in a device is turned off here' };
     if (!answered.ok) {

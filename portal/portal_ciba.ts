@@ -376,12 +376,14 @@ class PortalCiba {
                       prompt: 'login' } });
       }
     }
+    // The session's authentication, read through the `Session` concept.
+    const proved = authn.sessionView(signOn);
     const answered = await ciba.answerAndNotify(body.id, who, approve, {
-      acr: signOn.acr || '', amr: signOn.amr || [],
-      authTime: signOn.authTime,
+      acr: proved.assuranceLevel || '', amr: proved.methods || [],
+      authTime: proved.authTime,
       // The tokens are issued ON this session (#239), so its end revokes
       // their refresh token as a sign-out does every grant's.
-      sessionId: signOn.id || '' });
+      sessionId: proved.id || '' });
     if (!answered.ok) {
       log.debug("Leaving PortalCiba.answer(). Refused.");
       return ctx.refuse(res, 400, 'STS-PORTAL-0089', answered.why);

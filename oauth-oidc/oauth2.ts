@@ -8186,12 +8186,15 @@ class OAuth2Server {
                     'or is not the ID Token\'s sid.');
     }
     const scope = String(body.scope || 'openid');
+    // The sign-on session read through the `Session` concept (#1579).
+    const signOn = authn.sessionView(held);
     const exchanged = await ctx.issue({
       jkt: ctx.dpopJkt, user: held.user, client_id: client.client_id,
       scope: scope, session_id: device.session,
       // The session's own sign-in, which is what this ID Token asserts:
       // `authTime` is seconds, as every issuing site reads it.
-      auth_time: held.authTime || undefined, amr: held.amr, acr: held.acr,
+      auth_time: signOn.authTime || undefined, amr: signOn.methods,
+      acr: signOn.assuranceLevel,
       grant: 'native sso exchange',
       native_sso_device_secret: secret
     });
@@ -9225,14 +9228,19 @@ class OAuth2Server {
     log.debug("Entering OAuth2Server.issueAuthorizationResponse().");
     // Everything minted below is this authorization server's, so the base it is
     // built from is this authorization server's.
-    const amr = (authInfo && authInfo.amr) || null;
-    const acr = issuedAcr || (authInfo && authInfo.acr) || null;
+    // THE SESSION'S AUTHENTICATION, READ THROUGH THE `Session` CONCEPT
+    // (#1579): what the code, the ID Token and the issuance policy say about
+    // how the person signed in is the model's statement of the record.
+    const signOn = this.deps.authn.sessionView(authInfo);
+    const signedIn = signOn.authenticated !== false;
+    const amr = signOn.methods || null;
+    const acr = issuedAcr || signOn.assuranceLevel || null;
     // The session this response is being issued ON. Every path into this
     // function has one — an unauthenticated request is shown the login screen
     // instead — so an empty id here would mean a session object arrived from
     // somewhere that did not make it, which is worth seeing on the console
     // rather than defaulting quietly.
-    const sessionId = (authInfo && authInfo.id) || '';
+    const sessionId = signOn.id || '';
     log.debug("Entering OAuth2Server.issueAuthorizationResponse(). " +
               "response_type=" + (query.response_type || '(none)') +
               ", user=" + user.username);
@@ -9250,8 +9258,7 @@ class OAuth2Server {
     // `let`, because a gated permission comes off below (#302, #303), after
     // the client's own refusals have seen it.
     const person = { kind: 'user', name: user.username,
-                     authenticated: !authInfo ||
-                                    authInfo.authenticated !== false };
+                     authenticated: signedIn };
     let scope = debuggerAccess.narrowScope(
       self.offlineAccessScope(String(query.scope || ''), query, types, user),
       person, { clientId: query.client_id, grant: 'authorization_code' });
@@ -9473,7 +9480,7 @@ class OAuth2Server {
       // answer could be anything else. `!== false` keeps a session made before
       // the field existed meaning what it meant.
       subject: { kind: 'user', name: String(user.username || ''),
-                 authenticated: (authInfo || {}).authenticated !== false },
+                 authenticated: signedIn },
       claims: null,
       // The session this response is issued on, whose risk the policy reads
       // (#62 P3).
@@ -9488,8 +9495,7 @@ class OAuth2Server {
     // session that satisfies one. `prompt=none` forbids the screen, so it is
     // `login_required` (OIDC Core section 3.1.2.6) instead.
     // -----------------------------------------------------------------------
-    if (!roleAnswer.allowed && roleAnswer.mechanism &&
-        (authInfo || {}).authenticated !== false) {
+    if (!roleAnswer.allowed && roleAnswer.mechanism && signedIn) {
       if (String(query.prompt || '').split(/\s+/).indexOf('none') >= 0) {
         // A second factor the client does not allow (#475) is its own.
         errorCodes.mark(res, roleAnswer.mechanism.secondFactor
@@ -9531,7 +9537,7 @@ class OAuth2Server {
     // -----------------------------------------------------------------------
     if (!roleAnswer.allowed && roleAnswer.risk &&
         roleAnswer.risk.action === 'step-up' && !roleAnswer.risk.observed &&
-        (authInfo || {}).authenticated !== false) {
+        signedIn) {
       errorCodes.mark(res, 'STS-RISK-0017');
       log.info('oauth2: the issuance policy asks for a ' +
                roleAnswer.risk.factor + ' on the risk of the session of "' +
@@ -9807,7 +9813,7 @@ class OAuth2Server {
         // is the right reading rather than a limitation: what a required role
         // asks is who was authenticated when this authorization happened, and a
         // session that has since ended does not change what happened then.
-        session_authenticated: (authInfo || {}).authenticated !== false,
+        session_authenticated: signedIn,
         // WHICH AUTHORIZATION SERVER ISSUED IT. A code from one is not
         // redeemable at another's token endpoint, and that is not a formality:
         // they publish different capabilities, may have different clients
@@ -12673,7 +12679,9 @@ class OAuth2Server {
         authn.noteSessionChanged(session);
       }
       return self.issueAuthorizationResponse(req, res, q, session.user,
-                                             session.authTime, session,
+                                             authn.sessionView(session)
+                                               .authTime,
+                                             session,
                                              stepUpAssessed ? stepUpAssessed.acr
                                                             : null)
         .catch(function (e) {
