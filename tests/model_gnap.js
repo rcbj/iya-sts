@@ -158,7 +158,10 @@ async function buildCheck(t) {
   };
   checked('a member set declared twice', /grant-response is declared twice/,
     function (o) {
-      o.members.push(JSON.parse(JSON.stringify(o.members[0])));
+      o.members.push(JSON.parse(JSON.stringify(o.members.filter(
+        function (one) {
+          return one.id === 'grant-response';
+        })[0])));
     });
   checked('a member citing nothing', /discovery\.grant_request_endpoint cites nothing/,
     function (o) {
@@ -174,9 +177,15 @@ async function buildCheck(t) {
     /Bad-Code is not a lower-case word/, function (o) {
       o.errors.push({ code: 'Bad-Code', cite: 'x' });
     });
+  checked('a parameter checked as neither a type nor values',
+    /api-approve\.action must be checked as one shared type/, function (o) {
+      o.params.filter(function (one) {
+        return one.id === 'api-approve';
+      })[0].params[0].kind = 'token';
+    });
   checked('a path parameter required and empty',
     /continue\.grant is required and may be empty/, function (o) {
-      o.pathParams.filter(function (one) {
+      o.params.filter(function (one) {
         return one.id === 'continue';
       })[0].params[0].empty = true;
     });
@@ -245,13 +254,25 @@ function noHandSchema(t) {
           'B. registration: token_introspection_required is a boolean');
   const validation = require('../common/validation');
   t.check(!validation.checkParsed({ grant: 'a b' }, 'params',
-                                  GnapModel.pathParams('continue')).ok &&
+                                  GnapModel.params('continue')).ok &&
           validation.checkParsed({ grant: 'abc_-1' }, 'params',
-                                 GnapModel.pathParams('continue')).ok,
+                                 GnapModel.params('continue')).ok,
           'B. the continuation path\'s grant is a base64url value');
   t.check(validation.checkParsed({ as: '' }, 'params',
-                                 GnapModel.pathParams('as')).ok,
+                                 GnapModel.params('as')).ok,
           'B. an empty authorization server name is no name');
+  const act = function (body) {
+    return validation.checkParsed(body, 'body',
+                                  GnapModel.params('api-approve'));
+  };
+  t.check(act({ action: 'allow', right: 't0r0' }).ok &&
+          Array.isArray(act({ action: 'allow', right: 't0r0' }).value.right),
+          'B. /gnap-api/approve: one ticked right is a list of one');
+  t.check(!act({ action: 'maybe' }).ok && !act({ action: 'deny', x: 1 }).ok,
+          'B. /gnap-api/approve: action is allow or deny, and the body is ' +
+          'closed');
+  t.check(act({ action: 'deny', subject: '' }).ok,
+          'B. /gnap-api/approve: an empty subject is no value');
   const applications = require('../common/applications');
   const stray = applications.authorizationDetailsTypeOf(JSON.stringify({
     type: 'm-type', owner: 'x' }));

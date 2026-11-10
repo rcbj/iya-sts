@@ -29,7 +29,9 @@
 //   finish object (section 2.5.2) is CLOSED.
 // * THE SHARED TYPES (`@definitions`): every document carries all of them
 //   as its `$defs`, in this order.
-// * A PATH'S PARAMETERS (`@pathParams`).
+// * THE PARAMETERS `common/validation.js`'s shared types check (`@params`):
+//   the paths', the approval page's query, and the bodies of `/gnap-api`'s
+//   two acts (#578).
 // * THE ANSWERS (`@members`): the grant response and what it nests, the
 //   error response, both discovery documents, introspection, registration,
 //   the verification material, the revoked biscuits, the ZCAP controller
@@ -368,22 +370,72 @@ model Registration {
 // THE PATHS' PARAMETERS.
 // ---------------------------------------------------------------------------
 
-@pathParams(#{ id: "as", cite: "this service's named authorization servers (`common/authorization_servers.js`)" })
+@params(#{ id: "as", input: "params", cite: "this service's named authorization servers (`common/authorization_servers.js`)" })
 model AsPath {
-  @pathParam(#{ kind: "identifier", empty: true, cite: "this service's own: a named authorization server" })
+  @param(#{ kind: "identifier", empty: true, cite: "this service's own: a named authorization server" })
   as?: string;
 }
 
-@pathParams(#{ id: "continue", cite: "RFC 9635 section 3.1" })
+@params(#{ id: "continue", input: "params", cite: "RFC 9635 section 3.1" })
 model ContinuePath {
-  @pathParam(#{ kind: "base64url", cite: "RFC 9635 section 3.1: the continuation URI this service mints" })
+  @param(#{ kind: "base64url", cite: "RFC 9635 section 3.1: the continuation URI this service mints" })
   grant: string;
 }
 
-@pathParams(#{ id: "manage", cite: "RFC 9635 section 3.2.1" })
+@params(#{ id: "manage", input: "params", cite: "RFC 9635 section 3.2.1" })
 model ManagePath {
-  @pathParam(#{ kind: "base64url", cite: "RFC 9635 section 3.2.1: the management URI this service mints" })
+  @param(#{ kind: "base64url", cite: "RFC 9635 section 3.2.1: the management URI this service mints" })
   handle: string;
+}
+
+/** A start link's, an approval page's or `/gnap-api`'s handle. */
+@params(#{ id: "interaction-id", input: "params", cite: "RFC 9635 sections 3.3.1 and 3.3.2: the URIs this service mints" })
+model InteractionPath {
+  @param(#{ kind: "base64url", cite: "RFC 9635 section 3.3.1" })
+  id: string;
+}
+
+/** What the sign-in screen hands back to the approval page. */
+@params(#{ id: "approve-query", input: "query", cite: "this service's own: the approval page's return from the sign-in screen" })
+model ApproveQuery {
+  @param(#{ kind: "token", empty: true, cite: "this service's own: the sign-in screen's refusal" })
+  authn_error?: string;
+
+  @param(#{ kind: "text", empty: true, cite: "this service's own" })
+  authn_error_description?: string;
+
+  /** #432 phase 6: the sign-in for a step-up has happened once. */
+  @param(#{ empty: true, cite: "this service's own (#432 phase 6, rule 3an)" })
+  step_up_honoured?: "1";
+}
+
+/**
+ * `POST /gnap-api/approve/{id}` (#578): the approval form's fields as they
+ * were, the CSRF field gone into a header — `action`, the ticked rights
+ * `t<k>r<r>` (a string where one is ticked, an array where several), and
+ * `subject` where "Who you are" stayed ticked. Closed, as `/authn-api`'s
+ * are: a field nobody reads must not arrive under a name that looks
+ * decisive. A right's limit controls (`lim_t<k>r<r>_<member>`, #432 phase
+ * 5) are not these: `LimitsForm.strip()` takes them off first, and
+ * `limitFieldsRefusal()` holds them to their own bound.
+ */
+@params(#{ id: "api-approve", input: "body", closed: true, cite: "this service's own (#578)" })
+model ApiApproveBody {
+  @param(#{ cite: "this service's own (#578)" })
+  action: "allow" | "deny";
+
+  @param(#{ empty: true, cite: "this service's own (#578)" })
+  subject?: "yes";
+
+  @param(#{ kind: "token", cite: "this service's own (#578)" })
+  right?: string[];
+}
+
+/** `POST /gnap-api/code` (#578): the user code as typed. */
+@params(#{ id: "api-code", input: "body", closed: true, cite: "RFC 9635 sections 4.1.2 and 4.1.3; this service's own (#578)" })
+model ApiCodeBody {
+  @param(#{ kind: "text", empty: true, cite: "RFC 9635 section 4.1.2" })
+  code?: string;
 }
 
 // ---------------------------------------------------------------------------

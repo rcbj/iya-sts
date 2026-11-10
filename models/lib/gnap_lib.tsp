@@ -9,7 +9,8 @@
 // JSON Schema 2020-12 `gnap/gnap_schemas.ts` compiles. The types a document
 // shares are the properties of the one `@definitions` model, in the order of
 // its `$defs`. An answer is a model of members, as OAuth's are; a path's
-// parameters are `@pathParams`; the error codes are one model. A value a
+// parameters, a `/gnap-api` act's body and the approval page's query are
+// `@params`; the error codes are one model. A value a
 // decorator takes is closed, so a new fact is added here on purpose.
 
 import "./gnap_lib.mjs";
@@ -85,18 +86,33 @@ model DocumentOptions {
   cite: string;
 }
 
-/** A path's parameters. */
-model PathParamsOptions {
+/**
+ * Parameters checked by `common/validation.js`'s shared types: a path's, a
+ * query's, or the body of a `/gnap-api` act.
+ */
+model ParamsOptions {
   /** The id the service asks the model for. */
   id: string;
+
+  /** Where they arrive. */
+  input: "params" | "query" | "body";
+
+  /** A member the model does not name is refused (zod's `strict()`). */
+  closed?: boolean;
 
   cite: string;
 }
 
-/** What a path parameter's TypeSpec type cannot say. */
-model PathParamOptions {
-  /** The shared type of `common/validation.js` it is checked as. */
-  kind: "identifier" | "base64url";
+/**
+ * What a parameter's TypeSpec type cannot say. Its type says the rest: a
+ * union of string literals is one of those values, an array repeats.
+ */
+model ParamOptions {
+  /**
+   * The shared type of `common/validation.js` it is checked as; none where
+   * its type is a union of string literals.
+   */
+  kind?: "identifier" | "base64url" | "token" | "text";
 
   /** An empty value is no value (`validation.types.opt()`). */
   empty?: boolean;
@@ -147,8 +163,8 @@ extern dec shape(target: Model | ModelProperty | UnionVariant | Scalar,
   options: valueof Shape);
 extern dec document(target: Model, options: valueof DocumentOptions);
 extern dec definitions(target: Model);
-extern dec pathParams(target: Model, options: valueof PathParamsOptions);
-extern dec pathParam(target: ModelProperty, options: valueof PathParamOptions);
+extern dec params(target: Model, options: valueof ParamsOptions);
+extern dec param(target: ModelProperty, options: valueof ParamOptions);
 extern dec members(target: Model, options: valueof MembersOptions);
 extern dec member(target: ModelProperty, options: valueof MemberOptions);
 extern dec registry(target: Union | Model, options: valueof RegistryOptions);

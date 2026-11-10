@@ -187,39 +187,15 @@ interface RouteTable {
   post(path: string, ...handlers: Handler[]): unknown;
 }
 
-const vz = validation.z;
-const vt = validation.types;
-
-const ID_PARAMS = vz.object({ id: vt.base64url });
-const APPROVE_QUERY = vz.object({
-  authn_error: vt.opt(vt.token),
-  authn_error_description: vt.opt(vt.text),
-  // #432 phase 6: the sign-in for a step-up has happened once.
-  step_up_honoured: vt.opt(vt.oneOf(['1']))
-});
-// ---------------------------------------------------------------------------
-// `/gnap-api` (#578): THE BODIES OF ITS TWO ACTS, closed shapes as
-// `/authn-api`'s are — they are this service's own operations, and a field
-// nobody reads must not arrive under a name that looks decisive. They are the
-// forms' fields as they were, the CSRF field gone into a header:
-//
-//   * the user code page: `code`, as typed (spaces, dashes, either case).
-//   * the approval: `action` (`allow` or `deny`), `right` — the ticked
-//     rights, `t<k>r<r>`, a string where one is ticked and an array where
-//     several are, as a form's repeated checkbox reads in JSON — and
-//     `subject` (`yes` where "Who you are" stayed ticked). A right's limit
-//     controls (`lim_t<k>r<r>_<member>`, #432 phase 5) are not this schema's:
-//     `LimitsForm.strip()` takes them off before it is asked, and
-//     `limitFieldsRefusal()` holds them to their own bound.
-// ---------------------------------------------------------------------------
-const API_APPROVE_BODY = vz.object({
-  action: vt.oneOf(['allow', 'deny']),
-  subject: vt.opt(vt.oneOf(['yes'])),
-  right: vt.repeatable(vt.token).optional()
-}).strict();
-const API_CODE_BODY = vz.object({
-  code: vt.opt(vt.text)
-}).strict();
+// THE PARAMETERS ARE THE MODEL'S (#1579): `models/gnap/gnap.tsp`'s
+// `@params` — a handle in a path, what the sign-in screen hands back to the
+// approval page, and the bodies of `/gnap-api`'s two acts (#578), closed as
+// `/authn-api`'s are. Why each field is what it is, and why a right's limit
+// controls are not among them, is said there.
+const ID_PARAMS = GnapModel.params('interaction-id');
+const APPROVE_QUERY = GnapModel.params('approve-query');
+const API_APPROVE_BODY = GnapModel.params('api-approve');
+const API_CODE_BODY = GnapModel.params('api-code');
 
 // The API's base, the header an act's CSRF token travels in, and the
 // surface's script — its path and the build's file (`build-typescript.sh`'s

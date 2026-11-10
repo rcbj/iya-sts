@@ -18,8 +18,10 @@
 //     table of the shared caps — byte for byte the schemas
 //     `gnap/gnap_schemas.ts` wrote by hand until #1579, so ajv answers every
 //     refusal as it did (`tests/gnap_model_wire.js`).
-//   * `pathParams(id)` is the zod object a path's parameters are checked
-//     against, each the shared type of `common/validation.js` it names.
+//   * `params(id)` is the zod object a path's or a query's parameters, or a
+//     `/gnap-api` act's body, are checked against: each the shared type of
+//     `common/validation.js` it names, or one of its values, repeated where
+//     it may repeat, closed where the model says so.
 //   * `registry(id)` is one of the registries `gnap/gnap_request.ts`'s walk
 //     and `gnap/gnap_keys.ts` branch on.
 //   * `hold(id, body)` and `holdError(code)` are the holding: what an answer
@@ -60,7 +62,7 @@ const GAPS_KEPT = 100;
 
 const GAPS: string[] = [];
 
-const PATH_PARAMS = new Map<string, any>();
+const PARAMS = new Map<string, any>();
 
 let SCHEMAS: Json | null = null;
 
@@ -123,28 +125,32 @@ class GnapModel {
   }
 
   /**
-   * One path's parameter validator, built once.
+   * One set of parameters' validator, built once.
    *
-   * @param id - the path's id in the model: `as`, `continue` or `manage`
+   * @param id - the set's id in the model: `as`, `continue`, `manage`,
+   *   `interaction-id`, `approve-query`, `api-approve`, `api-code`
    * @returns the zod object
    */
-  static pathParams(id: string): any {
-    log.debug("Entering GnapModel.pathParams().");
-    if (!PATH_PARAMS.has(id)) {
-      const set = MODEL.pathParams.find(function (one: Json) {
+  static params(id: string): any {
+    log.debug("Entering GnapModel.params().");
+    if (!PARAMS.has(id)) {
+      const set = MODEL.params.find(function (one: Json) {
         return one.id === id;
       });
       if (!set) {
-        log.debug("Leaving GnapModel.pathParams(). No such path.");
-        throw new TypeError('The GNAP model has no path ' + id);
+        log.debug("Leaving GnapModel.params(). No such set.");
+        throw new TypeError('The GNAP model has no parameters ' + id);
       }
       const vt: any = validation.types;
       const shape: Json = {};
       set.params.forEach(function (param: Json) {
-        let type = vt[param.kind];
+        let type = param.values ? vt.oneOf(param.values) : vt[param.kind];
         if (!type) {
           throw new TypeError('No validator can be generated for the kind ' +
                               param.kind + ' of ' + param.name);
+        }
+        if (param.repeatable) {
+          type = vt.repeatable(type);
         }
         if (param.empty) {
           type = vt.opt(type);
@@ -153,10 +159,11 @@ class GnapModel {
         }
         shape[param.name] = type;
       });
-      PATH_PARAMS.set(id, (validation.z as any).object(shape));
+      const object = (validation.z as any).object(shape);
+      PARAMS.set(id, set.closed ? object.strict() : object);
     }
-    log.debug("Leaving GnapModel.pathParams().");
-    return PATH_PARAMS.get(id);
+    log.debug("Leaving GnapModel.params().");
+    return PARAMS.get(id);
   }
 
   /**

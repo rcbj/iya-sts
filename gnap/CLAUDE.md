@@ -71,7 +71,7 @@ Route-free libraries, each require-able from an in-process test:
 | ~~`gnap_sf.ts`~~, ~~`gnap_httpsig.ts`~~ | **Moved out of `gnap/` by #178 (2026-10-05)**. RFC 8941 is `common/structured_fields.ts`; RFC 9421 and RFC 9530 are `common/crypto.js` section 14, shared with the FAPI 2.0 HTTP Signatures profile at the OAuth resource servers. `tests/http_signatures.js` holds them to the RFC's vectors. The codes they raised, STS-GNAP-0200 to 0246, are retired as STS-KEYS-0107 to 0153 |
 | `gnap_keys.ts` | key formats, proof method normalisation, thumbprints, the key descriptor every other module takes |
 | `gnap_proof.ts` | verifies a request's proof — httpsig, mtls, jwsd, jws, and the nested proofs of a key rotation |
-| `gnap_model.ts` | **the model, as the endpoints read it (#1579)**: the request schemas with `common/validation.js`'s caps put in, the paths' zod validators, the registries, and the holding of every answer and error code — see *The documents, answers and codes are the model's* below |
+| `gnap_model.ts` | **the model, as the endpoints read it (#1579)**: the request schemas with `common/validation.js`'s caps put in, the zod validators of the paths, the approval page's query and `/gnap-api`'s acts, the registries, and the holding of every answer and error code — see *The documents, answers and codes are the model's* below |
 | `gnap_schemas.ts` | compiles the six JSON Schemas the model renders (ajv 2020-12) and names the most useful error. Types, bounds, URI formats, and **no control character in any string**. No `required` or `enum`: those are the walker's, so a refusal names the RFC section |
 | `gnap_request.ts` | `checkEnvelope()` (depth/key bounds, then the schema, then the walker) and one parser per document; its registries are the model's |
 | `gnap_access.ts` | access rights: covers, intersect, the RFC 9767 token model and its presentation checks |
@@ -1117,7 +1117,11 @@ the source of:
   were CLOSED; the code had them open, and the model keeps the code's
   behaviour (only `finish` is closed). Whether they should close is a wire
   change, rcbj's to decide.
-* **The paths' parameters** (`@pathParams`: `as`, `continue`, `manage`).
+* **The parameters `common/validation.js`'s shared types check** (`@params`):
+  the paths' (`as`, `continue`, `manage`, an interaction handle), the
+  approval page's query from the sign-in screen, and the bodies of
+  `/gnap-api`'s two acts, closed — `gnap.ts` and `gnap_interact.ts` hold no
+  zod object of their own.
 * **The registries the walk reads** (`@registry`): the request and
   response-only flags, start modes, finish methods, assertion formats, proof
   methods, key formats, and RFC 9493's subject identifier formats with the

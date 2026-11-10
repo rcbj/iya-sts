@@ -141,10 +141,10 @@ interface AsSelection {
 }
 
 // The paths' parameters are the model's (#1579): `models/gnap/gnap.tsp`'s
-// `@pathParams`, each the shared type of `common/validation.js` it names.
-const AS_PARAMS = GnapModel.pathParams('as');
-const GRANT_PARAMS = GnapModel.pathParams('continue');
-const HANDLE_PARAMS = GnapModel.pathParams('manage');
+// `@params`, each the shared type of `common/validation.js` it names.
+const AS_PARAMS = GnapModel.params('as');
+const GRANT_PARAMS = GnapModel.params('continue');
+const HANDLE_PARAMS = GnapModel.params('manage');
 
 const STATUS_FOR: Record<string, number> = {
   invalid_client: 401,

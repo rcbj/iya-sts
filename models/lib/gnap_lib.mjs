@@ -16,7 +16,8 @@
 //     `common/validation.js`'s `CAP[NAME]` — `gnap/gnap_model.ts` puts the
 //     number in at load, because that table is the one source of the caps
 //     and this build cannot load it.
-//   * `pathParams`: a path's parameters and the shared type each is.
+//   * `params`: a path's, a query's or an act's parameters, and the shared
+//     type or the values each is.
 //   * `members`: every answer, discovery document and object inside one,
 //     with the JSON types each member may take and the sets it nests.
 //   * `errors`: the error codes, RFC 9635 section 3.6's and this service's.
@@ -42,8 +43,8 @@ const log = bunyan.createLogger({
 const SHAPE = Symbol.for('iya.gnap.shape');
 const DOCUMENT = Symbol.for('iya.gnap.document');
 const DEFINITIONS = Symbol.for('iya.gnap.definitions');
-const PATH_PARAMS = Symbol.for('iya.gnap.pathParams');
-const PATH_PARAM = Symbol.for('iya.gnap.pathParam');
+const PARAMS = Symbol.for('iya.gnap.params');
+const PARAM = Symbol.for('iya.gnap.param');
 const MEMBERS = Symbol.for('iya.gnap.members');
 const MEMBER = Symbol.for('iya.gnap.member');
 const REGISTRY = Symbol.for('iya.gnap.registry');
@@ -79,11 +80,11 @@ export const $decorators = {
     definitions: function (context, target) {
       context.program.stateMap(DEFINITIONS).set(target, true);
     },
-    pathParams: function (context, target, options) {
-      context.program.stateMap(PATH_PARAMS).set(target, options);
+    params: function (context, target, options) {
+      context.program.stateMap(PARAMS).set(target, options);
     },
-    pathParam: function (context, target, options) {
-      context.program.stateMap(PATH_PARAM).set(target, options);
+    param: function (context, target, options) {
+      context.program.stateMap(PARAM).set(target, options);
     },
     members: function (context, target, options) {
       context.program.stateMap(MEMBERS).set(target, options);
@@ -430,13 +431,17 @@ function nestedSets(program, type) {
 }
 
 /**
- * The string values of a union of string literals, or null.
+ * The string values of a string literal or a union of them, or null.
  *
  * @param type - the TypeSpec type
  * @returns the values
  */
 function literalsOf(type) {
   log.debug("Entering literalsOf().");
+  if (type.kind === 'String') {
+    log.debug("Leaving literalsOf(). One value.");
+    return [type.value];
+  }
   if (type.kind !== 'Union') {
     log.debug("Leaving literalsOf(). Not a union.");
     return null;
@@ -498,7 +503,7 @@ function registryOf(target, where, problems) {
  * rendering them.
  *
  * @param program - the compiled program
- * @returns `{ safePattern, schemas, documents, pathParams, registries,
+ * @returns `{ safePattern, schemas, documents, params, registries,
  *   members, errors, problems }`
  */
 export function readGnap(program) {
@@ -543,16 +548,33 @@ export function readGnap(program) {
     documents.push({ name: options.name, cite: options.cite,
                      model: model.name });
   });
-  const pathParams = [];
-  program.stateMap(PATH_PARAMS).forEach(function (options, model) {
-    const params = [];
+  const paramSets = [];
+  program.stateMap(PARAMS).forEach(function (options, model) {
+    const list = [];
     model.properties.forEach(function (property) {
-      const one = program.stateMap(PATH_PARAM).get(property) || {};
-      params.push({ name: property.name, kind: one.kind || '',
-                    required: property.optional !== true,
-                    empty: one.empty === true, cite: one.cite || '' });
+      const one = program.stateMap(PARAM).get(property) || {};
+      let type = property.type;
+      const repeatable = isArray(type);
+      if (repeatable) {
+        type = type.indexer.value;
+      }
+      const param = { name: property.name, kind: one.kind || '',
+                      required: property.optional !== true,
+                      repeatable: repeatable, empty: one.empty === true,
+                      cite: one.cite || '' };
+      const values = literalsOf(type);
+      if (values) {
+        param.values = values;
+      } else if (type.kind !== 'Scalar' ||
+                 scalarOf(program, type).base !== 'string') {
+        renderer.problems.push(options.id + '.' + property.name + ' is ' +
+                               'neither a string nor a list of values');
+      }
+      list.push(param);
     });
-    pathParams.push({ id: options.id, cite: options.cite, params: params });
+    paramSets.push({ id: options.id, input: options.input,
+                     closed: options.closed === true, cite: options.cite,
+                     params: list });
   });
   const members = [];
   program.stateMap(MEMBERS).forEach(function (options, model) {
@@ -607,7 +629,7 @@ export function readGnap(program) {
             " document(s), " + members.length + " member set(s), " +
             errors.length + " error code(s).");
   return { safePattern: SAFE, schemas: schemas, documents: documents,
-           pathParams: pathParams, registries: registries,
+           params: paramSets, registries: registries,
            members: members, errors: errors,
            problems: renderer.problems };
 }
@@ -631,12 +653,19 @@ export function checkGnap(gnap) {
       problems.push('the document ' + document.name + ' cites nothing');
     }
   });
-  gnap.pathParams.forEach(function (set) {
+  gnap.params.forEach(function (set) {
     if (seen.has('params:' + set.id)) {
-      problems.push('the path ' + set.id + ' is declared twice');
+      problems.push('the parameters ' + set.id + ' are declared twice');
     }
     seen.add('params:' + set.id);
+    if (!set.cite) {
+      problems.push('the parameters ' + set.id + ' cite nothing');
+    }
     set.params.forEach(function (param) {
+      if (!param.kind === !param.values) {
+        problems.push(set.id + '.' + param.name + ' must be checked as ' +
+                      'one shared type or one list of values');
+      }
       if (!param.cite) {
         problems.push(set.id + '.' + param.name + ' cites nothing');
       }
