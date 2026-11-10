@@ -230,6 +230,13 @@ function eventMembersOf(program, model) {
     if (shape.values) {
       member.values = shape.values;
     }
+    // A member whose type is a NAMED list (`@valueList`) says which, so the
+    // service can hand every row naming it the one list: CAEP's and RISC's
+    // credential types are one list by reference, not two alike.
+    const named = program.stateMap(LIST).get(property.type);
+    if (named) {
+      member.list = named.id;
+    }
     member.what = options.what || '';
     if (options.cite) {
       member.cite = options.cite;

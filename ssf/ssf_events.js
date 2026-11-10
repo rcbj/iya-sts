@@ -490,6 +490,17 @@ function keyEventGenerator(row) {
 // One catalogue row from the model's: the required names, and its generator.
 function rowOf(row) {
   log.debug("Entering rowOf(). " + row.uri);
+  // A member naming one of the model's lists gets THE list, the same array
+  // object every other row naming it gets: a value added to CAEP's
+  // credential types cannot fail to reach RISC's.
+  const LISTS = { 'credential-types': CREDENTIAL_TYPES,
+                  'stream-statuses': STATUSES };
+  row.members.forEach(function (member) {
+    if (member.list && LISTS[member.list]) {
+      member.values = LISTS[member.list];
+    }
+    delete member.list;
+  });
   row.required = row.members.filter(function (member) {
     return member.required;
   }).map(function (member) {

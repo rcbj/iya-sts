@@ -190,8 +190,16 @@ function noHandTables(t) {
   t.check(JSON.stringify(events.EVENTS.map(function (row) {
     return { uri: row.uri, members: row.members, what: row.what };
   })) === JSON.stringify(model.map(function (row) {
-    return { uri: row.uri, members: row.members, what: row.what };
+    return { uri: row.uri, members: row.members.map(function (member) {
+      const out = Object.assign({}, member);
+      delete out.list;
+      return out;
+    }), what: row.what };
   })), 'B. every catalogue row is the model\'s, in its order');
+  t.check(events.RISC_EVENTS.filter(function (row) {
+    return /credential-compromise$/.test(row.uri);
+  })[0].members[0].values === events.CREDENTIAL_TYPES,
+          'B. RISC\'s credential types are CAEP\'s list, the same object');
   events.EVENTS.forEach(function (row) {
     const payload = row.generate({});
     const verdict = events.validateEvent(row.uri, payload);
@@ -284,6 +292,15 @@ function recorded(t) {
       return;
     }
     const id = DOCUMENT_OF[one.step];
+    if (id === 'poll-response' && Array.isArray(body.sets)) {
+      // The record keeps a poll's SETs as a list, its jtis being drawn at
+      // random; the answer was a map keyed by them.
+      const sets = {};
+      body.sets.forEach(function (set, i) {
+        sets['jti' + i] = set;
+      });
+      body.sets = sets;
+    }
     if (id) {
       documents++;
       SsfModel.undeclared(id, body).forEach(function (p) {
@@ -305,8 +322,8 @@ function recorded(t) {
           });
       });
     }
-    if (id === 'poll-response' && Array.isArray(body.sets)) {
-      body.sets.forEach(function (set) {
+    if (id === 'poll-response' && Array.isArray(one.body.sets)) {
+      restored(one.body.sets).forEach(function (set) {
         sets++;
         const claims = set.jwt.claims;
         SsfModel.undeclared('set-claims', claims).forEach(function (p) {
