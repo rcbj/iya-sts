@@ -179,6 +179,66 @@ class OAuthModel {
   }
 
   /**
+   * One named member of a set.
+   *
+   * @param id - the member set's id
+   * @param name - the member
+   * @returns the member, as the model states it
+   */
+  static member(id: string, name: string): Json {
+    log.debug("Entering OAuthModel.member().");
+    const found = OAuthModel.members(id).list.find(function (one: Json) {
+      return one.name === name;
+    });
+    if (!found) {
+      log.debug("Leaving OAuthModel.member(). No such member.");
+      throw new TypeError('The OAuth model\'s ' + id + ' names no member ' +
+                          name);
+    }
+    log.debug("Leaving OAuthModel.member().");
+    return found;
+  }
+
+  /**
+   * Whether a value is of a JSON type the model gives a member: what a
+   * refusal that tests a member's type asks, so the type is the model's
+   * and the refusal, with its words, stays the caller's.
+   *
+   * @param id - the member set's id
+   * @param name - the member
+   * @param value - the value sent
+   * @returns true when it is
+   */
+  static memberFits(id: string, name: string, value: unknown): boolean {
+    log.debug("Entering OAuthModel.memberFits().");
+    const fits = OAuthModel.fits(value, OAuthModel.member(id, name).types);
+    log.debug("Leaving OAuthModel.memberFits().");
+    return fits;
+  }
+
+  /**
+   * Whether one member of an array is of the JSON type the model gives the
+   * array's members.
+   *
+   * @param id - the member set's id
+   * @param name - the array member
+   * @param value - one of its values
+   * @returns true when it is
+   */
+  static itemFits(id: string, name: string, value: unknown): boolean {
+    log.debug("Entering OAuthModel.itemFits().");
+    const items = OAuthModel.member(id, name).items;
+    if (!items) {
+      log.debug("Leaving OAuthModel.itemFits(). Not an array.");
+      throw new TypeError('The OAuth model\'s ' + id + '.' + name +
+                          ' is not an array');
+    }
+    const fits = OAuthModel.fits(value, items);
+    log.debug("Leaving OAuthModel.itemFits().");
+    return fits;
+  }
+
+  /**
    * What an answer carries that its member set does not allow: a member a
    * closed set does not name, a named member of a type the set does not
    * allow, and a required member missing. Empty when the answer is the

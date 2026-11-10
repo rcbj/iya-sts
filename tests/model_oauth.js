@@ -154,6 +154,34 @@ function validators(t) {
     t.check(!!OAuthModel.request(endpoint.id),
             'B. a validator is generated for ' + endpoint.id);
   });
+  // The registration refusals that test a member's JSON type ask the
+  // model for it, by a name the model's RegistrationRequest holds.
+  const applicationsSource = fs.readFileSync(path.join(ROOT, 'common',
+    'applications.js'), 'utf8').replace(/\s+/g, ' ');
+  const asked = new Set();
+  const pattern = /registration(?:Type|Item)Fits\('([a-z_]+)'/g;
+  let found = pattern.exec(applicationsSource);
+  while (found) {
+    asked.add(found[1]);
+    found = pattern.exec(applicationsSource);
+  }
+  const requestMembers = OAuthModel.members('registration-request').list
+    .map(function (one) {
+      return one.name;
+    });
+  const strays = Array.from(asked).filter(function (name) {
+    return requestMembers.indexOf(name) < 0;
+  });
+  t.check(asked.size >= 8 && strays.length === 0,
+          'B. every registration refusal testing a member\'s type reads it ' +
+          'from the model (' + asked.size + ' named)', strays.join(', '));
+  t.check(OAuthModel.memberFits('registration-request', 'default_max_age',
+                                300) &&
+          !OAuthModel.memberFits('registration-request', 'default_max_age',
+                                 1.5) &&
+          OAuthModel.itemFits('registration-request', 'request_uris', 'x') &&
+          !OAuthModel.itemFits('registration-request', 'request_uris', 5),
+          'B. the model types a member and an array\'s values');
   const r1 = accepts('authorize', { max_age: '30', scope: 'openid' },
                      'query');
   t.check(r1.ok && r1.value.max_age === 30,
@@ -265,6 +293,9 @@ function issued(t) {
     } else if (!id && one.path === '/oauth2/device_authorization' &&
                one.status === 200) {
       id = 'device-authorization-response';
+    } else if (!id && one.path === '/oauth2/bc-authorize' &&
+               one.status === 200) {
+      id = 'backchannel-authentication-response';
     } else if (!id && one.path === '/oauth2/par' && one.status === 201) {
       id = 'pushed-authorization-response';
     }
@@ -283,7 +314,8 @@ function issued(t) {
       const kind = token.header.typ === 'at+jwt' ? 'access-token'
         : token.header.typ === 'token-introspection+jwt'
           ? 'introspection-jwt'
-          : token.name === 'id_token' ? 'id-token' : null;
+          : token.header.typ === 'logout+jwt' ? 'logout-token'
+            : token.name === 'id_token' ? 'id-token' : null;
       if (kind) {
         hold(where + ' (' + kind + ')', kind, token.claims);
         counted[kind] = (counted[kind] || 0) + 1;
@@ -296,7 +328,8 @@ function issued(t) {
           problems.slice(0, 20).join('\n'));
   ['openid-provider-metadata', 'token-response', 'error-response',
    'access-token', 'id-token', 'introspection-response',
-   'registration-response'].forEach(function (id) {
+   'registration-response', 'logout-token',
+   'backchannel-authentication-response'].forEach(function (id) {
     t.check((counted[id] || 0) > 0, 'C. the record holds a ' + id);
   });
   // Every error code a funnel of this family sends is declared.

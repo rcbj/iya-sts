@@ -452,6 +452,195 @@ model RegistrationResponse {
   application_type?: string;
 }
 
+/**
+ * The client metadata a registration sends (RFC 7591 and RFC 7592) — every
+ * member this service reads, from RFC 7591 section 2, OpenID Connect Dynamic
+ * Client Registration section 2 and the extension specifications that add
+ * one. Open: a member nobody defines is stored and echoed, as section 2 lets
+ * a server do. The refusals in `common/applications.js` that test a member's
+ * JSON type read it from here; `registerClient()` records the members whose
+ * type nothing refuses today (STS-OAUTH-1005), and the answer is unchanged.
+ */
+@members(#{ id: "registration-request", cite: "RFC 7591 section 2", members: "open" })
+model RegistrationRequest {
+  @member(#{ cite: "RFC 7591 section 2" })
+  redirect_uris?: string[];
+
+  @member(#{ cite: "RFC 7591 section 2" })
+  token_endpoint_auth_method?: string;
+
+  @member(#{ cite: "RFC 7591 section 2" })
+  grant_types?: string[];
+
+  @member(#{ cite: "RFC 7591 section 2" })
+  response_types?: string[];
+
+  @member(#{ cite: "RFC 7591 section 2" })
+  client_name?: string;
+
+  @member(#{ cite: "RFC 7591 section 2" })
+  client_uri?: string;
+
+  @member(#{ cite: "RFC 7591 section 2" })
+  logo_uri?: string;
+
+  @member(#{ cite: "RFC 7591 section 2" })
+  scope?: string;
+
+  @member(#{ cite: "RFC 7591 section 2" })
+  contacts?: string[];
+
+  @member(#{ cite: "RFC 7591 section 2" })
+  tos_uri?: string;
+
+  @member(#{ cite: "RFC 7591 section 2" })
+  policy_uri?: string;
+
+  @member(#{ cite: "RFC 7591 section 2" })
+  jwks_uri?: string;
+
+  @member(#{ cite: "RFC 7591 section 2" })
+  jwks?: Record<unknown>;
+
+  @member(#{ cite: "RFC 7591 section 2" })
+  software_id?: string;
+
+  @member(#{ cite: "RFC 7591 section 2" })
+  software_version?: string;
+
+  @member(#{ cite: "RFC 7591 section 2.3" })
+  software_statement?: string;
+
+  @member(#{ cite: "OpenID Connect Dynamic Client Registration 1.0 section 2" })
+  application_type?: string;
+
+  @member(#{ cite: "OpenID Connect Dynamic Client Registration 1.0 section 2" })
+  sector_identifier_uri?: string;
+
+  @member(#{ cite: "OpenID Connect Dynamic Client Registration 1.0 section 2" })
+  subject_type?: string;
+
+  @member(#{ cite: "OpenID Connect Dynamic Client Registration 1.0 section 2" })
+  id_token_signed_response_alg?: string;
+
+  @member(#{ cite: "OpenID Connect Dynamic Client Registration 1.0 section 2" })
+  id_token_encrypted_response_alg?: string;
+
+  @member(#{ cite: "OpenID Connect Dynamic Client Registration 1.0 section 2" })
+  id_token_encrypted_response_enc?: string;
+
+  @member(#{ cite: "OpenID Connect Dynamic Client Registration 1.0 section 2" })
+  userinfo_signed_response_alg?: string;
+
+  @member(#{ cite: "OpenID Connect Dynamic Client Registration 1.0 section 2" })
+  userinfo_encrypted_response_alg?: string;
+
+  @member(#{ cite: "OpenID Connect Dynamic Client Registration 1.0 section 2" })
+  userinfo_encrypted_response_enc?: string;
+
+  @member(#{ cite: "OpenID Connect Dynamic Client Registration 1.0 section 2" })
+  request_object_signing_alg?: string;
+
+  @member(#{ cite: "OpenID Connect Dynamic Client Registration 1.0 section 2" })
+  request_object_encryption_alg?: string;
+
+  @member(#{ cite: "OpenID Connect Dynamic Client Registration 1.0 section 2" })
+  request_object_encryption_enc?: string;
+
+  @member(#{ cite: "OpenID Connect Dynamic Client Registration 1.0 section 2" })
+  token_endpoint_auth_signing_alg?: string;
+
+  @member(#{ cite: "OpenID Connect Dynamic Client Registration 1.0 section 2" })
+  default_max_age?: int64;
+
+  @member(#{ cite: "OpenID Connect Dynamic Client Registration 1.0 section 2" })
+  require_auth_time?: boolean;
+
+  @member(#{ cite: "OpenID Connect Dynamic Client Registration 1.0 section 2" })
+  default_acr_values?: string[];
+
+  @member(#{ cite: "OpenID Connect Dynamic Client Registration 1.0 section 2" })
+  initiate_login_uri?: string;
+
+  @member(#{ cite: "OpenID Connect Dynamic Client Registration 1.0 section 2" })
+  request_uris?: string[];
+
+  @member(#{ cite: "OpenID Connect RP-Initiated Logout 1.0 section 3.1" })
+  post_logout_redirect_uris?: string[];
+
+  @member(#{ cite: "OpenID Connect Front-Channel Logout 1.0 section 2" })
+  frontchannel_logout_uri?: string;
+
+  @member(#{ cite: "OpenID Connect Front-Channel Logout 1.0 section 2" })
+  frontchannel_logout_session_required?: boolean;
+
+  @member(#{ cite: "OpenID Connect Back-Channel Logout 1.0 section 2.2" })
+  backchannel_logout_uri?: string;
+
+  @member(#{ cite: "OpenID Connect Back-Channel Logout 1.0 section 2.2" })
+  backchannel_logout_session_required?: boolean;
+
+  @member(#{ cite: "RFC 9701 section 6" })
+  introspection_signed_response_alg?: string;
+
+  @member(#{ cite: "RFC 9701 section 6" })
+  introspection_encrypted_response_alg?: string;
+
+  @member(#{ cite: "RFC 9701 section 6" })
+  introspection_encrypted_response_enc?: string;
+
+  @member(#{ cite: "JARM section 3" })
+  authorization_signed_response_alg?: string;
+
+  @member(#{ cite: "JARM section 3" })
+  authorization_encrypted_response_alg?: string;
+
+  @member(#{ cite: "JARM section 3" })
+  authorization_encrypted_response_enc?: string;
+
+  @member(#{ cite: "RFC 9101 section 10.5" })
+  require_signed_request_object?: boolean;
+
+  @member(#{ cite: "RFC 9126 section 6" })
+  require_pushed_authorization_requests?: boolean;
+
+  @member(#{ cite: "RFC 8705 section 3.4" })
+  tls_client_certificate_bound_access_tokens?: boolean;
+
+  @member(#{ cite: "RFC 8705 section 2.1.2" })
+  tls_client_auth_subject_dn?: string;
+
+  @member(#{ cite: "RFC 8705 section 2.1.2" })
+  tls_client_auth_san_dns?: string;
+
+  @member(#{ cite: "RFC 8705 section 2.1.2" })
+  tls_client_auth_san_uri?: string;
+
+  @member(#{ cite: "RFC 8705 section 2.1.2" })
+  tls_client_auth_san_ip?: string;
+
+  @member(#{ cite: "RFC 8705 section 2.1.2" })
+  tls_client_auth_san_email?: string;
+
+  @member(#{ cite: "OpenID Connect CIBA Core 1.0 section 4" })
+  backchannel_token_delivery_mode?: string;
+
+  @member(#{ cite: "OpenID Connect CIBA Core 1.0 section 4" })
+  backchannel_client_notification_endpoint?: string;
+
+  @member(#{ cite: "OpenID Connect CIBA Core 1.0 section 4" })
+  backchannel_authentication_request_signing_alg?: string;
+
+  @member(#{ cite: "OpenID Connect CIBA Core 1.0 section 4" })
+  backchannel_user_code_parameter?: boolean;
+
+  @member(#{ cite: "RFC 9396 section 10" })
+  authorization_details_types?: string[];
+
+  @member(#{ cite: "OpenID Provider Commands 1.0 section 3" })
+  command_endpoint?: string;
+}
+
 /** The device authorization response. */
 @members(#{ id: "device-authorization-response", cite: "RFC 8628 section 3.2", members: "closed" })
 model DeviceAuthorizationResponse {
