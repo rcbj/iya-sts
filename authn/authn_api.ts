@@ -1566,28 +1566,19 @@ class AuthnApi {
     helpers.log.debug("Entering AuthnApi.parametersOf().");
     const Spec = require('../account-api/account_api_spec');
     const out: Json[] = [];
-    if (op.access === 'wallet' && op.path.indexOf(':state') >= 0) {
-      out.push({ name: 'state', in: 'path', required: true,
-                 description: 'The wallet sign-in\'s transaction: a bearer ' +
-                   'capability, answered to this browser only (its ' +
-                   '`sts_wallet_binding` cookie).',
-                 schema: { type: 'string' } });
-    } else if (op.path.indexOf(':id') >= 0) {
-      out.push({ name: 'id', in: 'path', required: true,
-                 description: op.access === 'consent'
-                   ? 'The pending consent\'s id: a bearer capability, as the ' +
-                     '`consent` the consent screen was opened with, answered ' +
-                     'only to the browser whose session is the person asked.'
-                   : op.access === 'step'
-                   ? 'The password change step\'s id.'
-                   : op.access === 'mfa'
-                   ? 'The second-factor or emailed-factor step\'s id: a ' +
-                     'bearer capability, as the `mfa` its page was opened ' +
-                     'with.'
-                   : 'The pending sign-in\'s id: a bearer capability, as the ' +
-                     '`authn` the screen was opened with.',
-                 schema: { type: 'string' } });
-    }
+    // The path's own parameter — a pending sign-in's, a step's or a
+    // consent's `id` (the model's `SignInId`, #1579), or the wallet's
+    // `state` — is the one the model states for this operation.
+    const path = String(op.path).replace(/:([A-Za-z]+)/g, '{$1}');
+    const entry = ModelTables.file('openapi.authn.json')
+      .paths[path][op.method.toLowerCase()];
+    (entry.parameters || []).filter(function (one: Json): boolean {
+      return one.in === 'path';
+    }).forEach(function (one: Json): void {
+      const copy = Object.assign({}, one);
+      delete copy.example;
+      out.push(copy);
+    });
     const query = op.query ? Spec.jsonSchemaOf(op.query) : null;
     const props = (query && query.properties) || {};
     Object.keys(props).forEach(function (name) {
