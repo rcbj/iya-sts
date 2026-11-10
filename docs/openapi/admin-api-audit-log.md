@@ -93,6 +93,7 @@ Scope: `admin:read`.
 | `events[].channel` | string |  |  |
 | `events[].detail` | any JSON |  | What this one kind of event recorded about its own act: several hundred call sites each name their members, and values are trimmed by `detailOf()`. What this one kind of event recorded about its own act: several hundred call sites each name their members, and values are trimmed by `detailOf()`. |
 | `events[].errorCode` | string, or null |  |  |
+| `events[].mac` | string |  |  |
 | `events[].origin` | string, or null |  |  |
 | `events[].outcome` | string |  |  |
 | `events[].protocol` | string |  |  |
