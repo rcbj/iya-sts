@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5408** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5409** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -71,7 +71,7 @@ is an ordinary outcome.
 * [Federation (`STS-FED`)](#sts-fed) — 217
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 257
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 165
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 166
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
@@ -3509,6 +3509,7 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0209` | The directory would not store a changed custom attribute definition (#700). | HTTP 400 JSON (the sentence; the code is recorded) |
 | `STS-LDAP-0210` | A create was refused because its DN or username is longer than the create coordinator holds (4096 characters). The name is not being created elsewhere, and retrying it cannot succeed (#1402). | HTTP 400 on /admin-api and /scim/v2; LDAP adminLimitExceeded (11). The code is recorded, never sent |
 | `STS-LDAP-0211` | A description was refused because its value carries an operator error code. A description is stored text this service sends back, and a code is recorded, never sent (#1416). | HTTP 400 JSON (the sentence; the code is recorded). LDAP constraintViolation (19). Nothing is stored |
+| `STS-LDAP-0212` | A group write was refused because a member it adds names no entry: a member, uniqueMember or memberUid must name something stored in the realm, so a group can never list a person, group or application that is not there (2026-11-10). | HTTP 400 (console, /admin-api), SCIM 400 invalidValue, LDAP constraintViolation (19). Nothing is stored |
 
 ## STS-ATTR
 
@@ -5536,7 +5537,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0916` | A second factor was not cleared because the administrator did not say how the person was verified. | HTTP 400 |
 | `STS-ADMIN-0917` | An application was not created because the metadata document given with it was refused. | HTTP 400 |
 | `STS-ADMIN-0918` | A passkey an administrator enrolled was recorded, and the account signal about it could not be sent (ASVS 5.0.0 2.3.3). | — |
-| `STS-ADMIN-0919` | A deleted application, person or group could not be taken out of a role that named it, so the role still names it, and anything made again under that name would hold the role (roles.forgetMember()). | — |
+| `STS-ADMIN-0919` | A deleted or renamed application, person or group could not be taken out of, or renamed in, a role or group that named it, so that role or group still names the old name or DN (roles.forgetMember(), roles.renameMember(), the directory's forgetGroupMemberships() and moveGroupMemberships()). | — |
 
 ## STS-API
 

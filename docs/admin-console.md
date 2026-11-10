@@ -888,9 +888,10 @@ names `default` or another policy.
 
 Three behaviours are the directory being consistent with itself:
 
-* **A member that names nothing is written, not refused.** This directory
-  does no referential integrity, so refusing here would make the *dangling*
-  state this page reports impossible to produce from it.
+* **A member that names nothing is refused.** A group lists only people,
+  groups and applications that exist, and deleting one takes it out of every
+  group that listed it. This page still reports a *dangling* member that an
+  older store holds.
 * **An empty group is allowed**, although RFC 4519 makes `member` MUST on a
   `groupOfNames`: SCIM already creates one, and the two doors should not
   disagree about what the directory holds.

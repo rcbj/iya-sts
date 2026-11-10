@@ -368,8 +368,9 @@ from `listen()`* is the rule this is an instance of.
    answers for one of those and silently loses the other, so each row says which
    rule caught it. The three disagreements it reports are the point of the page and
    none of them is a defect to fix: a **dangling** member (this directory does not
-   do referential integrity on a write, so a member may name nothing; a delete
-   takes its DN out of every group since 2026-11-10), a member that is
+   do referential integrity before 2026-11-10, so an older store may hold one;
+   since then a write may not add one and a delete takes its DN out of every
+   group), a member that is
    itself a **group** (nesting is shown, never expanded — nothing here walks it),
    and an entry whose own `memberOf` names a group that does not list it back
    (nothing here maintains `memberOf`; it is not even a standard attribute). Note
@@ -2331,8 +2332,17 @@ mode.
   person, group, or application object that is then recreated should not
   automatically inherit any roles. It all has to be readded")** —
   `forgetGroupMemberships()` through the group index, and `roles.forgetMember()`.
-  A member ADDED that names nothing is still accepted, and a rename (modifyDN)
-  still leaves the old DN in the groups that listed it.
+  **And a member that names nothing can no longer be ADDED** (rcbj, the same
+  day): `membersNamingNothing()`, asked by `writeGroupEntry()` (SCIM, the
+  console, `/admin-api`), `createGroup()`, `addGroupMember()` and the LDAP add
+  and modify handlers, refuses it as `STS-LDAP-0212` (LDAP
+  `constraintViolation`). Only the values a write adds are asked about. **And a
+  rename (modifyDN) carries the entry's memberships with it**: every group listing
+  the old DN lists the new one (`moveGroupMemberships()`, through the index), a
+  person's `memberUid` follows their username, and `roles.renameMember()` moves the
+  username or group name on every role. So no group or role can be left naming
+  something that is not there. Until then a rename left the old DN in the groups
+  that listed it.
 
 ---
 

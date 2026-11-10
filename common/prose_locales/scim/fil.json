@@ -72,8 +72,8 @@
     "text": "WALANG ETag AT WALANG changePassword, parehong ina-advertise bilang hindi suportado sa halip na kalahating naka-implement. Ang version na binuo sa timestamp na may one-second resolution ay magiging concurrency control na pinagkakatiwalaan ng client at mali; at walang password na chine-check sa serbisyong ito, kaya walang mapapalitan."
   },
   "scim.doesNotDo.member": {
-    "en": "3cce88d4d02d3509",
-    "text": "TINATANGGAP ANG MEMBER NA WALANG PINANGANGALANAN. Sinasadyang walang referential integrity ang directory na ito — ang pag-delete ng user ay nag-iiwan ng DN nila sa bawat group na naglista sa kanila — kaya kung tatanggihan dito ang dangling member, magiging imposibleng i-reproduce ang state na iyon. Iniuulat sila ng /admin/groups."
+    "en": "fc37b8e96ac4cde8",
+    "text": "TINATANGGIHAN ANG MEMBER NA WALANG PINANGANGALANAN (400 invalidValue). Ang group ay naglilista lamang ng mga tao, group at application na naroroon, at ang pag-delete ng isa ay nag-aalis dito sa bawat group na naglista rito."
   },
   "scim.endpoints.serviceProviderConfig": {
     "en": "ec5c59eeb4453e91",

@@ -430,8 +430,10 @@ knowing whether an entry holds the role treats it as holding it.
   `/Me` is an ALIAS now that there can be an authenticated subject, delegating
   to the same User handlers, and its 501 is kept for the two cases where it is
   still right — an anonymous caller, and POST. A member naming nothing is
-  ACCEPTED, because refusing it would make the
-  dangling-member state `/admin/groups` exists to report impossible to produce.
+  REFUSED since 2026-11-10 (rcbj), 400 `invalidValue` naming what isn't there:
+  a group lists only what exists, and a delete takes an entry out of every group
+  (`ldap/CLAUDE.md`). It was accepted until then, so the dangling-member state
+  `/admin/groups` reports could be produced.
 
 ## `active` IS THE ACCOUNT'S DISABLED STATE (2026-09-17, #36 follow-up)
 
@@ -683,8 +685,8 @@ changed would have been the one identifier here that still moved. Five things fo
 * **Member, group and manager values are ids on the wire and DNs in the store.** The
   handlers translate: `groupResourceFor()` and `groupsOf()` add each DN's id, the Group
   ingress turns member ids into DNs before writing, and the User ingress does the same for
-  `manager`. A value naming no entry is kept as it was sent — this directory does no
-  referential integrity, as the dangling-member paragraph above says.
+  `manager`. A MEMBER naming no entry is refused (the paragraph above); a `manager`
+  naming no entry is still kept as it was sent.
 * **A DN presented as an id still resolves**, through the directory's
   `dnForResourceId()`, for a client that stored one before the change; the resource comes
   back with its new id.

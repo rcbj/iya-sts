@@ -490,11 +490,9 @@ const DOES_NOT_DO = Object.freeze({
     'one-second resolution would be a concurrency control a client trusts ' +
     'and that is wrong; and no password in this service is checked, so ' +
     'there is none to change.',
-  member: 'A MEMBER THAT NAMES NOTHING IS ACCEPTED. This directory does no ' +
-    'referential integrity on purpose — deleting a user leaves their DN in ' +
-    'every group that listed them — so refusing a dangling member here ' +
-    'would make that state impossible to reproduce. /admin/groups reports ' +
-    'them.'
+  member: 'A MEMBER THAT NAMES NOTHING IS REFUSED (400 invalidValue). A ' +
+    'group lists only people, groups and applications that are there, and ' +
+    'deleting one takes it out of every group that listed it.'
 });
 
 // What each endpoint is, keyed by a name of this table's own (the methods
@@ -2822,34 +2820,23 @@ class Scim {
             'There is already a group at ' + dn + '.'));
         }
 
-        // A MEMBER THAT NAMES NOTHING IS NOT REFUSED, and that is deliberate
-        // rather than an omission. This directory does no referential integrity
-        // — a delete leaves the DN behind in every group that listed it — so
-        // refusing a member here would make it impossible to reproduce the
-        // dangling-member state that /admin/groups exists to report, and would
-        // be this service enforcing in one direction what it explicitly does
-        // not enforce in the other. Logged, so it is visible rather than
-        // silent. A MEMBER ARRIVES AS A SCIM ID AND IS STORED AS A DN
+        // A MEMBER THAT NAMES NOTHING IS REFUSED since 2026-11-10 (rcbj): a
+        // group lists only what is there, and a delete takes a DN out of every
+        // group (`ldap_server.js` membersNamingNothing() and
+        // forgetGroupMemberships()). writeGroupEntry() is where it is refused,
+        // answered below as 400 invalidValue naming what is not there. Until
+        // then one was accepted, so the state /admin/groups reports could be
+        // produced. A MEMBER ARRIVES AS A SCIM ID AND IS STORED AS A DN
         // (2026-09-14): a `member` value is a DN in LDAP, and every reader of a
         // group here — the groups claim, /admin/groups, an ldapsearch — reads
-        // it as one. A value that names no entry is kept as it was sent, for
-        // the reason below.
+        // it as one. A value that names no entry is kept as it was sent, and
+        // so refused by name.
         if (converted.attributes.member) {
           converted.attributes.member = converted.attributes.member
             .map((value) => {
               return directory.dnForResourceId(value);
             });
         }
-        (converted.attributes.member || []).forEach((value) => {
-          if (!directory.readPerson(value) &&
-              !directory.readGroupEntry(value)) {
-            log.info('scim: ' + dn + ' lists ' + value + ' as a member and ' +
-                     'nothing is stored there. It is written anyway — this ' +
-                     'directory does no referential integrity, and a ' +
-                     'dangling member is a state worth being able to produce.');
-          }
-        });
-
         const written = directory.writeGroupEntry(dn, converted.attributes);
         if (!written.ok) {
           // 500 and not 507 for a full directory: RFC 7644 section 3.12 lists
@@ -2861,6 +2848,12 @@ class Scim {
                 ? 'The directory holds its maximum of ' +
                   directory.maxEntries() +
                   ' entries (ldap.maxEntries). Nothing was written.'
+                : written.reason === 'danglingMember'
+                ? 'Nothing is stored at ' +
+                  (written.members || []).join(', ') + ', so it cannot be a ' +
+                  'member of this group. A group lists only people, groups ' +
+                  'and applications that are there: create them first. ' +
+                  'Nothing was written.'
                 : 'The entry could not be written at ' + dn + ' (' +
                   written.reason + ').'));
         }

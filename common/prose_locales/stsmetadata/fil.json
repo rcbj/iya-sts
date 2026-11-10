@@ -1140,8 +1140,8 @@
     "text": "Section 3.4.3, para sa mga group."
   },
   "stsmetadata.endpoints./scim/v2/Groups/:id.what": {
-    "en": "6f6ca2ae30df56a4",
-    "text": "Sa READ, pare-parehong nire-resolve ang member, uniqueMember at memberUid at ibinabalik ang bawat member ayon sa id nito — ang pagtrato sa tatlo nang magkakaiba ang paraan kung paano tahimik na nawawala ang bawat posixGroup membership. Sa WRITE, ginagawang DN ang bawat member id at inilalagay sa member, at kini-clear ang dalawa pa para ang client na nag-alis ng lahat ay hindi makakita ng group na may laman pa. Ang member na walang pinangangalanan ay TINATANGGAP at nilo-log: ang dangling member ay estadong sulit na kayang gawin."
+    "en": "c85629ec6fc43a6f",
+    "text": "Sa READ, pare-parehong nire-resolve ang member, uniqueMember at memberUid at ibinabalik ang bawat member ayon sa id nito — ang pagtrato sa tatlo nang magkakaiba ang paraan kung paano tahimik na nawawala ang bawat posixGroup membership. Sa WRITE, ginagawang DN ang bawat member id at inilalagay sa member, at kini-clear ang dalawa pa para ang client na nag-alis ng lahat ay hindi makakita ng group na may laman pa. Ang member na walang pinangangalanan ay TINATANGGIHAN (400 invalidValue): ang group ay naglilista lamang ng mga naroroon, at ang pag-delete ay nag-aalis ng entry sa bawat group."
   },
   "stsmetadata.endpoints./scim/v2/Groups/:id.effect": {
     "en": "590332223e3866ae",
@@ -2131,6 +2131,10 @@
     "en": "6c8c19ee983ea097",
     "text": "NON-SPEC (#717). Sabay na isinusulat ng save ang mga branding setting ng realm, tinatanggihan ang teksto o mga link na mas mababa sa 4.5:1 laban sa card; inaalis ng remove-logo ang logo at ina-audit ito."
   },
+  "stsmetadata.endpoints./admin-api/audit/integrity.what": {
+    "en": "80d0dc13ebf1f23b",
+    "text": "Inihahambing ang bawat naka-imbak na audit row sa keyed checksum nito at iniuulat ang mga hindi na tugma. Walang binabago."
+  },
   "stsmetadata.endpoints./admin-api/audit.what": {
     "en": "55d3dcbe157b0e3f",
     "text": "NON-SPEC. Kung ano ang nangyari rito, sunud-sunod, bilang JSON: bawat authentication, sign-on session, LDAP directory operation, interaksyon sa console, tawag sa management API at tawag sa protocol endpoint, pinakabago muna, sinasala ayon sa category, action, outcome, actor at free text at naka-page gamit ang ?page= at ?per=. WALANG CREDENTIAL NA KAILANMAN NASA ROW — walang password, bearer token, assertion o body; pinangangalanan ng modify ang mga attribute na binago nito at hindi kailanman ang mga value nila. IPAGPATULOY AYON SA `at`, hindi ayon sa `seq` (#465). Natatangi ang `seq` sa bawat proseso ng serbisyo at hindi kailanman ginagamit muli, at tumataas ito sa loob ng bawat proseso, ngunit ang bawat worker thread ay nagbibilang mula sa sarili nitong bloke, kaya ang mga numero ay hindi iisang pagkakasunod-sunod at ang \"lahat pagkatapos ng 4102\" ay nakakaligtaan ng isang mas huling kaganapang naitala sa mas mababang numero. Ang `origin` ang pumapantay sa `seq`. Ang page 2 na kinuha isang segundo pagkatapos ng page 1 ay puwedeng umulit ng row na lumipat dito. READ ONLY — isa sa dalawang resource dito na ganoon, ang isa pa ay /admin-api/delegation. Walang clear operation, dahil ang erase control sa hindi protektadong API ay gagawing hindi masagot ng audit log ang nag-iisang tanong na dahilan ng pag-iral nito. Sinasalamin ang GET /admin/audit."
@@ -2158,6 +2162,14 @@
   "stsmetadata.endpoints./admin-api/cells/people.what": {
     "en": "dc30d3b633728d57",
     "text": "NON-SPEC (#98 D11). Isang page ng mga residente ng ibang cell, sinasagot ng cell na iyon lang kung saan pinapahintulutan ng release policy nito."
+  },
+  "stsmetadata.endpoints./admin-api/malware-scanning.what": {
+    "en": "14ed85bab8488344",
+    "text": "NON-SPEC (#1501). GET /admin/malware-scanning sa JSON: kung ini-scan ang mga in-upload na file at ang ICAP service na nag-i-scan. Walang binabago."
+  },
+  "stsmetadata.endpoints./admin-api/malware-scanning/:action.what": {
+    "en": "1bf7c4937a9313c4",
+    "text": "NON-SPEC (#1501). Ipinapadala sa naka-configure na ICAP service ang EICAR test file at nagtatagumpay lamang kung na-flag ito ng service."
   },
   "stsmetadata.endpoints./admin-api/listeners.what": {
     "en": "6a6a1ecfd0643325",
@@ -3950,17 +3962,5 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "isang parameter"
-  },
-  "stsmetadata.endpoints./admin-api/malware-scanning.what": {
-    "en": "14ed85bab8488344",
-    "text": "NON-SPEC (#1501). GET /admin/malware-scanning sa JSON: kung ini-scan ang mga in-upload na file at ang ICAP service na nag-i-scan. Walang binabago."
-  },
-  "stsmetadata.endpoints./admin-api/malware-scanning/:action.what": {
-    "en": "1bf7c4937a9313c4",
-    "text": "NON-SPEC (#1501). Ipinapadala sa naka-configure na ICAP service ang EICAR test file at nagtatagumpay lamang kung na-flag ito ng service."
-  },
-  "stsmetadata.endpoints./admin-api/audit/integrity.what": {
-    "en": "80d0dc13ebf1f23b",
-    "text": "Inihahambing ang bawat naka-imbak na audit row sa keyed checksum nito at iniuulat ang mga hindi na tugma. Walang binabago."
   }
 }

@@ -27,6 +27,12 @@
 //      under the username is in none of them (so holds no role through one);
 //      a deleted group leaves the group it was nested in; a deleted
 //      application leaves a group that listed its entry.
+//   G. OVER LDAP, A GROUP LISTS ONLY WHAT IS THERE: an add of a group naming
+//      a member nobody stored, and a modify adding one, are refused with
+//      constraintViolation (19) and change nothing.
+//   H. A RENAME CARRIES THE MEMBERSHIPS: a person renamed by modifyDN is
+//      listed by the new DN in their group and by the new username in their
+//      role, and nothing names the old ones.
 //
 // IN A THROWAWAY REALM, removed at the end (app_roles.js's arrangement).
 // ===========================================================================
@@ -230,6 +236,82 @@ function groups(t) {
   log.debug("Leaving groups().");
 }
 
+// One LDAP operation as the socket would hand it to the directory.
+async function ldapOp(operation, fields) {
+  log.debug("Entering ldapOp(). " + operation);
+  const out = await Promise.resolve(ldap.performOperation(operation,
+    Object.assign({ boundDn: 'cn=rmf-test', channel: 'ldaps' }, fields)));
+  log.debug("Leaving ldapOp().");
+  return out || {};
+}
+
+async function overLdap(t) {
+  log.debug("Entering overLdap().");
+  t.log.info('=== G. over LDAP, a group lists only what is there ===');
+  const ghost = 'uid=rmf-ghost-' + RUN + ',' + ldap.usersDn();
+  const groupDn = ldap.groupDnFor('rmf-ldap-' + RUN);
+  const added = await ldapOp('add', { dn: groupDn, attributes: [
+    { type: 'objectClass', values: ['top', 'groupOfNames'] },
+    { type: 'cn', values: ['rmf-ldap-' + RUN] },
+    { type: 'member', values: [ghost] }] });
+  // constraintViolation is result code 19; the answer names the error.
+  t.check(added.ok === false &&
+          added.errorName === 'ConstraintViolationError' &&
+          !ldap.readGroupEntry(groupDn),
+          'G1. an LDAP add of a group naming a member nobody stored is ' +
+          'refused (19), and nothing is stored', JSON.stringify(added));
+  const made = await ldapOp('add', { dn: groupDn, attributes: [
+    { type: 'objectClass', values: ['top', 'groupOfNames'] },
+    { type: 'cn', values: ['rmf-ldap-' + RUN] }] });
+  const modified = await ldapOp('modify', { dn: groupDn, changes: [
+    { operation: 'add', modification: { type: 'member', values: [ghost] } }] });
+  t.check(made.ok === true && modified.ok === false &&
+          modified.errorName === 'ConstraintViolationError' &&
+          listedBy('rmf-ldap-' + RUN).length === 0,
+          'G2. an LDAP modify adding one is refused (19), and the group is ' +
+          'as it was', JSON.stringify([made, modified]));
+
+  t.log.info('=== H. a rename carries the memberships ===');
+  const before = 'rmf-before-' + RUN;
+  const after = 'rmf-after-' + RUN;
+  const role = 'rmf-renamed-role-' + RUN;
+  const person = ldap.createUser(before, { invent: false, attributes: {} });
+  const personDn = typeof person === 'string' ? person
+                                              : (person && person.dn);
+  const inGroup = ldap.addGroupMember('rmf-ldap-' + RUN, before);
+  const roleMade = rolesAction({ action: 'create-role', role: role });
+  const inRole = rolesAction({ action: 'add-member', role: role,
+                               kind: 'user', member: before });
+  // deleteOldRdn, so the old `uid` goes and the username really changes
+  // (RFC 4511 section 4.9): without it the person keeps the old name too,
+  // and the role naming it is still right.
+  const renamed = await ldapOp('modifyDN', { dn: personDn,
+    newRdn: 'uid=' + after, newSuperior: '', deleteOldRdn: true });
+  const newDn = 'uid=' + after + ',' + ldap.usersDn();
+  const listed = listedBy('rmf-ldap-' + RUN);
+  t.check(inGroup.ok && roleMade.ok && inRole.ok && renamed.ok === true &&
+          listed.length === 1 && listed[0] === newDn.toLowerCase(),
+          'H1. the renamed person is listed by their new DN in their group, ' +
+          'and the old DN is nowhere', JSON.stringify([renamed, listed]));
+  t.check(members(role).users.indexOf(after) >= 0 &&
+          members(role).users.indexOf(before) < 0,
+          'H2. and by their new username in their role', JSON.stringify(
+            members(role)));
+  // WITHOUT deleteOldRdn the old name stays on the entry, so the role keeps
+  // naming the person by it, and is right to.
+  const kept = 'rmf-kept-' + RUN;
+  const keptPerson = ldap.createUser(kept, { invent: false, attributes: {} });
+  rolesAction({ action: 'add-member', role: role, kind: 'user',
+                member: kept });
+  const keptRenamed = await ldapOp('modifyDN', {
+    dn: typeof keptPerson === 'string' ? keptPerson : keptPerson.dn,
+    newRdn: 'uid=' + kept + '-moved', newSuperior: '' });
+  t.check(keptRenamed.ok === true && members(role).users.indexOf(kept) >= 0,
+          'H3. a rename that keeps the old uid keeps the role on that name, ' +
+          'which the person still holds', JSON.stringify(members(role)));
+  log.debug("Leaving overLdap().");
+}
+
 function theCode(t) {
   log.debug("Entering theCode().");
   t.check(!!errorCodes.lookup ? !!errorCodes.lookup('STS-ADMIN-0919')
@@ -251,6 +333,7 @@ async function run(t) {
       aPerson(t, made);
       aGroup(t, made);
       groups(t);
+      await overLdap(t);
       theCode(t);
     });
   } finally {

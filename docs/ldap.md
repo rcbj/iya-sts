@@ -461,13 +461,17 @@ changes one, and a runtime setting can be set per trust realm. See
   directory is still a tree, a leaf is still a leaf, and one person is still one
   entry. Inventing a schema would hide the difference from a real directory
   instead of stating it.
-* **No referential integrity on a write.** It is a feature of some
-  directories, not of the protocol. A group member that names nothing is
-  accepted, and the console reports it as dangling.
+* **A group lists only what is there.** Adding a group member that names no
+  entry is refused, over LDAP with `constraintViolation` (19), and over SCIM,
+  the console and `/admin-api` with a 400 naming the missing member. The
+  console still reports a dangling member that an older store holds.
 * **A delete takes the entry out of every group and role.** Deleting a person,
   a group or an application removes its DN from every group that listed it and
   its name from every role. Something created again under the same name starts
   with no memberships and no roles, and has to be added back.
+* **A rename keeps the entry's memberships.** A modifyDN updates every group
+  that listed the old DN, and every role that listed the old username or group
+  name, to the new one.
 * **Two ports rather than StartTLS.** StartTLS is an extended operation
   (RFC 4511 section 4.14) that upgrades a connection already in progress,
   ldapjs implements none, and LDAPS on 636 is what most clients speak. Which of

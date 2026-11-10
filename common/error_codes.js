@@ -16149,6 +16149,13 @@ const CODES = [
       'sends back, and a code is recorded, never sent (#1416).',
     spec: 'HTTP 400 JSON (the sentence; the code is recorded). LDAP ' +
       'constraintViolation (19). Nothing is stored' },
+  { code: 'STS-LDAP-0212',
+    summary: 'A group write was refused because a member it adds names no ' +
+      'entry: a member, uniqueMember or memberUid must name something stored ' +
+      'in the realm, so a group can never list a person, group or ' +
+      'application that is not there (2026-11-10).',
+    spec: 'HTTP 400 (console, /admin-api), SCIM 400 invalidValue, LDAP ' +
+      'constraintViolation (19). Nothing is stored' },
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
       'dialect\'s package is an optional one, installed into the image with ' +
@@ -25107,9 +25114,11 @@ const CODES = [
       'account signal about it could not be sent (ASVS 5.0.0 2.3.3).',
     spec: '' },
   { code: 'STS-ADMIN-0919',
-    summary: 'A deleted application, person or group could not be taken out ' +
-      'of a role that named it, so the role still names it, and anything ' +
-      'made again under that name would hold the role (roles.forgetMember()).',
+    summary: 'A deleted or renamed application, person or group could not ' +
+      'be taken out of, or renamed in, a role or group that named it, so ' +
+      'that role or group still names the old name or DN ' +
+      '(roles.forgetMember(), roles.renameMember(), the directory\'s ' +
+      'forgetGroupMemberships() and moveGroupMemberships()).',
     spec: '' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +

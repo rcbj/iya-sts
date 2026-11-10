@@ -1140,8 +1140,8 @@
     "text": "第 3.4.3 節，用於群組。"
   },
   "stsmetadata.endpoints./scim/v2/Groups/:id.what": {
-    "en": "6f6ca2ae30df56a4",
-    "text": "「讀取」時一視同仁地解析 member、uniqueMember 與 memberUid，並以 id 傳回每個成員——對三者區別對待，正是每個 posixGroup 成員資格悄悄消失的原因。「寫入」時將每個成員 id 轉為其 DN 並放入 member，並清除另外兩者，讓移除了所有人的用戶端不會發現群組仍有成員。未指向任何對象的成員會被「接受」並記錄：懸空成員是一種值得能夠產生的狀態。"
+    "en": "c85629ec6fc43a6f",
+    "text": "「讀取」時一視同仁地解析 member、uniqueMember 與 memberUid，並以 id 傳回每個成員——對三者區別對待，正是每個 posixGroup 成員資格悄悄消失的原因。「寫入」時將每個成員 id 轉為其 DN 並放入 member，並清除另外兩者，讓移除了所有人的用戶端不會發現群組仍有成員。未指向任何對象的成員會被「拒絕」（400 invalidValue）：群組只列出存在之物，刪除會將項目從每個群組中移除。"
   },
   "stsmetadata.endpoints./scim/v2/Groups/:id.effect": {
     "en": "590332223e3866ae",
@@ -2131,6 +2131,10 @@
     "en": "6c8c19ee983ea097",
     "text": "NON-SPEC (#717)。save 一起寫入領域的 branding 設定，拒絕相對於卡片低於 4.5:1 的文字或連結；remove-logo 移除標誌並予以稽核。"
   },
+  "stsmetadata.endpoints./admin-api/audit/integrity.what": {
+    "en": "80d0dc13ebf1f23b",
+    "text": "將每筆保留的稽核紀錄與其帶金鑰總和檢查碼比較，並回報不再相符的紀錄。不做任何變更。"
+  },
   "stsmetadata.endpoints./admin-api/audit.what": {
     "en": "55d3dcbe157b0e3f",
     "text": "非規格端點。這裡依序發生了什麼，以 JSON 提供：每次驗證、登入工作階段、LDAP 目錄操作、主控台互動、管理 API 呼叫與協定端點呼叫，最新的在前，可依類別、動作、結果、行為者與自由文字篩選，並以 ?page= 與 ?per= 分頁。任何資料列中都絕不含認證資訊——沒有密碼、持有人權杖、斷言或本文；modify 只指名它變更的屬性，絕不含其值。請依 `at` 而非依 `seq` 續讀（#465）。`seq` 在服務的每個程序中都是唯一的且永不重複使用，並在每個程序內遞增，但每個工作執行緒從自己的編號區塊計數，因此這些數字不是單一順序，「4102 之後的一切」會漏掉另一個工作執行緒用較小編號記錄的較晚事件。`origin` 與 `seq` 一起打破平手。在第 1 頁之後一秒取得的第 2 頁，可能會重複一個被推移過來的資料列。唯讀——是此處兩個唯讀資源之一，另一個是 /admin-api/delegation。沒有清除操作，因為在未受保護的 API 上提供清除控制項，會讓稽核記錄無法回答它存在的目的所要回答的那一個問題。對應 GET /admin/audit。"
@@ -2158,6 +2162,14 @@
   "stsmetadata.endpoints./admin-api/cells/people.what": {
     "en": "dc30d3b633728d57",
     "text": "非規格端點（#98 D11）。另一個儲存格居民的一頁清單，僅在該儲存格的釋出原則允許時由該儲存格回應。"
+  },
+  "stsmetadata.endpoints./admin-api/malware-scanning.what": {
+    "en": "14ed85bab8488344",
+    "text": "NON-SPEC (#1501). 以 JSON 形式提供 GET /admin/malware-scanning：是否掃描上傳的檔案以及執行掃描的 ICAP 服務。不做任何變更。"
+  },
+  "stsmetadata.endpoints./admin-api/malware-scanning/:action.what": {
+    "en": "1bf7c4937a9313c4",
+    "text": "NON-SPEC (#1501). 向設定的 ICAP 服務傳送 EICAR 測試檔案，僅當服務標記該檔案時才成功。"
   },
   "stsmetadata.endpoints./admin-api/listeners.what": {
     "en": "6a6a1ecfd0643325",
@@ -3950,17 +3962,5 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "一個參數"
-  },
-  "stsmetadata.endpoints./admin-api/malware-scanning.what": {
-    "en": "14ed85bab8488344",
-    "text": "NON-SPEC (#1501). 以 JSON 形式提供 GET /admin/malware-scanning：是否掃描上傳的檔案以及執行掃描的 ICAP 服務。不做任何變更。"
-  },
-  "stsmetadata.endpoints./admin-api/malware-scanning/:action.what": {
-    "en": "1bf7c4937a9313c4",
-    "text": "NON-SPEC (#1501). 向設定的 ICAP 服務傳送 EICAR 測試檔案，僅當服務標記該檔案時才成功。"
-  },
-  "stsmetadata.endpoints./admin-api/audit/integrity.what": {
-    "en": "80d0dc13ebf1f23b",
-    "text": "將每筆保留的稽核紀錄與其帶金鑰總和檢查碼比較，並回報不再相符的紀錄。不做任何變更。"
   }
 }

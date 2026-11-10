@@ -72,8 +72,8 @@
     "text": "PAS D’ETag NI DE changePassword, tous deux annoncés comme non pris en charge plutôt qu’à moitié implémentés. Une version construite sur un horodatage d’une résolution d’une seconde serait un contrôle de concurrence auquel un client se fierait et qui serait faux ; et aucun mot de passe n’est vérifié dans ce service, il n’y en a donc aucun à changer."
   },
   "scim.doesNotDo.member": {
-    "en": "3cce88d4d02d3509",
-    "text": "UN MEMBRE QUI NE NOMME RIEN EST ACCEPTÉ. Cet annuaire n’assure délibérément aucune intégrité référentielle — supprimer un utilisateur laisse son DN dans chaque groupe qui le listait —, si bien que refuser ici un membre orphelin rendrait cet état impossible à reproduire. /admin/groups les signale."
+    "en": "fc37b8e96ac4cde8",
+    "text": "UN MEMBRE QUI NE DÉSIGNE RIEN EST REFUSÉ (400 invalidValue). Un groupe ne liste que des personnes, des groupes et des applications qui existent, et en supprimer un le retire de chaque groupe qui le listait."
   },
   "scim.endpoints.serviceProviderConfig": {
     "en": "ec5c59eeb4453e91",
