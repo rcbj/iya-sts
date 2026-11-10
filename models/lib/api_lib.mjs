@@ -402,7 +402,56 @@ function typeOf(schema) {
 }
 
 /**
- * The declarations of every request and response of every document.
+ * One operation as the handler that serves it is typed (#1579): what it
+ * takes — the JSON body, the query's names and types — and what it answers,
+ * by status, for every 2xx status the model gives a JSON answer. A body the
+ * model does not declare is `{}`, so reading a member of it fails to
+ * compile; a body that is not JSON (an upload) is `unknown`.
+ *
+ * @param operation - the OpenAPI operation
+ * @returns the type's text
+ */
+function operationType(operation) {
+  log.debug("Entering operationType().");
+  const content = (operation.requestBody && operation.requestBody.content) ||
+    null;
+  let body = '{}';
+  if (content && content['application/json']) {
+    body = typeOf(content['application/json'].schema);
+  } else if (content) {
+    body = 'unknown';
+  }
+  const query = {};
+  const required = [];
+  (operation.parameters || []).filter(function (one) {
+    return one.in === 'query';
+  }).forEach(function (one) {
+    query[one.name] = one.schema;
+    if (one.required) {
+      required.push(one.name);
+    }
+  });
+  const answers = [];
+  Object.keys(operation.responses || {}).sort().forEach(function (status) {
+    const media = /^2[0-9][0-9]$/.test(status) &&
+      operation.responses[status].content &&
+      operation.responses[status].content['application/json'];
+    if (media) {
+      answers.push(status + ': ' + typeOf(media.schema));
+    }
+  });
+  log.debug("Leaving operationType().");
+  return '{ body: ' + body + '; query: ' + (Object.keys(query).length > 0
+    ? typeOf({ properties: query, required: required }) : '{}') +
+    '; answers: { ' + answers.join('; ') + (answers.length ? ' }' : '}') +
+    ' }';
+}
+
+/**
+ * The declarations of every request and response of every document: the
+ * reusable schemas, and `Operations`, every operation by its operationId (or,
+ * in a document whose operations carry none, by `METHOD path`). The handlers
+ * of the five APIs are typed by it through `types/api-handlers.d.ts`.
  *
  * @param served - the documents, by name
  * @returns the text of `types/api.generated.d.ts`
@@ -413,7 +462,8 @@ export function renderApiTypes(served) {
     'LLC', '// SPDX-License-Identifier: BUSL-1.1', '//',
   '// GENERATED from models/api/ (#1390). Do not edit: change the model and',
   '// run tests/tools/regenerate-model-docs.sh. tests/model_openapi.js fails',
-  '// when this differs.', ''];
+  '// when this differs. The handlers are typed by it (#1579): see',
+  '// types/api-handlers.d.ts.', ''];
   Object.keys(served).sort().forEach(function (name) {
     const document = served[name];
     lines.push('declare namespace IyaApi.' + name.charAt(0).toUpperCase() +
@@ -423,41 +473,17 @@ export function renderApiTypes(served) {
       lines.push('  type ' + key.replace(/[^A-Za-z0-9_]/g, '_') + ' = ' +
         typeOf(schemas[key]) + ';');
     });
+    lines.push('  interface Operations {');
     Object.keys(document.paths).sort().forEach(function (path) {
       Object.keys(document.paths[path]).sort().forEach(function (method) {
         const operation = document.paths[path][method];
-        const id = operation.operationId;
-        if (!id) {
-          return;
-        }
-        const body = operation.requestBody && operation.requestBody.content &&
-          operation.requestBody.content['application/json'];
-        if (body) {
-          lines.push('  type ' + id + 'Body = ' + typeOf(body.schema) + ';');
-        }
-        const query = {};
-        const required = [];
-        (operation.parameters || []).filter(function (one) {
-          return one.in === 'query';
-        }).forEach(function (one) {
-          query[one.name] = one.schema;
-          if (one.required) {
-            required.push(one.name);
-          }
-        });
-        if (Object.keys(query).length > 0) {
-          lines.push('  type ' + id + 'Query = ' + typeOf({ properties: query,
-            required: required }) + ';');
-        }
-        const answer = (operation.responses || {})['200'];
-        const media = answer && answer.content &&
-          answer.content['application/json'];
-        if (media) {
-          lines.push('  type ' + id + 'Answer = ' + typeOf(media.schema) + ';');
-        }
+        const key = operation.operationId ||
+          method.toUpperCase() + ' ' + path;
+        lines.push('    ' + JSON.stringify(key) + ': ' +
+          operationType(operation) + ';');
       });
     });
-    lines.push('}', '');
+    lines.push('  }', '}', '');
   });
   log.debug("Leaving renderApiTypes().");
   return lines.join('\n');
