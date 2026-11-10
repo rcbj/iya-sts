@@ -37,6 +37,13 @@
 #
 # Overrides (environment):
 #   STS_BASE                 default https://localhost:8081
+#   STS_BASE_DN              the directory's base DN, which the "already
+#                            there?" checks compare entries against; default
+#                            dc=example,dc=com, the local stack's. A deployment
+#                            with its own domain has its own: test-idp's is
+#                            dc=iyasec,dc=io (STS_DOMAIN=iyasec.io), and with
+#                            the wrong one a second run creates rcbj and
+#                            group1 again.
 #   ADMIN_API_CLIENT_SECRET  sts-api-client's secret; default: read from
 #                            OpenBao with the seeder's operator token
 #   STS_BAO_CONTAINER        default sts-openbao
@@ -57,6 +64,7 @@
 set -euo pipefail
 
 BASE="${STS_BASE:-https://localhost:8081}"
+BASE_DN="${STS_BASE_DN:-dc=example,dc=com}"
 BAO_CONTAINER="${STS_BAO_CONTAINER:-sts-openbao}"
 SEED_CONTAINER="${STS_BAO_SEED_CONTAINER:-sts-openbao-seed}"
 RESOURCE=rcbj0003
@@ -136,7 +144,7 @@ create_user() {
   local name="$1" password="$2" given="${3:-$1}" surname="${4:-$1}"
   local mail="${5:-$1@example.com}" dn body pw err attrs cn
   echo "== User ${name}"
-  dn="uid=${name},ou=users,dc=example,dc=com"
+  dn="uid=${name},ou=users,${BASE_DN}"
   if get "/ldap/directory?q=uid%3D${name}&per=50" |
      jq -e --arg dn "$dn" '[.entries[]? | select(.dn == $dn)] | length > 0' >/dev/null; then
     echo "  already there; left as it is (password unchanged)"
@@ -161,7 +169,7 @@ create_user() {
   return 0
 }
 
-USER_DN="uid=${USER_NAME},ou=users,dc=example,dc=com"
+USER_DN="uid=${USER_NAME},ou=users,${BASE_DN}"
 create_user "$USER_NAME" "${RCBJ_PASSWORD:-}" "${RCBJ_GIVEN_NAME:-}" \
   "${RCBJ_SURNAME:-}" "${RCBJ_MAIL:-}"
 
@@ -178,7 +186,7 @@ done
 echo "== Group ${GROUP}"
 if get "/groups" | jq -e --arg g "$GROUP" '[.groups[]? | select(.cn == $g)] | length > 0' >/dev/null; then
   if get "/ldap/directory?q=${GROUP}&per=50" |
-     jq -e --arg g "cn=${GROUP},ou=groups,dc=example,dc=com" --arg m "$USER_DN" \
+     jq -e --arg g "cn=${GROUP},ou=groups,${BASE_DN}" --arg m "$USER_DN" \
        '[.entries[]? | select(.dn == $g) | .attributes.member[]? | select(ascii_downcase == ($m|ascii_downcase))] | length > 0' >/dev/null; then
     echo "  already there, with ${USER_NAME} in it"
   else
