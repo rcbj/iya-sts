@@ -10,10 +10,14 @@ directory is also the STORE for four other things: people, groups, applications
 below, for the submodule's placement rules, which have already cost something
 three times.
 
-**These names are modelled in TypeSpec in `models/directory/` (#1390).** The
-switched objects' tables are written there and generated for the service; the
-others are still read from their modules and from this file's spelling lists. The
-directory still enforces nothing.
+**These names are modelled in TypeSpec in `models/directory/` (#1390).** Every
+object's table is written there and generated for the service, and so are the
+spelling lists (`STANDARD_NAMES`, `OWN_NAMES`, `SECRET_ATTRIBUTES`), from
+`models/directory/names.tsp` into the `directory.names.json` this module reads
+through `ModelTables.names()`.
+The directory still enforces nothing; a module reads an entry through its domain
+concept (`common/domain_map.ts`), and this module, the store itself, reads raw
+attributes (`models/CLAUDE.md`).
 
 **636 RE-KEYS WHEN THE LISTENER CERTIFICATE IS RE-ISSUED (2026-09-21)** — `rekeyLdaps()`,
 registered on `tls_server.onServerCertificateChange()`, runs at bind and again after

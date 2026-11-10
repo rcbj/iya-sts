@@ -9,17 +9,18 @@ The abstract model describes this service's data once, in TypeSpec, under
 `models/`, in namespaces that stay apart: a directory entry is not an API
 body, and neither is a PostgreSQL row.
 
-**The model is being built, and it becomes the source one object at a time.**
-Every directory object with a published table has switched: applications, roles,
-devices, service accounts, SPIFFE registrations, XACML policies and enforcement
-points, federation relationships, and the seven kinds of policy. Each is written
-in TypeSpec, and the service reads what the image build generates from it. A
-policy's settings are there too: their types, defaults, limits, and labels. So are
-people, groups, the registers that keep one JSON value, and the directory's lists of
-attribute spellings and of the attributes it withholds. The PostgreSQL and MariaDB
-tables and indexes are too, and they generate both the statements the service runs
-and the scripts an owner runs. All five OpenAPI documents have switched too. An object switches only
-after what the model generates is shown to be the same as what is there.
+**The model is the source.** Every directory object with a published table is
+written in it: applications, roles, devices, service accounts, SPIFFE
+registrations, XACML policies and enforcement points, federation relationships,
+and the seven kinds of policy. The service reads what the image build generates
+from it. A policy's settings are there too: their types, defaults, limits, and
+labels. So are people, groups, the registers that keep one JSON value, and the
+directory's lists of attribute spellings and of the attributes it withholds. The
+PostgreSQL and MariaDB tables and indexes are too, and they generate both the
+statements the service runs and the scripts an owner runs. So are all five
+OpenAPI documents. Each object switched only after what the model generated was
+shown to be the same as what was there. One thing is still to come: this
+service's own OIDs, below, are placeholders.
 
 [![The current state: code and SQL are read into TypeSpec, the compiler checks it, and what it generates is compared with the code and SQL it came from](data-model.svg)](data-model.svg)
 
@@ -32,6 +33,8 @@ after what the model generates is shown to be the same as what is there.
 | The 15 switched tables, and policy settings | Yes, and TypeSpec is the source | Byte-identical to the tables they replaced | **Yes** |
 | RFC 4512 definitions, for names with an OID | Yes | Against the RFC text | No |
 | Directory and table classes, with validators | Yes | Compiled and run | No |
+| Domain concept classes, and types for every API request and response | Yes | Compiled, and each concept held to real entries and records | **Yes** |
+| Request validators for the Account API and Authentication API | Yes, from the documents the service serves | The refusal and the document are one declaration | **Yes** |
 | PostgreSQL tables and indexes, and `postgres/schema.sql` | Yes, and TypeSpec is the source | The same statements as those they replaced | **Yes** |
 | MariaDB tables and indexes, and `mariadb/schema.sql` | Yes, and TypeSpec is the source | The same statements as those they replaced | **Yes** |
 | All five OpenAPI documents | Yes, and TypeSpec is the source | Equal to the documents they replaced | **Yes** |
@@ -56,7 +59,7 @@ ships, and neither are the `.tsp` files.
 
 ## How an object switches
 
-Each directory object moves to the model the same way:
+Each directory object moved to the model the same way:
 
 1. The object's table is written out once as TypeSpec, with its comments.
 2. The build generates the table from that TypeSpec.
@@ -115,6 +118,13 @@ SCHEMA module. Their shapes are the catalogue behind
 is one JSON value, `stsAttributeSourceData`.
 
 The directory does not load a schema when it answers.
+
+The service reads an entry through the concept that names it (see
+[Domain concepts](#domain-concepts)), and a stored value that is not in its
+type's canonical form reads as absent rather than guessed: a boolean is `TRUE`
+or `FALSE` in any case, an integer is digits with an optional leading minus,
+and a time is LDAP Generalized Time in UTC (ending `Z`). A value written over LDAP as `12abc` where
+a counter belongs is therefore treated as not set.
 
 ### What the application's entry states as structure
 

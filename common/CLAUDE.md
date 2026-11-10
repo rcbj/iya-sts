@@ -15317,14 +15317,17 @@ response is validated against it, always.** There is no setting, in either mode.
 * **A VIOLATION IS NOT SENT.** The caller gets a 500 `server_error` saying nothing
   of the shape; the operator gets `STS-API-0139` once per distinct failure, naming
   the operation, the status and where, with key names and never a value.
-* **THE MODELS ARE IN ONE FILE PER FAMILY**, keyed by operationId
-  (`models/api/management.tsp` since #1390, `models/api/account.tsp` (since #1390),
-  `authn/authn_response_models.ts`), and in `report/openapi.ts` itself. A new
+* **THE MODELS ARE IN ONE FILE PER DOCUMENT**, keyed by operationId, in
+  TypeSpec since #1390: `models/api/management.tsp`, `console.tsp`, `account.tsp`,
+  `authn.tsp` and `report.tsp`, with the shapes they share in `common.tsp`
+  (`models/CLAUDE.md`). A new
   operation owes a model; `tests/openapi_response_models.js` fails otherwise, at
   any depth. **A new member of an answer owes a line in its model in the same
   commit**, or that answer becomes a 500.
-* **THREE SHAPES AND ONLY THREE**: `closed()`, `mapOf()` where keys are data, and
-  `freeForm('why')`, the argued exception, printed by that test.
+* **THREE SHAPES AND ONLY THREE**: closed, a map where keys are data, and
+  free-form with its reason (`x-free-form` in the model, `freeForm('why')` in
+  `response_model_kit.ts` for a row still built in code), the argued exception,
+  printed by that test.
 * **NO MEMBER IS `required` UNLESS EVERY BRANCH SENDS IT**: the management API
   removes members after a view built them (an owner's projection, the console's
   own members).
