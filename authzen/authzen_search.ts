@@ -63,6 +63,7 @@
 // ===========================================================================
 
 import helpers = require('../common/helpers');
+import authzenModel = require('./authzen_model');
 
 const { log } = helpers;
 
@@ -112,19 +113,6 @@ function isObject(value: unknown): boolean {
   log.debug("Entering isObject().");
   log.debug("Leaving isObject().");
   return !!value && typeof value === 'object' && !Array.isArray(value);
-}
-
-/**
- * Builds a search refusal, status 400.
- *
- * @param code - the error code
- * @param message - what the caller is told
- * @returns `{ refusal }`
- */
-function refused(code: string, message: string): SearchRequest {
-  log.debug("Entering refused(). " + code);
-  log.debug("Leaving refused().");
-  return { refusal: { status: 400, code: code, message: message } };
 }
 
 /**
@@ -181,53 +169,29 @@ class AuthzenSearch {
   read(kind: string, given: unknown): SearchRequest {
     const self = this;
     log.debug("Entering AuthzenSearch.read(). " + kind);
-    if (!isObject(given)) {
-      log.debug("Leaving AuthzenSearch.read(). Not an object.");
-      return refused('STS-AUTHZEN-0001', 'A search request is a JSON ' +
-                     'object.');
+    // THE SHAPE IS THE MODEL'S (#1579): the search's own request in
+    // `models/authzen/authzen.tsp` — `page`, and the searched entity's
+    // `type` (or, for an Action Search, no `action` at all). What is left
+    // is read as an evaluation, by `authzen_map.ts`.
+    const refusal = authzenModel.read('search-' + kind, given);
+    if (refusal) {
+      log.debug("Leaving AuthzenSearch.read(). " + refusal.code);
+      return { refusal: refusal };
     }
     const body: any = Object.assign({}, given);
     let page = { token: '', limit: null, properties: {} };
     if (body.page !== undefined) {
       const sent = body.page;
-      const limit = isObject(sent) ? sent.limit : undefined;
-      if (!isObject(sent) ||
-          (sent.token !== undefined && typeof sent.token !== 'string') ||
-          (limit !== undefined && (!Number.isSafeInteger(limit) ||
-                                   limit < 0)) ||
-          (sent.properties !== undefined && !isObject(sent.properties)) ||
-          Object.keys(sent).some(function (key: string) {
-            return ['token', 'limit', 'properties'].indexOf(key) < 0;
-          })) {
-        log.debug("Leaving AuthzenSearch.read(). A bad page.");
-        return refused('STS-AUTHZEN-0042', 'page is an object with token ' +
-                       '(a string from a previous next_token), limit (a ' +
-                       'non-negative integer) and properties (an object), ' +
-                       'each optional.');
-      }
       page = { token: String(sent.token || ''),
-               limit: limit === undefined ? null : limit,
+               limit: sent.limit === undefined ? null : sent.limit,
                properties: sent.properties || {} };
       delete body.page;
     }
     if (kind === 'action') {
-      if (body.action !== undefined) {
-        log.debug("Leaving AuthzenSearch.read(). An action was sent.");
-        return refused('STS-AUTHZEN-0009', 'An Action Search request ' +
-                       'carries no action member (section 8.6).');
-      }
       body.action = { name: PLACEHOLDER };
     } else {
-      const object = body[kind];
-      if (!isObject(object) || typeof object.type !== 'string' ||
-          !object.type) {
-        log.debug("Leaving AuthzenSearch.read(). No " + kind + ".type.");
-        return refused('STS-AUTHZEN-0002', 'A ' + kind + ' search names ' +
-                       'the ' + kind + '.type to search, a non-empty ' +
-                       'string.');
-      }
       // AN ID SENT IS IGNORED (sections 8.4 and 8.5: it "MUST be ignored").
-      body[kind] = Object.assign({}, object, { id: PLACEHOLDER });
+      body[kind] = Object.assign({}, body[kind], { id: PLACEHOLDER });
     }
     // THE FINGERPRINT IS OF EVERYTHING BUT THE TOKEN: the entities and the
     // limit a continued request must not change (section 8.2).

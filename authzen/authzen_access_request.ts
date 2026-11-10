@@ -95,6 +95,7 @@ import stsCrypto = require('../common/crypto');
 // The lexical spaces of an advice's values (`termsOf()`). A leaf the
 // mapping already loads.
 import datatypes = require('../xacml/xacml_datatypes');
+import authzenModel = require('./authzen_model');
 
 const { log } = helpers;
 
@@ -106,9 +107,6 @@ type Res = import('express').Response;
 const ADVICE_ID = 'urn:sts:xacml:advice:access-request';
 const ADVICE_PREFIX = ADVICE_ID + ':';
 
-// The profile's problem types (its section on error responses).
-const PROBLEM = 'urn:openid:authzen:access-request:error:';
-
 // The capability the metadata names while this is on.
 const CAPABILITY = 'urn:openid:authzen:capability:access-request';
 
@@ -119,18 +117,11 @@ const REQUESTS_PATH = '/access/v1/access-requests';
 const GATE_RESOURCE = 'authzen-access-request';
 const GATE_ACTION = 'approve-access-request';
 
-// The lifecycle.
-const STATES = Object.freeze(['pending', 'approved', 'denied', 'expired',
-                              'cancelled', 'failed']);
-
-// The CALLBACK companion's event names.
-const EVENTS = Object.freeze(['approved', 'denied', 'expired', 'cancelled',
-                              'failed']);
-
-// The members a submission may carry at its top level. `items` is BULK's
-// and refused; anything else is a mistake rather than an extension point.
-const SUBMISSION_MEMBERS = Object.freeze(['subject', 'resource', 'action',
-  'context', 'denial', 'requested_access', 'client', 'callback']);
+// The lifecycle, the first status the only one that is not terminal, and
+// the CALLBACK companion's event names, which are the terminal statuses:
+// the model's Task Handle (`models/authzen/authzen_members.tsp`, #1579).
+const STATES = Object.freeze(authzenModel.valuesOf('task-handle', 'status'));
+const EVENTS = Object.freeze(STATES.slice(1));
 
 // The context members that are the profile's machinery, never part of the
 // authorization-relevant context and never bound.
@@ -612,22 +603,18 @@ class AccessRequests {
     const { log, errorCodes } = this.deps;
     log.debug("Entering AccessRequests.problem(). " + code);
     errorCodes.mark(res, code);
-    const titles: Json = {
-      not_requestable: 'Access is not requestable',
-      expired_denial: 'The requestable denial has expired',
-      invalid_denial_binding: 'The request cannot be bound to the denial',
-      duplicate_request: 'The Idempotency-Key was used for another request',
-      unknown_task: 'There is no such task',
-      task_expired: 'The task has expired',
-      invalid_task_state: 'The task is not in a state that allows this'
-    };
+    // THE TYPE AND ITS TITLE ARE THE MODEL'S (`ProblemTypes`, #1579); a
+    // refusal with none is `about:blank`, titled by its status.
+    const named = type ? authzenModel.problemType(type) : null;
+    const body: Json = {
+      type: named ? named.uri : 'about:blank',
+      title: named ? named.title : (status >= 500 ? 'Server error'
+                                                  : 'Bad request'),
+      status: status, detail: detail };
+    authzenModel.hold('problem', body, 'an access request endpoint');
     res.status(status).type('application/problem+json')
        .set('Cache-Control', 'no-store')
-       .send(JSON.stringify({
-         type: type ? PROBLEM + type : 'about:blank',
-         title: type ? titles[type] : (status >= 500 ? 'Server error'
-                                                      : 'Bad request'),
-         status: status, detail: detail }, null, 2));
+       .send(JSON.stringify(body, null, 2));
     log.debug("Leaving AccessRequests.problem().");
   }
 
@@ -737,6 +724,9 @@ class AccessRequests {
                                  approved_until: instant(
                                    task.approval.approvedUntil * 1000) } };
     }
+    // Every answer this body is sent in is held to the model's Task
+    // response (#1579): a gap is recorded, the answer is unchanged.
+    authzenModel.hold('task-response', out, 'an access request endpoint');
     log.debug("Leaving AccessRequests.bodyOf().");
     return out;
   }
@@ -805,48 +795,22 @@ class AccessRequests {
     const self = this;
     const { log, helpers } = this.deps;
     log.debug("Entering AccessRequests.submit().");
-    if (!isObject(body)) {
-      self.problem(res, 400, '', 'STS-AUTHZEN-0071', 'An access request ' +
-                   'is a JSON object with subject, resource, action and ' +
-                   'denial.');
-      log.debug("Leaving AccessRequests.submit(). Not an object.");
+    // THE SHAPE IS THE MODEL'S (#1579): `AccessRequestSubmission` — the
+    // members it takes, BULK's refused, the denied tuple's three objects.
+    // `denial`, `requested_access` and `callback` are read at their own
+    // places below, between the checks that need state.
+    const shape = authzenModel.read('access-request', body);
+    if (shape) {
+      self.problem(res, 400, '', shape.code, shape.message);
+      log.debug("Leaving AccessRequests.submit(). " + shape.code);
       return;
     }
     const given: Json = body;
-    if (given.items !== undefined) {
-      self.problem(res, 400, '', 'STS-AUTHZEN-0071', 'This service does ' +
-                   'not implement the bulk companion profile; submit one ' +
-                   'item at a time.');
-      log.debug("Leaving AccessRequests.submit(). Bulk.");
-      return;
-    }
-    const stray = Object.keys(given).filter(function (key: string) {
-      return SUBMISSION_MEMBERS.indexOf(key) < 0;
-    })[0];
-    if (stray) {
-      self.problem(res, 400, '', 'STS-AUTHZEN-0071', 'An access request ' +
-                   'has no member "' + stray.slice(0, 64) + '"; it takes ' +
-                   SUBMISSION_MEMBERS.join(', ') + '.');
-      log.debug("Leaving AccessRequests.submit(). An unknown member.");
-      return;
-    }
-    const missing = ['subject', 'resource', 'action'].filter(
-      function (key: string) {
-        return !isObject(given[key]);
-      })[0];
-    if (missing) {
-      self.problem(res, 400, '', 'STS-AUTHZEN-0071', missing + ' is ' +
-                   'required, the AuthZEN ' + missing + ' of the denied ' +
-                   'evaluation, as a JSON object.');
-      log.debug("Leaving AccessRequests.submit(). No " + missing + ".");
-      return;
-    }
     const denial = given.denial;
-    if (!isObject(denial) || (!denial.binding_token &&
-                              !denial.evaluation_id)) {
-      self.problem(res, 400, 'not_requestable', 'STS-AUTHZEN-0072',
-                   'The request carries no denial with the binding_token ' +
-                   'of a requestable denial, so it is not based on one.');
+    const unbound = authzenModel.field('access-request', 'denial', denial);
+    if (unbound) {
+      self.problem(res, 400, 'not_requestable', unbound.code,
+                   unbound.message);
       log.debug("Leaving AccessRequests.submit(). No denial.");
       return;
     }
@@ -1099,13 +1063,14 @@ class AccessRequests {
     const self = this;
     const { log } = this.deps;
     log.debug("Entering AccessRequests.requestedAccess().");
+    const shape = authzenModel.field('access-request', 'requested_access',
+                                     given.requested_access);
+    if (shape) {
+      log.debug("Leaving AccessRequests.requestedAccess(). Not an object.");
+      return { problem: shape.message, code: shape.code };
+    }
     const asked: Json = given.requested_access === undefined ? {}
       : given.requested_access;
-    if (!isObject(asked)) {
-      log.debug("Leaving AccessRequests.requestedAccess(). Not an object.");
-      return { problem: 'requested_access must be a JSON object.',
-               code: 'STS-AUTHZEN-0096' };
-    }
     let until = 0;
     if (asked.requested_until !== undefined) {
       const at = Date.parse(String(asked.requested_until));
@@ -1190,11 +1155,12 @@ class AccessRequests {
       log.debug("Leaving AccessRequests.callbackOf(). None.");
       return { value: null };
     }
-    const asked: Json = given;
-    if (!isObject(asked) || typeof asked.endpoint !== 'string') {
+    const shape = authzenModel.field('access-request', 'callback', given);
+    if (shape) {
       log.debug("Leaving AccessRequests.callbackOf(). Not an object.");
-      return { problem: 'callback must be a JSON object with an endpoint.' };
+      return { problem: shape.message };
     }
+    const asked: Json = given;
     const endpoint = String(asked.endpoint);
     if (!/^https:\/\//i.test(endpoint) ||
         self.registeredCallbacks(caller).indexOf(endpoint) < 0) {
@@ -1204,12 +1170,14 @@ class AccessRequests {
                         'service never dials one taken from a request ' +
                         'alone.' };
     }
-    const events = asked.events === undefined ? EVENTS.slice(0)
-      : (Array.isArray(asked.events) ? asked.events.map(String) : null);
-    if (!events) {
+    const listed = authzenModel.field('access-request', 'callback.events',
+                                      asked.events);
+    if (listed) {
       log.debug("Leaving AccessRequests.callbackOf(). Bad events.");
-      return { problem: 'callback.events must be an array of event names.' };
+      return { problem: listed.message };
     }
+    const events: string[] = asked.events === undefined ? EVENTS.slice(0)
+      : asked.events.map(String);
     const state = asked.state === undefined ? undefined
       : String(asked.state).slice(0, MAX_TEXT);
     log.debug("Leaving AccessRequests.callbackOf().");
@@ -1275,6 +1243,8 @@ class AccessRequests {
       log.debug("Leaving AccessRequests.notify(). Not signed.");
       return Promise.resolve(failed('the notification could not be signed'));
     }
+    authzenModel.hold('callback-notification', payload,
+                      'an access request callback');
     let sent: Promise<Json>;
     try {
       sent = self.deps.loadFedHttp().deliverJson(
@@ -1397,7 +1367,8 @@ class AccessRequests {
       why: 'by the requesting PEP' + (given.reason
         ? ' (' + String(given.reason).slice(0, 64) + ')' : '') });
     res.status(200).type('application/json').set('Cache-Control', 'no-store')
-       .send(JSON.stringify({ task: self.handleOf(task) }, null, 2));
+       .send(JSON.stringify(authzenModel.held('task-response',
+         { task: self.handleOf(task) }, 'the cancellation'), null, 2));
     log.debug("Leaving AccessRequests.cancel().");
   }
 

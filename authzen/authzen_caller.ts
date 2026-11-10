@@ -54,6 +54,7 @@
 
 import helpers = require('../common/helpers');
 import Classes = require('../common/domain_classes');
+import authzenModel = require('./authzen_model');
 
 const { log } = helpers;
 
@@ -258,7 +259,8 @@ class AuthzenCaller {
   static send(res: Res, status: number, message: string): void {
     log.debug("Entering AuthzenCaller.send(). " + status);
     res.status(status).type('application/json').set('Cache-Control', 'no-store')
-       .send(JSON.stringify({ error: { status: status, message: message } },
+       .send(JSON.stringify(authzenModel.held('error',
+         { error: { status: status, message: message } }, 'AuthZEN'),
                             null, 2));
     log.debug("Leaving AuthzenCaller.send().");
   }

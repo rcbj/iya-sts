@@ -36,6 +36,7 @@ their own, and each is advertised only while it is on.
 | `authzen.ts` | The routes, registered at 23c-ii (`common/protocol_stack.ts`): `POST /access/v1/evaluation`, `POST /access/v1/evaluations`, and the metadata. Thin, as `xacml/xacml.ts` is. |
 | `authzen_exchange.ts` | The OAuth 2.0 Token Exchange Binding, direction A (#1181): which tuples are its gates and scopes, the FIXED conversion rules, and each tuple's answer from the questions a local RFC 8693 exchange asks. Built by `authzen.ts`'s `defaultDeps()` beside the caller and the search. |
 | `authzen_access_request.ts` | The Access Request and Approval Profile and its CALLBACK companion (#1180): the requestable denial and its `binding_token`, the submission, the per-realm task store and its index, the status and cancellation, `decide()` (the one door the portal and the console reach), the approval's verification at re-evaluation, the mail, the callback and the `authzen.access-requests` job. A library; `authzen.ts` registers its three routes. |
+| `authzen_model.ts` | **The AuthZEN model, as the endpoints read it (#1579).** Builds every request's shape pass from `models/generated/authzen.json`, answers the lists the code branches on, and holds every answer to its member set. A leaf. See *THE REQUEST SHAPES ARE THE MODEL'S*, below. |
 | `authzen_admin.ts` | What the AuthZEN tab of `/admin/xacml` shows and does: `view()` and `act()` (`set-attribute`, `remove-attribute`, `set-scope`), shared by the console and `mgmt-api/authzen_api.ts`'s `/admin-api/xacml/authzen` operations (rule 7). A library, built by the root beside the other API modules. |
 
 `tests/authzen_map.js` holds the two pure modules in process;
@@ -691,6 +692,64 @@ header argues each. What a maintainer needs quickly:
   revokes). `tests/authzen_access_request.js` holds it in process and
   `tests/protocol/sts_authzen.js` section 9 over HTTP.
 
+## THE REQUEST SHAPES ARE THE MODEL'S (#1579, 2026-11-10)
+
+**`models/authzen/authzen.tsp` is the source of every request this API
+reads**: the access evaluation (section 6), the evaluations request with its
+`options` and `evaluations_semantic` (section 7), the three searches with
+`page` (section 8), and the access request submission (#1180). Each property
+is a member, checked IN THE ORDER IT IS DECLARED, because the order decides
+which refusal a request with two wrong members gets. Its TypeSpec type says
+what it is — a model (an object, its own properties checked the same way), a
+bounded `string`, `string[]`, an integer, a union of string literals (its
+values), `unknown` (read by somebody else) or `never` (a member the request
+must not carry) — and whether it must be present; `@field` says the bounds,
+the error code and the sentence a refusal carries. `@request` gives the
+request's own sentences (a body that is not an object, a member it does not
+take) and the codes of each kind. **Every sentence is the one the
+hand-written reader sent, word for word**, and `tests/authzen_model_wire.js`
+holds 326 recorded answers to it, in a development and a product realm with
+each switch turned.
+
+* **The pass, in `authzen_model.ts`'s `read()`**: the body an object, the
+  leading members it must not carry (BULK's `items`), then the first member
+  it does not take (unless the request is open, as a search is — what it does
+  not name is read as an evaluation next), then every field. A field with a
+  `refusal` answers it for everything it holds, at the request's type code
+  unless it names its own (`context.approval`, `page`, a search's entity).
+* **Deferred fields are read where the code reads them**, with `field(id,
+  path, value)`: a submission's `denial`, `requested_access` and `callback`
+  (and `callback.events`) sit between checks that need state — the binding
+  token, the clock, the registered callbacks — and moving them would change
+  which refusal comes first. `item(id, path, value)` is a batch item, refused
+  alone.
+* **The lists the code branches on are the model's**: the reserved context
+  members (`authzen_catalogue.ts`'s `RESERVED_CONTEXT` is the evaluation's
+  `Context`, in its check order, which since #1579 is the order the console's
+  catalogue tab lists them too), the obligation types and their required and
+  array properties (`authzen_members.tsp`'s `obligation` sets), the batch
+  semantics and the default one, the task statuses and the callback events
+  (the terminal statuses), and the problem types' URIs and titles.
+* **Every answer is HELD, never reshaped**: the metadata, an evaluation's and
+  a batch's answers (each item, its Decision Context and its `context.error`
+  through the nested sets), a search's answer and page, the error object,
+  every problem, every task response and the callback's payload. A member a
+  closed set does not name, a wrong type or value, or a missing required
+  member is logged under STS-AUTHZEN-0116 and the answer is sent as it was
+  built.
+
+**What stays in the code, because it needs state**: the catalogue's rows and
+their value rules (`xacml/xacml_attribute_rows.ts`), the token-exchange
+binding's fixed context (`authzen_exchange.ts`'s `strayContext()`, which
+depends on `authzen.tokenExchange`), the caller's application scope, the
+batch's `maxBodyBytes` and `maxEvaluations`, a search's page token against the
+request it continues, a submission's binding token, `expires_at`, freshness,
+idempotency, scope and registered callbacks, and `requested_until` (the
+clock). The access request's cancellation body is read leniently and never
+refused, so it is not a request in the model. `tests/model_authzen.js` holds
+the build's refusals, that `authzen/` writes no shape check or sentence of its
+own, and every recorded answer to its member set.
+
 ## Error codes
 
 `STS-AUTHZEN-*` is its own subsystem (`common/error_codes.js`). 0001–0009 are
@@ -707,4 +766,5 @@ binding, 0088–0090 and 0094–0095 the approvers' and the tab's acts, 0091–0
 the callback, the job and the mail; 0100–0115 the token-exchange binding
 (#1181): 0100–0102 a tuple's shape, 0103–0107 a fixed-rule `false`, 0108–0110
 the exchange question's answer, 0111–0113 a scope's, 0114 an expired subject
-token, 0115 the no-broadening check.
+token, 0115 the no-broadening check; 0116 an answer that is not its model's
+(#1579).
