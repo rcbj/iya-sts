@@ -6843,22 +6843,29 @@ function gnapMtlsTrustProblem(attribute, value) {
  */
 const AUTHORIZATION_DETAILS_BUILT_IN = ['openid_credential'];
 
-const AUTHORIZATION_DETAILS_DEFINITION_MEMBERS = ['type', 'description',
-                                                  'locations', 'schema',
-                                                  'actions', 'datatypes',
-                                                  'privileges', 'required',
-                                                  'interaction',
-                                                  'consentActions', 'bearer',
-                                                  'maxLifetimeS', 'acr',
-                                                  'derivableFrom',
-                                                  'introspectionClaims',
-                                                  'limits', 'xacml',
-                                                  'notForPolicy'];
+// THE DEFINITION'S MEMBERS ARE THE MODEL'S (#1579): `models/gnap/gnap.tsp`'s
+// `AccessTypeDefinition`, each with its citation, in the order a refusal
+// lists them. What each member MEANS is checked below, because a list's
+// grammar, a member naming another and a sentence a console shows are not
+// shapes.
+const ACCESS_TYPE_DEFINITION = ModelTables.file('gnap.json').members
+  .find(function (set) {
+    return set.id === 'access-type-definition';
+  });
+
+const AUTHORIZATION_DETAILS_DEFINITION_MEMBERS =
+  ACCESS_TYPE_DEFINITION.list.map(function (member) {
+    return member.name;
+  });
 
 // The three values `interaction` may take (#432 phase 4; enforced by phase
-// 6): `always` asks the resource owner whatever the client is, `never` lets a
-// client that may skip the page skip it, `default` leaves it to the client.
-const ACCESS_TYPE_INTERACTIONS = ['always', 'default', 'never'];
+// 6), the model's: `always` asks the resource owner whatever the client is,
+// `never` lets a client that may skip the page skip it, `default` leaves it
+// to the client.
+const ACCESS_TYPE_INTERACTIONS = ACCESS_TYPE_DEFINITION.list
+  .find(function (member) {
+    return member.name === 'interaction';
+  }).values;
 
 // The members an introspection response already carries, which no type may
 // name as a claim to add beside them: RFC 7662 section 2.2's, RFC 9767

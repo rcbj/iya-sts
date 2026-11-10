@@ -153,6 +153,7 @@ import ShellDocument = require('../common/shell_document');
 import listenerMap = require('../common/listener_map');
 import cors = require('../common/cors');
 import stsCrypto = require('../common/crypto');
+import GnapModel = require('./gnap_model');
 
 type Json = any;
 
@@ -369,6 +370,10 @@ class GnapInteract {
   private answer(res: Res, status: number, body: Json): void {
     const { log } = this.deps;
     log.debug("Entering GnapInteract.answer(). " + status);
+    // THE HOLDING (#1579): the index, or any other answer; recorded, never a
+    // change to what is sent.
+    GnapModel.hold(body.api !== undefined ? 'gnap-api-index'
+      : 'gnap-api-answer', body, '/gnap-api');
     // error-code: none — the API's own send; every refusal's code is marked by apiRefusal() or interactionError() first.
     res.status(status)
        .set('Cache-Control', 'no-store')

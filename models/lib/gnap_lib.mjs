@@ -621,7 +621,7 @@ export function readGnap(program) {
  */
 export function checkGnap(gnap) {
   log.debug("Entering checkGnap().");
-  const problems = gnap.problems.slice(0);
+  const problems = (gnap.problems || []).slice(0);
   const seen = new Set();
   if (gnap.documents.length === 0) {
     problems.push('no request document is declared');

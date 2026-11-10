@@ -491,6 +491,13 @@ function childMain() {
     }
     config.clearOverride('global.mode');
     config.clearOverride('gnap.continueWaitS');
+    // Every answer above was held to the model as it was sent (#1579); a
+    // gap is recorded there, and none may have been.
+    try {
+      record.gaps = require(ROOT + '/gnap/gnap_model').gaps();
+    } catch (e) {
+      record.gaps = ['the model could not be asked: ' + (e && e.message)];
+    }
     server.close();
     fs.writeFileSync(OUT, JSON.stringify(record));
     process.exit(0);
@@ -648,6 +655,10 @@ function run(t) {
   }
   t.check(now.problems.length === 0, 'the child ran to the end',
           now.problems.join('\n'));
+  t.check(Array.isArray(now.gaps) && now.gaps.length === 0,
+          'every answer of the conversation is its model\'s ' +
+          '(models/gnap/gnap.tsp; none recorded under STS-GNAP-0910/0911)',
+          JSON.stringify(now.gaps).slice(0, 2000));
   let recorded = null;
   try {
     recorded = JSON.parse(fs.readFileSync(SNAPSHOT, 'utf8'));
