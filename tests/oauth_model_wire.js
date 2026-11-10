@@ -617,6 +617,12 @@ function scrub(value, name) {
     log.debug("Leaving scrub().");
     return out;
   }
+  // A cookie's value is a handle drawn at random; its name and its
+  // attributes are what is held.
+  if (name === 'set-cookie' && typeof value === 'string') {
+    log.debug("Leaving scrub(). A cookie.");
+    return value.replace(/=[^;]*/, '=<cookie>');
+  }
   if (typeof value === 'string' && JWT.test(value)) {
     const decoded = decodeJwt(value);
     if (decoded !== value) {
@@ -663,11 +669,16 @@ function normalise(record) {
     ['httpdate', /[A-Z][a-z]{2}, \d\d [A-Z][a-z]{2} \d{4} \d\d:\d\d:\d\d GMT/g],
     ['port', /127\.0\.0\.1(:|%3A)\d+/g],
     ['epoch', /\b1[789]\d{8}\b/g],
+    // How long the process has been up, which a refusal of a code says.
+    ['uptime', /up \d+ second\(s\)/g],
     // A dynamically registered client's id.
     ['client', /sts-client-[A-Za-z0-9_-]+/g],
     // A sign-in transaction's handle, in a redirect's text body.
     ['authn', /authn=[A-Za-z0-9_-]+/g],
-    ['random', /[A-Za-z0-9_-]{32,}/g]
+    // A random value has an upper-case letter and a digit in it, which a
+    // member name (`token_endpoint_auth_signing_alg_values_supported`) has
+    // not: a member name is never a placeholder.
+    ['random', /(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]*[A-Z])(?=[A-Za-z0-9_-]*[0-9])[A-Za-z0-9_-]{32,}/g]
   ];
   const text = JSON.stringify(scrub(record), null, 1);
   let out = text;
