@@ -16,7 +16,7 @@ client, a person or a password is known or correct is a separate question, and
 | **Control characters** | None are allowed in a query parameter, path parameter or header. In a body field, tab, newline and carriage return are allowed, and nothing else below U+0020. |
 | **A repeated parameter** | Refused, unless that parameter is defined as repeatable (RFC 8707's `resource` and RFC 8693's `audience`, for example). This service never picks one value and discards the rest. |
 | **Parameter names that pollute objects** | `__proto__` and similar names are refused everywhere. |
-| **Unknown parameters** | Ignored in a query string and on protocol endpoints, because RFC 6749 and OpenID Connect require it. An unknown member of a JSON body on the management API is refused. |
+| **Unknown parameters** | Ignored on protocol endpoints, because RFC 6749 and OpenID Connect require it. On the [management](management-api.md#query-parameters-and-headers), [account](account-api.md#what-a-request-may-name), [sign-in](authn-api.md#what-a-request-may-name) and [report](reporting.md#what-a-request-may-name) APIs, a query parameter the operation does not list, a value that does not fit its declared type, and a custom header nothing declares are each refused with a 400, and so is an unknown member of a JSON body the operation's schema closes. |
 | **Body size** | 5 MB at most, and less wherever a field states a limit. |
 
 ## Limits by kind of value
