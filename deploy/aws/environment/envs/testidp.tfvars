@@ -72,12 +72,13 @@ direct_hostname       = "direct.test-idp.iyasec.io"
 cloudfront_log_bucket = "iyasec-logs"
 cloudfront_log_prefix = "test-idp/"
 
-# THE WAF REPORTS AND DOES NOT BLOCK (rcbj, 2026-11-10): the Qualys scan must
-# reach the service, and its scanners' addresses were not all known (the first
-# scan came from 139.87.104.123, outside the range admitted for it, and was 99%
-# blocked). The public name is then open to anyone; outside-allowed-cidrs
-# counts who.
-waf_report_only = true
+# THE WAF BLOCKS (rcbj, 2026-11-10). It was in report-only mode for the first
+# Qualys scan, whose scanner (139.87.104.123, Qualys US Platform 3) was outside
+# the range admitted for it; report-only opened the public name to anyone, and
+# a dozen outside sources found it within the hour. For a scan, admit the
+# scanner's addresses in ALLOWED_CIDR instead, or set this true for its
+# duration only.
+waf_report_only = false
 
 # The service's own names under iyasec.io rather than the example domains the
 # settings default to (2026-09-18): the default realm's DNS domain (which roots
