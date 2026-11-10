@@ -16,9 +16,10 @@
 // door is a gate one door forgets, so every door now asks this class, and each
 // surface has one chokepoint in `crypto.js` or `helpers.js`.
 //
-// A LIBRARY (rule 3), and it reads only `config`, `error_codes` and the
-// registry, so `crypto.js` may require it and no cycle can form. It needs no
-// `realms`: `config.value()` already answers for the ambient realm.
+// A LIBRARY (rule 3), and it reads only `config`, `error_codes`, `mode` and
+// the registry, so `crypto.js` may require it and no cycle can form (`mode.js`
+// requires only `config` and `error_codes` at load). It needs no `realms`:
+// `config.value()` already answers for the ambient realm.
 //
 // ---------------------------------------------------------------------------
 // WHAT THE FAMILY SWITCHES COVER, AND WHAT THEY DO NOT.
@@ -62,6 +63,7 @@
 
 import bunyan = require('bunyan');
 import config = require('./config');
+import mode = require('./mode');
 import algorithmRegistry = require('./crypto_impl/algorithm_registry');
 
 const log = bunyan.createLogger({
@@ -156,6 +158,37 @@ class SignaturePolicy {
     return list;
   }
 
+  // -------------------------------------------------------------------------
+  // ES256K IN PRODUCT, UNLESS LISTED (#1533, ASVS 5.0.0 11.6.1; #1577). The
+  // secp256k1 curve is outside the approved ones, so with no
+  // `keys.signingAlgorithms` list product mode neither signs with ES256K nor
+  // offers it nor publishes a key for it. An operator who LISTS it is choosing
+  // it, and is obeyed. Until #1577 the rule sat only in
+  // `helpers.signingAlgListed()`, which nothing but tests called, so product
+  // still advertised, published and signed with it. These two answers are the
+  // one predicate: `signCause()` below asks it, so every signer, `effective()`,
+  // `defaultJoseAlg()` and `narrowOwnMembers()` follow, and the helpers that
+  // narrow lists and the JWK Set ask `unapprovedCurve()` through
+  // `signingAlgListed()`.
+  // -------------------------------------------------------------------------
+  /**
+   * @returns whether ES256K is left out for want of a list: product mode
+   *   (`mode.omitsUnapprovedSigningCurves()`) and no `keys.signingAlgorithms`
+   */
+  static omitsUnapprovedCurves(): boolean {
+    return !SignaturePolicy.joseSignList() &&
+      mode.omitsUnapprovedSigningCurves();
+  }
+
+  /**
+   * @param alg - a JOSE algorithm name
+   * @returns whether that algorithm is on an unapproved curve the ambient
+   *   realm leaves out (`omitsUnapprovedCurves()`)
+   */
+  static unapprovedCurve(alg: string): boolean {
+    return String(alg) === 'ES256K' && SignaturePolicy.omitsUnapprovedCurves();
+  }
+
   /**
    * @returns whether the ambient realm signs, publishes and verifies the
    *   post-quantum JOSE algorithms (`keys.postQuantumSigning`, on by default)
@@ -238,6 +271,13 @@ class SignaturePolicy {
       return { code: lists.signCode,
                message: 'this realm does not sign with ' + name + ': ' +
                  lists.sign + ' does not list it.' };
+    }
+    // The same code as an unlisted algorithm: the list is what would admit it.
+    if (surface === 'jose' && SignaturePolicy.unapprovedCurve(name)) {
+      return { code: lists.signCode,
+               message: 'this realm does not sign with ' + name + ': ' +
+                 'secp256k1 is not an approved curve, and in product mode ' +
+                 'it is used only where ' + lists.sign + ' lists it.' };
     }
     if (row && row.pqc === null && SignaturePolicy.pqcOnly() &&
         PQC_ONLY_SURFACES.indexOf(surface) >= 0 &&
@@ -437,7 +477,8 @@ class SignaturePolicy {
    * @returns whether anything but the family switches narrows a JOSE list
    */
   private static joseNarrowed(): boolean {
-    return SignaturePolicy.pqcOnly() || !!SignaturePolicy.signIds('jose');
+    return SignaturePolicy.pqcOnly() || !!SignaturePolicy.signIds('jose') ||
+      SignaturePolicy.omitsUnapprovedCurves();
   }
 
   /**

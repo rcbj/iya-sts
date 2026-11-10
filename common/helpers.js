@@ -3605,28 +3605,49 @@ function signingAlgAllowlist() {
  * @returns true when the realm names no list, the list holds it, or it is
  * `none`, which signs nothing
  */
+// THE ONE PREDICATE the three narrowing helpers below ask (#1577): the list
+// when there is one, and with none, product's rule that secp256k1 is outside
+// the approved curves (ASVS 5.0.0 11.6.1, #1533), which is
+// `signaturePolicy.unapprovedCurve()` — the same answer `signatureRefusal()`
+// gets from `signCause()`. Until #1577 only this function knew the product
+// rule and nothing but tests called it, so product still offered, published
+// and signed with ES256K.
 function signingAlgListed(alg) {
   log.debug("Entering signingAlgListed(). alg=" + alg);
   const list = signingAlgAllowlist();
-  // secp256k1 is outside the approved curves (ASVS 5.0.0 11.6.1), so product
-  // signs with it only where the operator lists it.
   const listed = list ? alg === 'none' || list.indexOf(String(alg)) >= 0
-    : !(alg === 'ES256K' && require('./mode').omitsUnapprovedSigningCurves());
+    : !signaturePolicy.unapprovedCurve(String(alg));
   log.debug("Leaving signingAlgListed(). " + listed);
   return listed;
 }
 
 /**
- * A list of algorithms narrowed to what `keys.signingAlgorithms` admits.
+ * Whether anything narrows by `signingAlgListed()`: a list, or product's
+ * unapproved-curve rule with none. While neither holds the helpers below
+ * answer their input unchanged, the same object.
+ *
+ * @returns true when `signingAlgListed()` can say no to a signing algorithm
+ */
+function signingAlgsNarrowed() {
+  log.debug("Entering signingAlgsNarrowed().");
+  const narrowed = !!signingAlgAllowlist() ||
+    signaturePolicy.omitsUnapprovedCurves();
+  log.debug("Leaving signingAlgsNarrowed(). " + narrowed);
+  return narrowed;
+}
+
+/**
+ * A list of algorithms narrowed to what `keys.signingAlgorithms` admits, and
+ * in product with no list, without ES256K.
  *
  * @param base - the list to narrow
  * @returns the narrowed list, a new array
  */
 function listedSigningAlgs(base) {
   log.debug("Entering listedSigningAlgs().");
-  const list = signingAlgAllowlist();
+  const narrowed = signingAlgsNarrowed();
   const out = (base || []).filter(function (alg) {
-    return !list || alg === 'none' || list.indexOf(alg) >= 0;
+    return !narrowed || signingAlgListed(alg);
   });
   log.debug("Leaving listedSigningAlgs(). " + out.length);
   return out;
@@ -3643,7 +3664,7 @@ function listedSigningAlgs(base) {
  */
 function withoutUnlistedSigningAlgs(doc) {
   log.debug("Entering withoutUnlistedSigningAlgs().");
-  if (!doc || typeof doc !== 'object' || !signingAlgAllowlist()) {
+  if (!doc || typeof doc !== 'object' || !signingAlgsNarrowed()) {
     log.debug("Leaving withoutUnlistedSigningAlgs(). Unchanged.");
     return doc;
   }
@@ -3697,13 +3718,14 @@ function narrowSigningAlgs(doc) {
 
 function withoutUnlistedSigningKeys(keys) {
   log.debug("Entering withoutUnlistedSigningKeys().");
-  const list = signingAlgAllowlist();
-  if (!list) {
+  if (!signingAlgsNarrowed()) {
     log.debug("Leaving withoutUnlistedSigningKeys(). Unchanged.");
     // keys.pqcOnly leaves no list to read, and still narrows what is published.
     return signaturePolicy.pqcOnly()
       ? (keys || []).filter(signaturePolicy.publishedUnderPqcOnly) : keys;
   }
+  // A key naming no algorithm is judged by what its curve serves, so product's
+  // secp256k1 key leaves with no list, as it does with a list that omits it.
   const out = (keys || []).filter(function (jwk) {
     if (!jwk || jwk.use === 'enc') {
       return true;
@@ -3712,13 +3734,11 @@ function withoutUnlistedSigningKeys(keys) {
       return false;
     }
     if (jwk.alg) {
-      return list.indexOf(jwk.alg) >= 0;
+      return signingAlgListed(jwk.alg);
     }
     const served = Object.prototype.hasOwnProperty.call(ALG_OF_CURVE, jwk.crv)
       ? ALG_OF_CURVE[jwk.crv] : null;
-    return !served || served.some(function (alg) {
-      return list.indexOf(alg) >= 0;
-    });
+    return !served || served.some(signingAlgListed);
   });
   log.debug("Leaving withoutUnlistedSigningKeys(). " + out.length + " of " +
             (keys || []).length + ".");

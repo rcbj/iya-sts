@@ -760,8 +760,18 @@ over it.
 * **`none` is not governed**: a UserInfo response may be plain JSON.
 * **It does not shrink the generations.** An RS256-only realm still publishes
   every live generation of its RSA key.
+* **EMPTY IN PRODUCT STILL LEAVES ES256K OUT (#1533, ASVS 11.6.1; made real by
+  #1577).** secp256k1 is not an approved curve, so with no list
+  `mode.omitsUnapprovedSigningCurves()` takes ES256K out of everything above —
+  the JWK Set, the signing lists, `signableJwsAlgs()`, and `signatureRefusal()`
+  (`STS-KEYS-0166`, the list's code, because a list is what admits it). **ONE
+  PREDICATE**: `SignaturePolicy.unapprovedCurve()` inside `signCause()`, which
+  `helpers.signingAlgListed()` asks too, and which the three narrowing helpers
+  now go through. Until #1577 the rule lived only in `signingAlgListed()`,
+  which nothing but tests called, so product still offered and signed it. An
+  operator who LISTS ES256K is obeyed. Development is unchanged.
 
-`tests/signing_algorithm_allowlist.js` holds it.
+`tests/signing_algorithm_allowlist.js` holds it (section F for ES256K).
 
 ## A JWK'S CERTIFICATE CHAIN AS AN ADDRESS (#1351, 2026-11-05)
 
