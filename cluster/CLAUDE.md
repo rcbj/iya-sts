@@ -125,10 +125,13 @@ the load that caused it and the sentence that reported it.
   "has expired or been left", which sends an operator to the database. The
   status object carries `lastStallMs`.
 * **`cluster.nodeTtlMs` is 30000 (it was 10000).** The largest computation a
-  supported console action still makes on the thread is an SLH-DSA-SHAKE-128s
+  supported console action then made on the thread was an SLH-DSA-SHAKE-128s
   signature on `/admin/pki`'s authoring pane: 13.7s measured with the vendored
   signer (`common/CLAUDE.md` 3aa says why that pane does not use the pool),
-  past 10000 − 2000 and inside 30000 − 2000 with its own length to spare. The
+  past 10000 − 2000 and inside 30000 − 2000 with its own length to spare.
+  Since #1464 that signature and the key generation run on libuv's thread
+  pool (`common/crypto_impl/CLAUDE.md`), so the thread no longer stalls on it;
+  the default was not lowered. The
   cost is an active-passive takeover after a CRASH (up to 30s); a clean stop
   releases the lease and hands over in one heartbeat either way, and in
   active-active serving never waited on the lifetime. The fence is unchanged.

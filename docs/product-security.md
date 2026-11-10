@@ -84,6 +84,28 @@ limit), `oauth2.consentAlwaysForPublicClients` (on) and
   caller can write them. Behind a proxy, list its addresses in
   `global.trustedProxies`. See [TLS](tls.md#reverse-proxies-and-load-balancers).
 
+## Certificates
+
+* **Paranoid PKI mode is on.** `pki.paranoid` is `auto`, which is on in product
+  mode: every certificate this service relies on, at a TLS handshake in either
+  direction, under a signature, as an encryption recipient or in an attestation,
+  needs a path to an anchor it was told about, validity now, revocation where a
+  source is named, and the key usages its use case asks. See
+  [Paranoid PKI mode](pki.md#paranoid-pki-mode).
+* **A partner's CA goes in a truststore.** A third party's certificate that is
+  not registered on the application or relationship it is used for must chain
+  to an anchor this service holds: the
+  [client-certificate truststore](tls.md#the-client-truststore) at a TLS
+  handshake, and the realm's [signer truststore](signer-truststore.md) for
+  everything else. A server this service dials that presents a self-signed certificate is
+  refused until it is
+  [accepted by name](signer-truststore.md#accepting-one-certificate-by-name).
+* **One row per use case.** If one kind of certificate cannot meet the checks,
+  turn off that use case's `pki.paranoid<UseCase>` row in the realm that needs
+  it, not the whole mode. A row off in product is logged (`STS-PKI-0239`) and
+  drawn red on `/admin/pki/trust`, which also lists every pinned certificate
+  and its status.
+
 ## Passwords
 
 * **Any composition is accepted.** A policy can set a minimum length and a
