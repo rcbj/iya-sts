@@ -128,6 +128,12 @@ declare namespace IyaDomain {
     actor?: string;
     target?: string;
     summary: string;
+    origin?: string;
+    actorForm?: string;
+    protocol?: string;
+    channel?: string;
+    address?: string;
+    detail?: Record<string, unknown>;
   }
 
   /**
@@ -458,6 +464,11 @@ declare namespace IyaDomain {
     sessionId?: string;
     grantId?: string;
     revoked: boolean;
+    username?: string;
+    issuedAt: number;
+    revocable: boolean;
+    dpopThumbprint?: string;
+    state?: string;
   }
 
   /**
@@ -932,6 +943,16 @@ declare namespace IyaDomain {
     expires: number;
     lastSeenAt: number;
     events: AuthenticationEvent[];
+    eventsDropped?: number;
+    sub?: string;
+    derivedFrom?: string;
+    relyingPartySurface?: string;
+    relyingPartyLabel?: string;
+    relyingPartyClientId?: string;
+    relyingPartyRenewals?: number;
+    relyingPartyRenewedAt?: number;
+    apiCalls?: number;
+    accountSetId?: string;
   }
 
   /**
