@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5411** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5413** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -83,7 +83,7 @@ is an ordinary outcome.
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 54
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 15
-* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 359
+* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 33
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 105
@@ -4752,6 +4752,8 @@ Raised from: gnap/.
 | `STS-GNAP-0906` | In product mode, a GNAP client instance proved a key no application entry registers, and the class_id its request sent does not name an application such a key may be an instance of: no GNAP client of that identifier in the realm, a resource server, one nobody registered, or one listing no registered gnapFinishUri (#1216). With no class_id, the refusal is STS-GNAP-0082. | HTTP 401 GNAP invalid_client (RFC 9635 sections 2.3 and 2.3.3) |
 | `STS-GNAP-0907` | A GNAP grant made by an unregistered instance of its application (#1216) was refused at use — its continuation, or introspected inactive — because gnap.unregisteredInstances has been turned off since (#1219). Such a grant is never refused for the key missing from the entry, where it never was (that is STS-GNAP-0731 for every other grant). | RFC 9635 section 5 (invalid_continuation); RFC 9767 section 3.3 (active: false) |
 | `STS-GNAP-0908` | The custom claims configured for a GNAP access-token JWT could not be read. The token is still minted, without those claims. The protocol claims are unaffected. | RFC 9635 section 3.2.1 (the access token is opaque to the client); the JWT is what a resource server verifies |
+| `STS-GNAP-0910` | A GNAP answer carried a member its model in models/gnap/gnap.tsp does not name, one of a type or value the model does not allow, or lacked one the model requires (#1579). The answer is sent as it was built: the model describes the wire and does not reshape it, so this is a model gap to close. | none (recorded only; the answer is unchanged) |
+| `STS-GNAP-0911` | A GNAP error response carried an error code models/gnap/gnap.tsp does not declare (#1579). The response is sent as it was built; the code is to be declared, with the document that defines it. | none (recorded only; the response is unchanged) |
 
 ## STS-DEVICE
 

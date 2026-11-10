@@ -21689,6 +21689,19 @@ const CODES = [
       'The protocol claims are unaffected.',
     spec: 'RFC 9635 section 3.2.1 (the access token is opaque to the ' +
       'client); the JWT is what a resource server verifies' },
+  { code: 'STS-GNAP-0910',
+    summary: 'A GNAP answer carried a member its model in ' +
+      'models/gnap/gnap.tsp does not name, one of a type or value the ' +
+      'model does not allow, or lacked one the model requires (#1579). The ' +
+      'answer is sent as it was built: the model describes the wire and ' +
+      'does not reshape it, so this is a model gap to close.',
+    spec: 'none (recorded only; the answer is unchanged)' },
+  { code: 'STS-GNAP-0911',
+    summary: 'A GNAP error response carried an error code ' +
+      'models/gnap/gnap.tsp does not declare (#1579). The response is sent ' +
+      'as it was built; the code is to be declared, with the document that ' +
+      'defines it.',
+    spec: 'none (recorded only; the response is unchanged)' },
   { code: 'STS-DEVICE-0001',
     summary: 'A device named an owner that is not a person or an application' +
       ' in the realm\'s directory, named no owner, or an owner kind ' +
