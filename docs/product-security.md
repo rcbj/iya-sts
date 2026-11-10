@@ -136,8 +136,9 @@ engine throws or answers nothing), or the application register cannot be read
 to judge a sign-in, no token is issued (`STS-XACML-0183`).
 
 An administrator's `admin:read` is permission to read every object in that
-realm: a realm is the boundary between tenants. A token of one realm is refused
-at any other realm's `/admin-api`.
+realm: a realm is the boundary between tenants. A realm's own token is refused
+at any other realm's `/admin-api`; a default-realm token is the service's and
+reaches every realm. See [Management API](management-api.md).
 
 At SCIM and Shared Signals, a scheme that carries no scope (HTTP Basic, the
 session cookie) needs Admin Read to read and Admin Write to write.
