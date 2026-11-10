@@ -22402,8 +22402,19 @@ class OAuth2Server {
     // Into the directory, under ou=applications. The response below is composed
     // from `record` rather than read back, because the two are the same object
     // and a read-back would only be able to differ.
-    applications.register(clientId, record,
-                          { softwareStatement: resolved.statement });
+    const stored = applications.register(clientId, record,
+                                         { softwareStatement:
+                                             resolved.statement });
+    // NOT STORED IS NOT REGISTERED (ASVS 5.0.0 2.3.3): the register refuses
+    // metadata it cannot use and says why in the log, and answering 201 with
+    // credentials for a client nobody holds would hand the caller a
+    // registration that does not exist. RFC 7591 section 3.2.2.
+    if (!stored) {
+      log.debug("Leaving OAuth2Server.registerClient(). Not stored.");
+      errorCodes.mark(res, 'STS-OAUTH-1003');
+      return self.oauthError(res, 400, 'invalid_client_metadata',
+                             'the client metadata could not be registered.');
+    }
     res.status(201).type('application/json').set('Cache-Control', 'no-store')
        .send(JSON.stringify(record, null, 2));
     log.debug("Leaving the client registration endpoint. Registered " +

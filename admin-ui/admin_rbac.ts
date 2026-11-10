@@ -880,11 +880,22 @@ class AdminRbac {
       directory.writePersonFlag(name, 'stsConsoleClaimedAt',
                                 self.nowGeneralized());
     }
+    // WHAT HAPPENED, NOT WHAT WAS MEANT (ASVS 5.0.0 2.3.3): a role grant
+    // that failed makes the row an error naming the roles missing, so the
+    // audit log never says an administrator holds what they do not.
     audit.record({
-      action: 'admin.console.bootstrap', outcome: 'success', actor: 'bootstrap',
+      action: 'admin.console.bootstrap',
+      outcome: failed.length ? 'error' : 'success',
+      errorCode: failed.length ? 'STS-ADMIN-0706' : '',
+      // Logged once already, just above.
+      summarised: true,
+      actor: 'bootstrap',
       target: flags.dn, channel: 'internal',
       summary: 'The bootstrap administrator "' + name + '" was ' +
-               (created ? 'created and ' : '') + 'given both console roles' +
+               (created ? 'created and ' : '') +
+               (failed.length
+                 ? 'given ' + (2 - failed.length) + ' of the 2 console roles'
+                 : 'given both console roles') +
                (closedAtOnce
                  ? '; the console was already administered, so it ' +
                    'is not opened to everybody' : ''),

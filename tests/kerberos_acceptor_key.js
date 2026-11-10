@@ -265,6 +265,7 @@ function inAChild(t, which, env) {
     env: Object.assign(clean, {
       LOG_LEVEL: 'fatal', AK_ROOT: ROOT, AK_OUT: outFile, AK_CASE: which,
       STS_KEYS_SOURCE: 'persisted', STS_KEYS_KEK_PROVIDER: 'file',
+      STS_SECRETS_ALLOW_LOCAL_SECRETS: 'true',
       STS_KEYS_KEK_FILE: kekFile
     }, env),
     encoding: 'utf8', timeout: 180000

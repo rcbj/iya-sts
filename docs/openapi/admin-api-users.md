@@ -416,6 +416,7 @@ Scope: `admin:read`.
 | `(shape 2).authenticationEvents[].mac` | string |  |  |
 | `(shape 2).authenticationEvents[].origin` | string |  |  |
 | `(shape 2).authenticationEvents[].outcome` | string |  |  |
+| `(shape 2).authenticationEvents[].prev` | string |  |  |
 | `(shape 2).authenticationEvents[].protocol` | string |  |  |
 | `(shape 2).authenticationEvents[].seq` | number |  |  |
 | `(shape 2).authenticationEvents[].summary` | string |  |  |

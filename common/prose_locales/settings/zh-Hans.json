@@ -315,6 +315,14 @@
     "en": "7324a27b3b761012",
     "text": "每个进程对单个地址所有请求的上限。这是防滥用的措施，与凭据尝试限制不同。0 表示无上限，这是开发模式的默认值。产品模式默认 6000。在代理后面时，请设置 global.trustedProxies 以正确读取地址。"
   },
+  "security.pbes2MinIterations|label": {
+    "en": "099bacdecdd8c71d",
+    "text": "PBES2 JWE 接受的最少 PBKDF2 迭代次数"
+  },
+  "security.pbes2MinIterations|description": {
+    "en": "c6f00e313b689b2b",
+    "text": "以密码加密的 JWE（PBES2，RFC 7518 第 4.8 节）自行声明迭代次数，低于此值的会在派生任何内容之前被拒绝。产品模式默认 600000，即 OWASP 对 PBKDF2-HMAC-SHA256 给出的数值（ASVS 5.0.0 11.4.4）；开发模式默认 RFC 7518 推荐的 1000。使用某个库较小默认值的发送方在产品模式下会被拒绝，直到调低此值。密钥在 libuv 的线程池中派生，绝不在事件循环上，超过 1000000 次迭代会被拒绝。"
+  },
   "audit.allowPlainSyslog|label": {
     "en": "1401e9d7380768e3",
     "text": "在产品模式下允许明文 syslog 审计导出"
@@ -1866,6 +1874,18 @@
   "keys.kekProvider|restartReason": {
     "en": "0956d2f97d1df86a",
     "text": "密钥加密密钥在启动时、签名密钥解密之前读取一次"
+  },
+  "secrets.allowLocalSecrets|label": {
+    "en": "b746acd0225ed6a2",
+    "text": "在产品模式下允许本地后端密钥"
+  },
+  "secrets.allowLocalSecrets|description": {
+    "en": "ecfd7489f63a1df3",
+    "text": "关闭（默认）时，产品模式从密钥存储或密钥管理服务获取密钥加密密钥（keys.kekProvider、keys.cellKekProvider），从密钥存储获取数据库密码；文件中的密钥加密密钥，或文件中、连接字符串中的数据库密码，会使服务停止（ASVS 5.0.0 13.3.1）。开启时接受它们，这会让密钥留在主机上。无论哪种情况，先前的密钥加密密钥都可以是文件。开发模式不论此设置如何都接受它们。"
+  },
+  "secrets.allowLocalSecrets|restartReason": {
+    "en": "3c6a25d74849bf35",
+    "text": "密钥加密密钥和数据库密码只在启动时读取一次"
   },
   "keys.kekTransitMount|label": {
     "en": "efe8c3a4233dd778",
@@ -4480,8 +4500,8 @@
     "text": "刷新令牌加密：密钥管理（alg）"
   },
   "oauth2.refreshTokenEncryptionAlg|description": {
-    "en": "edc32ded102e4226",
-    "text": "每个刷新令牌加密所用的 JWE 密钥管理算法。刷新令牌是一个封装给此领域自身密钥的签名 JWT，对其客户端不透明，因此这一选择在本服务之外不可见。RSA-OAEP 算法使用领域的 RSA 密钥，ECDH-ES 算法使用其 EC 密钥，其余算法使用领域自己的密钥材料。更改它只影响此后签发的令牌；已签发的令牌仍可解开，因为领域持有每种类型的密钥。不提供 RSA1_5。ML-KEM 和 HPKE 算法（#82——草案，参见 keys.encryptionKemAlgs）封装给从领域针对该算法的密钥材料派生出的密钥对，该密钥对从不发布，因此在此处选择它们无需任何密钥，也不会改变客户端看到的任何内容；HPKE-10-KE（X-Wing）使今天截获的刷新令牌不仅能抵御经典攻击者，也能抵御未来的量子攻击者。"
+    "en": "93e63f4a8c7ba5b2",
+    "text": "每个刷新令牌加密所用的 JWE 密钥管理算法。刷新令牌是一个封装给此领域自身密钥的签名 JWT，对其客户端不透明，因此这一选择在本服务之外不可见。RSA-OAEP 算法使用领域的 RSA 密钥，ECDH-ES 算法使用其 EC 密钥，其余算法使用领域自己的密钥材料。不提供 PBES2：该密钥是随机的，把它当作密码进行拉伸毫无益处。更改它只影响此后签发的令牌；已签发的令牌仍可解开，因为领域持有每种类型的密钥。不提供 RSA1_5。ML-KEM 和 HPKE 算法（#82——草案，参见 keys.encryptionKemAlgs）封装给从领域针对该算法的密钥材料派生出的密钥对，该密钥对从不发布，因此在此处选择它们无需任何密钥，也不会改变客户端看到的任何内容；HPKE-10-KE（X-Wing）使今天截获的刷新令牌不仅能抵御经典攻击者，也能抵御未来的量子攻击者。"
   },
   "oauth2.refreshTokenEncryptionEnc|label": {
     "en": "901d0b6a281af825",

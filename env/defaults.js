@@ -717,6 +717,11 @@ var config = {
     pinnedCertificateWarningDays: 30            // Pinned certificate expiry warning (days)
   },
 
+  // --- Key material ----------------------------------------------------
+  secrets: {
+    allowLocalSecrets: false  // Allow local backend secrets in product mode; restart to apply
+  },
+
   // --- Global ----------------------------------------------------------
   workers: {
     startTimeoutMs: 60000,                                                                 // Request worker start limit (ms); restart to apply

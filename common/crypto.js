@@ -6673,40 +6673,33 @@ function pbes2Key(alg, password, saltInput, iterations) {
 // The symmetric half of both directions, so that the key a wrap derives and
 // the key an unwrap derives are derived by ONE function. Two copies of the
 // PBES2 salt construction is one copy that will eventually leave out the alg.
-function symmetricKek(alg, secret, header, forEncrypt) {
+function symmetricKek(alg, secret, header, forEncrypt, prepared) {
   log.debug('Entering symmetricKek(). alg=' + alg);
   if (JWE_PBES2_ALGS.indexOf(alg) >= 0) {
-    let salt;
-    let iterations;
-    if (forEncrypt) {
-      salt = nodeCrypto.randomBytes(16);
-      iterations = PBES2_DEFAULT_ITERATIONS;
-      header.p2s = b64u(salt);
-      header.p2c = iterations;
-    } else {
-      if (!header.p2s) {
-        throw new Error('a ' + alg + ' JWE carries its PBKDF2 salt in the ' +
-          'header as `p2s` (RFC 7518 section 4.8.1.1) and this one has none.');
-      }
-      salt = Buffer.from(String(header.p2s), 'base64url');
-      iterations = Math.floor(Number(header.p2c));
-      if (!isFinite(iterations) || iterations < PBES2_MIN_ITERATIONS) {
-        throw new Error('a ' + alg + ' JWE carries its PBKDF2 iteration ' +
-          'count in the header as `p2c` and this one says ' +
-          '"' + header.p2c + '".');
-      }
-      if (iterations > PBES2_MAX_ITERATIONS) {
-        // Refused rather than performed: see PBES2_MAX_ITERATIONS.
-        throw new Error('this JWE asks for ' + iterations + ' PBKDF2 ' +
-          'iterations and this service performs at most ' +
-          PBES2_MAX_ITERATIONS + '. RFC 7518 section 4.8.1.2 leaves the ' +
-          'ceiling to the recipient, and a caller choosing this number is a ' +
-          'caller choosing how long this process blocks.');
-      }
+    // THE KEY WAS DERIVED BEFORE THIS RAN, OFF THE EVENT LOOP (ASVS 5.0.0
+    // 11.4.4). Hundreds of thousands of PBKDF2 iterations here would hold
+    // every other request this thread serves, so the synchronous door does
+    // not derive at all: `encryptJweCompactAsync()` and
+    // `decryptJweCompactAsync()` derive on libuv's thread pool and hand the
+    // key in, and a PBES2 JWE that reaches this without one is refused.
+    if (!prepared || !Buffer.isBuffer(prepared.key)) {
+      log.debug('Leaving symmetricKek(). PBES2 with no derived key.');
+      throw new Error('a ' + alg + ' JWE needs its key derived off the ' +
+        'event loop: this caller must use encryptJweCompactAsync() or ' +
+        'decryptJweCompactAsync().');
     }
-    const key = pbes2Key(alg, secret, salt, iterations);
+    if (forEncrypt) {
+      header.p2s = b64u(prepared.salt);
+      header.p2c = prepared.iterations;
+    } else if (String(header.p2s) !== b64u(prepared.salt) ||
+               Math.floor(Number(header.p2c)) !== prepared.iterations ||
+               prepared.alg !== alg) {
+      log.debug('Leaving symmetricKek(). PBES2 key for another header.');
+      throw new Error('the PBES2 key derived for this JWE does not match ' +
+        'its header.');
+    }
     log.debug('Leaving symmetricKek(). PBES2.');
-    return key;
+    return prepared.key;
   }
   const bytes = secretBytes(secret);
   if (alg === 'dir') {
@@ -6745,7 +6738,8 @@ function wrapCek(alg, recipientJwk, cek, header, options) {
   // with a message about key data.
   // ---------------------------------------------------------------------
   if (JWE_SYMMETRIC_ALGS.indexOf(alg) >= 0) {
-    const kek = symmetricKek(alg, recipientJwk, header, true);
+    const kek = symmetricKek(alg, recipientJwk, header, true,
+                             options && options.pbes2);
     if (alg === 'dir') {
       // RFC 7518 section 4.5: the shared key IS the content encryption key and
       // encrypted_key is empty. The LENGTH is therefore decided by `enc`, and
@@ -6969,7 +6963,8 @@ function unwrapCek(header, encryptedKey, options, spec) {
         'or one of the symmetric algorithms with the client_secret as the ' +
         'key.');
     }
-    const kek = symmetricKek(alg, options.secret, header, false);
+    const kek = symmetricKek(alg, options.secret, header, false,
+                             options.pbes2);
     if (alg === 'dir') {
       log.debug('Leaving unwrapCek(). Direct.');
       return kek;
@@ -7243,6 +7238,141 @@ function decryptJweCompact(compact, opts) {
   log.debug('Leaving decryptJweCompact(). ' + plaintext.length +
             ' characters.');
   return { header: header, plaintext: plaintext };
+}
+
+// ---------------------------------------------------------------------------
+// PBES2 OFF THE EVENT LOOP (ASVS 5.0.0 11.4.4).
+//
+// PBES2 stretches a password with PBKDF2 on purpose, and the stretch is the
+// cost: 600,000 iterations of HMAC-SHA-256 is a large fraction of a second.
+// `pbkdf2Sync()` would spend it on the thread that answers every other
+// request, so the two doors below derive with `pbkdf2()`, which runs on
+// libuv's thread pool, and hand the key to the synchronous functions above,
+// which refuse a PBES2 JWE that arrives without one (`symmetricKek()`).
+//
+// The iteration count a SENDER chose is bounded on both sides before anything
+// is derived: below `security.pbes2MinIterations` is too weak to accept, and
+// above PBES2_MAX_ITERATIONS is a caller choosing how much of the pool it
+// spends. RFC 7518 section 4.8.1.2 leaves both to the recipient.
+// ---------------------------------------------------------------------------
+function pbes2MinIterations() {
+  log.debug('Entering pbes2MinIterations().');
+  const value = Math.floor(Number(config.value('security.pbes2MinIterations')));
+  log.debug('Leaving pbes2MinIterations().');
+  return isFinite(value) && value >= PBES2_MIN_ITERATIONS
+    ? Math.min(value, PBES2_MAX_ITERATIONS) : PBES2_MIN_ITERATIONS;
+}
+
+/**
+ * Derives a PBES2 key (RFC 7518 section 4.8.1.1) on libuv's thread pool.
+ *
+ * @param alg - the PBES2 algorithm
+ * @param password - the password
+ * @param saltInput - the `p2s` salt input
+ * @param iterations - the `p2c` count
+ * @returns a promise of the key
+ */
+function pbes2KeyAsync(alg, password, saltInput, iterations) {
+  log.debug('Entering pbes2KeyAsync(). alg=' + alg);
+  const salt = Buffer.concat([Buffer.from(alg, 'utf8'), Buffer.alloc(1),
+                              saltInput]);
+  log.debug('Leaving pbes2KeyAsync().');
+  return new Promise(function (resolve, reject) {
+    nodeCrypto.pbkdf2(secretBytes(password), salt, iterations,
+                      AESKW_BYTES[alg], PBES2_HASH[alg], function (err, key) {
+                        if (err) {
+                          log.debug('Caught in pbes2KeyAsync(): ' +
+                                    ((err && err.message) || err));
+                          reject(err);
+                          return;
+                        }
+                        resolve(key);
+                      });
+  });
+}
+
+/**
+ * Encrypts a plaintext as a compact JWE, deriving a PBES2 key off the event
+ * loop. Takes the options `encryptJweCompact()` takes.
+ *
+ * @param plaintext - the plaintext
+ * @param opts - as `encryptJweCompact()`
+ * @returns a promise of the compact JWE
+ */
+async function encryptJweCompactAsync(plaintext, opts) {
+  log.debug('Entering encryptJweCompactAsync().');
+  const options = opts || {};
+  const alg = options.alg || JWE_ALG;
+  if (JWE_PBES2_ALGS.indexOf(alg) === -1) {
+    log.debug('Leaving encryptJweCompactAsync(). Not PBES2.');
+    return encryptJweCompact(plaintext, options);
+  }
+  // RFC 7518 section 4.8.1.1: a new salt for every encryption.
+  const salt = nodeCrypto.randomBytes(16);
+  const key = await pbes2KeyAsync(alg, options.secret, salt,
+                                  PBES2_DEFAULT_ITERATIONS);
+  log.debug('Leaving encryptJweCompactAsync(). PBES2.');
+  return encryptJweCompact(plaintext, Object.assign({}, options, {
+    pbes2: { alg: alg, salt: salt, iterations: PBES2_DEFAULT_ITERATIONS,
+             key: key } }));
+}
+
+/**
+ * Decrypts a compact JWE, deriving a PBES2 key off the event loop. Takes the
+ * options `decryptJweCompact()` takes, and refuses what it refuses.
+ *
+ * @param compact - the compact JWE
+ * @param opts - as `decryptJweCompact()`
+ * @returns a promise of `{ header, plaintext }`; it rejects where
+ *   `decryptJweCompact()` throws
+ */
+async function decryptJweCompactAsync(compact, opts) {
+  log.debug('Entering decryptJweCompactAsync().');
+  const options = opts || {};
+  const parts = String(compact || '').trim().split('.');
+  let header = null;
+  try {
+    header = JSON.parse(Buffer.from(parts[0] || '', 'base64url')
+      .toString('utf8'));
+  } catch (e) {
+    log.debug('Caught in decryptJweCompactAsync(): ' +
+              ((e && e.message) || e));
+  }
+  const alg = header && typeof header === 'object' ? String(header.alg) : '';
+  // Only a PBES2 JWE this caller would open is derived for: one it is going to
+  // refuse anyway costs nothing, and the refusal is decryptJweCompact()'s.
+  if (parts.length !== 5 || JWE_PBES2_ALGS.indexOf(alg) === -1 ||
+      (options.allowedAlg && options.allowedAlg.indexOf(alg) === -1) ||
+      options.secret === undefined || options.secret === null ||
+      options.secret === '') {
+    log.debug('Leaving decryptJweCompactAsync(). Not derived here.');
+    return decryptJweCompact(compact, options);
+  }
+  if (!header.p2s) {
+    log.debug('Leaving decryptJweCompactAsync(). No p2s.');
+    throw new Error('a ' + alg + ' JWE carries its PBKDF2 salt in the ' +
+      'header as `p2s` (RFC 7518 section 4.8.1.1) and this one has none.');
+  }
+  const salt = Buffer.from(String(header.p2s), 'base64url');
+  const iterations = Math.floor(Number(header.p2c));
+  const floor = pbes2MinIterations();
+  if (!isFinite(iterations) || iterations < floor) {
+    log.debug('Leaving decryptJweCompactAsync(). Too few iterations.');
+    throw new Error('a ' + alg + ' JWE carries its PBKDF2 iteration count ' +
+      'in the header as `p2c`, and this service accepts at least ' + floor +
+      '; this one says "' + header.p2c + '".');
+  }
+  if (iterations > PBES2_MAX_ITERATIONS) {
+    log.debug('Leaving decryptJweCompactAsync(). Too many iterations.');
+    throw new Error('this JWE asks for ' + iterations + ' PBKDF2 ' +
+      'iterations and this service performs at most ' +
+      PBES2_MAX_ITERATIONS + '. RFC 7518 section 4.8.1.2 leaves the ' +
+      'ceiling to the recipient.');
+  }
+  const key = await pbes2KeyAsync(alg, options.secret, salt, iterations);
+  log.debug('Leaving decryptJweCompactAsync(). PBES2.');
+  return decryptJweCompact(compact, Object.assign({}, options, {
+    pbes2: { alg: alg, salt: salt, iterations: iterations, key: key } }));
 }
 
 // The Integrated half of `decryptJweCompact()`: the same refusals in the
@@ -18219,10 +18349,13 @@ module.exports = {
   // same key for three different key sizes, and nothing about a round trip can
   // see that.
   pbes2Key: pbes2Key,
+  pbes2KeyAsync: pbes2KeyAsync,
   JWE_SYMMETRIC_ALGS: JWE_SYMMETRIC_ALGS,
   JWE_ENCS: JWE_ENCS,
   encryptJweCompact: encryptJweCompact,
   decryptJweCompact: decryptJweCompact,
+  encryptJweCompactAsync: encryptJweCompactAsync,
+  decryptJweCompactAsync: decryptJweCompactAsync,
   // --- post-quantum and HPKE key establishment (section 4a, #82) ---
   // The families, each a list of `alg` values: ML-KEM (pqc-kem-05), HPKE
   // (both drafts), the Integrated subset (no `enc`), the post-quantum subset

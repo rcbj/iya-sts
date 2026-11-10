@@ -2375,7 +2375,8 @@ class AdminActions {
   // the path an administrator's password reset takes) — so a person who
   // did not expect a key on their account hears of it at once.
   private adminKeyEnrolled(who, done, ctx) {
-    const { log, credentials, auditLog, accountSignals } = this.deps;
+    const { log, credentials, auditLog, accountSignals,
+            errorCodes } = this.deps;
     log.debug("Entering AdminActions.adminKeyEnrolled().");
     if (!done || !done.ok) {
       auditLog.record({
@@ -2393,14 +2394,6 @@ class AdminActions {
     const enrolled = credentials.keysOf(who).filter(function (one) {
       return one.credentialId === String(done.credentialId || '');
     })[0] || null;
-    accountSignals.credentialChanged({ username: who,
-      credentialType: accountSignals.keyCredentialType(enrolled),
-      fido2Aaguid: String((enrolled && enrolled.aaguid) || ''),
-      friendlyName: String((enrolled && enrolled.label) || ''),
-      changeType: 'create', initiatingEntity: 'admin', via: ctx.via,
-      reasonAdmin: 'An administrator (' + (ctx.actor || 'unnamed') +
-                   ') enrolled a passkey for ' + who + '.',
-      reasonUser: 'An administrator enrolled a passkey on your account.' });
     const algorithm = credentials.keyAlgorithm(enrolled || {});
     auditLog.record({
       category: 'authentication', action: 'admin.passkey.enrolled',
@@ -2415,6 +2408,23 @@ class AdminActions {
                 aaguid: String((enrolled && enrolled.aaguid) || ''),
                 enrolledBy: (done.enrolledBy || {}).username || '',
                 held: done.held } });
+    // THE AUDIT ROW BEFORE THE SIGNAL (ASVS 5.0.0 2.3.3): the key is already
+    // enrolled, so a signal that throws must not leave it unrecorded.
+    try {
+      accountSignals.credentialChanged({ username: who,
+        credentialType: accountSignals.keyCredentialType(enrolled),
+        fido2Aaguid: String((enrolled && enrolled.aaguid) || ''),
+        friendlyName: String((enrolled && enrolled.label) || ''),
+        changeType: 'create', initiatingEntity: 'admin', via: ctx.via,
+        reasonAdmin: 'An administrator (' + (ctx.actor || 'unnamed') +
+                     ') enrolled a passkey for ' + who + '.',
+        reasonUser: 'An administrator enrolled a passkey on your account.' });
+    } catch (e) {
+      log.error(errorCodes.tag('STS-ADMIN-0918') + 'admin: the passkey ' +
+                'enrolled for "' + who + '" was recorded, and the account ' +
+                'signal about it could not be sent: ' +
+                ((e && e.message) || e));
+    }
     log.info('admin: ' + (ctx.actor || 'an unnamed caller') + ' (' +
              ctx.via + ') enrolled a passkey for "' +
              who + '", who now holds ' + done.held + '.');

@@ -50,6 +50,8 @@ Level 2. Turn one on only for the clients that need it.
 | `crypto.allowLegacyHashes` | OAEP over SHA-1 in XML encryption and JWE, the SHA-1 PKINIT key derivation, and S4U2Self's HMAC-MD5 checksum | Partners and Kerberos clients that support nothing newer |
 | `persistence.allowDefaultDatabasePassword` | Starting with a well-known database password, such as `sts`, `sts_app` or `postgres`, or one equal to the user name | Test stacks |
 | `audit.allowPlainSyslog` | A syslog audit destination over `tcp` or `udp` | A collector on a network you trust that cannot accept TLS |
+| `secrets.allowLocalSecrets` | A key-encryption key in a file, or a database password in a file or the connection string | A host whose only secret store is its own file system |
+| `security.pbes2MinIterations` | Set below 600000, a password-encrypted JWE (PBES2) with fewer PBKDF2 iterations | A sender whose library uses a smaller count |
 | `malwareScan.allowCleartext` | A plain `icap://` malware scanner | A scanner on a network you trust |
 
 Two settings are on by default in product mode, and turning one off weakens it
@@ -310,8 +312,9 @@ default. When it is on, product mode reaches the scanner over TLS only. See
 * **Audit log.** Configure an [audit export](audit-export.md) destination, so that
   a copy of the log leaves this service as it is written and a compromise here
   cannot alter it. Syslog destinations use TLS unless `audit.allowPlainSyslog` is
-  on. Each held row also carries a keyed checksum: `GET /admin-api/audit/integrity`
-  lists any row that no longer matches.
+  on. Each held row also carries a keyed checksum and the checksum of the row
+  before it: `GET /admin-api/audit/integrity` lists any row that no longer
+  matches, any place a row is missing, and whether the newest rows are there.
 * **Clocks.** With a database store, a node whose clock differs from the
   database's by more than five seconds logs a warning (`STS-SCHED-0022`), and a
   line when they agree again.
@@ -334,6 +337,12 @@ Product mode does not start with a well-known database password (`sts`,
 `sts_app`, `postgres` and the like) or one equal to the user name, unless
 `persistence.allowDefaultDatabasePassword` is on. The compose stack generates its
 passwords at first start. See [The compose stack](docker-compose.md).
+
+Product mode also takes the database password from a secret store, and the
+key-encryption key from a secret store or a key management service. A password
+written into the connection string, the `file` provider, or a key-encryption key
+in a file stops the service unless `secrets.allowLocalSecrets` is on. The compose
+stack uses OpenBao for both. See [Key management](key-management.md).
 
 ## Related
 

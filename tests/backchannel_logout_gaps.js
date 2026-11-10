@@ -167,6 +167,21 @@ function childMain() {
     note(r.status === 400, '1f. and a public client\'s still is not',
          r.status);
     config.setOverride('federation.outboundAllowHttp', false);
+    // A REGISTRATION THE REGISTER DID NOT STORE IS NOT ANSWERED 201 (ASVS
+    // 5.0.0 2.3.3, RFC 7591 section 3.2.2).
+    const realRegister = applications.register;
+    applications.register = function () {
+      return null;
+    };
+    try {
+      r = await registerWith({ backchannel_logout_uri: HTTPS_URI });
+    } finally {
+      applications.register = realRegister;
+    }
+    note(r.status === 400 && r.json &&
+           r.json.error === 'invalid_client_metadata' && !r.json.client_id,
+         '1g. a registration the register refused is not answered 201, and ' +
+         'no credentials are handed out', r.status + ' ' + r.text.slice(0, 200));
 
     let made = applications.createApplication({ identifier: 'bcg-public',
       protocols: ['oauth2'],

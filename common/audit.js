@@ -1781,8 +1781,12 @@ const events = realms.arr({ persist: 'audit.events', merge: 'own',
 // out leased numbers wherever the store is shared, #465), and a restored ring
 // beside one that went back to 0 would renumber every event written
 // afterwards on top of ones already read.
+// `head` (ASVS 5.0.0 16.4.2) is the checksum of the newest row this process
+// wrote in this realm, `headSeq` its seq and `headMac` a keyed checksum over
+// the two: what a row deleted from the END of the ring is found by, where the
+// chain on each row finds one deleted from the middle.
 const nums = realms.obj(function () {
-  return { seq: 0, recorded: 0 };
+  return { seq: 0, recorded: 0, head: '', headSeq: 0, headMac: '' };
 }, { persist: 'audit.nums', merge: 'own', contributionsOnRead: true });
 
 
@@ -2222,7 +2226,20 @@ function record(event) {
       ? (info.summary ? detailOf({ note: info.detail }) : {})
       : detailOf(info.detail)
   };
+  // THE CHAIN (ASVS 5.0.0 16.4.2): the checksum of the row this process wrote
+  // before it in this realm, covered by this row's own checksum. A row taken
+  // out of the middle leaves the next one naming a checksum nobody holds.
+  row.prev = String(nums.head || '');
   row.mac = rowMac(row);
+  if (row.mac) {
+    nums.head = row.mac;
+    nums.headSeq = row.seq;
+    nums.headMac = headMac(row.origin, row.seq, row.mac);
+  } else {
+    nums.head = '';
+    nums.headSeq = 0;
+    nums.headMac = '';
+  }
   events.push(row);
   trimToCap();
   // `summarised: true` (2026-09-17, #36 follow-up): the caller logs a
@@ -2317,16 +2334,20 @@ function failure(code, event) {
 // the database, so somebody able to rewrite a row there cannot make the
 // checksum agree. `verifyIntegrity()` is what reads it. A row with no checksum
 // was written with no key-encryption key in the process.
-const MAC_FIELDS = ['seq', 'origin', 'at', 'category', 'action', 'actor',
-                    'actorForm', 'target', 'outcome', 'summary', 'address',
-                    'errorCode'];
+// A row written before the chain (no `prev` member) was checksummed without
+// it, and is checked the way it was written.
+const LEGACY_MAC_FIELDS = ['seq', 'origin', 'at', 'category', 'action', 'actor',
+                           'actorForm', 'target', 'outcome', 'summary',
+                           'address', 'errorCode'];
+const MAC_FIELDS = LEGACY_MAC_FIELDS.concat(['prev']);
 
 function rowMac(row) {
   log.debug("Entering rowMac().");
   let mac = '';
+  const fields = row.prev === undefined ? LEGACY_MAC_FIELDS : MAC_FIELDS;
   try {
     mac = String(require('./keystore').keyedDigest('audit-row',
-      JSON.stringify(MAC_FIELDS.map(function (key) {
+      JSON.stringify(fields.map(function (key) {
         return row[key] === undefined ? null : row[key];
       }))) || '');
   } catch (e) {
@@ -2336,15 +2357,43 @@ function rowMac(row) {
   return mac;
 }
 
+// The keyed checksum over the newest row's place: without the key, nobody who
+// deletes the last rows can make the head name the row that is now last.
+function headMac(origin, seq, mac) {
+  log.debug("Entering headMac().");
+  let out = '';
+  try {
+    out = String(require('./keystore').keyedDigest('audit-head',
+      JSON.stringify([String(origin || ''), Number(seq) || 0,
+                      String(mac || '')])) || '');
+  } catch (e) {
+    log.debug("Caught in headMac(): " + ((e && e.message) || e));
+  }
+  log.debug("Leaving headMac().");
+  return out;
+}
+
 /**
- * Reports which of this realm's held audit rows no longer match their checksum.
+ * Reports which of this realm's held audit rows no longer match their checksum,
+ * where a row is missing between two held ones, and whether this process's
+ * newest rows are still there (ASVS 5.0.0 16.4.2).
  *
- * @returns `{ checked, unsigned, altered }`, `altered` being the rows' seq
+ * The oldest rows leave the ring by design, at `audit.maxEvents`; what is
+ * checked is that nothing left any other way.
+ *
+ * @param held - the rows to check, this realm's held rows when left out (a
+ *   test passes a copy with rows taken away)
+ * @returns `{ checked, unsigned, altered, missing, head }`: `altered` the
+ *   seq of each row that no longer matches, `missing` each gap as
+ *   `{ origin, after, before }`, and `head` `intact`, `truncated`, `altered`
+ *   or `none`
  */
-function verifyIntegrity() {
+function verifyIntegrity(held) {
   log.debug("Entering verifyIntegrity().");
-  const out = { checked: 0, unsigned: 0, altered: [] };
-  list().forEach(function (row) {
+  const out = { checked: 0, unsigned: 0, altered: [], missing: [],
+                head: 'none' };
+  const byOrigin = new Map();
+  (Array.isArray(held) ? held : list()).forEach(function (row) {
     if (!row.mac) {
       out.unsigned += 1;
       return;
@@ -2354,8 +2403,39 @@ function verifyIntegrity() {
     if (again && again !== row.mac) {
       out.altered.push(row.seq);
     }
+    const origin = String(row.origin || '');
+    if (!byOrigin.has(origin)) {
+      byOrigin.set(origin, []);
+    }
+    byOrigin.get(origin).push(row);
   });
-  log.debug("Leaving verifyIntegrity(). " + out.altered.length + " altered.");
+  // EACH PROCESS'S ROWS IN THE ORDER IT WROTE THEM, which is its seq order
+  // (`reserveIncident()` keeps seq rising within a process).
+  byOrigin.forEach(function (rows, origin) {
+    rows.sort(function (a, b) {
+      return (a.seq || 0) - (b.seq || 0);
+    });
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i].prev !== undefined && rows[i].prev !== rows[i - 1].mac) {
+        out.missing.push({ origin: origin, after: rows[i - 1].seq,
+                           before: rows[i].seq });
+      }
+    }
+  });
+  if (nums.head) {
+    const own = byOrigin.get(String(processOrigin())) || [];
+    const newest = own.length ? own[own.length - 1] : null;
+    if (headMac(processOrigin(), nums.headSeq, nums.head) !== nums.headMac) {
+      out.head = 'altered';
+    } else if (!newest || newest.mac !== nums.head) {
+      out.head = 'truncated';
+    } else {
+      out.head = 'intact';
+    }
+  }
+  log.debug("Leaving verifyIntegrity(). " + out.altered.length +
+            " altered, " + out.missing.length + " gap(s), head " + out.head +
+            ".");
   return out;
 }
 

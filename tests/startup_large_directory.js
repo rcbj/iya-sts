@@ -222,6 +222,7 @@ async function restoreMinted(count) {
                    { encoding: 'utf8', mode: 0o600 });
   process.env.STS_KEYS_SOURCE = 'persisted';
   process.env.STS_KEYS_KEK_PROVIDER = 'file';
+  process.env.STS_SECRETS_ALLOW_LOCAL_SECRETS = 'true';
   process.env.STS_KEYS_KEK_FILE = kekFile;
   const config = require('../common/config');
   const realms = require('../common/realms');

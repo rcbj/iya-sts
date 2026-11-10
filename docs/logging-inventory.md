@@ -44,8 +44,12 @@ network except through audit export.
   is the access token's subject, not whoever the browser's sign-on cookie names.
   Reading the audit log is itself recorded.
 * **An audit row can be checked.** Each row carries a keyed checksum under a key
-  that is not in the database. `GET /admin-api/audit/integrity` (`admin:read`)
-  lists the rows that no longer match, and counts rows written without one.
+  that is not in the database, and the checksum of the row its process wrote
+  before it. `GET /admin-api/audit/integrity` (`admin:read`) lists the rows that
+  no longer match and each place a row is missing between two held ones, says
+  whether the process's newest rows are still there, and counts rows written
+  without a checksum. The oldest rows leave the ring at `audit.maxEvents` by
+  design, and that is not reported.
 
 ## Log level
 

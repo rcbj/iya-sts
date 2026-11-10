@@ -1342,6 +1342,21 @@ function create(spec) {
     overrides: Object.assign(seededNames(id, domain),
                              (spec || {}).overrides || {})
   };
+  // AN ID REMOVED BEFORE IS PURGED AGAIN FIRST (ASVS 5.0.0 2.3.3): remove()
+  // carries on past a store that refused to purge, so the new realm must not
+  // inherit what that store kept for the old one. Each purge empties one
+  // partition and is safe to run twice.
+  if (retired.has(id)) {
+    purges.forEach(function (purge) {
+      try {
+        purge(id);
+      } catch (e) {
+        log.warn(errorCodes.tag('STS-CORE-0020') +
+                 'realms: a store refused to purge "' + id + '" before it ' +
+                 'was defined again: ' + ((e && e.message) || e));
+      }
+    });
+  }
   realms.set(id, realm);
   // A realm removed and defined again takes rows again. See acceptsRows().
   retired.delete(id);

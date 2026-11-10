@@ -155,6 +155,9 @@ services:
       - STS_GLOBAL_DATABASE_PASSWORD_FIELD=databasePassword
       - STS_CELL_KEK_PROVIDER=file
       - STS_CELL_KEK_REF=/run/secrets/cell-kek/kek
+      # The cell keys are files on test volumes, which product mode refuses
+      # (ASVS 5.0.0 13.3.1) unless this is on.
+      - STS_SECRETS_ALLOW_LOCAL_SECRETS=true
       - STS_TLS_HOSTNAMES=${STS_TLS_HOSTNAMES:-localhost,sts,sts2,sts-cella,sts-mock,sts.example.com}
     volumes:
       - sts-cell-kek-a:/run/secrets/cell-kek:ro
@@ -204,6 +207,9 @@ services:
       - STS_GLOBAL_DATABASE_PASSWORD_FIELD=databasePassword
       - STS_CELL_KEK_PROVIDER=file
       - STS_CELL_KEK_REF=/run/secrets/cell-kek/kek
+      # The cell keys are files on test volumes, which product mode refuses
+      # (ASVS 5.0.0 13.3.1) unless this is on.
+      - STS_SECRETS_ALLOW_LOCAL_SECRETS=true
       - STS_TLS_HOSTNAMES=${STS_TLS_HOSTNAMES:-localhost,sts,sts2,sts-cella,sts-mock,sts.example.com}
       # Cell B binds no realm SPIFFE listener: the extra addresses are cell
       # A's (`cluster`'s arrangement for node B).

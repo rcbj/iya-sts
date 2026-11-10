@@ -315,6 +315,14 @@
     "en": "7324a27b3b761012",
     "text": "每個處理程序對單一位址所有要求的上限。這是防濫用的措施，與認證嘗試限制不同。0 表示無上限，為開發模式預設值。產品模式預設 6000。在 Proxy 後方時，請設定 global.trustedProxies 以正確讀取位址。"
   },
+  "security.pbes2MinIterations|label": {
+    "en": "099bacdecdd8c71d",
+    "text": "PBES2 JWE 接受的最少 PBKDF2 迭代次數"
+  },
+  "security.pbes2MinIterations|description": {
+    "en": "c6f00e313b689b2b",
+    "text": "以密碼加密的 JWE（PBES2，RFC 7518 第 4.8 節）會自行宣告迭代次數，低於此值者會在衍生任何內容之前被拒絕。產品模式預設為 600000，即 OWASP 對 PBKDF2-HMAC-SHA256 提出的數值（ASVS 5.0.0 11.4.4）；開發模式預設為 RFC 7518 建議的 1000。使用某個函式庫較小預設值的傳送方，在產品模式下會被拒絕，直到調低此值。金鑰在 libuv 的執行緒集區中衍生，絕不在事件迴圈上，超過 1000000 次迭代會被拒絕。"
+  },
   "audit.allowPlainSyslog|label": {
     "en": "1401e9d7380768e3",
     "text": "在產品模式下允許明文 syslog 稽核匯出"
@@ -1866,6 +1874,18 @@
   "keys.kekProvider|restartReason": {
     "en": "0956d2f97d1df86a",
     "text": "金鑰加密金鑰在啟動時、解密簽章金鑰之前讀取一次"
+  },
+  "secrets.allowLocalSecrets|label": {
+    "en": "b746acd0225ed6a2",
+    "text": "在產品模式下允許本機後端密鑰"
+  },
+  "secrets.allowLocalSecrets|description": {
+    "en": "ecfd7489f63a1df3",
+    "text": "關閉（預設）時，產品模式從密鑰儲存區或金鑰管理服務取得金鑰加密金鑰（keys.kekProvider、keys.cellKekProvider），並從密鑰儲存區取得資料庫密碼；檔案中的金鑰加密金鑰，或檔案中、連線字串中的資料庫密碼，會使服務停止（ASVS 5.0.0 13.3.1）。開啟時接受它們，這會讓密鑰留在主機上。無論哪種情況，先前的金鑰加密金鑰都可以是檔案。開發模式不論此設定為何都接受它們。"
+  },
+  "secrets.allowLocalSecrets|restartReason": {
+    "en": "3c6a25d74849bf35",
+    "text": "金鑰加密金鑰與資料庫密碼只在啟動時讀取一次"
   },
   "keys.kekTransitMount|label": {
     "en": "efe8c3a4233dd778",
@@ -4480,8 +4500,8 @@
     "text": "重新整理權杖加密：金鑰管理（alg）"
   },
   "oauth2.refreshTokenEncryptionAlg|description": {
-    "en": "edc32ded102e4226",
-    "text": "每個重新整理權杖加密所用的 JWE 金鑰管理演算法。重新整理權杖是以「此」領域自己的金鑰密封的已簽署 JWT，對其用戶端而言不透明，因此這項選擇在此服務之外看不出來。RSA-OAEP 演算法使用領域的 RSA 金鑰，ECDH-ES 演算法使用其 EC 金鑰，其餘則使用領域自己的密鑰。變更它會影響之後簽發的權杖；已簽發的權杖仍可開啟，因為領域持有每一種金鑰。不提供 RSA1_5。ML-KEM 與 HPKE 演算法（#82——草案，請參閱 keys.encryptionKemAlgs）會密封給從領域該演算法之密鑰「衍生」的金鑰組，永不發佈，因此在此選擇它們不需要任何金鑰，也不會改變用戶端所見的任何內容；HPKE-10-KE（X-Wing）能讓今天被擷取的重新整理權杖在面對未來的量子對手與傳統對手時都保持安全。"
+    "en": "93e63f4a8c7ba5b2",
+    "text": "每個重新整理權杖加密所用的 JWE 金鑰管理演算法。重新整理權杖是以「此」領域自己的金鑰密封的已簽署 JWT，對其用戶端而言不透明，因此這項選擇在此服務之外看不出來。RSA-OAEP 演算法使用領域的 RSA 金鑰，ECDH-ES 演算法使用其 EC 金鑰，其餘則使用領域自己的密鑰。不提供 PBES2：該密鑰是隨機的，把它當作密碼來延展毫無益處。變更它會影響之後簽發的權杖；已簽發的權杖仍可開啟，因為領域持有每一種金鑰。不提供 RSA1_5。ML-KEM 與 HPKE 演算法（#82——草案，請參閱 keys.encryptionKemAlgs）會密封給從領域該演算法之密鑰「衍生」的金鑰組，永不發佈，因此在此選擇它們不需要任何金鑰，也不會改變用戶端所見的任何內容；HPKE-10-KE（X-Wing）能讓今天被擷取的重新整理權杖在面對未來的量子對手與傳統對手時都保持安全。"
   },
   "oauth2.refreshTokenEncryptionEnc|label": {
     "en": "901d0b6a281af825",

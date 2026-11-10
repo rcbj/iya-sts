@@ -1473,6 +1473,21 @@ const SETTINGS = [
                  'default. Product mode defaults to 6000. Behind a proxy, set ' +
                  'global.trustedProxies so that addresses are read correctly.' },
 
+  { key: 'security.pbes2MinIterations', group: 'Web security',
+    label: 'Fewest PBKDF2 iterations accepted in a PBES2 JWE',
+    env: 'STS_SECURITY_PBES2_MIN_ITERATIONS', type: 'int',
+    dflt: strongerInProduct(600000, 1000), derived: true,
+    min: 1000, max: 1000000, runtime: true,
+    description: 'A JWE encrypted to a password (PBES2, RFC 7518 section ' +
+                 '4.8) names its own iteration count, and one below this ' +
+                 'is refused before anything is derived. Product mode ' +
+                 'defaults to 600000, OWASP\'s figure for PBKDF2-HMAC-' +
+                 'SHA256 (ASVS 5.0.0 11.4.4); development to RFC 7518\'s ' +
+                 'recommended 1000. A sender using a library\'s smaller ' +
+                 'default is refused in product until this is lowered. The ' +
+                 'key is derived on libuv\'s thread pool, never on the ' +
+                 'event loop, and above 1000000 iterations is refused.' },
+
   { key: 'audit.allowPlainSyslog', group: 'Audit log',
     label: 'Allow plain syslog audit export in product mode',
     env: 'STS_AUDIT_ALLOW_PLAIN_SYSLOG', type: 'bool', dflt: false,
@@ -4317,6 +4332,22 @@ const SETTINGS = [
                  '`file` lazily requires its official SDK, which is ' +
                  'deliberately NOT a dependency of this service; a missing ' +
                  'one is reported with the package name to install.' },
+
+  { key: 'secrets.allowLocalSecrets', group: 'Key material',
+    label: 'Allow local backend secrets in product mode',
+    env: 'STS_SECRETS_ALLOW_LOCAL_SECRETS', type: 'bool', dflt: false,
+    runtime: false,
+    restartReason: 'the key-encryption key and the database password are ' +
+                   'read once, at startup',
+    description: 'Off, the default, product mode takes its key-encryption ' +
+                 'keys (keys.kekProvider, keys.cellKekProvider) from a ' +
+                 'secret store or a key management service, and a database ' +
+                 'password from a secret store; a key-encryption key in a ' +
+                 'file, or a database password in a file or in the ' +
+                 'connection string, stops the service (ASVS 5.0.0 13.3.1). ' +
+                 'On, those are accepted, which leaves the secret on the ' +
+                 'host. A previous key-encryption key may be a file either ' +
+                 'way. Development mode accepts them whatever this says.' },
 
   { key: 'keys.kekTransitMount', group: 'Key material',
     label: 'Transit engine mount',
@@ -9085,8 +9116,9 @@ const SETTINGS = [
     enumValues: ['RSA-OAEP-256', 'RSA-OAEP', 'ECDH-ES', 'ECDH-ES+A128KW',
                  'ECDH-ES+A192KW', 'ECDH-ES+A256KW'].concat(JWE_KEM_ALGS, [
                  'A128KW', 'A192KW', 'A256KW',
-                 'A128GCMKW', 'A192GCMKW', 'A256GCMKW', 'PBES2-HS256+A128KW',
-                 'PBES2-HS384+A192KW', 'PBES2-HS512+A256KW', 'dir']),
+                 'A128GCMKW', 'A192GCMKW', 'A256GCMKW', 'dir']),
+    // NO PBES2 (ASVS 5.0.0 11.4.4): the realm's secret is random, and
+    // stretching it as a password would cost a PBKDF2 run at every refresh.
     // A256KW SINCE 2026-10-21 (#820, rcbj's decision; it was RSA-OAEP-256).
     // A refresh token is sealed by this realm to itself, so a public key
     // buys nothing; RSA cost a private-key decrypt and an encryption on the
@@ -9100,6 +9132,8 @@ const SETTINGS = [
                  'choice is invisible outside this service. The RSA-OAEP ' +
                  'algorithms use the realm\'s RSA key, the ECDH-ES ones its ' +
                  'EC key, and the rest a secret of the realm\'s own. ' +
+                 'PBES2 is not offered: the secret is random, so stretching ' +
+                 'it as a password adds nothing. ' +
                  'Changing it affects tokens issued from then on; tokens ' +
                  'already issued still open, because the realm holds a key ' +
                  'of every kind. RSA1_5 is not offered. The ML-KEM and HPKE ' +

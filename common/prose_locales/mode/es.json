@@ -1359,6 +1359,18 @@
     "en": "a037c255a759deb1",
     "text": "Los registros de solicitudes omiten credenciales y cuerpos en todos los niveles, y una contraseña predeterminada de la base de datos detiene el servicio salvo que persistence.allowDefaultDatabasePassword esté activo."
   },
+  "mode.requirements.secrets-from-store.what": {
+    "en": "51a0285e7263826e",
+    "text": "Los secretos del servicio provienen de un almacén de secretos"
+  },
+  "mode.requirements.secrets-from-store.development": {
+    "en": "14c3b25b8289b3fa",
+    "text": "La clave de cifrado de claves puede ser un archivo, y la contraseña de la base de datos puede estar en un archivo o en la cadena de conexión."
+  },
+  "mode.requirements.secrets-from-store.product": {
+    "en": "8a3820f8013ed174",
+    "text": "Las claves de cifrado de claves provienen de un almacén de secretos o de un servicio de gestión de claves, y la contraseña de la base de datos de un almacén de secretos. Un archivo o una contraseña en la cadena de conexión detiene el servicio salvo que secrets.allowLocalSecrets esté activado. Una clave de cifrado de claves anterior puede seguir siendo un archivo, para que un despliegue pueda dejarlo."
+  },
   "mode.requirements.audit-destination.what": {
     "en": "93abf5e422347728",
     "text": "El registro de auditoría debería salir de este servicio"

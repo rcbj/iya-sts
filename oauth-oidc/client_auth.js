@@ -333,9 +333,8 @@ async function verifyAssertion(opts) {
   // A plain three-part JWS comes back untouched, so every client that
   // authenticated with one before this existed is on exactly the path it was.
   // ---------------------------------------------------------------------
-  const unwrapped = assertionGrant.unwrapAssertion(opts.assertion,
-                                                   { secret:
-                                                       opts.clientSecret });
+  const unwrapped = await assertionGrant.unwrapAssertion(
+    opts.assertion, { secret: opts.clientSecret });
   if (!unwrapped.ok) {
     log.debug("Leaving verifyAssertion(). It would not decrypt.");
     return { ok: false, errorCode: unwrapped.errorCode,

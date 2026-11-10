@@ -414,6 +414,7 @@ async function armKeystore(dir) {
                    { encoding: 'utf8', mode: 0o600 });
   process.env.STS_KEYS_SOURCE = 'persisted';
   process.env.STS_KEYS_KEK_PROVIDER = 'file';
+  process.env.STS_SECRETS_ALLOW_LOCAL_SECRETS = 'true';
   process.env.STS_KEYS_KEK_FILE = kekFile;
   keystore.reset();
   keystore.setStore({
@@ -962,6 +963,7 @@ async function run(t) {
     } finally {
       delete process.env.STS_KEYS_SOURCE;
       delete process.env.STS_KEYS_KEK_PROVIDER;
+      delete process.env.STS_SECRETS_ALLOW_LOCAL_SECRETS;
       delete process.env.STS_KEYS_KEK_FILE;
       require('../common/keystore').reset();
       fs.rmSync(dir, { recursive: true, force: true });

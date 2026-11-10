@@ -238,6 +238,7 @@ async function run(t) {
     // variable here is enough and nothing has to be re-required.
     process.env.STS_KEYS_SOURCE = 'persisted';
     process.env.STS_KEYS_KEK_PROVIDER = 'file';
+    process.env.STS_SECRETS_ALLOW_LOCAL_SECRETS = 'true';
     process.env.STS_KEYS_KEK_FILE = kekFile;
 
     const store = fakeStore();
@@ -454,6 +455,7 @@ async function run(t) {
     // keystore this file turned on.
     delete process.env.STS_KEYS_SOURCE;
     delete process.env.STS_KEYS_KEK_PROVIDER;
+    delete process.env.STS_SECRETS_ALLOW_LOCAL_SECRETS;
     delete process.env.STS_KEYS_KEK_FILE;
     keystore.reset();
     keystore.setStore({ loadKeys: function () {
@@ -508,6 +510,7 @@ async function run(t) {
                      'utf8');
     process.env.STS_KEYS_SOURCE = 'persisted';
     process.env.STS_KEYS_KEK_PROVIDER = 'file';
+    process.env.STS_SECRETS_ALLOW_LOCAL_SECRETS = 'true';
     process.env.STS_KEYS_KEK_FILE = kekFile;
     const store = fakeStore();
     keystore.setStore(store);
@@ -613,6 +616,7 @@ async function run(t) {
 
     delete process.env.STS_KEYS_SOURCE;
     delete process.env.STS_KEYS_KEK_PROVIDER;
+    delete process.env.STS_SECRETS_ALLOW_LOCAL_SECRETS;
     delete process.env.STS_KEYS_KEK_FILE;
     keystore.reset();
     keystore.setStore({ loadKeys: function () {

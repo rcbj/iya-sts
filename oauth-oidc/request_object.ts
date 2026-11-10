@@ -689,8 +689,8 @@ class RequestObject {
       .subarray(0, bytes);
   }
 
-  private decrypt(compact: Json, client: Json, profile: Json,
-                  keySet: Json): Json {
+  private async decrypt(compact: Json, client: Json, profile: Json,
+                        keySet: Json): Promise<Json> {
     const { stsCrypto, applications, helpers, log } = this.deps;
     const self = this;
     log.debug("Entering RequestObject.decrypt().");
@@ -790,7 +790,9 @@ class RequestObject {
     }
     let opened = null;
     try {
-      opened = stsCrypto.decryptJweCompact(compact, options);
+      // ASYNC, so that a PBES2 key is derived off the event loop (ASVS
+      // 5.0.0 11.4.4); every other algorithm is opened as before.
+      opened = await stsCrypto.decryptJweCompactAsync(compact, options);
     } catch (e) {
       log.debug("Caught in RequestObject.decrypt(): " +
                 "" + ((e && e.message) || e));
@@ -1244,7 +1246,8 @@ class RequestObject {
     let encrypted = '';
     const parts = compact.split('.').length;
     if (parts === 5) {
-      const opened = self.decrypt(compact, client, profile, options.keySet);
+      const opened = await self.decrypt(compact, client, profile,
+                                        options.keySet);
       if (!opened.ok) {
         log.debug("Leaving RequestObject.verifyObject(). Decryption refused.");
         return opened;

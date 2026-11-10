@@ -609,7 +609,9 @@ var OID_FRIENDLY_NAME = '1.2.840.113549.1.9.20';
 var PBES2_OPTS = {
   contentEncryptionAlgorithm: { name: 'AES-CBC', length: 256 },
   hmacHashAlgorithm: 'SHA-256',
-  iterationCount: 100000,
+  // OWASP's figure for PBKDF2-HMAC-SHA256 (ASVS 5.0.0 11.4.4). Web Crypto
+  // derives it on libuv's thread pool, off the event loop.
+  iterationCount: 600000,
   pbkdf2HashAlgorithm: 'SHA-256'
 };
 

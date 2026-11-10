@@ -187,7 +187,52 @@ async function run(t) {
   t.equal(auditLog.verifyIntegrity().altered.indexOf(held.seq) >= 0, true,
           'a row rewritten afterwards is reported');
   held.summary = honest;
+  // The chain (16.4.2): a row taken from the middle, or the newest ones, is
+  // found, and the oldest leaving at the cap is not a finding.
+  ['one', 'two', 'three'].forEach(function (n) {
+    auditLog.audit({ category: 'admin', action: 'admin.test', summary: n });
+  });
+  // Only this check's own four rows: others in the ring were written by
+  // earlier jobs, some under the real key.
+  const rows = auditLog.list().slice(0, 4);
+  const whole = auditLog.verifyIntegrity(rows);
+  t.equal(whole.missing.length + whole.altered.length, 0,
+          'a whole chain verifies');
+  t.equal(whole.head, 'intact', 'and its newest row is there');
+  t.equal(rows[0].prev, rows[1].mac,
+          'each row names the checksum of the one before it');
+  const gap = auditLog.verifyIntegrity(rows.slice(0, 1).concat(rows.slice(2)));
+  t.equal(gap.missing.length === 1 && gap.missing[0].before === rows[0].seq &&
+          gap.missing[0].after === rows[2].seq, true,
+          'a row deleted from the middle is reported between its neighbours');
+  t.equal(auditLog.verifyIntegrity(rows.slice(1)).head, 'truncated',
+          'deleting the newest row is reported');
+  const oldestGone = auditLog.verifyIntegrity(rows.slice(0, rows.length - 1));
+  t.equal(oldestGone.missing.length === 0 && oldestGone.head === 'intact',
+          true, 'and the oldest leaving, as the cap does, is not');
   keystore.keyedDigest = realKeyed;
+  // A realm id defined again is purged first (2.3.3): a store that refused
+  // to purge when the realm was removed must not hand its rows to the new one.
+  const realmsMod = require(ROOT + '/common/realms');
+  let refuse = true;
+  const purgedFor = [];
+  realmsMod.onRemove(function (id) {
+    if (id !== 'asvs-reused') {
+      return;
+    }
+    purgedFor.push(refuse ? 'refused' : 'purged');
+    if (refuse) {
+      refuse = false;
+      throw new Error('refused for the test');
+    }
+  });
+  realmsMod.create({ id: 'asvs-reused' });
+  realmsMod.remove('asvs-reused');
+  realmsMod.create({ id: 'asvs-reused' });
+  t.equal(purgedFor.join(','), 'refused,purged',
+          'a realm id defined again after a refused purge is purged again ' +
+          'before it is defined');
+  realmsMod.remove('asvs-reused');
   // A partner's sign-in time counts (#1554).
   const authn = require(ROOT + '/authn/authn');
   const fedProto = fedSp.FederationSp.prototype;

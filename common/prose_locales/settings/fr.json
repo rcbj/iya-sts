@@ -315,6 +315,14 @@
     "en": "7324a27b3b761012",
     "text": "Plafond de toutes les requêtes d’une adresse, par processus. C’est un frein aux abus, distinct des limites sur les tentatives d’identifiants. 0 signifie aucun plafond, valeur par défaut en développement. Le mode produit utilise 6000 par défaut. Derrière un proxy, définissez global.trustedProxies pour que les adresses soient lues correctement."
   },
+  "security.pbes2MinIterations|label": {
+    "en": "099bacdecdd8c71d",
+    "text": "Nombre minimal d’itérations PBKDF2 accepté dans un JWE PBES2"
+  },
+  "security.pbes2MinIterations|description": {
+    "en": "c6f00e313b689b2b",
+    "text": "Un JWE chiffré pour un mot de passe (PBES2, RFC 7518 section 4.8) indique son propre nombre d’itérations, et un nombre inférieur à celui-ci est refusé avant toute dérivation. Le mode produit vaut 600000 par défaut, le chiffre de l’OWASP pour PBKDF2-HMAC-SHA256 (ASVS 5.0.0 11.4.4) ; le mode développement, 1000, la valeur recommandée par la RFC 7518. Un émetteur qui utilise la valeur par défaut plus petite d’une bibliothèque est refusé en mode produit tant que ce réglage n’est pas abaissé. La clé est dérivée dans le pool de threads de libuv, jamais sur la boucle d’événements, et plus de 1000000 itérations est refusé."
+  },
   "audit.allowPlainSyslog|label": {
     "en": "1401e9d7380768e3",
     "text": "Autoriser l’export d’audit syslog en clair en mode produit"
@@ -1866,6 +1874,18 @@
   "keys.kekProvider|restartReason": {
     "en": "0956d2f97d1df86a",
     "text": "la clé de chiffrement de clés est lue une seule fois, au démarrage, avant le déchiffrement des clés de signature"
+  },
+  "secrets.allowLocalSecrets|label": {
+    "en": "b746acd0225ed6a2",
+    "text": "Autoriser les secrets locaux en mode produit"
+  },
+  "secrets.allowLocalSecrets|description": {
+    "en": "ecfd7489f63a1df3",
+    "text": "Désactivé, la valeur par défaut, le mode produit prend ses clés de chiffrement de clés (keys.kekProvider, keys.cellKekProvider) dans un coffre de secrets ou un service de gestion de clés, et un mot de passe de base de données dans un coffre de secrets ; une clé de chiffrement de clés dans un fichier, ou un mot de passe de base dans un fichier ou dans la chaîne de connexion, arrête le service (ASVS 5.0.0 13.3.1). Activé, ils sont acceptés, ce qui laisse le secret sur l’hôte. Une clé de chiffrement de clés précédente peut être un fichier dans les deux cas. Le mode développement les accepte quoi que dise ce réglage."
+  },
+  "secrets.allowLocalSecrets|restartReason": {
+    "en": "3c6a25d74849bf35",
+    "text": "la clé de chiffrement de clés et le mot de passe de la base sont lus une fois, au démarrage"
   },
   "keys.kekTransitMount|label": {
     "en": "efe8c3a4233dd778",
@@ -4480,8 +4500,8 @@
     "text": "Chiffrement du jeton d’actualisation : gestion de clé (alg)"
   },
   "oauth2.refreshTokenEncryptionAlg|description": {
-    "en": "edc32ded102e4226",
-    "text": "L’algorithme de gestion de clé JWE sous lequel chaque jeton d’actualisation est chiffré. Un jeton d’actualisation est un JWT signé scellé pour les propres clés de CE domaine et opaque pour son client : le choix est donc invisible hors de ce service. Les algorithmes RSA-OAEP utilisent la clé RSA du domaine, les ECDH-ES sa clé EC, et les autres un secret propre au domaine. Le modifier affecte les jetons émis à partir de ce moment ; les jetons déjà émis s’ouvrent toujours, car le domaine détient une clé de chaque type. RSA1_5 n’est pas proposé. Les algorithmes ML-KEM et HPKE (#82 — des drafts, voir keys.encryptionKemAlgs) scellent pour une paire de clés DÉRIVÉE du secret du domaine pour cet algorithme, jamais publiée : en choisir un ici ne nécessite donc aucune clé et ne change rien de ce que voit un client ; HPKE-10-KE (X-Wing) protège un jeton d’actualisation capturé aujourd’hui contre un futur adversaire quantique aussi bien que contre un adversaire classique."
+    "en": "93e63f4a8c7ba5b2",
+    "text": "L’algorithme de gestion de clé JWE sous lequel chaque jeton d’actualisation est chiffré. Un jeton d’actualisation est un JWT signé scellé pour les propres clés de CE domaine et opaque pour son client : le choix est donc invisible hors de ce service. Les algorithmes RSA-OAEP utilisent la clé RSA du domaine, les ECDH-ES sa clé EC, et les autres un secret propre au domaine. PBES2 n’est pas proposé : le secret est aléatoire, donc l’étirer comme un mot de passe n’apporte rien. Le modifier affecte les jetons émis à partir de ce moment ; les jetons déjà émis s’ouvrent toujours, car le domaine détient une clé de chaque type. RSA1_5 n’est pas proposé. Les algorithmes ML-KEM et HPKE (#82 — des drafts, voir keys.encryptionKemAlgs) scellent pour une paire de clés DÉRIVÉE du secret du domaine pour cet algorithme, jamais publiée : en choisir un ici ne nécessite donc aucune clé et ne change rien de ce que voit un client ; HPKE-10-KE (X-Wing) protège un jeton d’actualisation capturé aujourd’hui contre un futur adversaire quantique aussi bien que contre un adversaire classique."
   },
   "oauth2.refreshTokenEncryptionEnc|label": {
     "en": "901d0b6a281af825",

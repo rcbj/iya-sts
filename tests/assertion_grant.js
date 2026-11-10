@@ -60,7 +60,7 @@ const log = require('bunyan').createLogger({ name: 'assertion_grant',
 const ENCS = ['A128GCM', 'A192GCM', 'A256GCM',
               'A128CBC-HS256', 'A192CBC-HS384', 'A256CBC-HS512'];
 
-function run(t) {
+async function run(t) {
   log.debug("Entering run().");
   t.log.info('=== the JWE tables say what this service can actually do ===');
 
@@ -111,9 +111,9 @@ function run(t) {
   const ec = nodeCrypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
   const PLAINTEXT = '{"probe":"an assertion would be here"}';
   let combinations = 0;
-  ENCS.forEach(function (enc) {
+  for (const enc of ENCS) {
     const spec = stsCrypto.JWE_ENCS[enc];
-    stsCrypto.JWE_ALGS.forEach(function (alg) {
+    for (const alg of stsCrypto.JWE_ALGS) {
       let encOpts;
       let decOpts;
       if (stsCrypto.JWE_RSA_ALGS.indexOf(alg) >= 0) {
@@ -149,16 +149,18 @@ function run(t) {
         encOpts = { secret: key };
         decOpts = { secret: key };
       }
-      const compact = stsCrypto.encryptJweCompact(PLAINTEXT,
+      // THE ASYNC DOORS, which every caller that can meet PBES2 uses (ASVS
+      // 5.0.0 11.4.4) and which pass every other algorithm straight through.
+      const compact = await stsCrypto.encryptJweCompactAsync(PLAINTEXT,
         Object.assign({ alg: alg, enc: enc }, encOpts));
-      const back = stsCrypto.decryptJweCompact(compact,
+      const back = await stsCrypto.decryptJweCompactAsync(compact,
         Object.assign({ allowedEnc: [enc] }, decOpts));
       if (back.plaintext !== PLAINTEXT) {
         throw new Error(alg + '/' + enc + ' did not round-trip');
       }
       combinations += 1;
-    });
-  });
+    }
+  }
   t.equal(combinations, stsCrypto.JWE_ALGS.length * ENCS.length,
           'every key management algorithm round-trips against every content ' +
           'encryption algorithm — ' + combinations + ' combinations, which ' +
@@ -227,7 +229,7 @@ function run(t) {
           'different key, which is what the algorithm name in the salt is for');
 
   t.log.info('=== a PBES2 iteration count a caller chose is bounded ===');
-  const pbes = stsCrypto.encryptJweCompact(PLAINTEXT,
+  const pbes = await stsCrypto.encryptJweCompactAsync(PLAINTEXT,
     { alg: 'PBES2-HS256+A128KW', enc: 'A128GCM', secret: 'pw' });
   const header = JSON.parse(Buffer.from(pbes.split('.')[0], 'base64url')
     .toString('utf8'));
@@ -243,8 +245,8 @@ function run(t) {
     Object.assign({}, header, { p2c: 1000001 })), 'utf8').toString('base64url')]
     .concat(pbes.split('.').slice(1)).join('.');
   try {
-    stsCrypto.decryptJweCompact(greedy, { allowedEnc: ['A128GCM'],
-                                          secret: 'pw' });
+    await stsCrypto.decryptJweCompactAsync(greedy, { allowedEnc: ['A128GCM'],
+                                                     secret: 'pw' });
     t.check(false, 'two billion iterations should be refused');
   } catch (e) {
     t.check(/at most/.test(e.message),
@@ -253,6 +255,75 @@ function run(t) {
             'and a caller choosing this number is a caller choosing how long ' +
             'this process blocks', e.message.slice(0, 90));
   }
+
+  t.equal(header.p2c, 600000,
+          'this service encrypts with OWASP\'s 600,000 iterations');
+
+  t.log.info('=== PBES2 is never derived on the event loop (11.4.4) ===');
+  let syncRefusal = '';
+  try {
+    stsCrypto.encryptJweCompact(PLAINTEXT,
+      { alg: 'PBES2-HS256+A128KW', enc: 'A128GCM', secret: 'pw' });
+  } catch (e) {
+    syncRefusal = e.message;
+  }
+  t.check(/off the\s+event loop/.test(syncRefusal),
+          'the synchronous door refuses to encrypt PBES2 rather than ' +
+          'derive on the thread that answers requests', syncRefusal);
+  syncRefusal = '';
+  try {
+    stsCrypto.decryptJweCompact(pbes, { allowedEnc: ['A128GCM'],
+                                        secret: 'pw' });
+  } catch (e) {
+    syncRefusal = e.message;
+  }
+  t.check(/off the\s+event loop/.test(syncRefusal),
+          'and refuses to decrypt one', syncRefusal);
+  // OBSERVED, not inferred: the loop keeps turning while 600,000 iterations
+  // are derived. A synchronous derivation would let no setImmediate run.
+  let done = false;
+  let turns = 0;
+  const opening = stsCrypto.decryptJweCompactAsync(pbes,
+    { allowedEnc: ['A128GCM'], secret: 'pw' }).then(function (out) {
+    done = true;
+    return out;
+  });
+  while (!done) {
+    await new Promise(function (resolve) {
+      setImmediate(resolve);
+    });
+    turns += 1;
+  }
+  t.check((await opening).plaintext === PLAINTEXT && turns > 10,
+          'and the event loop turned ' + turns + ' times while one was ' +
+          'derived');
+
+  t.log.info('=== a PBES2 count below the configured floor is refused ===');
+  const config = require('../common/config');
+  const weakKey = stsCrypto.pbes2Key('PBES2-HS256+A128KW', 'pw',
+                                     Buffer.alloc(16, 1), 1000);
+  const weak = stsCrypto.encryptJweCompact(PLAINTEXT,
+    { alg: 'PBES2-HS256+A128KW', enc: 'A128GCM', secret: 'pw',
+      pbes2: { alg: 'PBES2-HS256+A128KW', salt: Buffer.alloc(16, 1),
+               iterations: 1000, key: weakKey } });
+  config.setOverride('security.pbes2MinIterations', '600000');
+  let floorRefusal = '';
+  try {
+    await stsCrypto.decryptJweCompactAsync(weak,
+      { allowedEnc: ['A128GCM'], secret: 'pw' });
+  } catch (e) {
+    floorRefusal = e.message;
+  } finally {
+    config.clearOverride('security.pbes2MinIterations');
+  }
+  t.check(/at least 600000/.test(floorRefusal),
+          'with the floor at 600,000 (product\'s default), a sender\'s ' +
+          '1,000 iterations are refused before anything is derived',
+          floorRefusal);
+  const allowed = await stsCrypto.decryptJweCompactAsync(weak,
+    { allowedEnc: ['A128GCM'], secret: 'pw' });
+  t.equal(allowed.plaintext, PLAINTEXT,
+          'and development\'s floor, RFC 7518\'s 1,000, accepts them');
 
   t.log.info('=== an assertion may be encrypted, and cty is checked ===');
   // A REAL JWS SHAPE and not three random strings joined by dots. Whether the
@@ -269,9 +340,8 @@ function run(t) {
                 nodeCrypto.randomBytes(32).toString('base64url');
   const nested = stsCrypto.encryptJweCompact(inner,
     { alg: 'A256KW', enc: 'A256GCM', secret: Buffer.alloc(32, 7), cty: 'JWT' });
-  const opened = assertionGrant.unwrapAssertion(nested,
-                                                { secret: Buffer.alloc(32,
-                                                                       7) });
+  const opened = await assertionGrant.unwrapAssertion(nested,
+    { secret: Buffer.alloc(32, 7) });
   t.check(opened.ok && opened.encrypted && opened.jws === inner,
           'a five-part assertion is decrypted and the JWS inside it comes ' +
           'back', opened.description || '');
@@ -279,7 +349,7 @@ function run(t) {
           'and the encryption is REPORTED, so the console and the delegation ' +
           'register can say the assertion arrived encrypted');
 
-  const plain = assertionGrant.unwrapAssertion(inner, {});
+  const plain = await assertionGrant.unwrapAssertion(inner, {});
   t.check(plain.ok && !plain.encrypted && plain.jws === inner,
           'a THREE-part assertion comes back untouched — every client that ' +
           'authenticated with one before encryption existed is on exactly ' +
@@ -293,9 +363,8 @@ function run(t) {
   const notJws = stsCrypto.encryptJweCompact(
     '{"iss":"https://issuer.example.test/x","sub":"alice"}',
     { alg: 'A256KW', enc: 'A256GCM', secret: Buffer.alloc(32, 7), cty: 'JWT' });
-  const refused = assertionGrant.unwrapAssertion(notJws,
-                                                 { secret: Buffer.alloc(32,
-                                                                        7) });
+  const refused = await assertionGrant.unwrapAssertion(notJws,
+    { secret: Buffer.alloc(32, 7) });
   t.check(!refused.ok && /section 3 claim 9/.test(refused.description),
           'a JWE whose plaintext is NOT a signed JWT is refused citing the ' +
           'claim it breaks: encryption does not stand in for a signature, ' +
@@ -305,7 +374,7 @@ function run(t) {
   const wrongCty = stsCrypto.encryptJweCompact(inner,
     { alg: 'A256KW', enc: 'A256GCM', secret: Buffer.alloc(32, 7),
       cty: 'application/json' });
-  const ctyRefused = assertionGrant.unwrapAssertion(wrongCty,
+  const ctyRefused = await assertionGrant.unwrapAssertion(wrongCty,
     { secret: Buffer.alloc(32, 7) });
   t.check(!ctyRefused.ok && /cty/.test(ctyRefused.description),
           'and a nested JWT declaring a `cty` that is not JWT is refused ' +

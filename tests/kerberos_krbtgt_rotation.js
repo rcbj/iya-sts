@@ -575,6 +575,7 @@ function productEnv(dir, kekFile) {
            KRB5_KRBTGT_PASSWORD: 'krbtgt-rotation-ignored-169',
            KRB5_SERVICE_PASSWORD: 'service-rotation-169',
            STS_KEYS_SOURCE: 'persisted', STS_KEYS_KEK_PROVIDER: 'file',
+           STS_SECRETS_ALLOW_LOCAL_SECRETS: 'true',
            STS_KEYS_KEK_FILE: kekFile, STS_PERSISTENCE_MODE: 'ldif',
            STS_PERSISTENCE_DATA_DIR: path.join(dir, 'store'),
            STS_PERSISTENCE_WRITE_DELAY: '0',

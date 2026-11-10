@@ -235,6 +235,7 @@ async function keyRows(t, dir) {
                    'utf8');
   process.env.STS_KEYS_SOURCE = 'persisted';
   process.env.STS_KEYS_KEK_PROVIDER = 'file';
+  process.env.STS_SECRETS_ALLOW_LOCAL_SECRETS = 'true';
   process.env.STS_KEYS_KEK_FILE = kekFile;
   const store = { rows: new Map(), fail: true,
     loadKeys: function () {
@@ -285,6 +286,7 @@ async function keyRows(t, dir) {
   } finally {
     delete process.env.STS_KEYS_SOURCE;
     delete process.env.STS_KEYS_KEK_PROVIDER;
+    delete process.env.STS_SECRETS_ALLOW_LOCAL_SECRETS;
     delete process.env.STS_KEYS_KEK_FILE;
     keystore.reset();
     helpers.resetStsKeys();

@@ -1359,6 +1359,18 @@
     "en": "a037c255a759deb1",
     "text": "Les journaux de requêtes omettent les identifiants et les corps à tous les niveaux, et un mot de passe de base par défaut arrête le service sauf si persistence.allowDefaultDatabasePassword est activé."
   },
+  "mode.requirements.secrets-from-store.what": {
+    "en": "51a0285e7263826e",
+    "text": "Les secrets du service proviennent d’un coffre de secrets"
+  },
+  "mode.requirements.secrets-from-store.development": {
+    "en": "14c3b25b8289b3fa",
+    "text": "La clé de chiffrement de clés peut être un fichier, et le mot de passe de la base peut être dans un fichier ou dans la chaîne de connexion."
+  },
+  "mode.requirements.secrets-from-store.product": {
+    "en": "8a3820f8013ed174",
+    "text": "Les clés de chiffrement de clés proviennent d’un coffre de secrets ou d’un service de gestion de clés, et le mot de passe de la base d’un coffre de secrets. Un fichier ou un mot de passe dans la chaîne de connexion arrête le service sauf si secrets.allowLocalSecrets est activé. Une clé de chiffrement de clés précédente peut encore être un fichier, pour qu’un déploiement puisse s’en défaire."
+  },
   "mode.requirements.audit-destination.what": {
     "en": "93abf5e422347728",
     "text": "Le journal d’audit devrait quitter ce service"

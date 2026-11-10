@@ -2435,6 +2435,25 @@ class Scim {
         // — one decides, the other says it in its own protocol.
         // ---------------------------------------------------------------------
         let dn;
+        // ALL OR NOTHING (ASVS 5.0.0 2.3.3): createUser() writes the entry
+        // before the resource is merged over it, so a refusal after that
+        // point would leave a bare entry nobody asked for, and a retry would
+        // meet its own name as a conflict. Each refusal below the create goes
+        // through undoCreate(), which deletes what this request made.
+        let createdHere = '';
+        const undoCreate = (err: any): any => {
+          if (createdHere) {
+            const undone = directory.deletePerson(createdHere,
+              { door: 'a SCIM create that was refused' });
+            if (!undone.ok) {
+              log.warn(errorCodes.tag('STS-SCIM-0090') + 'scim: a refused ' +
+                       'create left ' + createdHere + ' behind: ' +
+                       (undone.reason || 'not deleted') + '.');
+            }
+            createdHere = '';
+          }
+          return err;
+        };
         if (existing) {
           // An update keeps the DN it has. A rename is an LDAP modrdn rather
           // than a PUT — and since 2026-09-14 it would not change the SCIM id
@@ -2525,6 +2544,7 @@ class Scim {
                 (made.errors || []).join(' ')));
           }
           dn = made.dn;
+          createdHere = made.dn;
         }
 
         // Read back rather than reusing what came in, because on a create the
@@ -2550,9 +2570,9 @@ class Scim {
           }
         }
         if (converted.errors.length) {
-          throw coded('STS-SCIM-0010',
+          throw undoCreate(coded('STS-SCIM-0010',
             new SCIMMY.Types.Error(400, 'invalidValue',
-                                   converted.errors.join(' ')));
+                                   converted.errors.join(' '))));
         }
         if (customValues) {
           realmSchema.applyTo(converted.attributes, customValues);
@@ -2580,10 +2600,16 @@ class Scim {
         // `manager` holds (2026-09-14); a value naming no entry is kept as
         // sent.
         if (converted.attributes.manager) {
-          converted.attributes.manager = [].concat(converted.attributes.manager)
-            .map((value) => {
-              return directory.dnForResourceId(value);
-            });
+          try {
+            converted.attributes.manager =
+              [].concat(converted.attributes.manager).map((value) => {
+                return directory.dnForResourceId(value);
+              });
+          } catch (e) {
+            log.debug("Caught in the SCIM User ingress handler: " +
+                      ((e && e.message) || e));
+            throw undoCreate(e);
+          }
         }
         // The links, where the resource said them: REPLACED, whatever the
         // entry carried — a removal among them ends that partner's sessions
@@ -2605,7 +2631,8 @@ class Scim {
         if (!written.ok) {
           // 500 and not 507 for a full directory: RFC 7644 section 3.12 lists
           // no 507, and scimmy refuses to build an error it does not list.
-          throw coded(errorCodes.codeOf(written) || 'STS-SCIM-0011',
+          throw undoCreate(coded(
+            errorCodes.codeOf(written) || 'STS-SCIM-0011',
             new SCIMMY.Types.Error(written.reason === 'full' ? 500 : 400,
               written.reason === 'full' ? null : 'invalidValue',
               written.reason === 'full'
@@ -2613,8 +2640,9 @@ class Scim {
                   directory.maxEntries() +
                   ' entries (ldap.maxEntries). Nothing was written.'
                 : 'The entry could not be written at ' + dn + ' (' +
-                  written.reason + ').'));
+                  written.reason + ').')));
         }
+        createdHere = '';
 
         // The credential-claim fill, FOR THE PERSON THIS REQUEST CREATED.
         // createUser() already ran applyVcAttributes() on the entry it made —

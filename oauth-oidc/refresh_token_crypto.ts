@@ -101,9 +101,13 @@ interface RefreshTokenCryptoDeps {
 const DEFAULT_ALG = 'A256KW';
 const DEFAULT_ENC = 'A256GCM';
 
-// A PBES2 "password" has no required size; this is what the secret is
-// stretched to before PBKDF2 stretches it again.
-const PBES2_PASSWORD_BYTES = 32;
+// NO PBES2 (ASVS 5.0.0 11.4.4). The realm's secret is 32 random bytes, which a
+// password-stretching function adds nothing to, and stretching it would cost
+// hundreds of thousands of PBKDF2 iterations at every refresh. A refresh token
+// is opaque to its client, so no specification is involved.
+function isPbes2(alg: string): boolean {
+  return /^PBES2-/.test(alg);
+}
 
 /**
  * Seals every refresh token, a signed JWT, as a compact JWE to its own realm
@@ -217,9 +221,11 @@ class RefreshTokenCrypto {
                 'key.');
       return spec.cekBytes;
     }
-    if (/^PBES2-/.test(alg)) {
-      log.debug('Leaving RefreshTokenCrypto.symmetricBytes(). A password.');
-      return PBES2_PASSWORD_BYTES;
+    if (isPbes2(alg)) {
+      log.debug('Leaving RefreshTokenCrypto.symmetricBytes(). PBES2.');
+      throw this.refusal('STS-OAUTH-0238', 'refresh tokens are not sealed ' +
+        'with ' + alg + ': the realm\'s secret is random, so stretching it ' +
+        'as a password adds nothing.');
     }
     const bits = /^A(128|192|256)(?:GCM)?KW$/.exec(alg);
     if (!bits) {
@@ -304,7 +310,7 @@ class RefreshTokenCrypto {
                      DEFAULT_ALG);
     let enc = String(config.value('oauth2.refreshTokenEncryptionEnc') ||
                      DEFAULT_ENC);
-    if (stsCrypto.JWE_ALGS.indexOf(alg) === -1) {
+    if (stsCrypto.JWE_ALGS.indexOf(alg) === -1 || isPbes2(alg)) {
       log.warn(errorCodes.tag('STS-OAUTH-0241') +
                'oauth2.refreshTokenEncryptionAlg is "' +
                alg + '", which common/crypto.js does not implement; refresh ' +
@@ -575,7 +581,9 @@ class RefreshTokenCrypto {
       alg: pair.alg, enc: pair.enc,
       nested: 'a signed JWT (JWS) encrypted as a compact JWE with cty ' +
               '"JWT", RFC 7519 section 11.2',
-      algorithms: stsCrypto.JWE_ALGS.slice(),
+      algorithms: stsCrypto.JWE_ALGS.filter(function (alg: string) {
+        return !isPbes2(alg);
+      }),
       encryptions: Object.keys(stsCrypto.JWE_ENCS),
       keys: { rsa: keys.rsa.publicJwk.kid, ec: keys.ec.publicJwk.kid,
               ecCurve: keys.ec.publicJwk.crv, secret: keys.secretKid,
