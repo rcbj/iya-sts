@@ -832,9 +832,11 @@ CREATE TABLE IF NOT EXISTS sts_cluster_secrets (
   created_at bigint NOT NULL
 );
 
--- A NAMED LOCK AS A ROW (#677, schema version 30): the portable cluster
--- statements lock a row here FOR UPDATE where the native ones take
--- pg_advisory_xact_lock. `persistence/cluster_portable.js` argues it.
+-- A NAMED LOCK AS A ROW (#677, schema version 30). The portable join lock
+-- is a row here, locked FOR UPDATE, where the native join takes
+-- pg_advisory_xact_lock (`persistence/cluster_portable.js`). Since #770
+-- every engine's fence share-locks a row here too, named with the lease
+-- token or the origin reservation (`cluster/CLAUDE.md`).
 CREATE TABLE IF NOT EXISTS sts_cluster_locks (
   name text PRIMARY KEY
 );

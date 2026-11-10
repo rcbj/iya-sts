@@ -121,6 +121,13 @@ let lastStall = null;
 // When the pending heartbeat timer is due (monotonic ms). A timer still
 // pending well past this is a loop that could not run it.
 let heartbeatDueMono = 0;
+// A beat whose statement has not come back (#770). The next timer is armed
+// whether or not it has, and it does not start a second statement on the
+// one liveness connection.
+let heartbeatInFlight = false;
+// Bumped by reset(), so a beat that settles after a test's reset cannot
+// clear the next test's in-flight flag.
+let heartbeatEpoch = 0;
 let stopping = false;
 let fingerprint = '';
 // name -> token, for the leases this node holds.
@@ -797,18 +804,62 @@ function scheduleHeartbeat() {
   heartbeatDueMono = monotonicMs() + heartbeatMs();
   heartbeatTimer = setTimeout(function () {
     heartbeatTimer = null;
+    // A fail-stop between the arming and the fire must not arm another.
+    if (stopping) {
+      return;
+    }
     noteLateness(monotonicMs() - heartbeatDueMono);
+    // THE NEXT BEAT IS ARMED HERE, before this one settles (#770). A
+    // renewal that waits on a lock used to be the whole lifetime: the
+    // promise never settled, so this timer was never armed again, and
+    // STS-CLUSTER-0003 — which lives in the rejection — was never logged.
+    // The lifetime is now spent on beats that are seen.
+    scheduleHeartbeat();
+    if (heartbeatInFlight) {
+      noteUnsettledRenewal();
+      return;
+    }
+    const epoch = heartbeatEpoch;
+    heartbeatInFlight = true;
     beat().then(function () {
-      scheduleHeartbeat();
+      if (epoch === heartbeatEpoch) {
+        heartbeatInFlight = false;
+      }
     }, function (e) {
+      if (epoch === heartbeatEpoch) {
+        heartbeatInFlight = false;
+      }
       log.debug("Caught in scheduleHeartbeat(): " + ((e && e.message) || e));
-      scheduleHeartbeat();
     });
   }, heartbeatMs());
   if (heartbeatTimer.unref) {
     heartbeatTimer.unref();
   }
   log.debug("Leaving scheduleHeartbeat().");
+}
+
+// A beat was still running when the next was due. Logged as a heartbeat
+// that did not land (STS-CLUSTER-0003); the failure count stays with the
+// statement that actually fails, so one hung query is not counted twice
+// and does not exit early. Past the lifetime, the node exits as a renewal
+// that never landed (STS-CLUSTER-0004), hung query or not.
+function noteUnsettledRenewal() {
+  log.debug("Entering noteUnsettledRenewal().");
+  const since = monotonicMs() - lastRenewOk;
+  if (since >= ttlMs() - heartbeatMs()) {
+    failStop('STS-CLUSTER-0004', 'It has not renewed its membership for ' +
+             since + 'ms against a lifetime of ' + ttlMs() +
+             'ms (the previous renewal has not finished). The other nodes ' +
+             'may already treat it as dead and take over its leases.');
+    log.debug("Leaving noteUnsettledRenewal(). Past the lifetime.");
+    return;
+  }
+  lastHeartbeatError = 'the previous renewal has not finished';
+  log.warn(errorCodes.tag('STS-CLUSTER-0003') + 'cluster: a heartbeat has ' +
+           'not landed (the previous renewal is still running); ' + since +
+           'ms since the last renewal, ' + (ttlMs() - since) +
+           'ms of lifetime left.');
+  log.debug("Leaving noteUnsettledRenewal().");
 }
 
 // ---------------------------------------------------------------------------
@@ -1517,6 +1568,8 @@ function reset(options) {
   lastRenewOk = 0;
   heartbeatFailures = 0;
   lastHeartbeatError = '';
+  heartbeatInFlight = false;
+  heartbeatEpoch += 1;
   stopping = false;
   fingerprint = '';
   lastState = null;

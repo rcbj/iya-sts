@@ -334,9 +334,16 @@ async function contracts(t, ops, pool, dialect) {
   const fenceNode = await ops.nodeFence(client, 'node-2');
   await client.query('COMMIT');
   client.release();
-  t.check(fenceLeases.join() === 'service' && fenceNode,
-          'B9. the lease fence keeps only the token still held',
-          JSON.stringify(fenceLeases));
+  const lockRows = await pool.query('SELECT name FROM sts_cluster_locks ' +
+    'WHERE left(name, 20) = \'fence:lease:service:\' ORDER BY name');
+  const lockNames = lockRows.rows.map(function (row) {
+    return row.name;
+  });
+  t.check(fenceLeases.join() === 'service' && fenceNode &&
+          lockNames.join() === 'fence:lease:service:2',
+          'B9. the lease fence keeps only the token still held, and the ' +
+          'lock row is that token\'s name',
+          JSON.stringify({ leases: fenceLeases, locks: lockNames }));
   const order = [];
   const joiner = function (name, holdMs) {
     return pool.connect().then(function (c) {
@@ -361,8 +368,11 @@ async function contracts(t, ops, pool, dialect) {
           'first to commit', order.join());
   await ops.leaveCluster('node-2');
   const after = await ops.heartbeat('node-2', 60000, null);
-  t.check(!after.alive, 'B11. a node that left is not alive',
-          JSON.stringify(after));
+  const leftLocks = await pool.query('SELECT name FROM sts_cluster_locks ' +
+    'WHERE left(name, 20) = \'fence:lease:service:\'');
+  t.check(!after.alive && leftLocks.rows.length === 0,
+          'B11. a node that left is not alive, and its lease locks are gone',
+          JSON.stringify({ after: after, locks: leftLocks.rows }));
   // ---- counters, windows, budgets -------------------------------------
   const up = await ops.advanceCounter('c', '', 'k', 10);
   const down = await ops.advanceCounter('c', '', 'k', 5);
