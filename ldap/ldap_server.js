@@ -256,7 +256,6 @@ const certEnrollment = require('../common/cert_enrollment');
 // move one.
 const federation = require('../federation/federation');
 const spiffeRegistry = require('../spiffe/spiffe_registry');
-const scimMap = require('../scim/scim_map');
 // The XACML policy repository and the PIP. Both are LIBRARIES that own a
 // schema and take their directory functions through a setDirectory() slot
 // filled below at require time — the same arrangement federation.js,
@@ -3577,17 +3576,9 @@ xacmlPepRegistry.SCHEMA.attributes.forEach(function (row) {
   learnName(row.name, 'the XACML PEP registry schema');
 });
 
-// And the SCIM mapping's two inventions, `scimActive` and `scimExternalId`, for
-// the same reason and from the same kind of source. They are a FIFTH list,
-// which is one more than the comment above learnName() named — and the check is
-// what makes a fifth affordable: the two names are this service's own, nothing
-// else spells them, and if that ever stops being true the warning says which
-// table to look in. scim_map.js is a library that registers nothing and
-// requires only helpers.js and vc_claims.js, so requiring it here moves no
-// route and closes no cycle.
-scimMap.OWN_NAMES.forEach(function (spelling) {
-  learnName(spelling, 'the SCIM mapping');
-});
+// The SCIM mapping's invention, `scimExternalId`, was a FIFTH list learnt
+// here until #1579; it is in the model's own names (`models/directory/
+// names.tsp`) now, which OWN_NAMES above already learns.
 
 // A DN as a comparison key. Case-folded, and the whitespace around each comma
 // removed, because `cn=alice, ou=users` and `CN=Alice,OU=Users` name the same

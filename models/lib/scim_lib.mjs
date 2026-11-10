@@ -209,9 +209,6 @@ function rowOf(found, own) {
   if (map.transform) {
     row.transform = map.transform;
   }
-  if (map.introduced) {
-    row.introduced = true;
-  }
   if (map.alsoClears) {
     row.alsoClears = map.alsoClears.slice(0);
   }

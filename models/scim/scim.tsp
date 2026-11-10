@@ -76,7 +76,6 @@ model CommonAttributes {
     ldap: "scimExternalId",
     kind: "single",
     own: "plain",
-    introduced: true,
     note: "The provisioning client's own identifier for this person. Stored verbatim and read by nothing here."
   })
   @maps(#{

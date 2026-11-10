@@ -135,9 +135,6 @@ model MapOptions {
   /** A conversion between the two spellings of one value. */
   transform?: "postalAddress";
 
-  /** The mapping introduced this attribute type; the directory learns it. */
-  introduced?: boolean;
-
   /** Attributes a write of a `members` row also clears. */
   alsoClears?: string[];
 }

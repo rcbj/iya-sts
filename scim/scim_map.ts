@@ -143,8 +143,8 @@
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `ScimMap` takes the logger and the credential claim catalogue
 // (`vc_claims.ts`'s CANONICAL_NAMES) through its constructor, and the two
-// mapping tables, the schema URNs and OWN_NAMES — each read from the model
-// (#1579) — are its static members. The
+// mapping tables and the schema URNs — each read from the model (#1579) — are
+// its static members. The
 // module still exports every old name, the functions as FACADES forwarding
 // to the instance the composition root builds and installs (#50, R2),
 // because `scim.ts`, `admin-ui/admin.ts`, `admin-core/admin_views.ts` and
@@ -185,7 +185,6 @@ interface MapRow {
   extension?: boolean;
   own?: string;
   transform?: string;
-  introduced?: boolean;
   alsoClears?: string[];
   section?: string;
   toScim?(value: unknown): string;
@@ -323,30 +322,6 @@ function rowFrom(generated: any): MapRow {
 }
 
 // ---------------------------------------------------------------------------
-// THE ATTRIBUTES THIS SERVICE INVENTED FOR SCIM: each row the model marks
-// `introduced`.
-//
-// Merged into ldap_server.js's canonical-name table through learnName(), which
-// is the ONE door into it, so that /admin/users and /admin/ldap/directory show
-// `scimExternalId` rather than the `scimexternalid` the store lower-cases it
-// to. It is an `stsApplication`-style invention: nothing standard carries it,
-// and saying so beside it is cheaper than leaving a reader to search RFC 4519
-// for an attribute that is not in it. (`scimActive` was the second until
-// 2026-09-17; `active` is `pwdAccountLockedTime` now, which the directory
-// learns from its own list.)
-// ---------------------------------------------------------------------------
-const OWN_NAMES: string[] = MODEL.mapping.user.concat(MODEL.mapping.group)
-  .filter(function (row: any) {
-    return row.introduced === true;
-  })
-  .map(function (row: any) {
-    return row.ldap;
-  })
-  .filter(function (name: string, index: number, all: string[]) {
-    return all.indexOf(name) === index;
-  });
-
-// ---------------------------------------------------------------------------
 // A `schema` THAT IS PROSE RATHER THAN A CITATION (#543 phase 2c): the three
 // ways a row says its LDAP type is this service's own, named once in the
 // model (`@scimOwnTypes`) so that the scimmap namespace can carry them and
@@ -469,11 +444,6 @@ class ScimMap {
    */
   static readonly IYA_STS_USER_SCHEMA = IYA_STS_USER_SCHEMA;
   /**
-   * The LDAP attribute types this mapping introduces, which the directory
-   * merges into what it knows.
-   */
-  static readonly OWN_NAMES = OWN_NAMES;
-  /**
    * The User mapping table: one row per SCIM member, with its LDAP attribute
    * and kind.
    */
@@ -543,10 +513,10 @@ class ScimMap {
   //
   // Every row whose LDAP attribute is one vc_claims.ts already knows is
   // compared against that catalogue's spelling. This is learnName()'s rule
-  // applied one module earlier: that function will also see these names
-  // (ldap_server.js merges OWN_NAMES below), but it would compare them against
-  // the FIRST spelling learnt and could not say which list disagreed. Here the
-  // answer is specific.
+  // applied one module earlier: that function also sees these names (the
+  // directory learns every one of them from its own lists), but it would
+  // compare them against the FIRST spelling learnt and could not say which
+  // list disagreed. Here the answer is specific.
   // -------------------------------------------------------------------------
   /**
    * Checks that every row whose LDAP attribute `vc_claims.ts` already knows
@@ -1522,7 +1492,6 @@ export = {
   // states them (#1579); `scim.ts` builds scimmy's definitions from them.
   SCHEMAS: ScimMap.SCHEMAS,
   COMMON: ScimMap.COMMON,
-  OWN_NAMES: ScimMap.OWN_NAMES,
   toScimUser: slot.forward('toScimUser'),
   fromScimUser: slot.forward('fromScimUser'),
   toScimGroup: slot.forward('toScimGroup'),

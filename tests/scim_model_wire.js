@@ -19,7 +19,7 @@
 //      draws (scimmy's toJSON()) and what the coercion reads besides
 //      (`direction`, `shadow`), the common attributes included;
 //   M. the mapping as the console and /admin-api publish it, the schema
-//      URNs, the names the mapping introduces, and the scimmap prose;
+//      URNs and the scimmap prose;
 //   C. the four conversions, entry to resource and back, on fixed inputs;
 //   W. a scripted conversation with /scim/v2 over HTTP: discovery, a full
 //      User and Group through create, read, filter, PUT, PATCH and delete,
@@ -134,7 +134,6 @@ function childMain() {
     // M. THE MAPPING.
     record.mapping = {
       described: scimMap.describeMapping(),
-      own: scimMap.OWN_NAMES,
       urns: [scimMap.USER_SCHEMA, scimMap.GROUP_SCHEMA,
              scimMap.ENTERPRISE_SCHEMA, scimMap.IYA_STS_USER_SCHEMA],
       prose: scimMap.prose()
@@ -545,7 +544,7 @@ function run(t) {
     return;
   }
   [['definitions', 'D. every published definition is as recorded'],
-   ['mapping', 'M. the mapping, its URNs, own names and prose are as ' +
+   ['mapping', 'M. the mapping, its URNs and its prose are as ' +
                'recorded'],
    ['conversions', 'C. the four conversions answer as recorded']]
     .forEach(function (pair) {
