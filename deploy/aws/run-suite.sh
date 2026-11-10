@@ -169,7 +169,20 @@ ENV_REGION="$(out aws_region)"
 ENV_REGION="${ENV_REGION:-${AWS_REGION}}"
 SECRET_ARN="$(out admin_api_client_secret_arn)"
 NLB_DNS="$(out nlb_dns_name)"
-LDAP_PORT="$(node -e 'process.stdout.write(String(JSON.parse(process.argv[1]).ldap.listener))' "$(out load_balancer_ports)")"
+# THE DIRECTORY THE JOBS DIAL (2026-11-10): plain LDAP where the environment
+# publishes 389, and LDAPS on 636 where it does not, which since the ASVS L2
+# hardening (#1490, ldap.plainListener off in product) is every AWS
+# environment. LDAPS is verified against the certificate, so it is dialled by
+# a name the certificate carries: the direct name where CloudFront fronts the
+# public one (CloudFront carries no 636), else the public name, else the NLB.
+LDAP_SCHEME="$(node -e 'process.stdout.write(JSON.parse(process.argv[1]).ldap ? "ldap" : "ldaps")' "$(out load_balancer_ports)")"
+LDAP_PORT="$(node -e 'const p = JSON.parse(process.argv[1]); process.stdout.write(String((p.ldap || p.ldaps).listener))' "$(out load_balancer_ports)")"
+LDAP_HOST="${NLB_DNS}"
+if [ "${LDAP_SCHEME}" = "ldaps" ]; then
+  LDAP_HOST="$(out direct_hostname)"
+  LDAP_HOST="${LDAP_HOST:-$(out public_hostname)}"
+  LDAP_HOST="${LDAP_HOST:-${NLB_DNS}}"
+fi
 NODES="$(node -e 'process.stdout.write(String(Object.keys(JSON.parse(process.argv[1])).length))' "$(out ecs_services)")"
 # WHAT THIS ENVIRONMENT DOES NOT PUBLISH (2026-09-21), for the jobs that
 # dial a port of their own rather than the main one. Kerberos TCP 88 is a
@@ -413,7 +426,7 @@ docker run --rm --network host \
   -e STS_CLUSTER_ALTERNATION_REQUESTS="${STS_CLUSTER_ALTERNATION_REQUESTS:-200}" \
   -e STS_PUBLIC_BASE_URL="${URL}" \
   -e STS_TEST_SERVICE_URL="${URL}" \
-  -e STS_LDAP_URL="ldap://${NLB_DNS}:${LDAP_PORT}" \
+  -e STS_LDAP_URL="${LDAP_SCHEME}://${LDAP_HOST}:${LDAP_PORT}" \
   -e STS_LDAP_PORT="${LDAP_PORT}" \
   "${TESTS_IMAGE}" bash -c '
     set -uo pipefail

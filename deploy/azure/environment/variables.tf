@@ -343,3 +343,16 @@ variable "kek_migrating_from_secret" {
     error_message = "kek_migrating_from_secret moves an environment from the `kek` secret to the Key Vault key: it needs kek_provider = kms."
   }
 }
+
+variable "bootstrap_admin_username" {
+  description = <<-EOT
+    The bootstrap administrator's username, for an environment whose account
+    already exists under a name this stack did not generate. Read on the apply
+    that first creates the `bootstrap-admin-username` secret and kept; empty
+    (the default) generates `admin-` and sixteen hex digits. Product mode only.
+    Passed as TF_VAR_bootstrap_admin_username, never committed.
+  EOT
+  type        = string
+  default     = ""
+  sensitive   = true
+}

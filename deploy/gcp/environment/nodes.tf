@@ -77,7 +77,17 @@ locals {
     # (AWS's argument, deploy/aws/environment/ecs.tf).
     PKI_DISTRIBUTION_BASE_URL  = local.pki_public_url
     PKI_DISTRIBUTION_LDAP_HOST = local.public_host
-    PKI_DISTRIBUTION_LDAP_PORT = tostring(local.published_ports.ldap.listener)
+    # 389 is what an ldap:// address names (RFC 4516; RFC 5280 section 8 rules
+    # out ldaps://); it is no longer published (locals.tf), so from outside
+    # that address does not resolve.
+    PKI_DISTRIBUTION_LDAP_PORT = "389"
+
+    # PARANOID PKI MODE FORCED OFF (rcbj, 2026-11-10), as on AWS (ecs.tf) and
+    # in every appconfig file the image packages (env/local.js): `auto` is on
+    # in product (#1360), and on AWS it refused the cloud's own secret-store
+    # certificate and the node never started. Set here too, so an image built
+    # before env/local.js said so behaves the same.
+    STS_PKI_PARANOID = "off"
 
     LDAP_MAX_ENTRIES          = tostring(var.ldap_max_entries)
     STS_APPLICATIONS_MAX      = tostring(var.applications_max)
