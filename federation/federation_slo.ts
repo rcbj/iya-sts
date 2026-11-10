@@ -133,7 +133,7 @@ import documentSettings = require('../saml/document_settings');
 // A PARTNER'S ENCRYPTED NameID OR LOGOUT TOKEN (#168): decrypted with the
 // relationship's own key, as a sign-in's assertion is.
 import fedEncryption = require('./federation_encryption');
-import xmldom = require('@xmldom/xmldom');
+import xmldom = require('../common/xml_parser');
 // A PARTNER'S SIGN-OUT REACHES EVERY CELL (#98): see endAtPeers(). A library
 // that registers no route; the channel is required lazily, as a dialler.
 import cells = require('../common/cells');

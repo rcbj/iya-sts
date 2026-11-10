@@ -159,7 +159,7 @@ import zlib = require('zlib');
 import realms = require('../common/realms');
 // The other listeners SAML 2.0 is on, for its metadata (#472). A LEAF.
 import listenerMap = require('../common/listener_map');
-import xmldom = require('@xmldom/xmldom');
+import xmldom = require('../common/xml_parser');
 // Every signature and every cipher in this service is in one module since
 // 2026-08-27. This file signs four documents and verifies two, and xml-crypto
 // is no longer required here: `common/crypto.js` sits over the parent

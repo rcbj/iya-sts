@@ -515,8 +515,8 @@ function rsaUnwrapKey(pem, wrapped, padding, hashName) {
 // that is what this catches, at the point of parsing, with a named error.
 //
 // External entities are not a concern to defend against here: the browser's
-// DOMParser does not resolve them at all, and neither does @xmldom/xmldom,
-// which is what the node-side tests load this module with.
+// DOMParser does not resolve them at all, and in node the global DOMParser is
+// `common/xml_parser.js`'s, which refuses any DOCTYPE or ENTITY declaration.
 function parseXmlStrict(xml, what) {
   log.debug("Entering parseXmlStrict().");
   var label = what || 'XML';

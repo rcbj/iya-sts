@@ -138,7 +138,7 @@ const bunyan = require('bunyan');
  */
 const { z } = require('zod');
 const config = require('./config');
-const { DOMParser } = require('@xmldom/xmldom');
+const { DOMParser } = require('./xml_parser');
 const zlib = require('zlib');
 // The registry of failure codes. A LEAF that requires nothing, so this closes
 // no cycle. The guard below marks its refusals with one, on the RESPONSE OBJECT

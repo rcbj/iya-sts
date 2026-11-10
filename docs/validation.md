@@ -41,7 +41,7 @@ client, a person or a password is known or correct is a separate question, and
 | Redirect URIs | Must be absolute, with no fragment. `javascript:`, `data:` and similar schemes are refused. |
 | Origins | A scheme, a host and an optional port, and nothing else. |
 | Distinguished names | Limited in length and free of NUL characters. Values are escaped whenever a DN is built from them. |
-| XML | Parsed with no external entities and no document type declaration. |
+| XML | Refused if it carries a `<!DOCTYPE>` or `<!ENTITY>` declaration (`STS-CORE-0174`), before the parser sees it, so no entity is ever expanded or resolved. SOAP 1.2 forbids a document type declaration, and nothing this service reads needs one. |
 | Compressed messages | Inflated up to a fixed limit, so a small message cannot expand without bound. |
 | Passwords | The realm's [password policy](authentication.md#passwords). |
 | Text this service sends back | A directory entry's `description`, and an application permission's name or description, may not contain anything shaped like one of this service's [error codes](error-codes.md) (`STS-…-NNNN`). A code is recorded and never sent, so such a value is refused and not stored, and the refusal does not repeat it. A `description` is checked on an LDAP write too; a permission written with `ldapmodify` is not. |

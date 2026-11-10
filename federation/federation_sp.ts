@@ -158,7 +158,7 @@
 import certificateTrust = require('../common/certificate_trust');
 import zlib = require('zlib');
 import AtprotoClient = require('./atproto_client');
-import xmldom = require('@xmldom/xmldom');
+import xmldom = require('../common/xml_parser');
 // One signer and one verifier for the whole service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
 

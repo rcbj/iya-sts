@@ -135,7 +135,7 @@
 // towards the format flag the header refuses.
 // ===========================================================================
 
-const { DOMParser, XMLSerializer } = require('@xmldom/xmldom');
+const { DOMParser, XMLSerializer } = require('../common/xml_parser');
 const stsCrypto = require('../common/crypto');
 const applications = require('../common/applications');
 // A PERSON's RFC 7522 key pair (2026-09-13). A library holding no store; the

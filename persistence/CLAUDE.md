@@ -2585,6 +2585,12 @@ memory mode, development, and every in-process test.
   heap copying two million rows (`dump()`) beside four restoring workers. The
   job walks each partition in place (`handle.partition()`), a batch at a time
   with a pause, and stops for the run past 85% of the heap limit.
+* **An indexed store the restore finds EMPTY is on demand from that start**
+  (`liveIfEmpty()`): it holds no row written before the index, so there is
+  nothing to backfill, and the front process writes its mark at once. Until
+  2026-11-10 a new install ran its whole first life with `admin_stats.tokens`
+  held whole under its 5,000 bound, which forgot the oldest tokens and their
+  rows, so a session's revocation no longer found them.
 * **An on-demand store keeps no index in memory**: `lookup()` walks what is
   held. Held whole, a family-to-keys Map over every token cost each process
   hundreds of MB; on demand, what is held is bounded. A row written meanwhile files
