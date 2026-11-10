@@ -66,12 +66,12 @@ and `docs/configuration.md`.
 | File | What it is |
 |---|---|
 | `report_app.ts` | The shell, the script and the stylesheet. A non-GET is 404 with `STS-REPORT-0033`. |
-| `report_api.ts` | `/report-api`. Every route, including the catalog and the OpenAPI document, takes the token below. |
+| `report_api.ts` | `/report-api`. Every route, including the catalog and the OpenAPI document, takes the token below. A definition, a share and a run's parameters are held to the model's `DefinitionWrite`, `ShareWrite` and `ParameterBag` here, at the door (#1579). |
 | `web_report.ts`, `web_report_pages.ts` | The browser runtime and the four pages (catalog, query, definitions, jobs). |
 | `catalog.ts` | The seventeen sources and their fields, which operators the store indexes (`indexed`, #985), and a source's predefined queries (`presets`, #1110). Credential attribute ids are absent, so they cannot be named. |
 | `passkey_ceremonies.ts` | The `passkeyCeremonies` source's projection of the ceremony audit rows (#1107). A library; reaches `authn/webauthn_ceremonies` lazily. |
 | `openapi.ts` | `GET /report-api/openapi.json`. Every released route, built from the catalog that is loaded. |
-| `query.ts` | Validates one JSON document and decides sync or async. It sends no HTTP response. |
+| `query.ts` | Validates one JSON document and decides sync or async. It sends no HTTP response. The document's SHAPE is `models/api/report.tsp`'s `QueryDocument` and `Filter*` forms, checked through `ModelZod` (#1579); the catalog, the field types, parameters, the filter's depth and the size caps are checked here, and every refusal keeps its code and sentence. |
 | `limits.ts` | The caps, read when asked. `Limits.fixed` is what a test passes. |
 | `formats.ts` | JSON, RFC 4180 CSV, and a PDF 1.4 file in Helvetica WinAnsi. A PDF cell wraps within its column, up to 256 bytes, and a row is as tall as its tallest cell (#993); the file's header argues the pagination. |
 | `rows.ts`, `sources.ts`, `executor.ts` | Reading one source, bounded, and writing the artifact. |
