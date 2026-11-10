@@ -701,6 +701,15 @@ function refusesTokenForGoneSubject() {
   return isProduct();
 }
 
+/**
+ * @returns the least scrypt parallelism a new password is hashed with
+ */
+function minScryptParallelism() {
+  log.debug("Entering minScryptParallelism().");
+  log.debug("Leaving minScryptParallelism().");
+  return isProduct() ? 3 : 1;
+}
+
 // Must a malware scanner be reached over TLS (#1501, ASVS 5.0.0 12.3.1)?
 /**
  * @returns true when a plain icap:// address may not be used
@@ -4900,6 +4909,7 @@ module.exports = {
   requiresPkceOfEveryClient: requiresPkceOfEveryClient,
   requiresSecondFactorOfEveryone: requiresSecondFactorOfEveryone,
   requiresTlsToMalwareScanner: requiresTlsToMalwareScanner,
+  minScryptParallelism: minScryptParallelism,
   refusesTokenForGoneSubject: refusesTokenForGoneSubject,
   refusesAssertionWithoutAudience: refusesAssertionWithoutAudience,
   warnsWithoutAuditDestination: warnsWithoutAuditDestination,

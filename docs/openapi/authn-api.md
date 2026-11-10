@@ -167,6 +167,7 @@ The door of the sign-in surface's `GET /oauth2/consent`.
 | `view.details[].label` | string |  |  |
 | `view.details[].note` | string |  |  |
 | `view.details[].value` | string |  |  |
+| `view.lifetimeHours` | number |  |  |
 | `view.limits` | list |  |  |
 | `view.limits[].limits` | any JSON |  | The limits member of an RFC 9396 authorization detail, as the client sent it: beyond the six members common/access_limits.ts names, every member is the API's own, under a schema an operator declared for its type. The limits member of an RFC 9396 authorization detail, as the client sent it: beyond the six members common/access_limits.ts names, every member is the API's own, under a schema an operator declared for its type. |
 | `view.limits[].r` | integer |  |  |

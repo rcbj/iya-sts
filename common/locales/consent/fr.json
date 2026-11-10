@@ -22,5 +22,6 @@
   "client.policy": "Politique de confidentialité",
   "client.tos": "Conditions d’utilisation",
   "resources": "Elle sera utilisée sur :",
-  "duration": "Cet accord reste valable jusqu’à ce que vous le retiriez depuis votre compte."
+  "duration": "Cet accord reste valable jusqu’à ce que vous le retiriez depuis votre compte.",
+  "lifetime": "À chaque fois, elle peut conserver l’accès jusqu’à {hours} heures."
 }

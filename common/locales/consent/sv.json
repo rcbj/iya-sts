@@ -22,5 +22,6 @@
   "client.policy": "Integritetspolicy",
   "client.tos": "Användarvillkor",
   "resources": "Det kommer att användas på:",
-  "duration": "Detta gäller tills du återkallar det från ditt konto."
+  "duration": "Detta gäller tills du återkallar det från ditt konto.",
+  "lifetime": "Varje gång kan den behålla åtkomsten i upp till {hours} timmar."
 }

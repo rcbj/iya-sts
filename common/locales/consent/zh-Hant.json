@@ -22,5 +22,6 @@
   "client.policy": "隱私權政策",
   "client.tos": "服務條款",
   "resources": "將用於：",
-  "duration": "此授權在您從帳戶中撤銷之前持續有效。"
+  "duration": "此授權在您從帳戶中撤銷之前持續有效。",
+  "lifetime": "每次最多可保留存取權 {hours} 小時。"
 }

@@ -557,6 +557,10 @@ class ConsentScreen {
       clientDisplay: this.deps.authn.clientDisplay(record.clientId),
       // ASVS 5.0.0 10.7.2: where the access will be used.
       resources: record.resources || [],
+      // ASVS 5.0.0 10.7.2: how long one grant of this access can last.
+      lifetimeHours: Math.round(Number(require('../common/applications')
+        .settingFor(record.clientId, 'oauth2.refreshTokenTtlS',
+                    require('../common/config'))) / 3600),
       scopes: record.scopes.map(function (one: Json): Json {
         const p = one.permission;
         return { scope: String(one.scope),
