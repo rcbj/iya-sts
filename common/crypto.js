@@ -106,7 +106,7 @@ const LazyModule = require('./lazy_module');
 const signaturePolicy = require('./signature_policy');
 const pqJose = require('./pq_jose');
 
-const xmldom = require('@xmldom/xmldom');
+const xmldom = require('./xml_parser');
 // THE FAILURE CODES. A LEAF with no requires, so this file stays one (rule 3r).
 // A verdict that refuses carries its code NON-ENUMERABLY — `errorCodes.mark()`
 // puts it under a Symbol — so no member a caller compares or serialises moves;

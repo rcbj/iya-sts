@@ -1250,6 +1250,10 @@ const CODES = [
   { code: 'STS-CORE-0173',
     summary: 'A SAML or WS-Federation request gave a parameter more than once.',
     spec: 'HTTP 400' },
+  { code: 'STS-CORE-0174',
+    summary: 'An XML document was refused because it carries a DOCTYPE or ' +
+      'ENTITY declaration (ASVS 5.0.0 1.5.2).',
+    spec: 'SOAP 1.2 Part 1 section 5: no Document Type Declaration' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +

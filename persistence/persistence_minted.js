@@ -2952,6 +2952,59 @@ function ensureIndexBackfillJob(schedulerInstance) {
   log.debug("Leaving ensureIndexBackfillJob().");
 }
 
+// ---------------------------------------------------------------------------
+// AN INDEXED ON-DEMAND STORE WITH NO ROWS IS LIVE FROM ITS FIRST START. The
+// index exists to find rows written before schema version 24, and every row
+// written since files its own index rows in the same transaction; a store the
+// restore found EMPTY has none to find. Waiting for the backfill's mark and a
+// second start meant a new install ran its whole first life with such a store
+// held in memory under its own bound: `admin_stats.tokens` forgot the oldest
+// token past 5,000, its row went with it, and a session's revocation no longer
+// found that token (ASVS 5.0.0 7.4.1, 7.4.3). The front process writes the
+// mark; any process may go live on what it found, since an empty store is
+// complete whoever looks.
+// ---------------------------------------------------------------------------
+function liveIfEmpty(heldHandles) {
+  log.debug("Entering liveIfEmpty().");
+  if (!onDemandActive()) {
+    log.debug("Leaving liveIfEmpty(). No on-demand reader.");
+    return;
+  }
+  // As the backfill does: '' is the default realm's partition too.
+  const realmIds = restoreFilter(Date.now()).realms.filter(function (id) {
+    return id !== '';
+  });
+  realms.handles().forEach(function (declared) {
+    if (!declared.onDemand || !owesMark(declared) ||
+        indexComplete.has(declared.handle) ||
+        heldHandles.has(declared.handle)) {
+      return;
+    }
+    if (typeof declared.beforeLive === 'function') {
+      realmIds.forEach(function (realmId) {
+        realms.run(realms.get(realmId), function () {
+          declared.beforeLive(realmId);
+        });
+      });
+    }
+    indexComplete.add(declared.handle);
+    if (!process.env.STS_REQUEST_WORKER && driver &&
+        typeof driver.markMintedIndexed === 'function') {
+      indexBackfilled.add(declared.handle);
+      driver.markMintedIndexed(declared.handle).catch(function (e) {
+        // This process reads it on demand either way; without the mark the
+        // next start finds it empty again, or the backfill files it.
+        log.warn(errorCodes.tag('STS-STORE-0086') + 'persistence: the ' +
+                 'empty on-demand store "' + declared.handle + '" was not ' +
+                 'marked complete: ' + ((e && e.message) || e) + '.');
+      });
+    }
+    log.info('persistence: the on-demand store "' + declared.handle + '" ' +
+             'was empty, so it is read on demand from this start.');
+  });
+  log.debug("Leaving liveIfEmpty().");
+}
+
 /**
  * Asks the store which indexed on-demand stores have a complete index, into
  * `indexComplete`. A store that cannot say is taken as incomplete: it is
@@ -4457,7 +4510,11 @@ function restore() {
     const staleHandles = new Set();
 
     const skipped = new Set(filter.skipHandles || []);
+    // Every handle the store holds a row of, readable or not: an indexed
+    // on-demand store with none goes live now (`liveIfEmpty()`).
+    const heldHandles = new Set();
     return restoreInSlices(rows || [], aside, function (row) {
+      heldHandles.add(row.handle);
       if (skipped.has(row.handle)) {
         return;
       }
@@ -4531,6 +4588,7 @@ function restore() {
     }).then(function () {
       restoredRows = restored;
       restoredAt = new Date().toISOString();
+      liveIfEmpty(heldHandles);
       // THE JOURNAL IS CLEARED RATHER THAN TRUSTED. `restoring` suppressed
       // every note above, but a store may write during a restore for a reason
       // of its own — `realms.create()` fires every builder, and a builder that

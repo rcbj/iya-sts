@@ -92,7 +92,7 @@
 
 // One signer and one verifier for the whole service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
-import xmldom = require('@xmldom/xmldom');
+import xmldom = require('../common/xml_parser');
 import app = require('../common/app');
 // firstByLocal/textByLocal were written here and now live in helpers.js:
 // WS-Federation reads the same shapes (a `wreq` RST, and a `wresult` at its

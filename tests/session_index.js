@@ -1426,13 +1426,22 @@ async function withTempDir(fn) {
 // written beside every body since schema version 24, so the rows stored
 // before it have none. Such a store is read back whole until the front
 // process has filed every row it holds and committed the mark.
-function indexDriver(complete, filed, marked, filters) {
+// `held` names the stores the store holds a row of: a row written before the
+// index, which is what a backfill is for. One that holds none is live from
+// its first start (`liveIfEmpty()`). The row will not open; only its handle
+// is read.
+function indexDriver(complete, filed, marked, filters, held) {
   log.debug("Entering indexDriver().");
   log.debug("Leaving indexDriver().");
   return {
     loadMinted: function (filter) {
       filters.push((filter.skipHandles || []).slice());
-      return Promise.resolve([]);
+      return Promise.resolve((held || []).filter(function (handle) {
+        return (filter.skipHandles || []).indexOf(handle) < 0;
+      }).map(function (handle) {
+        return { handle: handle, realm: '', key: 'legacy',
+                 body: 'not sealed' };
+      }));
     },
     readMinted: noRead,
     origin: testOrigin,
@@ -1477,14 +1486,19 @@ async function indexBackfillCases(t, realm) {
   let filed = [];
   let marked = [];
   let filters = [];
-  install(indexDriver([], filed, marked, filters));
+  install(indexDriver([], filed, marked, filters,
+                      ['test.session-index.on-demand']));
   await minted.restore();
   for (let i = 0; i < 20; i++) {
     await new Promise(function (resolve) {
       setImmediate(resolve);
     });
   }
-  t.equal(filed.length + marked.length, 0,
+  t.equal(filed.filter(function (one) {
+    return one.handle === 'test.session-index.on-demand';
+  }).length + marked.filter(function (one) {
+    return one === 'test.session-index.on-demand';
+  }).length, 0,
           'the restore files nothing: the backfill is not a step of the ' +
           'start (the first start of #823 ran out of heap)');
   t.check(!!scheduler.job('persistence.minted-index-backfill'),
@@ -1536,6 +1550,28 @@ async function indexBackfillCases(t, realm) {
   }).length + marked.filter(function (one) {
     return one === 'test.session-index.on-demand';
   }).length, 0, 'and nothing is filed again');
+
+  // A NEW INSTALL: the store holds no row of it, no mark yet. It is read on
+  // demand from this start, and the mark is written, so the token register
+  // is never held under its in-memory bound (ASVS 5.0.0 7.4.1).
+  filed = [];
+  marked = [];
+  filters = [];
+  install(indexDriver([], filed, marked, filters, []));
+  await minted.restore();
+  for (let i = 0; i < 20; i++) {
+    await new Promise(function (resolve) {
+      setImmediate(resolve);
+    });
+  }
+  t.equal(store.onDemandLive(), true,
+          'an indexed store the store holds no row of is on demand from its ' +
+          'first start');
+  t.check(marked.indexOf('test.session-index.on-demand') >= 0 &&
+          (!realms.handleFor('admin_stats.tokens') ||
+           marked.indexOf('admin_stats.tokens') >= 0),
+          'and the front process writes its mark, the token register\'s ' +
+          'among them', JSON.stringify(marked));
   store.realmMap().clear();
   log.debug("Leaving indexBackfillCases().");
 }
@@ -1560,7 +1596,7 @@ async function expiryBackfillCases(t) {
   const filters = [];
   const marked = [];
   const given = [];
-  const driver = indexDriver([], [], marked, filters);
+  const driver = indexDriver([], [], marked, filters, [handle]);
   driver.backfillMintedExpiry = function (name, addMs) {
     given.push({ handle: name, addMs: addMs });
     return Promise.resolve(7);

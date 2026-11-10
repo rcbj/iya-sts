@@ -207,7 +207,7 @@
 // config.js and error_codes.js here, so it cannot join a cycle and it
 // registers no route, so its position is not a position at all.
 import realms = require('../common/realms');
-import xmldom = require('@xmldom/xmldom');
+import xmldom = require('../common/xml_parser');
 const { DOMParser } = xmldom;
 // One signer and one verifier for the whole service since 2026-08-27.
 import stsCrypto = require('../common/crypto');

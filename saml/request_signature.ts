@@ -119,7 +119,7 @@ import config = require('../common/config');
 import mode = require('../common/mode');
 import errorCodes = require('../common/error_codes');
 import stsCrypto = require('../common/crypto');
-import xmldom = require('@xmldom/xmldom');
+import xmldom = require('../common/xml_parser');
 
 const DS_NS = 'http://www.w3.org/2000/09/xmldsig#';
 
