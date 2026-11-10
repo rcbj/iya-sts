@@ -1057,16 +1057,29 @@ async function decryptCompact(options) {
 // key_material.js, and both key-pair panes on the Digital Signature and
 // Encryption pages. It was written twice before it was written here.
 //
-// PBES2-HS256+A128KW over A256GCM, 100,000 iterations. Note the salt Web
-// Crypto is given is not p2s: RFC 7518 says the PBKDF2 salt is the alg name,
-// a zero octet, and then p2s — get that wrong and the output is a JWE that
-// only this code can open.
+// PBES2-HS256+A128KW over A256GCM, `PBKDF2_EXPORT_ITERATIONS` (600,000)
+// iterations. Note the salt Web Crypto is given is not p2s: RFC 7518 says the
+// PBKDF2 salt is the alg name, a zero octet, and then p2s — get that wrong and
+// the output is a JWE that only this code can open.
 // ---------------------------------------------------------------------------
+// THE ITERATION COUNT (#1512, ASVS 5.0.0 11.4.4; #1577). OWASP's Password
+// Storage Cheat Sheet's figure for PBKDF2-HMAC-SHA256 is 600,000, which #1512
+// adopted for PBES2 and PKCS#12 export alike, in either mode. This function
+// still fixed 100,000 until #1577, so a password-protected JWK downloaded from
+// the console was stretched a sixth as far as the PKCS#12 file beside it.
+// `key_material.js`'s `buildPkcs12()` reads the same constant, so the two
+// exports cannot drift again. `common/crypto.js`'s `PBES2_DEFAULT_ITERATIONS`
+// is the same figure for the JWEs it encrypts; it cannot be read from here,
+// because this file is a leaf `crypto.js` rests on, and its minimum of 1000
+// (RFC 7518 section 4.8.1.2) is what a JWE made here must also clear to be
+// opened there.
+var PBKDF2_EXPORT_ITERATIONS = 600000;
+
 async function pbes2JweEncrypt(plaintext, password) {
   log.debug("Entering pbes2JweEncrypt().");
   var alg = 'PBES2-HS256+A128KW', enc = 'A256GCM';
   var p2s = crypto.getRandomValues(new Uint8Array(16));
-  var p2c = 100000;
+  var p2c = PBKDF2_EXPORT_ITERATIONS;
   var pwKey = await crypto.subtle.importKey('raw',
       bytes.strBytes(password), 'PBKDF2', false, ['deriveKey']);
   var saltInput = concatBytes(bytes.strBytes(alg), new Uint8Array([0]), p2s);
@@ -1135,6 +1148,7 @@ module.exports = {
   cbcHmacDecrypt: cbcHmacDecrypt,
   // password-based key wrapping
   pbes2JweEncrypt: pbes2JweEncrypt,
+  PBKDF2_EXPORT_ITERATIONS: PBKDF2_EXPORT_ITERATIONS,
   // and the whole thing
   encryptCompact: encryptCompact,
   parseCompact: parseCompact,

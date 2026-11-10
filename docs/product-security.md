@@ -292,7 +292,8 @@ session cookie) needs Admin Read to read and Admin Write to write.
   [OAuth and OpenID Connect](oauth-oidc.md#limiting-a-realm-to-named-signing-algorithms).
 * **PBES2.** A JWE whose `p2c` is under 1000, RFC 7518's recommended minimum, is
   refused, in either mode. A PKCS#12 export uses PBKDF2 with SHA-256 at 600,000
-  iterations.
+  iterations, and so does a password-protected JWK export (a PBES2 JWE with
+  `p2c` 600,000), in either mode.
 * **SCEP** answers 503 until `scep.allowInProduct` is on. See [SCEP](scep.md).
 
 ## Uploaded files
