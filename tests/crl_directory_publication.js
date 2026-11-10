@@ -314,6 +314,23 @@ async function onlyWhatChanged(t, installed) {
             }),
             'H2. a revocation in the branch writes that authority\'s list ' +
             'at once, and still not the Root\'s', written.join(' '));
+    const intermediateWrites = function () {
+      return written.filter(function (one) {
+        return /\/intermediate$/.test(one);
+      }).length;
+    };
+    t.equal(intermediateWrites(), 1,
+            'H2a. and writes it ONCE: the revocation\'s own publication and ' +
+            'the save\'s are one');
+    written.length = 0;
+    ['0a0b0c0d1112', '0a0b0c0d1113', '0a0b0c0d1114'].forEach(function (s) {
+      revocation.revoke(REALM, 'intermediate',
+                        { serialHex: s, reason: 'keyCompromise' });
+    });
+    await settle();
+    t.equal(intermediateWrites(), 1,
+            'H2b. three revocations in a burst are one list written',
+            written.join(' '));
   } finally {
     revocation.restoreDirectory(installed);
   }

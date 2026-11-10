@@ -296,7 +296,7 @@ process is the leader.
   is fenced out (`STS-SCHED-0003`).
 - **A queue, and a cap.** Every hourly job in every realm falls due on the
   same second. The leader starts at most `scheduler.maxConcurrentRuns`
-  runs at once (at its default of 0: one, or one fewer than the request
+  runs at once (at its default of 0: two, or one fewer than the request
   worker threads when that is more, so one worker always has no job on it), a person's **Run now** first, and the rest wait for the
   next tick. The cap is always below the store's connection pool, so jobs
   cannot take every connection from requests.

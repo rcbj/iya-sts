@@ -20058,9 +20058,9 @@ const SETTINGS = [
     max: 1000, runtime: true, perProcess: true,
     description: 'How many scheduled or manual runs the leader has going at ' +
                  'once, across every job and trust realm. 0, the default, ' +
-                 'is one run, or one fewer than the request worker threads ' +
+                 'is two runs, or one fewer than the request worker threads ' +
                  '(workers.requestCount) when that is more, so one worker ' +
-                 'is always left answering requests with no job on it. A ' +
+                 'is left answering requests with no job on it. A ' +
                  'value of 1 or more is used instead. A slot is a multiple ' +
                  'of its interval, so every hourly job in every realm is ' +
                  'due on the same second; the rest wait, a person\'s Run ' +

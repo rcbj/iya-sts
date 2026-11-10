@@ -627,8 +627,9 @@ nothing else on that node reached the store: LDAPS timed out and a provider
 command was never delivered. Now each tick lines up everything due, a
 person's Run now first and then scheduled runs oldest-due first. It starts
 at most `scheduler.maxConcurrentRuns`. **Its default is 0 since 2026-11-10
-(rcbj): one run, or one fewer than the node's protocol request worker threads
-when that is more** — a body runs on the least-loaded protocol worker (#408),
+(rcbj): two runs, or one fewer than the node's protocol request worker threads
+when that is more** (the floor was one for a day, which starved the partner
+refresh again in the memory mode) — a body runs on the least-loaded protocol worker (#408),
 so N − 1 leaves one worker with no body on it; a value of 1 or more is an
 operator's own cap. What waits is not claimed, so it is
 still due at the next tick, and a run that ends asks for that tick at once.

@@ -525,6 +525,9 @@ const PIN_FOR_MS = 24 * 60 * 60 * 1000;
 // How far a node's clock may drift from the database's before it is said.
 const MAX_CLOCK_SKEW_MS = 5000;
 
+// The fewest runs the default cap allows at once (maxConcurrentRuns()).
+const MIN_DEFAULT_RUNS = 2;
+
 class Scheduler {
   /**
    * The leader's lease name.
@@ -1063,11 +1066,14 @@ class Scheduler {
   }
 
   // How many cluster runs this leader may have going at once (rcbj,
-  // 2026-11-10): ONE, or one fewer than the node's protocol request worker
+  // 2026-11-10): TWO, or one fewer than the node's protocol request worker
   // threads when that is more. A cluster run's body is handed to the
   // least-loaded protocol worker (#408), so a cap of N - 1 leaves at least one
-  // worker answering requests with no job body on it, and a node with one
-  // worker or none runs one job at a time. `scheduler.maxConcurrentRuns` at
+  // worker answering requests with no job body on it. THE FLOOR IS TWO, the
+  // cap before that day: at one, a node with no worker or one worker ran one
+  // job at a time, and in the memory mode the fifteen-second partner refresh
+  // queued behind every other job until the RP conformance plan's refresh
+  // modules timed out (the starvation #1571 fixed, back). `scheduler.maxConcurrentRuns` at
   // its default of 0 means exactly that; a value of 1 or more is an
   // operator's own cap and is used instead (read directly — 0 is a legal
   // value, the root CLAUDE.md's `|| n` rule).
@@ -1080,7 +1086,7 @@ class Scheduler {
   /**
    * Returns how many cluster runs the leader may have going at once:
    * `scheduler.maxConcurrentRuns` when it is 1 or more, otherwise the larger
-   * of 1 and one fewer than the protocol request workers; always leaving one
+   * of 2 and one fewer than the protocol request workers; always leaving one
    * store connection free.
    *
    * @returns the limit, at least 1
@@ -1095,7 +1101,7 @@ class Scheduler {
     } else {
       const workers = this.deps.requestWorkers ?
         Number(this.deps.requestWorkers()) || 0 : 0;
-      n = Math.max(1, workers - 1);
+      n = Math.max(MIN_DEFAULT_RUNS, workers - 1);
     }
     const pool = this.deps.storeConnections ?
       Number(this.deps.storeConnections()) || 0 : 0;
