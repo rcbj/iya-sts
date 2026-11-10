@@ -323,6 +323,14 @@ Verifying a Basic password costs about 70 ms of
 CPU per request in product mode, so a bulk provisioning client should use a
 `scim:write` access token. See [what is not checked](what-is-not-checked.md).
 
+**A credential with no scope, in product mode.** HTTP Basic and the session
+cookie name a person and carry no scope. In product mode the person needs Admin
+Read to read and Admin Write to write. The check is
+asked of the access-control policy, so editing the policy changes the answer.
+OAuth scopes and an application's certificate work as before. Setting
+`security.allowUnscopedPeople` lifts the check, and ASVS 5.0.0 requirements 8.2.1
+and 8.2.2 are then not met.
+
 **In product mode a provisioned person must carry what the realm's
 [attribute policy](admin-console.md#policies--adminpolicies) requires**
 (#396): `uid`, `cn` and `sn` always, and by default `givenName` and `mail` —
@@ -976,12 +984,3 @@ a log line. The most common:
 * [Trust realms](trust-realms.md)
 * [What is not checked](what-is-not-checked.md)
 * [Configuration](configuration.md)
-
-## A credential with no scope, in product mode
-
-HTTP Basic and the session cookie name a person and carry no scope. In product
-mode the person needs Admin Read to read and Admin Write to write. The check is
-asked of the access-control policy, so editing the policy changes the answer.
-OAuth scopes and an application's certificate work as before. Setting
-`security.allowUnscopedPeople` lifts the check, and ASVS 5.0.0 requirements 8.2.1
-and 8.2.2 are then not met.
