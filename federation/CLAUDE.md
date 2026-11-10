@@ -210,8 +210,10 @@ permissive, and each of the three was permissive:
    one restriction are an OR, restrictions an AND — reading only the first
    `<Audience>` refused legitimate multi-audience assertions too). SAML 2.0 with NO
    restriction is refused, because the Web Browser SSO profile requires one;
-   SAML 1.1 and WS-Federation with none are accepted with a warning, because
-   their profiles make it optional. **The WS-Federation path checked no audience
+   SAML 1.1 and WS-Federation with none are accepted with a warning in
+   development, because their profiles make it optional, and refused in product
+   since #1542 (ASVS 5.0.0 9.2.3, `STS-FED-0241`, `mode.refusesAssertionWithoutAudience()`)
+   unless `federation.allowAssertionWithoutAudience` is on. **The WS-Federation path checked no audience
    at all and does now.** The remedy for a partner that calls us something else
    is `fedLocalEntityId`.
 2. **`fedPeer`.** Empty, it skipped the issuer check with a warning — any issuer
@@ -833,7 +835,13 @@ that was checked.** That check and that resolution MOVED HERE on the same day
 (`internalAddressProblem()`, `vetHost()`), because a second requester needing
 them made this module — the owner of the outbound policy — the place for one
 copy; `oauth-oidc/protected_resource_metadata.ts` now asks for them and keeps
-its own refusal codes. Everything else above holds for `deliverForm()` too:
+its own refusal codes. **`vetHost()` also holds the operator's list of hosts,
+`security.outboundAllowedHosts` (#1526, ASVS 5.0.0 13.2.4)**: set, a host on
+neither an exact name nor a leading-dot suffix is refused BEFORE it is resolved,
+and only where the internal-address check runs, so in product mode alone.
+`common/revocation_status.js` reads the same list for the CRL and OCSP addresses
+a certificate names (#1550), in either mode, because those fetches never pass
+through `vetHost()`. Everything else above holds for `deliverForm()` too:
 the kill switch, the transport policy, no redirect,
 the cap, a timeout (the caller's, `oauth2.backchannelLogoutTimeoutMs`). **Its
 URL comes off a record by an attribute name from its OWN list, `SENDABLE`**
@@ -1485,7 +1493,8 @@ still the parent's to write):
   certificate that is NOT the configured one — that last is the one that must
   fail, and it is the one a naive implementation passes;
 * an assertion **outside its validity window** at both ends, and one with no
-  `<Conditions>` at all, which must be ACCEPTED for SAML 1.1 and WS-Federation and
+  `<Conditions>` at all, which must be ACCEPTED for SAML 1.1 and WS-Federation
+  in development (refused in product since #1542) and
   is REFUSED for SAML 2.0 since 2026-09-12, because it then carries no audience
   restriction and that profile requires one;
 * a `RelayState`/`wctx`/`state` that this service never minted, one that
@@ -2181,6 +2190,39 @@ partner. Unchanged with the setting off. Federation's own Single Logout and
   the confirmation was drawn for, still live in this browser's set. The
   cookie is then handled by `authn.afterAccountSignOut()`: cleared only where
   the default ended.
+
+## WHAT ASVS 5.0.0 LEVEL 2 ADDED TO THE SERVICE-PROVIDER HALF (#1497-#1499, #1523, #1541, #1542, #1554)
+
+`docs/federation.md` says what each refuses; this is why each is shaped so.
+
+* **The browser that started the flow (#1497, product only,
+  `bindsSignInSteps()`).** The context was found by its handle alone, so a flow
+  an attacker started could be finished in a victim's browser.
+  `bindFlowToBrowser()` sets a cookie PER FLOW (`sts_fed_flow_<random>`, its
+  hash on the context), so two tabs signing in at once do not undo each other.
+  It is `SameSite=None` because a SAML or `form_post` answer arrives as a
+  cross-site POST that a Lax cookie would not ride. A context with no binding
+  is one the mode did not bind, and passes (`STS-FED-0237`).
+* **The partner the flow was started for (#1498, every mode).** The state's
+  relationship is compared with the one whose endpoint received the answer, and
+  RFC 9207's `iss` with the partner's issuers wherever one is sent — it was
+  checked only for Bluesky before. A tenant-templated `fedPeer` is skipped here
+  and checked on the token, the only place the tenant is known (`STS-FED-0238`).
+* **An assertion is good once (#1499, then #1541).** #1499 claimed the ID of an
+  assertion that had no request context to spend. #1541 claims it EVERY time
+  (`claimAssertionOnce()`, `used_assertions`, until `NotOnOrAfter`), because a
+  context stops a replay only where the response names it, which SAML 1.1 and
+  WS-Federation may not (`STS-FED-0239`).
+* **The partner's authentication time (#1523, then #1554).**
+  `federation.maxPartnerAuthAgeS` is off at 0, and while set a partner that
+  gives no time is refused, its age being unknown (`STS-FED-0240`). #1554 made
+  the session's `authTime` the partner's (`authn.backdateAuthentication()`, which
+  only ever moves it earlier), so `max_age` is judged on the real age, and asks
+  the partner for a fresh one (`prompt=login`, `ForceAuthn`, `wfresh=0`) when
+  the pending step was a re-authentication. A partner that answers such a
+  request with an authentication more than `FRESH_SIGN_IN_SKEW_S` (60) older
+  than the request is refused (`STS-FED-0242`): accepting it would send the
+  person straight back round the same loop.
 
 ## A NEWCOMER THE ATTRIBUTE POLICY WOULD REFUSE (#396, 2026-10-19)
 

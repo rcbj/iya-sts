@@ -208,11 +208,13 @@ which can exceed an HTTP server's header limit when the token is sent as a
 bearer. `x5u`, the default, does not carry the chain.
 
 A process branch is held to one more limit. That handshake also carries the
-Root, and a stock TLS client accepts a certificate list of 102400 bytes.
-Choosing an alternative key whose signatures do not fit (SLH-DSA-256f is
-49856 bytes, and the leaf and the TLS Issuing CA each carry one) is refused
-and the branch is left as it was. ML-DSA-87 fits. A realm branch is not the
-listener's chain and is not refused for this reason.
+Root, and a stock TLS client accepts a certificate list of 102400 bytes. A
+build whose signatures do not fit is refused (`STS-PKI-0270`), and the branch
+and the listener's certificate are left as they were. That is SLH-DSA-256f,
+whether it is the alternative key or the branch's own signing key: its
+signature is 49856 bytes, and the leaf and the TLS Issuing CA each carry one.
+ML-DSA-87, alone or in a composite, fits, and so does SLH-DSA-128f. A realm
+branch is not the listener's chain and is not refused for this reason.
 
 **CRLs and OCSP responses are signed classically only, on purpose.** No
 published profile defines an alternative signature on either, so no client
@@ -363,6 +365,10 @@ and its keys come out uncertified.
 | **Root CA** | unconstrained | 20 years | The trust anchor. Self-signed, and the only certificate a relying party has to be given out of band — everything below it travels in the chain. |
 | **Intermediate CA** | 1 | 10 years | So the Root's key can be used once and left alone: a compromise here is repaired by reissuing this tier, and a compromise of the Root is not repaired at all. |
 | **Issuing CA** | **0** | 5 years | The only tier that signs anything handed out. `pathLen: 0` means it signs LEAVES and no further CA — so "an application certificate cannot mint another" is a property of the encoding rather than of this service's manners. |
+
+A tier's lifetime is a number of years above zero. One past the last date a
+certificate can carry is refused before any key is generated, and nothing is
+stored (`STS-PKI-0268`).
 
 **Building again REPLACES.** Everything issued from the old hierarchy chains to
 nothing the moment it does, and the page says so before the button is pressed —
@@ -792,8 +798,9 @@ anything.
 (#174).** A plain `ldap:` list under the default `pki.revocationLdap=ldaps`,
 any LDAP address with it `off`, a relative name without
 `pki.revocationLdapDirectory` (or with a multi-valued RDN), a scheme that is
-never dialled, an OCSP responder that is not http(s), and any responder with
-`pki.revocationOcsp=off` are **not dialled** — and when that is all a
+never dialled, an OCSP responder that is not http(s), any responder with
+`pki.revocationOcsp=off`, and an http(s) address whose host is not in
+`security.outboundAllowedHosts`, when that list is set, are **not dialled** — and when that is all a
 certificate names, the issuer published a list that this service's own policy
 kept it from reading. Its status could not be established: hard-fail refuses it
 as `STS-PKI-0188`, with the reason naming the setting that would dial it, and
@@ -965,7 +972,9 @@ more, and still refuses a certificate naming nothing.
 **An administrator's act names a certificate.** Registering a certificate on the entry it is used for makes it that entry's trust anchor, so it needs no chain to anything. That covers an application's signing and encryption certificates, a partner's on a federation relationship, and one stored on exactly one person's entry for WS-Security. A JWK's `x5c` needs no chain either, since the same key with none needs none. In every case the certificate's validity, usage and revocation still count, and a certificate that arrives without an administrator's act is never named this way. [SAML 2.0 Web Browser SSO](saml2-sso.md) says what that means for metadata.
 
 The rows are per realm and change at runtime, through
-[`/admin/pki/trust`](signer-truststore.md) or `POST /admin-api/config/set`. **The
+[`/admin/pki/trust`](signer-truststore.md), `POST /admin-api/pki/trust/set-row`
+(`{"setting": "pki.paranoidSamlSigner", "value": false}`, the master or any
+row) or `POST /admin-api/config/set`. **The
 exception is a client certificate at a TLS handshake**, which has no realm in it: on
 the main port, custom listeners, LDAPS and the debugger, the default realm's rows
 decide, and another realm's page shows a row that has no effect there. See
@@ -977,9 +986,9 @@ Nothing refuses a row switched off in product. It is logged once per process wit
 `STS-PKI-0239` and drawn red on the page, because you may have a reason and that is
 where the reason is visible.
 
-**The rollout is by phase.** Every row exists from the first phase, and a row
-governs a use case once its sites are wired. The last column of the
-[use cases](pki-use-cases.md) says which phase holds that use case's sites to it.
+**Every row is wired.** The mode was rolled out in six phases, and since the
+last of them every row governs its use case. The last column of the
+[use cases](pki-use-cases.md) says which phase that was.
 
 ### What the page shows
 
@@ -992,8 +1001,13 @@ Protocols → PKI trust has four tabs:
 * **Pinned certificates**: every certificate the realm relies on because somebody
   registered it, with where it is pinned, what it chains to, and a status of
   `valid`, `expiring`, `expired`, `not-yet-valid`, `revoked`, `chain-missing`,
-  `self-signed` or `thumbprint-only`. The daily `pki.pins.audit` job writes it, and
-  **Recheck now** does so on demand. The job logs what changed (`STS-PKI-0263`,
+  `self-signed`, `thumbprint-only` (only a thumbprint is held) or `unreadable`.
+  It reads the certificates on applications and federation relationships, the
+  `x5c` of their JWK sets, the settings that hold certificates or trust anchors,
+  the realm's federated SPIFFE bundles and GNAP clients' keys. The default
+  realm's tab also lists the cloud providers' certificates the image ships and
+  the client-certificate truststore, which are the same for every realm. The daily `pki.pins.audit` job writes it, and
+  **Recheck now** (`POST /admin-api/pki/trust/recheck`) does so on demand. The job logs what changed (`STS-PKI-0263`,
   `STS-PKI-0264`) and mails the realm's Admin Write holders on a change, never per
   run. `pki.pinnedCertificateWarningDays` is the horizon of `expiring`.
 * **Client-certificate truststore**: a link to the page that one has.
@@ -1328,14 +1342,23 @@ encoder cannot produce would be a third entry that is a 500.
 
 | | |
 |---|---|
-| Key algorithms, for the **hierarchy** | `rsa-2048`, `rsa-3072`, `rsa-4096`, `ec-p256`, `ec-p384`, `ec-p521`, `ed25519` |
+| Key algorithms, for the **hierarchy** | `rsa-2048`, `rsa-3072`, `rsa-4096`, `ec-p256`, `ec-p384`, `ec-p521`, `ed25519`, and the post-quantum ones that sign — ML-DSA, SLH-DSA and composite ML-DSA |
 | Key algorithms, on the **[Certificate Workbench](#the-certificate-workbench)** | those seven plus thirty-four post-quantum ones — ML-DSA, SLH-DSA, composite ML-DSA and ML-KEM — narrowed by the cryptographic approach |
 | Signature algorithms | RSASSA-PKCS1-v1_5 and RSASSA-PSS with SHA-256/384/512, ECDSA with SHA-256/384/512, Ed25519 — **and the two SHA-1 ones, marked weak**, because *does my stack refuse a SHA-1 certificate?* is a question a debugger should be able to ask. Nothing defaults to them. Plus the post-quantum ones, where the key is one. |
 
-**The hierarchy is deliberately the shorter list.** What the Issuing CA signs is
-a client assertion somebody else's OAuth library has to verify, and an ML-DSA
-signature is one almost nothing can read yet. The Certificate Workbench is where a
-certificate nothing can read is the point.
+**Choose a post-quantum hierarchy knowingly.** What the Issuing CA signs is a
+client assertion somebody else's OAuth library has to verify, and an ML-DSA
+signature is one almost nothing can read yet; the default is `rsa-2048`, and a
+[hybrid authority](#hybrid-authorities-a-second-post-quantum-key-and-signature-off-by-default)
+adds post-quantum protection without that cost. The build form lists every key
+algorithm, ML-KEM included, but an ML-KEM key cannot sign, so a hierarchy built
+with one is refused (`STS-PKI-0004`), and so is a process branch whose
+signatures would not fit the listener's handshake (see
+[hybrid authorities](#hybrid-authorities-a-second-post-quantum-key-and-signature-off-by-default)). A leaf issued with a
+pure ML-DSA or SLH-DSA key is published as an AKP JWK (RFC 9964). A composite
+ML-DSA key has no JWK, because its X.509 bytes are not a JOSE key, so issuing a
+signing key pair with one is refused (`STS-PKI-0269`) and nothing is recorded.
+The Certificate Workbench is where a certificate nothing can read is the point.
 
 **Leave the signature algorithm empty unless you mean it.** Empty means "the
 right one for the key algorithm", which is what almost every deployment wants:
@@ -1467,14 +1490,10 @@ validator that has never heard of ML-DSA*, plus the two that do not ask.
 | **Hybrid** | A second key and signature in three **non-critical** extensions — `subjectAltPublicKeyInfo` (2.5.29.72), `altSignatureAlgorithm` (2.5.29.73), `altSignatureValue` (2.5.29.74), ITU-T X.509 (2019) clause 9.8 — so a validator that has never heard of them sees an ordinary certificate and accepts it. That is the entire point. |
 | **Any** | Every algorithm this build has, listed together. |
 
-**SLH-DSA key generation takes seconds and it runs on this thread.** This
-process owns six listener families on one thread, so while one is being made
-this service answers nobody. It is deliberately not moved to the worker pool:
-that pool runs this service's own reading of the post-quantum constructions,
-which is independent of the vendored one **on purpose**, and crossing the two to
-save a button a few seconds is exactly the defect that independence exists to
-expose. Generate one pair and issue several certificates from it with *reuse the
-key pair below*.
+**SLH-DSA key generation takes seconds.** It and every SLH-DSA signature run
+on libuv's thread pool, so the service keeps answering while one is made, but
+the button still waits for it. Generate one pair and issue several certificates
+from it with *reuse the key pair below*.
 
 ### The twenty-two extensions
 
@@ -1650,7 +1669,7 @@ rebuild the hierarchy.
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
 | `pki.autoBuild` | `PKI_AUTO_BUILD` | `true` | no (restart) | Build the hierarchy at startup and certify every key this service generates under it. **Restart-only**: a key can only be issued by an authority that exists when the key is made, and the keys are made at startup. Off leaves every generated key uncertified. |
-| `pki.keyAlgorithm` | `STS_PKI_KEY_ALGORITHM` | `rsa-2048` | yes | The key algorithm a build uses when the form names none. RSA 2048 because the leaf signs a client assertion somebody else's OAuth library has to verify. |
+| `pki.keyAlgorithm` | `STS_PKI_KEY_ALGORITHM` | `rsa-2048` (`rsa-3072` in product) | yes | The key algorithm a build uses when the form names none. RSA 2048 because the leaf signs a client assertion somebody else's OAuth library has to verify. |
 | `pki.signatureAlgorithm` | `STS_PKI_SIGNATURE_ALGORITHM` | *(empty)* | yes | Empty means "the right one for the key algorithm" — see [above](#the-encoder-is-the-debuggers-own-vendored-byte-identical). `sha1-rsa` and `sha1-ecdsa` are development mode only: product uses the key's default instead and refuses setting either, or a build naming one (#181). |
 | `pki.alternativeKeyAlgorithm` | `STS_PKI_ALTERNATIVE_KEY_ALGORITHM` | `none` | yes | The post-quantum key every authority built holds beside its classical one, and signs everything it issues with a second time (ITU-T X.509 clause 9.8) — see [Hybrid authorities](#hybrid-authorities-a-second-post-quantum-key-and-signature-off-by-default). One of `ml-dsa-87` (the recommended value when it is turned on), `ml-dsa-65`, `ml-dsa-44`, `slh-dsa-sha2-256s`, `slh-dsa-sha2-192s`, `slh-dsa-sha2-128s` or `none`. `none`, the default, builds classical-only authorities, because many relying parties refuse a hybrid certificate's size. **Warning:** SLH-DSA costs seconds per certificate issued. |
 | `pki.organisation` | `STS_PKI_ORGANISATION` | `iya-sts` | yes | The `O=` every tier and leaf carries, and what the tiers are named after when no common name is given. |

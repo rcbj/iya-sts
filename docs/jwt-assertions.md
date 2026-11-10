@@ -288,13 +288,15 @@ was arranged deliberately:
 |---|---|---|
 | Registered by value | `oauthJwks` | RFC 7591's member. What a party with a key of its own uses. |
 | Issued by this service | `oauthAssertionJwks` | What `/admin/pki` wrote, public half only, carrying `x5c` and `x5t#S256`. |
-| Presented with the signature | the JWS `x5c` header | Used **only after** the chain has been shown to reach this realm's Root CA. |
+| Presented with the signature | the JWS `x5c` header | Used **only after** the chain has been shown to reach this realm's Root CA, and only for the party its leaf names: the client authenticating, or the assertion's issuer at the grant (`STS-OAUTH-1000`, `STS-OAUTH-1001`). |
 
 **A certificate that arrives WITH the signature is not evidence on its own.**
 Taking a public key out of an unchecked `x5c` would be verifying a signature
 against a key the signature came with, which proves nothing at all — so it is
-used only when this service can see that it issued it. That is the point of
-holding a certificate authority.
+used only when this service can see that it issued it, and to the party
+presenting it. A certificate this realm issued to one application does not
+verify another application's assertion. That is the point of holding a
+certificate authority.
 
 ### The certificate's whole chain is validated every time the key is used
 
@@ -381,7 +383,9 @@ Which key opens it depends on what the sender could possibly have had:
 | `A128KW` … `A256GCMKW`, `dir`, the three `PBES2` forms | the **client secret**, which is the only shared key that exists between this service and a client | a client that has one |
 
 Six content encryption algorithms against all sixteen: `A128GCM`, `A192GCM`,
-`A256GCM`, `A128CBC-HS256`, `A192CBC-HS384`, `A256CBC-HS512`.
+`A256GCM`, `A128CBC-HS256`, `A192CBC-HS384`, `A256CBC-HS512`. In product mode
+the three CBC-HMAC ones are refused unless `crypto.allowCbcJwe` is on, and
+`RSA-OAEP`, which is OAEP over SHA-1, unless `crypto.allowLegacyHashes` is on.
 
 **`RSA1_5` is deliberately absent and the refusal names it.** RFC 8017
 deprecated PKCS#1 v1.5 encryption, and implementing it safely means making an

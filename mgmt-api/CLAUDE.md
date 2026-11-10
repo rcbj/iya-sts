@@ -1206,6 +1206,16 @@ Three things a caller has to be told and the description does tell:
 three arithmetics produced the number; and on a Kerberos row the revoke does
 MORE than the row names, because that protocol has no per-ticket revocation.
 
+**`POST /admin-api/sessions/end-all` (#1520, ASVS 5.0.0 7.4.5) WALKS
+NOTHING.** It writes one instant, `authn.sessionsEndedBefore`, as a realm
+override, and `Authn.sessionEnded()` reads a session started before it as
+expired: the cost is one setting whatever the population, which a walk of a
+realm of millions could not promise (the constant-cost rule). Each session then
+ends as an expired one does, and the act itself writes one `session.end` row
+naming every sign-on session. It revokes no token, deliberately, and its answer says to use
+`tokens/revoke-all` as well: the two are different acts and an administrator
+may want one without the other.
+
 **`GET /admin-api/tokens` grew a `session` parameter beside it**, which is the
 join between the two resources: every browser-session row carries the
 `sessionId` a token issued under it records.
@@ -1520,6 +1530,20 @@ clear does not. The caller asked to clear a specific thing and it was not there.
 **`clear-key` GOES THROUGH `credentials.removeKey()`**, which is what carries
 the refusal that matters: it will not remove the last way in. An operator must
 not be able to do what the owner is stopped from doing.
+
+**IN PRODUCT A CLEAR NEEDS A STATEMENT AND A RECENT SIGN-IN, AND THEY ARE TWO
+DIFFERENT CHECKS.** The statement (`evidence`, #1504, #1558, ASVS 5.0.0 6.4.4)
+is asked in `admin-core/admin_actions.ts`'s `evidenceRefusal()` by every
+factor-clearing act — `clear-totp`, `clear-key`, `clear-backup-codes`,
+`clear-email-factor`, `disable-mfa`, `disable-primary-keys` — because the
+console and this API both reach it there, and it goes on the audit row:
+clearing a lost factor is how an account is taken over, so the row says how
+the person was identified. The recency (#1538, ASVS 5.0.0 7.5.1) is this
+module's: `REAUTHENTICATED_ACTIONS` in `admin_api.ts`, answered 401
+`insufficient_user_authentication` with `max_age` as RFC 9470 says
+(`STS-API-0145`), so the console re-signs in in its popup and resends. It is
+asked only of a token with a person behind it; a `client_credentials` caller
+has nobody to ask.
 
 
 ## `GET /admin-api/tls-connection` — MONITORING → TLS CONNECTION (#597, 2026-10-12)
@@ -2918,7 +2942,8 @@ that decides a cache), `passkey-report/export`'s `page`, `per` and `from`
 `consoleOnly()` refuses first.
 
 `declareImplicitParameters()` adds `DPoP` and `cell` to every row once, in
-`wire()`. **`consoleOnly()` now runs before the query check**, so `format=svg`
+`wire()`, reading them from the model's `x-iya-every-operation`
+(`openapi.every.json`; `models/CLAUDE.md`), where they are stated once. **`consoleOnly()` now runs before the query check**, so `format=svg`
 at a management address is still told where the drawing is rather than called
 an unknown name. `tests/admin_api_request_names.js` holds the rules, the
 wrapper and every `x-sts-` name; `schemathesis_kit.js`'s

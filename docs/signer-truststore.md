@@ -12,6 +12,8 @@ encryption recipient, or in an attestation.
 
 Protocols → PKI trust is the page, and `GET /admin-api/pki/trust` with
 `POST /admin-api/pki/trust/{add,remove}` are the same controls for a machine.
+The page's other tabs, paranoid PKI mode's rows and the pinned certificates,
+are described under [Paranoid PKI mode](pki.md#what-the-page-shows).
 
 ## What belongs in it
 

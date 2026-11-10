@@ -544,7 +544,7 @@ identity, and only a person may bind: see
 
 ## Keeping this page current
 
-This page is a copy of tables that live in code, so it can drift. The sources:
+This page is a copy of tables that live in the model, so it can drift. The sources:
 
 * `models/directory/names.tsp`: the standard and own spellings, and the
   attributes withheld from every reader

@@ -1780,8 +1780,15 @@ document implementing it is missing would be the one failure this feature must
 not have — a configured refusal silently not happening. So that one is refused,
 and the refusal NAMES the policy and the template that rebuilds it.
 
-**An error is not a decision.** A throw out of the engine is a defect, and
-`issuance_gate.js` answers a throw by allowing, for the locked-room reason. A
+**An error is not a decision.** A throw out of the engine is a defect, and in
+DEVELOPMENT `issuance_gate.js` answers a throw (or no answer) by allowing, for
+the locked-room reason. **In product it refuses (#1494, ASVS 5.0.0 16.5.3,
+`STS-XACML-0183`), as the access gate does (#1450)**: `noDecision()` asks
+`mode.failsOpenOnPolicyFault()`, and an application register that cannot be
+read to judge a sign-in yields the mechanism `unreadable`, which nothing holds.
+The recovery from a policy that denies its own repair is `roles.enforceIssuance`
+off, which `/admin/mode` reports while it is. An EMPTY decider (the XACML family
+not loaded in this process) still allows in both modes — that is rule 3v. A
 Deny, a NotApplicable and an Indeterminate are not throws — they are answers,
 and every one of them refuses here, because the policy is `deny-unless-permit`
 and an issuance decision must not rest on a PEP's bias. **`xacml.pepBias` was

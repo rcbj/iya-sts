@@ -6326,3 +6326,49 @@ Settings: `oauth2.tokenExchangeKerberosInput` (on, `0987`) and
 the one value no longer "read as a request and answered with an access
 token". Tests: `tests/kerberos_tokens.js` X and
 `tests/protocol/sts_kerberos_tokens.js` 4.
+
+## ASVS 5.0.0 IN THIS FAMILY (#1453-#1565, 2026-11-09)
+
+`docs/product-security.md` is the user's account and `docs/oauth-oidc.md` the
+behaviour; this is why each is shaped as it is. Every product-only rule is a
+`common/mode.js` predicate, never `isProduct()`.
+
+* **The grant list and the response-type list narrow together** (#1453 at the
+  token endpoint, `STS-OAUTH-0598`; #1479 at the authorization endpoint,
+  `0597`). Narrowing only the token endpoint left `response_type=id_token`
+  answering for a client the token endpoint held to the code flow. A client
+  that declared the `implicit` GRANT counts as having declared the response
+  types that grant answers with. ONE switch, `oauth2.allowUndeclaredGrants`,
+  lifts both, because a test stack that needs one needs the other.
+* **PKCE of a confidential client (#1495, `STS-OAUTH-1002`) sits AFTER the
+  public-client refusal in `oauth2_bcp.js` and outside OAuth 2.1 mode**, which
+  answers first with its own `pkceDecision()` and its nonce exemption. Product
+  does not override that mode's rule.
+* **A code replay ends what was refreshed from it** (#1467, #1489). The
+  redemption record carries the refresh `family`; a replay revokes every member
+  through `stats.revoke()` with `replay: 'authorization-code-replay'` — the one
+  act that fills the grant's CAEP `session-revoked` and `risk-level-change` —
+  and then `bcp.revokeFamily()`, which is persisted, so the revocation outlives
+  the in-memory redemption record. RISC has no event for it:
+  `credential-compromise` is about a credential type and `sessions-revoked`
+  about the whole account.
+* **The refresh chain's limit is an EXPIRY, not a refusal** (#1506). Each
+  refresh token carries `chain_iat`, copied from the one it replaced, and its
+  `exp` is `min(own lifetime, chain_iat + oauth2.refreshTokenMaxChainS)`. A
+  client sees an ordinary expired refresh token, and nothing new is stored.
+* **A repeated parameter in product reuses `oauth21.repeatedParameterRefusal()`**
+  (#1507 at the token endpoint, #1533 at the authorization endpoint), only
+  while OAuth 2.1 mode is off — that mode refuses already, with the same code.
+* **`id_token_hint` is refused when it is a Logout Token or an access token**
+  (#1531): every token this realm signs is signed with the same keys, so a
+  signature that verifies proves nothing about the KIND. `events`, or a `typ`
+  of `logout+jwt` or `at+jwt`, is the test.
+* **A public client is asked consent every time** (#1522,
+  `common/consent.ts`'s `alwaysAsks()`), except a client id starting `sts-`:
+  this service's own applications are not third parties. The screen's duration
+  (#1519, #1565) is the client's refresh token lifetime, because a recorded
+  consent never expires and what IS bounded is one grant of it.
+* **A person is found by `sub` first** (#1514, #1536) at `/account-api`,
+  `/report-api` and in `common/role_permissions.ts`, and in product a `sub`
+  that resolves to nobody is refused rather than matched by username (#1543,
+  `helpers.subjectIsGone()`), which may since name somebody else.

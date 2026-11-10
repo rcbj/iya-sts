@@ -15,20 +15,25 @@ own, `sts`.
 
 ## Where the schema is written down
 
-It is written in two places, and a test keeps them in step:
+It is written once, as TypeSpec in `models/persistence/persistence.tsp`, and
+two things are generated from it:
 
 * **`postgres/schema.sql`** is the script an owner runs once, with
   `psql -v ON_ERROR_STOP=1 -f postgres/schema.sql <url>`. It builds the tables
   and the least-privilege application role. The compose stack runs the same
-  file through `postgres/apply-schema.sh`.
-* **`persistence/persistence_postgres.js`** holds the same `CREATE` statements
-  as its exported `SCHEMA`. On every open it probes for each object
+  file through `postgres/apply-schema.sh`. It is committed, because the compose
+  stack mounts it; what is not a table or an index (comments, grants, routines,
+  the upgrade block) comes from `models/persistence/schema.template.sql`.
+* **`persistence/persistence_postgres.js`** runs the same `CREATE` statements,
+  which the image build generates. On every open it probes for each object
   (`to_regclass`) and creates only what is missing. Against a database the
   script already built, it therefore needs no `CREATE` privilege.
 
-`tests/postgres_schema.js` fails if either file holds a `CREATE` the other does
-not, or if the two version numbers differ. **A column change goes in both files
-in one commit.**
+**A table or column change goes in the model**, followed by
+`tests/tools/regenerate-model-docs.sh`, which rewrites `postgres/schema.sql`.
+`tests/model_typespec.js` fails if the committed script does not match the
+model, and `tests/postgres_schema.js` if the script and the driver disagree.
+See [Abstract data model](data-model.md#persistence).
 
 ### There are no migrations, only additions
 

@@ -546,7 +546,13 @@ is signed in to every surface on the port. In order:
    for one from an anchor somebody installed, the realm of the request
    (`/realm/<id>/tls/sign-in`, else the default realm) and the person whose
    entry stores it — refused, with `session.refusedAsStored`, when no entry or
-   several do (above).
+   several do (above);
+5. **in product mode, a person who owes a second factor is not signed in here**
+   (`STS-TLS-0060`), because this address cannot ask for one. The answer says
+   to sign in on the sign-in screen and choose the certificate there, which
+   asks for the second factor. A program presenting a certificate elsewhere
+   (WS-Trust, token exchange, RFC 8705, LDAP SASL EXTERNAL, PKINIT) is not
+   affected.
 
 The answer is **JSON**: `signedIn`, the session, whether a certificate was
 presented and verified, the `x5t#S256` thumbprint the token endpoint would bind
@@ -581,7 +587,10 @@ the recorded identity and the request are what get refused. See [PKI](pki.md).
 
 * **L7 (TLS-terminating) proxy**: `global.trustProxy` believes
   `X-Forwarded-Proto` and `X-Forwarded-Host`, and `global.trustedProxies`
-  narrows that to the proxy's own addresses. Monitoring → TLS connection
+  narrows that to the proxy's own addresses. In product mode, with
+  `global.trustedProxies` empty, no caller's `X-Forwarded-*` headers are
+  believed: the client's address is the connection's, and the scheme and host
+  are the request's own. Set it to your proxy's addresses. Monitoring → TLS connection
   shows what a request carried and what was believed. A client certificate cannot cross such
   a proxy.
 * **L4 load balancer with TLS passthrough** — the supported front for client
@@ -647,7 +656,7 @@ refusal of an application's certificate — is the same in both modes. See
 | `tls.signatureAlgorithms` | `STS_TLS_SIGALGS` | OpenSSL's list without DSA and SHA-224, brainpool omitted by policy | no | The signature schemes signed with, accepted, and asked for in a CertificateRequest; empty means OpenSSL's. |
 | `tls.trustAnchorsFile` | `STS_TLS_TRUST_ANCHORS_FILE` | *(empty)* | no | A PEM file of CA certificates client certificates are verified against, loaded at startup; unreadable or empty is fatal. |
 | `tls.trustIssuedClientCertificates` | `STS_TLS_TRUST_ISSUED_CLIENT_CERTIFICATES` | `true` | no | Add this service's Root to the client truststore, so a certificate a person issued on the portal signs them in. |
-| `tls.selfSignedKeyBits` | `STS_TLS_SELF_SIGNED_KEY_BITS` | `2048` | no | The RSA key size of the listener certificate made at startup. |
+| `tls.selfSignedKeyBits` | `STS_TLS_SELF_SIGNED_KEY_BITS` | `2048` (`3072` in product) | no | The RSA key size of the listener certificate made at startup. |
 | `tls.selfSignedValidityYears` | `STS_TLS_SELF_SIGNED_YEARS` | `2` | no | How long that certificate is valid. |
 | `tls.selfSignedOrganization` | `STS_TLS_SELF_SIGNED_ORGANIZATION` | `iya-sts` | no | The O= of its subject. |
 | `tls.sessionTicketRotationS` | `STS_TLS_SESSION_TICKET_ROTATION_S` | `3600` | yes | In an active-active cluster, how often the session-ticket key every node's LDAPS listener and main port share is replaced (the old key is deleted); `0` shares nothing. Outside active-active nothing is shared. |
@@ -661,7 +670,8 @@ refusal of an application's certificate — is the same in both modes. See
 | `http.maxConnections` | `STS_HTTP_MAX_CONNECTIONS` | `0` | yes | How many connections an HTTP listener holds at once; `0` is no limit. |
 | `http.http2MaxConcurrentStreams` | `STS_HTTP_HTTP2_MAX_CONCURRENT_STREAMS` | `100` | yes | How many streams (requests) one HTTP/2 connection may have open at once; a stream past it is refused (`REFUSED_STREAM`). Node's own is unbounded. Per listener as `listener<Id>.http2MaxConcurrentStreams` and a custom listener's `tls.http2MaxConcurrentStreams`. |
 | `global.trustProxy` | `STS_TRUST_PROXY` | `false` | yes | Believe `X-Forwarded-Proto` and `X-Forwarded-Host` from a TLS-terminating proxy. |
-| `global.trustedProxies` | `STS_TRUSTED_PROXIES` | *(empty)* | yes | The addresses or CIDRs forwarded headers — and PROXY protocol headers — are believed from. |
+| `global.trustedProxies` | `STS_TRUSTED_PROXIES` | *(empty)* | yes | The addresses or CIDRs forwarded headers — and PROXY protocol headers — are believed from. Empty believes forwarded headers from any caller in development and from none in product. |
+| `security.hstsIncludeSubDomains` | `STS_SECURITY_HSTS_INCLUDE_SUBDOMAINS` | `false` (`true` in product) | yes | Adds `includeSubDomains` to `Strict-Transport-Security`, which only product mode sends. |
 | `global.proxyProtocol` | `STS_PROXY_PROTOCOL` | `off` | no | `v2` expects a PROXY protocol v2 header on every TCP listener, read before TLS. |
 | `global.proxyProtocolTimeoutMs` | `STS_PROXY_PROTOCOL_TIMEOUT_MS` | `30000` | yes | How long a trusted proxy may take to send a complete header. |
 | `pki.revocationCheck` | `STS_PKI_REVOCATION_CHECK` | `auto` | yes | Whether a presented certificate is checked for revocation: `off`, `soft-fail`, `hard-fail`, or `auto` (hard in product, soft in development). |
@@ -692,10 +702,12 @@ and `/admin/mode` says so.
 ## Strict-Transport-Security
 
 In product mode, every response that arrives over TLS carries
-`Strict-Transport-Security: max-age=31536000`. It applies to the whole host
-name, every port included, and a browser that has seen it refuses an untrusted
-certificate with no way to click through, so give the service a certificate
-browsers trust before people use it in product mode. The plain-HTTP revocation
+`Strict-Transport-Security: max-age=31536000; includeSubDomains`. It applies to
+the whole host name, every port included, and to every subdomain of it. Turn off
+`security.hstsIncludeSubDomains` if a subdomain must still answer over plain
+HTTP; the header then carries `max-age` alone. A browser that has seen the
+header refuses an untrusted certificate with no way to click through, so give
+the service a certificate browsers trust before people use it in product mode. The plain-HTTP revocation
 and SCEP listener never sends the header. Development mode does not send it.
 
 ## Design decisions

@@ -116,6 +116,15 @@ is one a conforming client must reject. The inserted form behaves like its
 
 * **Authorization code**, with **PKCE**
   ([RFC 7636](https://www.rfc-editor.org/rfc/rfc7636), `S256` and `plain`).
+  In product mode every client must send a `code_challenge`, confidential ones
+  included, unless `oauth2.allowConfidentialWithoutPkce` is on
+  ([OAuth security](oauth-security.md#the-authorization-code-flow-section-211)).
+* **In product mode a client that declares no response types gets `code`
+  alone** (RFC 7591 section 2). One with no `oauthResponseType`, and no
+  `implicit` grant declared, is refused `unauthorized_client` for any other
+  `response_type`, as the token endpoint holds a client with no
+  `oauthGrantType` to `authorization_code` and `refresh_token`.
+  `oauth2.allowUndeclaredGrants` lifts both.
 * **Implicit and hybrid**: every combination of `code`, `token` and
   `id_token`, including `id_token token`.
 * **`response_type=none`**: nothing is issued. The response carries `state`
@@ -164,7 +173,9 @@ is one a conforming client must reject. The inserted form behaves like its
   issued to the client, with any of its signing algorithms; an expired one is
   still a valid hint, and an encrypted one is refused. If the person signed in
   is not the one it names, `prompt=none` answers `login_required` and
-  otherwise the person is asked to sign in again.
+  otherwise the person is asked to sign in again. A Logout Token or an access
+  token is not an ID Token, and is refused as a hint even when this realm signed
+  it for the same client.
 * **`display`** (`page`, `popup`, `touch`), **`ui_locales`** and
   **`claims_locales`** are accepted. There is one sign-in page and it is in
   English, so each is answered in English, which the specification permits.
@@ -241,7 +252,11 @@ client from the authorization endpoint, a 400 from PAR and from the token
 endpoint, in development mode as in product.
 
 **A redeemed code is refused if it is presented again, in every mode**, and
-what it bought is revoked (RFC 6749 sections 4.1.2 and 10.5). The refusal says
+what it bought is revoked (RFC 6749 sections 4.1.2 and 10.5): the tokens the
+first redemption issued, the refresh tokens rotated from them since, and the
+access tokens those refreshes minted. Each is revoked as a replay, so the
+grant's CAEP `session-revoked` and `risk-level-change` are sent
+([Shared Signals](shared-signals.md)). The refusal says
 when the code was redeemed and by which client, or names the field that differs.
 The old development courtesy — an identical repeat answered with the same token
 set — is still there as `oauth2.codeReplayIdempotent`, off by default and
@@ -486,6 +501,13 @@ tokens. Withdraw `offline_access` from an application's global consent on
 `/admin/consent` to turn this off: every session of that surface standing on it
 ends at its next token renewal, and the person is asked at their next sign-in.
 
+**A public client is asked every time, in product mode**
+(`oauth2.consentAlwaysForPublicClients`, on by default there and off in
+development). A public client (`token_endpoint_auth_method=none`) cannot prove
+which program holds its `client_id`, so an earlier answer, a recorded
+`oauthConsent`, does not speak for it. This service's own applications are not
+asked.
+
 Consent is **on by default** (`oauth2.consentRequired`). Turning it off means
 nothing is asked and nothing is recorded; it does not mean everybody consented,
 so turning it back on asks again. `/admin/consent` is the register. The
@@ -549,6 +571,11 @@ does.
   It needs JavaScript. The answer names the authorization request to go
   back to, so what reaches the application — a redirect, `form_post`, JARM
   — is decided by the authorization endpoint, exactly as before.
+* **The screen says where and for how long.** It lists each RFC 8707
+  `resource` the request names, and says that consent lasts until the person
+  withdraws it and that each grant can keep access for up to the client's
+  refresh token lifetime (`oauth2.refreshTokenTtlS`, or the client's own), in
+  hours.
 * Consent is a question asked of somebody already signed in. It is not a
   password check.
 
@@ -1224,7 +1251,9 @@ the client registered (RFC 7591, OpenID Connect Core section 5.3.2):
   ECDH-ES and its three key-wrapping variants, over any of the three AES-GCM
   and three AES-CBC-HMAC content encryptions. **`enc` defaults to
   `A128CBC-HS256`** when only an `alg` is registered, as the registration
-  specification says. The recipient key comes from the client's inline `jwks`
+  specification says. In product mode, unless `crypto.allowCbcJwe` is on, the
+  AES-CBC-HMAC encryptions are neither offered nor accepted and the default is
+  `A256GCM`, and RSA-OAEP (over SHA-1) needs `crypto.allowLegacyHashes`. The recipient key comes from the client's inline `jwks`
   or its registered `jwks_uri`, fetched and cached (see
   [Client authentication](#client-authentication)).
 * Both give a **Nested JWT**, signed then encrypted, with `cty: "JWT"`.
@@ -1432,6 +1461,9 @@ realm's own keys, so it is opaque to the client. It opens only in the realm that
 minted it. A refresh token that was not encrypted is refused. A refresh
 **hands on the grant it was given**: narrowing `scope` or `resource` narrows the
 new access token, and the rotated refresh token still carries the whole grant.
+A chain of refreshes has an absolute limit, `oauth2.refreshTokenMaxChainS`,
+counted from its first refresh token: 30 days in product mode and none in
+development. Past it the person signs in again.
 Rotation with replay detection belongs to [OAuth security](oauth-security.md).
 
 ### JWT access tokens (RFC 9068)
@@ -1816,7 +1848,7 @@ schema:
   is written (`STS-REG-0112`), as are an unknown category or datatype, a row
   for `type` or a common field, two rows for one member and a member both
   mapped and listed in `notForPolicy`. These are the rules
-  [AuthZEN's catalogue](authzen.md#the-attribute-catalogue) follows.
+  [AuthZEN's catalogue](authzen.md#3-the-realms-conversion-rules-the-attribute-catalogue) follows.
 * **Values are typed by the row**: a string is parsed as the row's datatype,
   a JSON number reaches only an `integer` or `double` row, `null` is refused,
   an array only for a `bag` row, and a nested object only through dotted
@@ -1973,7 +2005,7 @@ and it is not recorded in `/admin/tokens`: it is a response, not a credential.
   |---|---|---|
   | `introspection_signed_response_alg` | `oauthIntrospectionSignedResponseAlg` | `RS256` — any JWS algorithm in `introspection_signing_alg_values_supported`, HMAC keyed by the client secret; never `none` |
   | `introspection_encrypted_response_alg` | `oauthIntrospectionEncryptedResponseAlg` | not encrypted — RSA-OAEP, RSA-OAEP-256 or ECDH-ES(+A*KW), to a key in the client's `jwks` or registered `jwks_uri` |
-  | `introspection_encrypted_response_enc` | `oauthIntrospectionEncryptedResponseEnc` | `A128CBC-HS256` once an `alg` is set; refused without one |
+  | `introspection_encrypted_response_enc` | `oauthIntrospectionEncryptedResponseEnc` | `A128CBC-HS256` once an `alg` is set (`A256GCM` in product mode unless `crypto.allowCbcJwe` is on); refused without one |
 
   Set them in an RFC 7591 registration (an RFC 7592 update clears a member it
   omits), on the application's console page, or with
@@ -2328,6 +2360,11 @@ on [What is not checked](what-is-not-checked.md).
 | Redirect URIs | any | only one registered for the client |
 | Password grant | offered; accepts any password but `invalid` | not offered (RFC 9700 section 2.4) |
 | Grants for a public client | all | authorization code and refresh only |
+| A client that declares no grant or response types | any grant and response type | `authorization_code`, `refresh_token` and `response_type=code` only (`oauth2.allowUndeclaredGrants`) |
+| PKCE for a confidential client | recommended: omitting it is logged | required (`oauth2.allowConfidentialWithoutPkce`) |
+| A repeated parameter at the authorization or token endpoint | the last value is taken, outside OAuth 2.1 mode | refused `invalid_request` |
+| A chain of refresh tokens | no absolute limit | ends 30 days after its first token (`oauth2.refreshTokenMaxChainS`) |
+| Consent for a public client | asked once, then recorded | asked every time (`oauth2.consentAlwaysForPublicClients`) |
 | `POST /oauth2/register` | open | closed unless `oauth2.openRegistration`, or a trusted software statement |
 | JSON introspection | answers anybody holding the token | the caller must authenticate |
 | Request objects | `alg: none` accepted unless a signature is required; `request_uri` may be `http` | must be signed; `request_uri` must be https and answer a JWT media type |
@@ -2374,6 +2411,7 @@ on [OAuth security](oauth-security.md#configuration).
 | `oauth2.accessTokenTtlS` | `STS_OAUTH2_ACCESS_TOKEN_TTL_S` | `3600` | yes | An access token's lifetime and `expires_in`; read per token, in steps of 30 seconds. |
 | `oauth2.idTokenTtlS` | `STS_OAUTH2_ID_TOKEN_TTL_S` | `3600` | yes | An ID Token's lifetime, separate from the access token's. |
 | `oauth2.refreshTokenTtlS` | `STS_OAUTH2_REFRESH_TOKEN_TTL_S` | `86400` | yes | A refresh token's absolute lifetime, in both modes (it was thirty days before; `2592000` restores that). |
+| `oauth2.refreshTokenMaxChainS` | `STS_OAUTH2_REFRESH_TOKEN_MAX_CHAIN_S` | `0` (`2592000` in product) | yes | The absolute limit on a grant renewed by refresh tokens, counted from the first one; a renewed token never expires past it. 0 is no limit. |
 | `oauth2.clockSkewS` | `STS_OAUTH2_CLOCK_SKEW_S` | `30` | yes | The allowance on `exp` and `nbf` wherever this service reads back a token it issued, and on every console screen's state. |
 | `oauth2.authorizationCodeTtlS` | `STS_OAUTH2_AUTHORIZATION_CODE_TTL_S` | `300` | yes | How long an authorization code may wait to be redeemed; RFC 9700 mode's transaction memory is measured from it. |
 | `oauth2.redeemedCodeCacheSize` | `STS_OAUTH2_REDEEMED_CODE_CACHE_SIZE` | `10000` | yes | How many redeemed codes are remembered, so a repeat is refused naming when and by whom the code was redeemed (or the field that differs) and what it bought is revoked. Only with `oauth2.codeReplayIdempotent` on does an identical repeat get the same tokens. Past the limit the oldest is forgotten, and its replay is refused as an unknown code. |
@@ -2398,7 +2436,7 @@ on [OAuth security](oauth-security.md#configuration).
 |---|---|---|---|---|
 | `oauth2.refreshTokenEncryptionAlg` | `STS_OAUTH2_REFRESH_TOKEN_ENCRYPTION_ALG` | `A256KW` (`RSA-OAEP-256` until 2026-10-21; a token sealed under it still opens) | yes | The JWE key management algorithm every refresh token is sealed under, to this realm's own keys. |
 | `oauth2.refreshTokenEncryptionEnc` | `STS_OAUTH2_REFRESH_TOKEN_ENCRYPTION_ENC` | `A256GCM` | yes | The JWE content encryption algorithm for refresh tokens. |
-| `oauth2.refreshTokenEncryptionKeyBits` | `STS_OAUTH2_REFRESH_TOKEN_ENCRYPTION_KEY_BITS` | `2048` | yes | The size of each realm's RSA refresh-token encryption key; reaches keys made after the change. |
+| `oauth2.refreshTokenEncryptionKeyBits` | `STS_OAUTH2_REFRESH_TOKEN_ENCRYPTION_KEY_BITS` | `2048` (`3072` in product) | yes | The size of each realm's RSA refresh-token encryption key; reaches keys made after the change. |
 | `oauth2.refreshTokenEncryptionCurve` | `STS_OAUTH2_REFRESH_TOKEN_ENCRYPTION_CURVE` | `P-256` | yes | The curve of each realm's EC refresh-token encryption key; reaches keys made after the change. |
 
 ### Consent, permissions and claims
@@ -2406,6 +2444,7 @@ on [OAuth security](oauth-security.md#configuration).
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
 | `oauth2.consentRequired` | `STS_OAUTH2_CONSENT_REQUIRED` | `true` | yes | Ask the person, on `/oauth2/consent`, before issuing for a scope they have not agreed to for that application. |
+| `oauth2.consentAlwaysForPublicClients` | `STS_OAUTH2_CONSENT_ALWAYS_FOR_PUBLIC_CLIENTS` | `false` (`true` in product) | yes | Ask every time a public client requests access, whatever the person answered before. This service's own applications are not asked. |
 | `oauth2.delegatedPermissionsEnforced` | `STS_OAUTH2_DELEGATED_PERMISSIONS_ENFORCED` | `false` | yes | In development, refuse `invalid_scope` a request, on a person's behalf, for a delegated permission the client has not been granted; off, it is honoured and logged. Product mode always refuses one. Not asked on `client_credentials`, where a role decides (#551). |
 | `oauth2.maxRequestedClaims` | `STS_OAUTH2_MAX_REQUESTED_CLAIMS` | `64` | yes | The most claims one OpenID Connect Core 5.5 claims request may name. |
 | `oauth2.didClaim` | `STS_OAUTH2_DID_CLAIM` | `false` | yes | Release a person's preferred, proved DID as the `did` claim behind the `did` scope (#693). See [A person's DID](#a-persons-did-the-did-claim). |
@@ -2414,6 +2453,7 @@ on [OAuth security](oauth-security.md#configuration).
 
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
+| `oauth2.allowUndeclaredGrants` | `STS_OAUTH2_ALLOW_UNDECLARED_GRANTS` | `false` | yes | Product mode only. On, a client that declares no grant or response types may use any this service offers. Off, `authorization_code`, `refresh_token` and `response_type=code` alone. For test stacks. |
 | `oauth2.tokenExchangeAudience` | `STS_OAUTH2_TOKEN_EXCHANGE_AUDIENCE` | `authorization-server` | yes | What an exchanged assertion may be addressed to: this authorization server, or also (`any-declared-relying-party`) a relying party registered here — token forwarding. See [Delegation](delegation.md#assertions-as-the-subject-or-the-actor). |
 | `oauth2.tokenExchangeRefreshToken` | `STS_OAUTH2_TOKEN_EXCHANGE_REFRESH_TOKEN` | `when-requested` | yes | Whether an RFC 8693 exchange returns a refresh token: `never`, `when-requested` or `always`. |
 | `oauth2.jwtBearerGrant` | `STS_OAUTH2_JWT_BEARER_GRANT` | `true` | yes | Offer and advertise the RFC 7523 JWT bearer grant. |
@@ -2455,7 +2495,7 @@ on [OAuth security](oauth-security.md#configuration).
 | `oauth2.clientJwksCacheS` | `STS_OAUTH2_CLIENT_JWKS_CACHE_S` | `300` | yes | How long a key set fetched from a client's `jwks_uri` is reused. |
 | `oauth2.clientJwksRefetchS` | `STS_OAUTH2_CLIENT_JWKS_REFETCH_S` | `30` | yes | The least time between two fetches of one `jwks_uri` for a `kid` the cached set lacks. |
 | `oauth2.requestUriCacheS` | `STS_OAUTH2_REQUEST_URI_CACHE_S` | `0` | yes | How long a fetched `request_uri` answer is reused; 0 fetches every time. |
-| `oauth2.requestObjectEncryptionKeyBits` | `STS_OAUTH2_REQUEST_OBJECT_ENCRYPTION_KEY_BITS` | `2048` | yes | The size of the RSA key each realm publishes (`use: enc`) for encrypted request objects. |
+| `oauth2.requestObjectEncryptionKeyBits` | `STS_OAUTH2_REQUEST_OBJECT_ENCRYPTION_KEY_BITS` | `2048` (`3072` in product) | yes | The size of the RSA key each realm publishes (`use: enc`) for encrypted request objects. |
 | `oauth2.requestObjectEncryptionCurve` | `STS_OAUTH2_REQUEST_OBJECT_ENCRYPTION_CURVE` | `P-256` | yes | The curve of the EC key each realm publishes for ECDH-ES request object encryption. |
 
 ### Client attestation

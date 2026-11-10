@@ -443,11 +443,13 @@ docker compose up -d --wait
 
 `--wait` returns once `sts` is healthy, a minute or two on a first start.
 
-* **Signing in.** The console's first account is `admin`, with a password
-  generated on the first start and written to `data/bootstrap-admin-password`,
-  which only the service can read; the log says where. It has to be changed at
-  the first sign-in. To choose it instead, put
-  `STS_ADMIN_BOOTSTRAP_PASSWORD=...` in `.env` before the first start.
+* **Signing in.** The console's first account has a generated name and a
+  password generated on the first start. Both are written, as `name:password`,
+  to `data/bootstrap-admin-password`, which only the service can read; the log
+  names the account and says where. The password has to be changed at the
+  first sign-in. To choose the password instead, put
+  `STS_ADMIN_BOOTSTRAP_PASSWORD=...` in `.env` before the first start; the log
+  then names the account, and no file is written.
 
   ```bash
   docker compose exec sts cat data/bootstrap-admin-password

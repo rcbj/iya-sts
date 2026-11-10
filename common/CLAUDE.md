@@ -1142,7 +1142,8 @@ asked one RFC 9396 detail at a time, by `oauth-oidc/authorization_details.ts`'s
 `fineGrainedRefusal()`, and ONLY for a detail whose type's application has
 `appFgaEnforced` TRUE — `fgaStateOf()` above answers that without the XACML
 family. **An empty slot REFUSES (`STS-FGA-0016`), the opposite of
-`issuance_gate.js` and `access_gate.ts`**, because here somebody asked for a
+`issuance_gate.js`, and of `access_gate.ts` in development** (in product an
+empty access gate refuses too, `STS-XACML-0181`, #1450), because here somebody asked for a
 restriction: issuing an enforcing application's detail undecided would be
 the switch silently not applying. A decider that throws or answers nothing
 is a failure too (`STS-FGA-0015`). Rule 3e both ways round, as for the
@@ -7184,9 +7185,11 @@ thread and its lifetime*, has the numbers either side of the fix).
 * **Node's own asynchronous door**: RSA and EC generation is node's OpenSSL
   with an asynchronous door of its own, on libuv's thread pool, which costs no
   IPC and no child — the door the post-quantum keys use too since #363. 3aa's
-  reason for keeping `pki_authoring.ts` synchronous is about the post-quantum
-  encoders and is untouched — and that pane's SLH-DSA signature (13.7s
-  measured) is what `cluster.nodeTtlMs`'s new default is sized against.
+  reason for keeping `pki_authoring.ts` off the worker pool is about the
+  post-quantum encoders and is untouched — and that pane's SLH-DSA signature
+  (13.7s measured) is what `cluster.nodeTtlMs`'s new default was sized against,
+  until #1464 moved it and the key generation onto libuv's thread pool through
+  the same primitive (`common/crypto_impl/CLAUDE.md`).
 
 ### `secrets.js` — the key-encryption key
 
@@ -8976,11 +8979,13 @@ argument of 2026-09-13: every `openssl req -x509` certificate does, and a method
 defined as certificate equality has no chain for the flag to mean anything in. The
 table's `mayBeCa: false` is about a leaf on a chain.
 
-**WHAT EACH PHASE OWES.** Phase 0 wires one row, `anchor-admission`, at the client
-truststore; every other site still calls what it called, and
-`tests/certificate_trust_callers.js` lists each such call and only shrinks. A site
-moved to the door takes its row out of that list, moves its row's `phase` on the
-page, and extends `tests/protocol/sts_paranoid_pki_settings.js`'s proof.
+**WHAT A NEW SITE OWES.** The rollout was by phase: Phase 0 wired one row,
+`anchor-admission`, at the client truststore, and each later phase took its sites
+out of `tests/certificate_trust_callers.js`'s `ALLOWED`, which only shrank and has
+been empty since Phase 5. So a new site that relies on a certificate asks the door
+from the start: it is named in its row's `sites` (the same test fails on a named
+site that does not ask), and it extends
+`tests/protocol/sts_paranoid_pki_settings.js`'s proof.
 
 **THE SIGNER TRUSTSTORE IS THE DIRECTORY'S**, per realm, in
 `ou=signerTrustAnchors`, through a slot `ldap/ldap_server.js` fills (rule 3e,
@@ -15312,14 +15317,17 @@ response is validated against it, always.** There is no setting, in either mode.
 * **A VIOLATION IS NOT SENT.** The caller gets a 500 `server_error` saying nothing
   of the shape; the operator gets `STS-API-0139` once per distinct failure, naming
   the operation, the status and where, with key names and never a value.
-* **THE MODELS ARE IN ONE FILE PER FAMILY**, keyed by operationId
-  (`models/api/management.tsp` since #1390, `models/api/account.tsp` (since #1390),
-  `authn/authn_response_models.ts`), and in `report/openapi.ts` itself. A new
+* **THE MODELS ARE IN ONE FILE PER DOCUMENT**, keyed by operationId, in
+  TypeSpec since #1390: `models/api/management.tsp`, `console.tsp`, `account.tsp`,
+  `authn.tsp` and `report.tsp`, with the shapes they share in `common.tsp`
+  (`models/CLAUDE.md`). A new
   operation owes a model; `tests/openapi_response_models.js` fails otherwise, at
   any depth. **A new member of an answer owes a line in its model in the same
   commit**, or that answer becomes a 500.
-* **THREE SHAPES AND ONLY THREE**: `closed()`, `mapOf()` where keys are data, and
-  `freeForm('why')`, the argued exception, printed by that test.
+* **THREE SHAPES AND ONLY THREE**: closed, a map where keys are data, and
+  free-form with its reason (`x-free-form` in the model, `freeForm('why')` in
+  `response_model_kit.ts` for a row still built in code), the argued exception,
+  printed by that test.
 * **NO MEMBER IS `required` UNLESS EVERY BRANCH SENDS IT**: the management API
   removes members after a view built them (an owner's projection, the console's
   own members).

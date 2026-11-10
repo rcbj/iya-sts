@@ -45,6 +45,12 @@ client was `sts-management-api` itself; a script that still authenticates as
 | `admin:read` | make any `GET` request |
 | `admin:write` | make anything else, meaning every `POST` that changes state |
 
+A scope covers every object of the realm the call is made in: `admin:read`
+reads any of them, by id or in a list, and an object of another realm is never
+found. A realm is the boundary between tenants, so a realm's own token is
+refused at any other realm's `/admin-api`. A default-realm token is the
+service's, and reaches every realm under its prefix (`/realm/{id}/admin-api`).
+
 To get a token, call the token endpoint with the client-credentials grant, the
 scopes you need, and `resource=<base>/admin-api`. The `resource` value sets
 the token's audience, and the API refuses a token audienced to anything else.
@@ -855,9 +861,12 @@ them on the console or with `POST /admin-api/config/set`.
   The way to see it is not to read the code: revoke a token through the API
   and RFC 7662 introspection calls it inactive, because there is one set of
   revoked jtis in the service and `/oauth2/revoke` writes to the same one.
-* **The OpenAPI document is generated, not written.** It is built from the
-  route table, so it cannot describe an operation that does not exist or
-  omit one that does. The explorer's copy is built by the same function.
+* **The OpenAPI document is written once, in the model.** Each operation is
+  TypeSpec under `models/api/` ([Abstract data model](data-model.md#api)), and
+  the service serves the operations its routes answer, so the document cannot
+  describe an operation that does not exist. The same declaration validates
+  each request and every answer. The explorer's copy is built by the same
+  function.
 * **A token, not a console session.** `/admin-api` is a machine surface with
   no browser and no sign-in screen, so it is reached the way a machine
   reaches any resource server. A console session is not an API credential,

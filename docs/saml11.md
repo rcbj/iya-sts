@@ -257,6 +257,7 @@ something named it.
 | `shire` | used as it stands; with none, the registered one, and with none registered the flow is refused | must be a registered `samlAssertionConsumerService`, exact match; an address development merely observed is refused until confirmed |
 | `AttributeQuery`, `AuthenticationQuery` | answered, to anybody who can reach the port — logged as such | answered only to a registered, authenticated relying party about a person it holds a live session for, by the NameIdentifier it was given |
 | Artifact resolver authentication | not required (follows `saml2.requireSignedAuthnRequests`) | required |
+| A parameter given twice, or in both the query string and the body | not refused for that reason | refused, 400 (`STS-CORE-0173`) |
 | Given name, surname, mail, display name | invented | read off the directory entry, or omitted |
 
 The query policy in product is not a bare client-certificate gate on purpose:
