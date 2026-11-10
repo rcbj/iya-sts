@@ -1965,6 +1965,87 @@ function prose() {
  * `error_codes`, and reaches the directory through a slot.
  * @namespace
  */
+// ---------------------------------------------------------------------------
+// A MEMBER THAT NO LONGER EXISTS HOLDS NOTHING (2026-11-10).
+//
+// A role names its members — people by username, groups by name,
+// applications by identifier — and nothing took a name out when the thing it
+// named was deleted. So an application forgotten while it held ADMIN_READ (or
+// ADMIN_WRITE) left its identifier on the role, and the next application made
+// under that identifier held the role from its first request: a deleted
+// client's authority passed to a stranger by name. The same was true of a
+// person deleted through SCIM and made again with the same username, and of a
+// group. This is called where each is deleted (`applications.js`
+// deleteApplication(), `ldap/ldap_server.js` removePersonEntry() and
+// deleteGroupEntry()), after the delete, in the realm that deleted it.
+//
+// It is the role REGISTER only, which is this service's authorization record.
+// A deleted person's DN is still left in the groups that list it, on purpose
+// (`ldap/ldap_server.js`, above deletePerson()): that is directory
+// referential integrity, and /admin/groups reports it.
+//
+// Each role is written back whole, as `remove-member` writes it, because
+// write() REPLACES an entry. A console role's people are the roster's, so its
+// `users` never names anybody to take out.
+// ---------------------------------------------------------------------------
+/**
+ * Takes a deleted member's name out of every configured role in the ambient
+ * realm.
+ *
+ * @param field - `users`, `groups` or `applications`
+ * @param name - the deleted member's username, group name or identifier
+ * @returns the names of the roles it was taken out of
+ */
+function forgetMember(field, name) {
+  log.debug('Entering forgetMember(). field=' + field);
+  const wanted = String(name || '').toLowerCase();
+  if (!wanted || MEMBER_FIELDS.indexOf(field) < 0) {
+    log.debug('Leaving forgetMember(). Nothing to forget.');
+    return [];
+  }
+  const changed = [];
+  all().forEach(function (row) {
+    // A console role's people and groups are the roster's settings, not its
+    // entry, and write() refuses either on it; only its applications are its
+    // own to take out.
+    if (row.console && field !== 'applications') {
+      return;
+    }
+    const list = (row[field] || []).filter(function (one) {
+      return String(one).toLowerCase() !== wanted;
+    });
+    if (list.length === (row[field] || []).length) {
+      return;
+    }
+    const record = {
+      description: row.description, users: row.users, groups: row.groups,
+      applications: row.applications, permissions: row.permissions,
+      application: row.application, displayName: row.displayName,
+      memberTypes: row.memberTypes
+    };
+    record[field] = list;
+    const result = write(row.name, record);
+    if (result.ok) {
+      changed.push(row.name);
+    } else {
+      // The member stays on the role; nothing else is undone. The log line
+      // names both, so an administrator can take it out by hand.
+      log.error(errorCodes.tag('STS-ADMIN-0919') + 'roles: could not take ' +
+                field + ' "' + name + '" out of the role "' + row.name +
+                '" after it was deleted: ' + result.why);
+    }
+  });
+  if (changed.length) {
+    log.info('roles: the deleted ' + field.replace(/s$/, '') + ' "' + name +
+             '" was taken out of ' + changed.join(', ') + '.');
+  }
+  log.debug('Leaving forgetMember(). ' + changed.length + ' role(s).');
+  return changed;
+}
+
+// The three member lists a role row carries.
+const MEMBER_FIELDS = ['users', 'groups', 'applications'];
+
 module.exports = {
   SCHEMA: SCHEMA,
   BUILT_IN: BUILT_IN,
@@ -2002,6 +2083,8 @@ module.exports = {
   entryOf: entryOf,
   addOwner: addOwner,
   removeOwner: removeOwner,
+  // A deleted member taken out of every role (2026-11-10).
+  forgetMember: forgetMember,
   rolesOf: rolesOf,
   claimFor: claimFor,
   rolesInClaims: rolesInClaims,

@@ -20804,6 +20804,8 @@ server.del('', function (req, res, next) {
   // A person's delete was noted by removePersonEntry().
   if (!deletedPerson && deletedGroup) {
     noteMembershipChange(stored.dn, deletedAttributes, {});
+    // Out of every role that named it, as deleteGroupEntry() does.
+    roles.forgetMember('groups', String((deletedAttributes.cn || [])[0] || ''));
   } else if (!deletedPerson && isRoleEntry(stored)) {
     noteRoleChange(stored.dn, deletedAttributes, {});
   } else if (!deletedPerson && isUnder(stored.dn, applicationsDn()) &&
@@ -27017,6 +27019,12 @@ function noteApplicationRemoved(stored, via) {
     log.debug('Leaving noteApplicationRemoved(). No identifier.');
     return;
   }
+  // ITS ROLES GO WITH IT (2026-11-10): a role names an application by
+  // identifier, and the identifier comes back — made again by an
+  // administrator or, in development, by the next protocol that accepts it
+  // (`applications.js` deleteApplication()) — and would otherwise hold every
+  // role this one did. Here, because both doors reach here.
+  roles.forgetMember('applications', identifier);
   try {
     require('../ssf/account_signals').applicationPurged({
       application: identifier, dn: String(stored.dn), via: via,
@@ -27565,6 +27573,12 @@ function removePersonEntry(stored, door) {
   // canonicalUsernameOfDn() can no longer read an entry that is not there.
   noteAccountChange('deleted:' + goneName, stored.dn, goneAttributes, {},
                     { door: door });
+  // AND OUT OF EVERY ROLE THAT NAMED THEM (2026-11-10): a role names a person
+  // by username, so somebody made again under it would otherwise hold the
+  // deleted person's roles (`roles.forgetMember()`). Every door's person
+  // delete comes here (#351). Their DN is still left in the groups that list
+  // it, for deletePerson()'s reason below.
+  roles.forgetMember('users', goneName);
   log.debug('Leaving removePersonEntry().');
 }
 
@@ -27845,6 +27859,9 @@ function deleteGroupEntry(dn) {
   entries.delete(normalizeDn(stored.dn));
   touchDirectory();
   noteMembershipChange(stored.dn, stored.attributes, {});
+  // OUT OF EVERY ROLE THAT NAMED IT (2026-11-10), removePersonEntry()'s
+  // reason: a role names a group by name. The LDAP delete does the same.
+  roles.forgetMember('groups', String((stored.attributes.cn || [])[0] || ''));
   log.debug('Leaving deleteGroupEntry(). ' + entries.size + ' entry/entries ' +
       'left.');
   return { ok: true, dn: stored.dn };
