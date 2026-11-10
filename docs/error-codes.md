@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5411** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5414** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -60,8 +60,8 @@ is an ordinary outcome.
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 186
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 258
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
-* [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
-* [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
+* [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
+* [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 434
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 754
@@ -1220,6 +1220,8 @@ Raised from: acme/.
 | `STS-ACME-0097` | The query string of an ACME console page failed validation. | HTTP 400 text/plain |
 | `STS-ACME-0098` | An ACME finalize was refused because the order is already being finalized by another request, on this node or another. | HTTP 403, ACME orderNotReady problem |
 | `STS-ACME-0099` | An ACME Replay-Nonce or an order's finalize could not be claimed because the cluster store could not be asked, so the request was refused. | HTTP 500, ACME serverInternal problem |
+| `STS-ACME-0100` | An ACME answer or problem document carried a member its model in models/enrollment/acme.tsp does not name, one of a type or a value the model does not allow, or lacked a required one (#1579). The answer is sent as it was built: the model describes the wire and does not reshape it, so this is a model gap to close. | none (recorded only; the answer is unchanged) |
+| `STS-ACME-0101` | An ACME problem document carried an error type models/enrollment/acme.tsp does not declare (#1579). The problem is sent as it was built; the type is to be declared, with the document that defines it. | none (recorded only; the problem is unchanged) |
 
 ## STS-EST
 
@@ -1258,6 +1260,7 @@ Raised from: est/.
 | `STS-EST-0034` | An EST /nonce request (draft-ietf-lamps-attestation-freshness section 5.1) was malformed: a body that is not one JSON object, a member the nonce-request CDDL does not define, a "len" outside 8..64, a "reqTypeInfo" without a dotted-decimal "type", or a body larger than est.maxRequestBytes (#257). | HTTP 400, a sentence and no nonce (section 5.1) |
 | `STS-EST-0035` | An EST /nonce POST did not carry application/est-attestation-freshness+json, the one media type draft-ietf-lamps-attestation-freshness section 5.1 allows (#257). | HTTP 400 (section 5.1 answers every error 400) |
 | `STS-EST-0036` | An EST /nonce request named a "reqTypeInfo" type this service defines no reqInfo/respInfo for, so it is unable to answer it (draft-ietf-lamps-attestation-freshness section 5.1) (#257). | HTTP 503 (section 5.1) |
+| `STS-EST-0037` | An EST /nonce answer carried a member its model in models/enrollment/est.tsp does not name, or one of a type the model does not allow (#1579). The answer is sent as it was built: the model describes the wire and does not reshape it, so this is a model gap to close. | none (recorded only; the answer is unchanged) |
 
 ## STS-SCEP
 

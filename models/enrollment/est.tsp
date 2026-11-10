@@ -34,15 +34,15 @@ namespace IyaSts.Enrollment.Est;
  */
 @operations(#{ family: "est", cite: "RFC 7030 section 3.2.2" })
 model EstOperations {
-  @operation(#{ methods: #["GET"], answers: "certs-only",
+  @operation(#{ methods: #["GET"], answers: "certsOnly",
          authenticated: false, cite: "RFC 7030 section 4.1" })
   cacerts: string;
 
-  @operation(#{ methods: #["POST"], accepts: "pkcs10", answers: "certs-only",
+  @operation(#{ methods: #["POST"], accepts: "pkcs10", answers: "certsOnly",
          authenticated: true, cite: "RFC 7030 section 4.2.1" })
   simpleenroll: string;
 
-  @operation(#{ methods: #["POST"], accepts: "pkcs10", answers: "certs-only",
+  @operation(#{ methods: #["POST"], accepts: "pkcs10", answers: "certsOnly",
          authenticated: true, cite: "RFC 7030 section 4.2.2" })
   simplereenroll: string;
 
@@ -73,7 +73,7 @@ model EstMedia {
 
   @term(#{ value: "application/pkcs7-mime; smime-type=certs-only",
            cite: "RFC 7030 section 4.1.3; RFC 8551 section 3.2.2" })
-  `certs-only`: string;
+  certsOnly: string;
 
   @term(#{ value: "application/csrattrs", cite: "RFC 7030 section 4.5.2" })
   csrattrs: string;

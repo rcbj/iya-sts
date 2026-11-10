@@ -117,37 +117,36 @@ import InstanceSlot = require('../common/instance_slot');
 // Libraries; each is a no-op in a single-cell service.
 import cells = require('../common/cells');
 import cellPlacement = require('../common/cell_placement');
+// THE OPERATIONS, THE CAPABILITIES AND THE QUERY ARE THE MODEL'S (#1579):
+// `models/enrollment/scep.tsp`. A leaf.
+import EnrollmentModel = require('../common/enrollment_model');
 
-const vz = validation.z;
-const vt = validation.types;
+// The four operations and the methods each answers, the model's
+// `@operations` (#1579).
+const OPERATION_ROWS = EnrollmentModel.operations('scep');
 
 /**
  * The four SCEP operations: GetCACaps, GetCACert, GetNextCACert (answered 501)
  * and PKIOperation.
  */
-const OPERATIONS = ['GetCACaps', 'GetCACert', 'GetNextCACert',
-                    'PKIOperation'];
+const OPERATIONS = OPERATION_ROWS.map(function (op) {
+  return op.name;
+});
 
-// RFC 8894 section 3.5.2. `SCEPStandard` asserts AES, POSTPKIOperation and
-// SHA-256; each is still named, because older clients read the list rather
-// than the umbrella. `GetNextCACert` is deliberately absent — see the header.
+// RFC 8894 section 3.5.2, the model's `capabilities` register (#1579), whose
+// comment says why each is named and why `GetNextCACert` is absent.
 /**
  * The capabilities GetCACaps announces (RFC 8894 section 3.5.2).
  */
-const CAPABILITIES = ['POSTPKIOperation', 'SHA-256', 'SHA-512', 'AES',
-                      'SCEPStandard', 'Renewal'];
+const CAPABILITIES = EnrollmentModel.names('scep', 'capabilities');
 
 const PROFILE_SEGMENT = /^[a-z][a-z0-9-]{0,63}$/;
 
-// The GET binding's base64 is at most a third larger than the largest message
-// `scep.maxRequestBytes` allows at its maximum; the precise bound is checked
-// against the setting once the length is known.
-const MESSAGE_PARAMETER_CAP = Math.ceil(4194304 / 3) * 4 + 4;
-
-const QUERY = vz.object({
-  operation: vt.oneOf(OPERATIONS),
-  message: vt.opt(vz.string().max(MESSAGE_PARAMETER_CAP))
-});
+// The query every request carries, the model's (#1579): the operation, one of
+// the four, and the GET binding's message, whose cap is the base64 of the
+// largest message `scep.maxRequestBytes` allows at its maximum; the precise
+// bound is checked against the setting once the length is known.
+const QUERY = EnrollmentModel.body('scep', 'query');
 
 // How long a completed transaction's result is kept for CertPoll and for a
 // retried request, and how many a realm keeps. A result is a public
@@ -1601,13 +1600,16 @@ class Scep {
       return;
     }
     const operation = query.value.operation;
-    if (req.method === 'POST' && operation !== 'PKIOperation') {
+    const methods = OPERATION_ROWS.filter(function (op) {
+      return op.name === operation;
+    })[0].methods;
+    if (req.method === 'POST' && methods.indexOf('POST') < 0) {
       this.record({ operation: operation, outcome: 'refused', status: 405,
                     errorCode: 'STS-SCEP-0003' });
       this.scepError(res, 405, 'STS-SCEP-0003',
                      operation + ' is a GET (RFC 8894 ' +
                      'section 4); only PKIOperation may be POSTed.',
-                     { Allow: 'GET' });
+                     { Allow: methods.join(', ') });
       log.debug("Leaving Scep.handle(). POST of a GET operation.");
       return;
     }
