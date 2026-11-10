@@ -3556,9 +3556,15 @@ op `getCertificates`(`responses/200/content/application~1json/schema`: WithNameR
 
   
 
+// The profiles are `common/enrollment_profiles.js`'s, written at build time
+// (#1579): the nine an enrollment protocol issues and the device's.
+@js(#{
+    `$enumFrom`:#{`module`:"common/enrollment_profiles.js",`export`:"CHALLENGE_PROFILE_IDS"}
+  }) @hoisted scalar ChallengeProfileId extends string;
+
 @js(#{`description`:"The profile a new SCEP challenge is for."}) @hoisted union post_account_api_certificates_b_application_json_profile_h317 {
     EmptyText,
-    "tls-server" | "tls-client" | "tls-server-client" | "digital-signature" | "key-encipherment" | "code-signing" | "email" | "timestamping" | "smartcard-logon" | "device"
+    ChallengeProfileId
   }
 
   
@@ -3724,38 +3730,13 @@ op `getAppPasswords`(`responses/200/content/application~1json/schema`: WithUsern
 
   
 
-@js(#{`description`:"Accept the new password at the ldap door."}) @hoisted union post_account_api_app_passwords_b_application_json_door_ldap_h379 {
-    EmptyText,
-    "0" | "1" | "true" | "false" | "on" | "off" | "yes" | "no"
-  }
+  
 
   
 
-@js(#{`description`:"Accept the new password at the wstrust door."}) @hoisted union post_account_api_app_passwords_b_application_json_door_wstrust_h381 {
-    EmptyText,
-    "0" | "1" | "true" | "false" | "on" | "off" | "yes" | "no"
-  }
-
   
 
-@js(#{`description`:"Accept the new password at the scim door."}) @hoisted union post_account_api_app_passwords_b_application_json_door_scim_h383 {
-    EmptyText,
-    "0" | "1" | "true" | "false" | "on" | "off" | "yes" | "no"
-  }
-
   
-
-@js(#{`description`:"Accept the new password at the ssf door."}) @hoisted union post_account_api_app_passwords_b_application_json_door_ssf_h385 {
-    EmptyText,
-    "0" | "1" | "true" | "false" | "on" | "off" | "yes" | "no"
-  }
-
-  
-
-@js(#{`description`:"Accept the new password at the est door."}) @hoisted union post_account_api_app_passwords_b_application_json_door_est_h387 {
-    EmptyText,
-    "0" | "1" | "true" | "false" | "on" | "off" | "yes" | "no"
-  }
 
 @endpoint("/account-api/app-passwords",
   "post",
@@ -3802,7 +3783,22 @@ op `getAppPasswords`(`responses/200/content/application~1json/schema`: WithUsern
     `x-mirrors`:"POST /portal/app-passwords",
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`action`:"revoke",`id`:"NOSUCHID"}}}}
   })
-op `changeAppPasswords`(`requestBody/content/application~1json/schema`: {
+// A `door_<id>` member per door of `common/app_password_doors.js`, written at
+// build time (#1579), so a door is added in one place.
+op `changeAppPasswords`(@js(#{
+    `$membersFrom`:#{
+      `module`:"common/app_password_doors.js",
+      `export`:"DOOR_IDS",
+      `prefix`:"door_",
+      `describe`:"Accept the new password at the {id} door.",
+      `member`:#{
+        `anyOf`:#[
+          #{`type`:"string",`const`:""},
+          #{`type`:"string",`enum`:#["0","1","true","false","on","off","yes","no"]}
+        ]
+      }
+    }
+  }) `requestBody/content/application~1json/schema`: {
     `action`?: post_account_api_app_passwords_b_application_json_action_h377;
     @js(#{
       `description`:"What the new password is for, in your words.",
@@ -3812,12 +3808,7 @@ op `changeAppPasswords`(`requestBody/content/application~1json/schema`: {
       `description`:"The id of the app password to revoke.",
       `maxLength`:8,
       `pattern`:"^[A-Za-z2-7]*$"
-    }) `id`?: string;
-    `door_ldap`?: post_account_api_app_passwords_b_application_json_door_ldap_h379;
-    `door_wstrust`?: post_account_api_app_passwords_b_application_json_door_wstrust_h381;
-    `door_scim`?: post_account_api_app_passwords_b_application_json_door_scim_h383;
-    `door_ssf`?: post_account_api_app_passwords_b_application_json_door_ssf_h385;
-    `door_est`?: post_account_api_app_passwords_b_application_json_door_est_h387
+    }) `id`?: string
   },
   `responses/200/content/application~1json/schema`: {`stepUp`?: WithAcrValuesPromptMaxAge; 
     `ok`?: boolean;

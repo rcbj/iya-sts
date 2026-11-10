@@ -333,28 +333,6 @@ function reportPosted(req: any): any {
   return parsed;
 }
 
-function reportDocumentOf(body: any): any {
-  log.debug("Entering reportDocumentOf().");
-  if (!body || typeof body !== 'object') {
-    log.debug("Leaving reportDocumentOf(). None.");
-    return null;
-  }
-  if (typeof body.source === 'string') {
-    log.debug("Leaving reportDocumentOf(). Document.");
-    return { document: body, parameters: null };
-  }
-  if (body.document && typeof body.document === 'object' &&
-      !Array.isArray(body.document)) {
-    const parameters = body.parameters &&
-      typeof body.parameters === 'object' &&
-      !Array.isArray(body.parameters) ? body.parameters : null;
-    log.debug("Leaving reportDocumentOf(). Wrapper.");
-    return { document: body.document, parameters: parameters };
-  }
-  log.debug("Leaving reportDocumentOf(). Unshaped.");
-  return null;
-}
-
 function reportIdOk(id: string): boolean {
   log.debug("Entering reportIdOk().");
   const ok = /^[A-Za-z0-9_-]{1,64}$/.test(String(id || ''));
@@ -1347,10 +1325,17 @@ async function reportAcceptQuery(
     log.debug("Leaving reportAcceptQuery(). Bad JSON.");
     return;
   }
-  const wrapped = definition ? {
-    document: stores.copy(definition.document),
-    parameters: reportMergedParameters(definition.parameters, posted)
-  } : reportDocumentOf(posted);
+  // An ad hoc body IS the query document (`QueryDocument`, #1579): there is
+  // no wrapper, and so no parameter outside a saved definition's run.
+  let wrapped: any = null;
+  if (definition) {
+    wrapped = {
+      document: stores.copy(definition.document),
+      parameters: reportMergedParameters(definition.parameters, posted)
+    };
+  } else if (posted) {
+    wrapped = { document: posted, parameters: null };
+  }
   if (!wrapped) {
     reportQueryRefused(who, null, 'STS-REPORT-0004');
     reportSend(res, reportHttpStatus('STS-REPORT-0004'),
