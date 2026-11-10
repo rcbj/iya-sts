@@ -2336,8 +2336,13 @@ mode.
   day): `membersNamingNothing()`, asked by `writeGroupEntry()` (SCIM, the
   console, `/admin-api`), `createGroup()`, `addGroupMember()` and the LDAP add
   and modify handlers, refuses it as `STS-LDAP-0212` (LDAP
-  `constraintViolation`). Only the values a write adds are asked about. A rename (modifyDN)
-  still leaves the old DN in the groups that listed it.
+  `constraintViolation`). Only the values a write adds are asked about. **And a
+  rename (modifyDN) carries the entry's memberships with it**: every group listing
+  the old DN lists the new one (`moveGroupMemberships()`, through the index), a
+  person's `memberUid` follows their username, and `roles.renameMember()` moves the
+  username or group name on every role. So no group or role can be left naming
+  something that is not there. Until then a rename left the old DN in the groups
+  that listed it.
 
 ---
 

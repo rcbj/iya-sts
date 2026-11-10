@@ -2043,6 +2043,67 @@ function forgetMember(field, name) {
   return changed;
 }
 
+// ---------------------------------------------------------------------------
+// A MEMBER RENAMED KEEPS ITS ROLES (2026-11-10). forgetMember()'s pair: an
+// LDAP modifyDN that changes a person's username or a group's name moves the
+// name on every role that listed it, so the renamed member holds what it held
+// and nothing is left naming the old name for whatever is made under it next.
+// ---------------------------------------------------------------------------
+/**
+ * Renames a member in every configured role in the ambient realm.
+ *
+ * @param field - `users`, `groups` or `applications`
+ * @param from - the name it had
+ * @param to - the name it has now
+ * @returns the names of the roles changed
+ */
+function renameMember(field, from, to) {
+  log.debug('Entering renameMember(). field=' + field);
+  const was = String(from || '').toLowerCase();
+  const now = String(to || '');
+  if (!was || !now || was === now.toLowerCase() ||
+      MEMBER_FIELDS.indexOf(field) < 0) {
+    log.debug('Leaving renameMember(). Nothing to rename.');
+    return [];
+  }
+  const changed = [];
+  all().forEach(function (row) {
+    if (row.console && field !== 'applications') {
+      return;
+    }
+    const held = row[field] || [];
+    if (!held.some(function (one) {
+      return String(one).toLowerCase() === was;
+    })) {
+      return;
+    }
+    const list = held.map(function (one) {
+      return String(one).toLowerCase() === was ? now : one;
+    }).filter(function (one, at, every) {
+      return every.map(function (x) {
+        return String(x).toLowerCase();
+      }).indexOf(String(one).toLowerCase()) === at;
+    });
+    const record = {
+      description: row.description, users: row.users, groups: row.groups,
+      applications: row.applications, permissions: row.permissions,
+      application: row.application, displayName: row.displayName,
+      memberTypes: row.memberTypes
+    };
+    record[field] = list;
+    const result = write(row.name, record);
+    if (result.ok) {
+      changed.push(row.name);
+    } else {
+      log.error(errorCodes.tag('STS-ADMIN-0919') + 'roles: could not rename ' +
+                field + ' "' + from + '" to "' + to + '" on the role "' +
+                row.name + '": ' + result.why);
+    }
+  });
+  log.debug('Leaving renameMember(). ' + changed.length + ' role(s).');
+  return changed;
+}
+
 // The three member lists a role row carries.
 const MEMBER_FIELDS = ['users', 'groups', 'applications'];
 
@@ -2085,6 +2146,8 @@ module.exports = {
   removeOwner: removeOwner,
   // A deleted member taken out of every role (2026-11-10).
   forgetMember: forgetMember,
+  // A renamed member keeps its roles (2026-11-10).
+  renameMember: renameMember,
   rolesOf: rolesOf,
   claimFor: claimFor,
   rolesInClaims: rolesInClaims,

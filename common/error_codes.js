@@ -25114,9 +25114,11 @@ const CODES = [
       'account signal about it could not be sent (ASVS 5.0.0 2.3.3).',
     spec: '' },
   { code: 'STS-ADMIN-0919',
-    summary: 'A deleted application, person or group could not be taken out ' +
-      'of a role that named it, so the role still names it, and anything ' +
-      'made again under that name would hold the role (roles.forgetMember()).',
+    summary: 'A deleted or renamed application, person or group could not ' +
+      'be taken out of, or renamed in, a role or group that named it, so ' +
+      'that role or group still names the old name or DN ' +
+      '(roles.forgetMember(), roles.renameMember(), the directory\'s ' +
+      'forgetGroupMemberships() and moveGroupMemberships()).',
     spec: '' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +

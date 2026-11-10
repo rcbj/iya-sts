@@ -21326,6 +21326,17 @@ server.modifyDN('', function (req, res, next) {
   stored.attributes.modifytimestamp = [generalizedTime()];
   entries.set(normalizeDn(target), stored);
   touchDirectory();
+  // ITS GROUPS AND ROLES FOLLOW IT (2026-11-10): moveGroupMemberships() and
+  // `roles.renameMember()`, so nothing is left naming the old DN or name.
+  const groupCnBefore = String((before.cn || [])[0] || '');
+  const membershipsMoved = moveGroupMemberships(dn, target, nameBefore,
+    isPersonEntry(stored) ? personNameOf(stored) : '');
+  if (isPersonEntry(stored) && nameBefore) {
+    roles.renameMember('users', nameBefore, personNameOf(stored));
+  } else if (groupRuleFor(stored) && groupCnBefore) {
+    roles.renameMember('groups', groupCnBefore,
+                       String((stored.attributes.cn || [])[0] || ''));
+  }
   // A RENAME OF A PERSON IS AN ACCOUNT CHANGE and says so, where it used to
   // tell nobody: the SSF and RISC registers key on the name that just moved.
   if (isPersonEntry(stored)) {
@@ -21360,8 +21371,7 @@ server.modifyDN('', function (req, res, next) {
               newSuperior: newSuperior,
               movedContainer: normalizeDn(parentDn(dn)) !== normalizeDn(
                   newSuperior),
-              note: 'any group listing the OLD DN as a member still does; ' +
-                    'this directory does not do referential integrity' }
+              membershipsMoved: membershipsMoved }
   });
   res.end();
   log.debug('Leaving the LDAP modifyDN handler. The entry was renamed.');
@@ -27662,6 +27672,86 @@ function forgetGroupMemberships(dn, origin) {
              ' group(s).');
   }
   log.debug('Leaving forgetGroupMemberships(). ' + changed + '.');
+  return changed;
+}
+
+// ---------------------------------------------------------------------------
+// A RENAMED ENTRY STAYS IN ITS GROUPS (2026-11-10), forgetGroupMemberships()'s
+// pair. A modifyDN moves the entry; without this its old DN stayed in every
+// group that listed it, naming nothing, waiting for whatever was made at the
+// old DN next. Each group listing the old DN (the group index, `byMember`)
+// lists the new one in its place; a person's `memberUid` follows their
+// username. The new DN is there when this runs, so membersNamingNothing() in
+// writeGroupEntry() has nothing to refuse.
+// ---------------------------------------------------------------------------
+/**
+ * Moves a renamed entry's memberships from its old DN to its new one.
+ *
+ * @param oldDn - the DN it had
+ * @param newDn - the DN it has now
+ * @param oldName - a person's username before, for `memberUid`, or ''
+ * @param newName - their username after, or ''
+ * @returns how many groups were rewritten
+ */
+function moveGroupMemberships(oldDn, newDn, oldName, newName) {
+  log.debug('Entering moveGroupMemberships().');
+  const key = normalizeDn(oldDn);
+  const listed = groupIndexNow().byMember.get(key);
+  if (!listed || !listed.size) {
+    log.debug('Leaving moveGroupMemberships(). In no group.');
+    return 0;
+  }
+  let changed = 0;
+  Array.from(listed.keys()).forEach(function (groupKey) {
+    const existing = getEntry(groupKey);
+    if (!existing || !groupRuleFor(existing)) {
+      return;
+    }
+    const attributes = {};
+    Object.keys(existing.attributes).forEach(function (name) {
+      if (OPERATIONAL.indexOf(name.toLowerCase()) >= 0) {
+        return;
+      }
+      attributes[name] = existing.attributes[name].slice(0);
+    });
+    let moved = 0;
+    MEMBER_ATTRIBUTES.forEach(function (attribute) {
+      const name = Object.keys(attributes).filter(function (one) {
+        return one.toLowerCase() === attribute.name;
+      })[0];
+      if (!name) {
+        return;
+      }
+      attributes[name] = attributes[name].map(function (value) {
+        const raw = String(value == null ? '' : value);
+        if (attribute.holds === 'uid') {
+          if (oldName && newName &&
+              raw.toLowerCase() === String(oldName).toLowerCase()) {
+            moved += 1;
+            return newName;
+          }
+          return raw;
+        }
+        if (normalizeDn(raw) === key) {
+          moved += 1;
+          return newDn;
+        }
+        return raw;
+      });
+    });
+    if (!moved) {
+      return;
+    }
+    const written = writeGroupEntry(existing.dn, attributes, 'an LDAP rename');
+    if (written.ok) {
+      changed += 1;
+    } else {
+      log.error(errorCodes.tag('STS-ADMIN-0919') + 'ldap: could not move ' +
+                oldDn + ' to ' + newDn + ' in the group ' + existing.dn +
+                ' (' + written.reason + ').');
+    }
+  });
+  log.debug('Leaving moveGroupMemberships(). ' + changed + '.');
   return changed;
 }
 

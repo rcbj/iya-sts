@@ -5537,7 +5537,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0916` | A second factor was not cleared because the administrator did not say how the person was verified. | HTTP 400 |
 | `STS-ADMIN-0917` | An application was not created because the metadata document given with it was refused. | HTTP 400 |
 | `STS-ADMIN-0918` | A passkey an administrator enrolled was recorded, and the account signal about it could not be sent (ASVS 5.0.0 2.3.3). | — |
-| `STS-ADMIN-0919` | A deleted application, person or group could not be taken out of a role that named it, so the role still names it, and anything made again under that name would hold the role (roles.forgetMember()). | — |
+| `STS-ADMIN-0919` | A deleted or renamed application, person or group could not be taken out of, or renamed in, a role or group that named it, so that role or group still names the old name or DN (roles.forgetMember(), roles.renameMember(), the directory's forgetGroupMemberships() and moveGroupMemberships()). | — |
 
 ## STS-API
 
