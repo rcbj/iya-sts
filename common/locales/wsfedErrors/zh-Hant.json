@@ -29,6 +29,7 @@
   "refusal.STS-WSFED-0026": "此登入連結指明了一個回覆位址（<code>wreply</code>），而從這裡發起的登入只會傳送到為該信賴方註冊的位址。請從連結中移除 <code>wreply</code>。",
   "refusal.STS-WSFED-0027": "信賴方 <code>{realm}</code> 沒有註冊可用的回覆位址，因此無處傳送權杖。",
   "refusal.STS-WSFED-0028": "信賴方 <code>{realm}</code> 不能在此發起登入：該功能已為其關閉。",
+  "refusal.STS-WSFED-0031": "您選擇不登入此應用程式，因此沒有向它傳送任何內容。",
   "accepts.heading": "它接受的內容",
   "accepts.note": "它刻意拒絕，而不是以密碼登入作答：<code>wauth</code> 是信賴方要求某種方式的手段，忽略它會讓這項要求看似已獲滿足。",
   "forward.heading": "兩種繼續的方式",

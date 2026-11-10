@@ -88,6 +88,14 @@ closes a door rather than proving where a request came from: anybody can
 write a URL with a `shire`, or leave it off. Both refusals come before the
 sign-in screen.
 
+**In product mode a person is asked, once per relying party, before a session
+they already have signs them in to it** (ASVS 5.0.0 7.6.2), on the
+[consent screen](oauth-oidc.md#consent) OpenID Connect uses. An Allow is kept
+and answers every later sign-in to that relying party; a Deny is a 403 page
+(`STS-SAML-0120`). `saml11.ssoConsent` turns it on (product) or off
+(development), and `saml11SsoConsent` on the entry overrides it for one
+relying party.
+
 A sign-in started here runs what one the relying party started runs: the
 session, the issuance policy with the session's risk, the CAEP
 `session-presented` event, and the record of the relying party on the
@@ -282,6 +290,7 @@ session hold in **both** modes. See [What is not checked](what-is-not-checked.md
 | `saml11.requestTtlMin` | `STS_SAML11_REQUEST_TTL_MIN` | `10` | yes | How long a flow is held while the person signs in. |
 | `saml11.idpInitiatedSso` | `STS_SAML11_IDP_INITIATED_SSO` | `false` | yes | Answer a link with a `TARGET` and no `shire` — a sign-in started here. **Off by default**; per relying party with `saml11IdpInitiatedSso`. |
 | `saml11.spInitiatedSso` | `STS_SAML11_SP_INITIATED_SSO` | `true` | yes | Answer a request carrying `shire` — the relying party's own start. Per relying party with `saml11SpInitiatedSso`. The request is unsigned, so off closes a door rather than proving who opened it. |
+| `saml11.ssoConsent` | `STS_SAML11_SSO_CONSENT` | `true` in product, `false` in development | yes | Ask a person once per relying party before single sign-on signs them in to it. Per relying party with `saml11SsoConsent`. |
 | `saml11.assertionCacheMax` | `STS_SAML11_ASSERTION_CACHE_MAX` | `500` | yes | Assertions kept per realm for `AssertionIDReference`, oldest out first. |
 | `saml11.assertionCacheTtlS` | `STS_SAML11_ASSERTION_CACHE_TTL_S` | `3600` | yes | How long a kept assertion with no NotOnOrAfter stays answerable; one with a NotOnOrAfter is kept until then and no longer. |
 | `saml11.maxArtifacts` | `STS_SAML11_MAX_ARTIFACTS` | `10000` | yes | Unresolved artifacts kept per realm; a store full of live ones refuses the next Browser/Artifact sign-in with a 503 page (`STS-SAML-0110`) rather than forget one. |

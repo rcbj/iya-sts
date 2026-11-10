@@ -75,7 +75,9 @@ back on afterwards.
 
 Two more have a stricter default in product mode, and setting them back to the
 development value weakens it: `oauth2.refreshTokenMaxChainS` (30 days; `0` is no
-limit) and `oauth2.consentAlwaysForPublicClients` (on).
+limit), `oauth2.consentAlwaysForPublicClients` (on), and the three
+single sign-on consent switches `saml2.ssoConsent`, `saml11.ssoConsent` and
+`wsfed.ssoConsent` (on).
 
 ## Connections and browsers
 
@@ -252,6 +254,12 @@ session cookie) needs Admin Read to read and Admin Write to write.
   holds a public client's `client_id`, so an earlier answer does not cover it.
   This service's own applications are not asked. See
   [Consent](oauth-oidc.md#consent).
+* **Single sign-on asks before it signs a person in** to a SAML 2.0 service
+  provider, a SAML 1.1 relying party or a WS-Federation relying party, once
+  per application, on the same consent screen (ASVS 5.0.0 7.6.2).
+  `saml2.ssoConsent`, `saml11.ssoConsent` and `wsfed.ssoConsent` turn it off,
+  and `saml2SsoConsent`, `saml11SsoConsent` and `wsfedSsoConsent` on an
+  application's entry turn it off or on for that application.
 
 ## Tokens
 

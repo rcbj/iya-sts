@@ -3340,6 +3340,17 @@ const REQUIREMENTS = [
              'on.',
     where: 'common/helpers.js, persistence/persistence.js' },
   // ASVS 5.0.0 13.3.1.
+  // ASVS 5.0.0 7.6.2.
+  { id: 'sso-consent',
+    what: 'Single sign-on asks before it signs a person in to an application',
+    development: 'SAML 2.0, SAML 1.1 and WS-Federation sign a person in from ' +
+                 'their session without asking.',
+    product: 'A person is asked once per application before SAML 2.0, SAML ' +
+             '1.1 or WS-Federation signs them in to it, and the answer is ' +
+             'kept. saml2.ssoConsent, saml11.ssoConsent and ' +
+             'wsfed.ssoConsent turn it off per protocol, and an ' +
+             'application\'s own value overrides them.',
+    where: 'common/sso_consent.ts' },
   { id: 'secrets-from-store',
     what: 'Backend secrets come from a secret store',
     development: 'The key-encryption key may be a file, and the database ' +

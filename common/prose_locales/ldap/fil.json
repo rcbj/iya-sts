@@ -2010,5 +2010,17 @@
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "Anuman ang sinabi ng PEP tungkol sa sarili nito nang mag-register ito."
+  },
+  "applications.schema.attributes.saml2SsoConsent.what": {
+    "en": "f7ca67bc2031ec08",
+    "text": "TRUE o FALSE: tinatanong ba ang isang tao, minsan, bago siya i-sign in ng SAML 2.0 sa application na ito mula sa isang session na mayroon na siya, na nangingibabaw sa saml2.ssoConsent (ASVS 5.0.0 7.6.2). Bagay ang FALSE sa application na inaasahang gamitin ng lahat sa realm; ang global na pahintulot sa entry ay sumasagot para sa lahat at nag-iingat ng tala kung sino ang pumayag."
+  },
+  "applications.schema.attributes.saml11SsoConsent.what": {
+    "en": "0cb7bbf2fb684481",
+    "text": "TRUE o FALSE: tinatanong ba ang isang tao, minsan, bago siya i-sign in ng SAML 1.1 sa application na ito mula sa isang session na mayroon na siya, na nangingibabaw sa saml11.ssoConsent (ASVS 5.0.0 7.6.2). Bagay ang FALSE sa application na inaasahang gamitin ng lahat sa realm; ang global na pahintulot sa entry ay sumasagot para sa lahat at nag-iingat ng tala kung sino ang pumayag."
+  },
+  "applications.schema.attributes.wsfedSsoConsent.what": {
+    "en": "9a3541460bedfa45",
+    "text": "TRUE o FALSE: tinatanong ba ang isang tao, minsan, bago siya i-sign in ng WS-Federation sa application na ito mula sa isang session na mayroon na siya, na nangingibabaw sa wsfed.ssoConsent (ASVS 5.0.0 7.6.2). Bagay ang FALSE sa application na inaasahang gamitin ng lahat sa realm; ang global na pahintulot sa entry ay sumasagot para sa lahat at nag-iingat ng tala kung sino ang pumayag."
   }
 }

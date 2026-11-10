@@ -10936,6 +10936,20 @@ const SETTINGS = [
   // makes per relying party rather than one this service makes for all of
   // them. This was `saml2.unsolicitedSso`, ON, until #426; it was renamed with
   // no alias.
+  { key: 'saml2.ssoConsent', group: 'SAML 2.0',
+    label: 'Ask before signing a person in',
+    env: 'STS_SAML2_SSO_CONSENT', type: 'bool', dflt: strongerInProduct(true, false),
+    derived: true, runtime: true,
+    description: 'Whether a person is asked, once per application, before ' +
+                 'SAML 2.0 signs them in to it from a session they already ' +
+                 'have (ASVS 5.0.0 7.6.2). Their answer is kept, so they ' +
+                 'are asked again only if they withdraw it; a global ' +
+                 'consent on the application answers for everyone. A ' +
+                 'passive request is answered without the screen, as one ' +
+                 'that cannot interact. ON by default in product mode, off ' +
+                 'in development; saml2SsoConsent on an application\'s entry ' +
+                 'overrides it for that application.' },
+
   { key: 'saml2.idpInitiatedSso', group: 'SAML 2.0',
     label: 'Identity-provider-initiated sign-in',
     env: 'STS_SAML2_IDP_INITIATED_SSO', type: 'bool', dflt: false,
@@ -11282,6 +11296,20 @@ const SETTINGS = [
   // and one without is this identity provider's. Neither is signed: the
   // service-provider switch closes a door rather than proving where a
   // request came from.
+  { key: 'saml11.ssoConsent', group: 'SAML 1.1',
+    label: 'Ask before signing a person in',
+    env: 'STS_SAML11_SSO_CONSENT', type: 'bool', dflt: strongerInProduct(true, false),
+    derived: true, runtime: true,
+    description: 'Whether a person is asked, once per application, before ' +
+                 'SAML 1.1 signs them in to it from a session they already ' +
+                 'have (ASVS 5.0.0 7.6.2). Their answer is kept, so they ' +
+                 'are asked again only if they withdraw it; a global ' +
+                 'consent on the application answers for everyone. A ' +
+                 'passive request is answered without the screen, as one ' +
+                 'that cannot interact. ON by default in product mode, off ' +
+                 'in development; saml11SsoConsent on an application\'s entry ' +
+                 'overrides it for that application.' },
+
   { key: 'saml11.idpInitiatedSso', group: 'SAML 1.1',
     label: 'Identity-provider-initiated sign-in',
     env: 'STS_SAML11_IDP_INITIATED_SSO', type: 'bool', dflt: false,
@@ -11460,6 +11488,20 @@ const SETTINGS = [
                  'party receives a response it did not ask for, which it ' +
                  'cannot tell from one pushed into its browser by somebody ' +
                  'else.' },
+
+  { key: 'wsfed.ssoConsent', group: 'WS-Federation',
+    label: 'Ask before signing a person in',
+    env: 'STS_WSFED_SSO_CONSENT', type: 'bool', dflt: strongerInProduct(true, false),
+    derived: true, runtime: true,
+    description: 'Whether a person is asked, once per application, before ' +
+                 'WS-Federation signs them in to it from a session they already ' +
+                 'have (ASVS 5.0.0 7.6.2). Their answer is kept, so they ' +
+                 'are asked again only if they withdraw it; a global ' +
+                 'consent on the application answers for everyone. A ' +
+                 'passive request is answered without the screen, as one ' +
+                 'that cannot interact. ON by default in product mode, off ' +
+                 'in development; wsfedSsoConsent on an application\'s entry ' +
+                 'overrides it for that application.' },
 
   { key: 'wsfed.spInitiatedSso', group: 'WS-Federation',
     label: 'Relying-party-initiated sign-in',

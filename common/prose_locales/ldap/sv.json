@@ -2010,5 +2010,17 @@
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "Vad PEP:en än sade om sig själv när den registrerade sig."
+  },
+  "applications.schema.attributes.saml2SsoConsent.what": {
+    "en": "f7ca67bc2031ec08",
+    "text": "TRUE eller FALSE: tillfrågas en person, en gång, innan SAML 2.0 loggar in dem i det här programmet från en session de redan har, vilket åsidosätter saml2.ssoConsent (ASVS 5.0.0 7.6.2). FALSE passar ett program som alla i domänen förväntas använda; ett globalt samtycke på posten svarar för alla och behåller uppgiften om vem som godkände."
+  },
+  "applications.schema.attributes.saml11SsoConsent.what": {
+    "en": "0cb7bbf2fb684481",
+    "text": "TRUE eller FALSE: tillfrågas en person, en gång, innan SAML 1.1 loggar in dem i det här programmet från en session de redan har, vilket åsidosätter saml11.ssoConsent (ASVS 5.0.0 7.6.2). FALSE passar ett program som alla i domänen förväntas använda; ett globalt samtycke på posten svarar för alla och behåller uppgiften om vem som godkände."
+  },
+  "applications.schema.attributes.wsfedSsoConsent.what": {
+    "en": "9a3541460bedfa45",
+    "text": "TRUE eller FALSE: tillfrågas en person, en gång, innan WS-Federation loggar in dem i det här programmet från en session de redan har, vilket åsidosätter wsfed.ssoConsent (ASVS 5.0.0 7.6.2). FALSE passar ett program som alla i domänen förväntas använda; ett globalt samtycke på posten svarar för alla och behåller uppgiften om vem som godkände."
   }
 }

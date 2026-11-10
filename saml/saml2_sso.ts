@@ -222,6 +222,7 @@ import mode = require('../common/mode');
 import authnContext = require('./authn_context');
 // The EAP class URIs (#736). A leaf; requiring it moves no route.
 import PhishingResistance = require('../common/phishing_resistance');
+import SsoConsent = require('../common/sso_consent');
 import documentSettings = require('./document_settings');
 // The certificate the back channel presents, as a metadata key (#248).
 import listenerKeys = require('./listener_keys');
@@ -3772,6 +3773,66 @@ class Saml2Sso {
       return;
     }
 
+    // -----------------------------------------------------------------------
+    // CONSENT TO SIGN IN TO THIS SERVICE PROVIDER (ASVS 5.0.0 7.6.2,
+    // `common/sso_consent.ts`), once per service provider, where
+    // `saml2.ssoConsent` (or the entry's `saml2SsoConsent`) asks for it. The
+    // request is held and resumed by `?rid=`, as the sign-in hop's is, so a
+    // POST-binding request survives the trip. IsPassive is answered NoPassive
+    // rather than shown the screen; a Deny is RequestDenied.
+    // -----------------------------------------------------------------------
+    const consentStep = SsoConsent.check({
+      setting: 'saml2.ssoConsent', application: spEntityId,
+      username: String((session.user || {}).username || ''),
+      passive: !!request.isPassive,
+      denied: !!String((req.query || {}).consent_error || '') });
+    if (consentStep.action === 'ask') {
+      const waiting = held || {
+        id: randomId(18), samlRequest: String(encoded),
+        relayState: String(relayState || ''),
+        arrivedBy: arrivedBy, signature: String(params.Signature || ''),
+        sigAlg: String(params.SigAlg || ''),
+        verification: verification
+      };
+      waiting.expires = Date.now() + this.requestTtlMs();
+      pendingRequests.set(waiting.id, waiting);
+      const toScreen = SsoConsent.begin({
+        returnTo: req.path + '?rid=' + encodeURIComponent(waiting.id),
+        username: String((session.user || {}).username || ''),
+        application: spEntityId, decision: consentStep.decision,
+        protocol: 'SAML 2.0',
+        details: [{ label: 'Service provider', value: spEntityId },
+                  { label: 'Assertion consumer service', value: acsUrl }]
+      });
+      this.deps.authn.holdPresentation(session);
+      log.debug("Leaving Saml2Sso.singleSignOnChecked(). To the consent " +
+                "screen.");
+      return res.set('Cache-Control', 'no-store').redirect(303, toScreen);
+    }
+    if (consentStep.action === 'refuse') {
+      pendingRequests.delete(String(params.rid || ''));
+      errorCodes.mark(res, consentStep.passive ? 'STS-SAML-0119'
+                                                : 'STS-SAML-0120');
+      const declined = this.buildResponse({
+        issuer: idpEntityId, sp: spEntityId,
+        destination: acsUrl, inResponseTo: request.id,
+        status: STATUS_RESPONDER,
+        subStatus: consentStep.passive ? STATUS_NO_PASSIVE
+          : 'urn:oasis:names:tc:SAML:2.0:status:RequestDenied',
+        statusMessage: consentStep.why
+      });
+      this.deliver(res, {
+             binding: wanted.binding, destination: acsUrl,
+             field: 'SAMLResponse',
+             xml: declined.xml, relayState: relayState, issuer: idpEntityId,
+             spEntityId: spEntityId, inResponseTo: request.id,
+             note: { title: 'No consent — SAML 2.0',
+                     sub: consentStep.why }
+      });
+      log.debug("Leaving Saml2Sso.singleSignOnChecked(). No consent.");
+      return;
+    }
+
     pendingRequests.delete(String(params.rid || ''));
     notePresented(session, 'SAML 2.0', req, spEntityId);
     this.issueSignInResponse(res, {
@@ -4075,6 +4136,51 @@ class Saml2Sso {
                 sub: 'A <samlp:Response> carrying RequestDenied.' }
       });
       log.debug("Leaving Saml2Sso.unsolicitedSignOn(). RequestDenied.");
+      return;
+    }
+    // CONSENT, AS FOR A REQUESTED SIGN-IN (ASVS 5.0.0 7.6.2): this link is
+    // the one ANY page can send a browser to, so it asks too, after the
+    // policy has allowed the sign-in and before anything is issued. The
+    // link is a GET and comes back as itself, without `consent_error`; a
+    // Deny is a RequestDenied Response, as a policy refusal is.
+    const consentStep = SsoConsent.check({
+      setting: 'saml2.ssoConsent', application: spEntityId,
+      username: String((session.user || {}).username || ''),
+      passive: false,
+      denied: !!String((req.query || {}).consent_error || '') });
+    if (consentStep.action === 'ask') {
+      const back = this.rawQueryOf(req).split('&').filter(function (part) {
+        return !!part && !/^consent_error(_description)?=/.test(part);
+      }).join('&');
+      const toScreen = SsoConsent.begin({
+        returnTo: req.path + (back ? '?' + back : ''),
+        username: String((session.user || {}).username || ''),
+        application: spEntityId, decision: consentStep.decision,
+        protocol: 'SAML 2.0',
+        details: [{ label: 'Service provider', value: spEntityId },
+                  { label: 'Assertion consumer service', value: acsUrl }]
+      });
+      this.deps.authn.holdPresentation(session);
+      log.debug("Leaving Saml2Sso.unsolicitedSignOn(). To the consent " +
+                "screen.");
+      return res.set('Cache-Control', 'no-store').redirect(303, toScreen);
+    }
+    if (consentStep.action === 'refuse') {
+      errorCodes.mark(res, 'STS-SAML-0120');
+      const declined = this.buildResponse({
+        issuer: idpEntityId, sp: spEntityId, destination: acsUrl,
+        inResponseTo: '', status: STATUS_RESPONDER,
+        subStatus: 'urn:oasis:names:tc:SAML:2.0:status:RequestDenied',
+        statusMessage: consentStep.why
+      });
+      this.deliver(res, {
+        binding: binding, destination: acsUrl, field: 'SAMLResponse',
+        xml: declined.xml, relayState: relayState, issuer: idpEntityId,
+        spEntityId: spEntityId, inResponseTo: '',
+        note: { title: 'No consent — SAML 2.0',
+                sub: consentStep.why }
+      });
+      log.debug("Leaving Saml2Sso.unsolicitedSignOn(). No consent.");
       return;
     }
     notePresented(session, 'SAML 2.0', req, spEntityId);

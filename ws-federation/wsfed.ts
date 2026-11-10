@@ -170,6 +170,7 @@ import stepUp = require('../oauth-oidc/step_up');
 // nothing of this service — so this require closes no cycle and moves no
 // route. The URIs are not copied into a second table here.
 import PhishingResistance = require('../common/phishing_resistance');
+import SsoConsent = require('../common/sso_consent');
 // THE LANGUAGE A PAGE IS DRAWN IN (#539): a library and a leaf, so it moves
 // no route and closes no cycle. Every page a PERSON reads uses it — the
 // sign-in response, the sign-out page and, since #1327, every refusal.
@@ -1322,6 +1323,38 @@ class WsFederation {
       // reported for it would name a session this request did not honour. A
       // `wfresh` too old never reaches here at all — `fresh.ok` is false and
       // the request goes to the screen, which is a re-authentication too.
+      // CONSENT TO SIGN IN TO THIS RELYING PARTY (ASVS 5.0.0 7.6.2,
+      // `common/sso_consent.ts`), once, where `wsfed.ssoConsent` (or the
+      // entry's `wsfedSsoConsent`) asks. A wsignin1.0 is a GET, so the
+      // return address is the request itself, without `consent_error`. The
+      // passive requestor profile has no passive request, and a Deny is
+      // this service's page, as every refusal before a token is.
+      const consentStep = SsoConsent.check({
+        setting: 'wsfed.ssoConsent', application: realm,
+        username: String((session.user || {}).username || ''),
+        passive: false,
+        denied: !!String((req.query || {}).consent_error || '') });
+      if (consentStep.action === 'ask') {
+        const consentBack = this.requeryString(params,
+                                               ['wfresh', 'consent_error',
+                                                'consent_error_description']);
+        const toScreen = SsoConsent.begin({
+          returnTo: PASSIVE_PATH + (consentBack ? '?' + consentBack : ''),
+          username: String((session.user || {}).username || ''),
+          application: realm, decision: consentStep.decision,
+          protocol: 'WS-Federation',
+          details: [{ label: 'wtrealm', value: realm },
+                    { label: 'wreply', value: String(wreply || '') }]
+        });
+        authn.holdPresentation(session);
+        log.debug("Leaving WsFederation.signIn(). To the consent screen.");
+        return res.set('Cache-Control', 'no-store').redirect(303, toScreen);
+      }
+      if (consentStep.action === 'refuse') {
+        errorCodes.mark(res, 'STS-WSFED-0031');
+        log.debug("Leaving WsFederation.signIn(). No consent.");
+        return this.wsfedError(res, 403, 'Not signed in', consentStep.why);
+      }
       log.debug("The session stands, so the sign-in response goes out now.");
       notePresented(session, 'WS-Federation', req, realm);
       log.debug("Leaving WsFederation.signIn().");
@@ -1667,6 +1700,34 @@ class WsFederation {
       return;
     }
 
+    // CONSENT, AS AT `/wsfed` (ASVS 5.0.0 7.6.2): this link is the one ANY
+    // page can send a browser to, so it asks too. It comes back as itself,
+    // without `consent_error`; a Deny is this service's page.
+    const consentStep = SsoConsent.check({
+      setting: 'wsfed.ssoConsent', application: realm,
+      username: String((session.user || {}).username || ''),
+      passive: false,
+      denied: !!String(query.consent_error || '') });
+    if (consentStep.action === 'ask') {
+      const consentBack = this.requeryString(params,
+        ['consent_error', 'consent_error_description']);
+      const toScreen = SsoConsent.begin({
+        returnTo: linkPath + (consentBack ? '?' + consentBack : ''),
+        username: String((session.user || {}).username || ''),
+        application: realm, decision: consentStep.decision,
+        protocol: 'WS-Federation',
+        details: [{ label: 'wtrealm', value: realm },
+                  { label: 'wreply', value: String(wreply || '') }]
+      });
+      authn.holdPresentation(session);
+      log.debug("Leaving WsFederation.initiate(). To the consent screen.");
+      return res.set('Cache-Control', 'no-store').redirect(303, toScreen);
+    }
+    if (consentStep.action === 'refuse') {
+      errorCodes.mark(res, 'STS-WSFED-0031');
+      log.debug("Leaving WsFederation.initiate(). No consent.");
+      return this.wsfedError(res, 403, 'Not signed in', consentStep.why);
+    }
     // SINGLE SIGN-ON, for `signIn()`'s reason: CAEP's `session-presented`
     // is about the session, whichever door presented it.
     notePresented(session, 'WS-Federation', req, realm);

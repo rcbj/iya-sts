@@ -12442,5 +12442,29 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "Solo para la escucha del depurador de protocolos: http.http2MaxConcurrentStreams. -1, el predeterminado, sigue a http.http2MaxConcurrentStreams; cualquier otro valor decide solo para esta escucha. Cuántas solicitudes puede tener abiertas a la vez una conexión HTTP/2 (SETTINGS_MAX_CONCURRENT_STREAMS); un flujo por encima se rechaza hasta que termine otro. 100, el predeterminado, es el valor más pequeño que recomienda RFC 9113; el propio de node no tiene límite, lo que permitiría a una sola conexión llevar el trabajo de miles. Limita el trabajo de una conexión como http.maxConnections limita las conexiones. Una conexión nueva sigue un cambio de inmediato, y a una abierta se le envía el nuevo valor."
+  },
+  "saml2.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Preguntar antes de iniciar la sesión de una persona"
+  },
+  "saml2.ssoConsent|description": {
+    "en": "1ddf528dcc7be0f8",
+    "text": "Indica si se pregunta a una persona, una vez por aplicación, antes de que SAML 2.0 inicie su sesión en ella desde una sesión que ya tiene (ASVS 5.0.0 7.6.2). Su respuesta se conserva, de modo que solo se le vuelve a preguntar si la retira; un consentimiento global en la aplicación responde por todos. Una solicitud pasiva se responde sin la pantalla, como una que no puede interactuar. ACTIVADO de forma predeterminada en modo producto, desactivado en desarrollo; saml2SsoConsent en la entrada de una aplicación lo reemplaza para esa aplicación."
+  },
+  "saml11.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Preguntar antes de iniciar la sesión de una persona"
+  },
+  "saml11.ssoConsent|description": {
+    "en": "53f104813a60ba25",
+    "text": "Indica si se pregunta a una persona, una vez por aplicación, antes de que SAML 1.1 inicie su sesión en ella desde una sesión que ya tiene (ASVS 5.0.0 7.6.2). Su respuesta se conserva, de modo que solo se le vuelve a preguntar si la retira; un consentimiento global en la aplicación responde por todos. Una solicitud pasiva se responde sin la pantalla, como una que no puede interactuar. ACTIVADO de forma predeterminada en modo producto, desactivado en desarrollo; saml11SsoConsent en la entrada de una aplicación lo reemplaza para esa aplicación."
+  },
+  "wsfed.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Preguntar antes de iniciar la sesión de una persona"
+  },
+  "wsfed.ssoConsent|description": {
+    "en": "b60b06fe1664cb06",
+    "text": "Indica si se pregunta a una persona, una vez por aplicación, antes de que WS-Federation inicie su sesión en ella desde una sesión que ya tiene (ASVS 5.0.0 7.6.2). Su respuesta se conserva, de modo que solo se le vuelve a preguntar si la retira; un consentimiento global en la aplicación responde por todos. Una solicitud pasiva se responde sin la pantalla, como una que no puede interactuar. ACTIVADO de forma predeterminada en modo producto, desactivado en desarrollo; wsfedSsoConsent en la entrada de una aplicación lo reemplaza para esa aplicación."
   }
 }

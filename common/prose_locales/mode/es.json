@@ -1394,5 +1394,17 @@
   "mode.requirements.audit-destination.product": {
     "en": "e082de544e11ddcb",
     "text": "Añada un destino de exportación de auditoría, para que una copia del registro quede fuera del alcance de una intrusión. Mientras no exista, el servicio registra una advertencia para ese dominio."
+  },
+  "mode.requirements.sso-consent.what": {
+    "en": "2b06d195aa0a395d",
+    "text": "El inicio de sesión único pregunta antes de iniciar la sesión de una persona en una aplicación"
+  },
+  "mode.requirements.sso-consent.development": {
+    "en": "e519a44984791111",
+    "text": "SAML 2.0, SAML 1.1 y WS-Federation inician la sesión de una persona desde su sesión sin preguntarle."
+  },
+  "mode.requirements.sso-consent.product": {
+    "en": "0a4ee080bb81a76f",
+    "text": "Se pregunta a una persona una vez por aplicación antes de que SAML 2.0, SAML 1.1 o WS-Federation inicie su sesión en ella, y la respuesta se conserva. saml2.ssoConsent, saml11.ssoConsent y wsfed.ssoConsent lo desactivan por protocolo, y el valor propio de una aplicación los reemplaza."
   }
 }

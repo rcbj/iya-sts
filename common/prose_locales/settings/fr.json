@@ -12442,5 +12442,29 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "Pour l’écouteur du débogueur de protocoles uniquement : http.http2MaxConcurrentStreams. -1, la valeur par défaut, suit http.http2MaxConcurrentStreams ; toute autre valeur ne s’applique qu’à cet écouteur. Combien de requêtes une connexion HTTP/2 peut avoir ouvertes simultanément (SETTINGS_MAX_CONCURRENT_STREAMS) ; un flux au-delà est refusé jusqu’à ce qu’un autre se termine. 100, la valeur par défaut, est la plus petite valeur que recommande la RFC 9113 ; celle de node est illimitée, ce qui permettrait à une seule connexion de porter le travail de milliers. Elle borne le travail d’une connexion comme http.maxConnections borne les connexions. Une nouvelle connexion suit un changement immédiatement, et la nouvelle valeur est envoyée à une connexion ouverte."
+  },
+  "saml2.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Demander avant de connecter une personne"
+  },
+  "saml2.ssoConsent|description": {
+    "en": "1ddf528dcc7be0f8",
+    "text": "Indique si une personne est interrogée, une fois par application, avant que SAML 2.0 ne la connecte à celle-ci depuis une session qu’elle a déjà (ASVS 5.0.0 7.6.2). Sa réponse est conservée : on ne lui redemande que si elle la retire ; un consentement global sur l’application répond pour tout le monde. Une requête passive reçoit une réponse sans l’écran, comme une requête qui ne peut pas interagir. ACTIVÉ par défaut en mode produit, désactivé en développement ; saml2SsoConsent sur l’entrée d’une application le remplace pour cette application."
+  },
+  "saml11.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Demander avant de connecter une personne"
+  },
+  "saml11.ssoConsent|description": {
+    "en": "53f104813a60ba25",
+    "text": "Indique si une personne est interrogée, une fois par application, avant que SAML 1.1 ne la connecte à celle-ci depuis une session qu’elle a déjà (ASVS 5.0.0 7.6.2). Sa réponse est conservée : on ne lui redemande que si elle la retire ; un consentement global sur l’application répond pour tout le monde. Une requête passive reçoit une réponse sans l’écran, comme une requête qui ne peut pas interagir. ACTIVÉ par défaut en mode produit, désactivé en développement ; saml11SsoConsent sur l’entrée d’une application le remplace pour cette application."
+  },
+  "wsfed.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Demander avant de connecter une personne"
+  },
+  "wsfed.ssoConsent|description": {
+    "en": "b60b06fe1664cb06",
+    "text": "Indique si une personne est interrogée, une fois par application, avant que WS-Federation ne la connecte à celle-ci depuis une session qu’elle a déjà (ASVS 5.0.0 7.6.2). Sa réponse est conservée : on ne lui redemande que si elle la retire ; un consentement global sur l’application répond pour tout le monde. Une requête passive reçoit une réponse sans l’écran, comme une requête qui ne peut pas interagir. ACTIVÉ par défaut en mode produit, désactivé en développement ; wsfedSsoConsent sur l’entrée d’une application le remplace pour cette application."
   }
 }

@@ -216,6 +216,25 @@ answered. Off, the request is answered with a `Responder` / `RequestDenied`
 Response naming it (`STS-SAML-0111`), before the sign-in screen, and the
 service provider can be signed in to only from a link here.
 
+### Asking before single sign-on
+
+**In product mode a person is asked, once per service provider, before a
+session they already have signs them in to it** (ASVS 5.0.0 7.6.2). Single
+sign-on otherwise answers any page that can send an AuthnRequest, without the
+person doing anything. The question is the [consent screen](oauth-oidc.md#consent)
+OpenID Connect uses, with one line, *to sign you in to this application*; an
+Allow is kept on the person's entry and answers every later sign-in to that
+service provider, and a global consent on the application answers for
+everybody. A Deny is a `Responder` / `RequestDenied` Response
+(`STS-SAML-0120`). A request with `IsPassive="true"` is never shown the
+screen — the identity provider may not take over the browser — and is answered
+`NoPassive` (`STS-SAML-0119`) until the person has agreed.
+
+`saml2.ssoConsent` turns it on (product) or off (development);
+`saml2SsoConsent` on the application's entry overrides it for that service
+provider, which is the switch for an application the whole realm is expected
+to use. The same holds for an identity-provider-initiated sign-in.
+
 ### The attribute authority
 
 `POST /saml2/aa[/{sp}]` answers a SOAP `<samlp:AttributeQuery>` (the Assertion
@@ -652,6 +671,7 @@ one-shot artifact are enforced in **both** modes. See
 | `saml2.autocreateApplications` | `STS_SAML2_AUTOCREATE_APPLICATIONS` | `true` | yes | Create an application entry for a new entityID on its first valid AuthnRequest or metadata request. |
 | `saml2.requireSignedAuthnRequests` | `STS_SAML2_REQUIRE_SIGNED_AUTHN_REQUESTS` | `auto` | yes | Refuse unsigned requests: `auto` (on in product), `on` or `off`; also sets `WantAuthnRequestsSigned`. |
 | `saml2.idpInitiatedSso` | `STS_SAML2_IDP_INITIATED_SSO` | `false` | yes | Answer `/saml2/unsolicited`: identity-provider-initiated sign-in. **Off by default**; per service provider with `saml2IdpInitiatedSso`. Was `saml2.unsolicitedSso`, on, until #426. |
+| `saml2.ssoConsent` | `STS_SAML2_SSO_CONSENT` | `true` in product, `false` in development | yes | Ask a person once per service provider before single sign-on signs them in to it; see [Asking before single sign-on](#asking-before-single-sign-on). Per service provider with `saml2SsoConsent`. |
 | `saml2.spInitiatedSso` | `STS_SAML2_SP_INITIATED_SSO` | `true` | yes | Answer a service provider's AuthnRequest; off, it is answered `RequestDenied`. Per service provider with `saml2SpInitiatedSso`. |
 | `saml2.defaultSingleLogoutService` | `STS_SAML2_DEFAULT_SLO_SERVICE` | *(empty)* | yes | Where a LogoutResponse goes when the service provider registered no SingleLogoutService. |
 | `saml2.requestTtlMin` | `STS_SAML2_REQUEST_TTL_MIN` | `10` | yes | How long an AuthnRequest is held while the person signs in — and how old its `IssueInstant` may be. |

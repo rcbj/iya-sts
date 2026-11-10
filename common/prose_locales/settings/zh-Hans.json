@@ -12442,5 +12442,29 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "仅针对协议调试器监听器：http.http2MaxConcurrentStreams。-1（默认值）时遵循 http.http2MaxConcurrentStreams；其他任何值只对此监听器作出决定。一个 HTTP/2 连接可同时打开的请求数（SETTINGS_MAX_CONCURRENT_STREAMS）；超出的流会被拒绝，直到有流结束。默认值 100 是 RFC 9113 建议的最小值；node 自身的值没有上限，这会让一个连接承载成千上万个连接的工作量。它限制一个连接上的工作量，正如 http.maxConnections 限制连接数。新连接会立即遵循更改，已打开的连接会收到新值。"
+  },
+  "saml2.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "在让用户登录前先征得同意"
+  },
+  "saml2.ssoConsent|description": {
+    "en": "1ddf528dcc7be0f8",
+    "text": "在 SAML 2.0 用用户已有的会话将其登录到某个应用之前，是否先询问用户，每个应用一次（ASVS 5.0.0 7.6.2）。用户的回答会被保存，只有撤回后才会再次询问；应用上的全局同意代表所有人回答。被动请求不显示该页面，按无法交互的请求作答。产品模式下默认开启，开发模式下关闭；应用条目上的 saml2SsoConsent 可为该应用覆盖此设置。"
+  },
+  "saml11.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "在让用户登录前先征得同意"
+  },
+  "saml11.ssoConsent|description": {
+    "en": "53f104813a60ba25",
+    "text": "在 SAML 1.1 用用户已有的会话将其登录到某个应用之前，是否先询问用户，每个应用一次（ASVS 5.0.0 7.6.2）。用户的回答会被保存，只有撤回后才会再次询问；应用上的全局同意代表所有人回答。被动请求不显示该页面，按无法交互的请求作答。产品模式下默认开启，开发模式下关闭；应用条目上的 saml11SsoConsent 可为该应用覆盖此设置。"
+  },
+  "wsfed.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "在让用户登录前先征得同意"
+  },
+  "wsfed.ssoConsent|description": {
+    "en": "b60b06fe1664cb06",
+    "text": "在 WS-Federation 用用户已有的会话将其登录到某个应用之前，是否先询问用户，每个应用一次（ASVS 5.0.0 7.6.2）。用户的回答会被保存，只有撤回后才会再次询问；应用上的全局同意代表所有人回答。被动请求不显示该页面，按无法交互的请求作答。产品模式下默认开启，开发模式下关闭；应用条目上的 wsfedSsoConsent 可为该应用覆盖此设置。"
   }
 }

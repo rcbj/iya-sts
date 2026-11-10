@@ -46,6 +46,7 @@
   "refusal.STS-SAML-0114": "El inicio de sesión iniciado por esta parte de confianza está desactivado. Solo se puede acceder a ella desde un enlace de este proveedor de identidad.",
   "refusal.STS-SAML-0115": "Este inicio de sesión todavía necesita una autenticación más fuerte que la que completó, por lo que no se envió ninguna aserción.",
   "refusal.STS-SAML-0117": "La aplicación pidió un inicio de sesión resistente al phishing, y este inicio de sesión no lo proporcionó.",
+  "refusal.STS-SAML-0120": "Ha elegido no iniciar sesión en esta aplicación, así que no se le ha enviado nada.",
   "refusal.STS-RISK-0017": "Este inicio de sesión necesita un segundo factor o una llave de seguridad, y esta página no puede pedirlo.",
   "refusal.STS-CORE-0121": "Esta parte del servicio se está eliminando, por lo que ya no emite nada.",
   "background.saml2": "Esto es una página y no una Response SAML porque la solicitud nunca llegó a indicar un lugar al que este servicio pueda enviarla. Una vez conocido un servicio consumidor de aserciones, un fallo se entrega allí como una Response con un código de estado, como exige la sección 3.2.2 de saml-core-2.0-os.",

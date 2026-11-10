@@ -820,6 +820,8 @@ declare namespace IyaDomain {
     f2SpInitiatedSso?: string;
     f11IdpInitiatedSso?: string;
     f11SpInitiatedSso?: string;
+    f2SsoConsent?: string;
+    f11SsoConsent?: string;
     authnRequestSigned?: string;
   }
 
@@ -1089,6 +1091,7 @@ declare namespace IyaDomain {
     assertionLifetimeMin?: string;
     idpInitiatedSso?: string;
     spInitiatedSso?: string;
+    ssoConsent?: string;
     signOutUri?: string[];
   }
 

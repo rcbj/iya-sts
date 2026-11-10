@@ -2041,6 +2041,13 @@ model Application {
   @attr(#{
     kind: "single",
     from: "the console, the management API, or by hand",
+    overrides: "saml2.ssoConsent",
+    what: "TRUE or FALSE: is a person asked, once, before SAML 2.0 signs them in to this application from a session they already have, overriding saml2.ssoConsent (ASVS 5.0.0 7.6.2). FALSE suits an application everybody in the realm is expected to use; a global consent on the entry answers for everyone and keeps the record of who agreed."
+  })
+  saml2SsoConsent?: string;
+  @attr(#{
+    kind: "single",
+    from: "the console, the management API, or by hand",
     overrides: "saml2.spInitiatedSso",
     what: "TRUE or FALSE: is this service provider's own <samlp:AuthnRequest> answered, overriding saml2.spInitiatedSso. FALSE answers it RequestDenied, leaving identity-provider-initiated sign-in as the only way in."
   })
@@ -2052,6 +2059,13 @@ model Application {
     what: "TRUE or FALSE: may a SAML 1.1 sign-in to this relying party START here — /saml11/sso/{rp} with a TARGET and no shire, or /launch/{app} — overriding saml11.idpInitiatedSso."
   })
   saml11IdpInitiatedSso?: string;
+  @attr(#{
+    kind: "single",
+    from: "the console, the management API, or by hand",
+    overrides: "saml11.ssoConsent",
+    what: "TRUE or FALSE: is a person asked, once, before SAML 1.1 signs them in to this application from a session they already have, overriding saml11.ssoConsent (ASVS 5.0.0 7.6.2). FALSE suits an application everybody in the realm is expected to use; a global consent on the entry answers for everyone and keeps the record of who agreed."
+  })
+  saml11SsoConsent?: string;
   @attr(#{
     kind: "single",
     from: "the console, the management API, or by hand",
@@ -2094,6 +2108,13 @@ model Application {
     what: "TRUE or FALSE: is this relying party's own wsignin1.0 answered, overriding wsfed.spInitiatedSso. A wsignin1.0 is an unsigned URL, so FALSE closes the door rather than proving who opened it."
   })
   wsfedSpInitiatedSso?: string;
+  @attr(#{
+    kind: "single",
+    from: "the console, the management API, or by hand",
+    overrides: "wsfed.ssoConsent",
+    what: "TRUE or FALSE: is a person asked, once, before WS-Federation signs them in to this application from a session they already have, overriding wsfed.ssoConsent (ASVS 5.0.0 7.6.2). FALSE suits an application everybody in the realm is expected to use; a global consent on the entry answers for everyone and keeps the record of who agreed."
+  })
+  wsfedSsoConsent?: string;
   @attr(#{
     kind: "multi",
     from: "by hand",

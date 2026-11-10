@@ -569,7 +569,9 @@ class ConsentScreen {
                                    identifier: p.identifier || '',
                                    baseUri: p.baseUri || '' } : null,
                  // The `did` scope's sentence (#693).
-                 releasesDid: one.releasesDid === true };
+                 releasesDid: one.releasesDid === true,
+                 // Single sign-on's sentence (ASVS 5.0.0 7.6.2).
+                 signsIn: one.signsIn === true };
       }),
       authorizationDetails: record.authorizationDetails.map(
         function (one: Json): Json {

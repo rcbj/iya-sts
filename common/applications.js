@@ -1100,6 +1100,10 @@ const EDITABLE = {
   saml11SpInitiatedSso: 'set',
   wsfedIdpInitiatedSso: 'set',
   wsfedSpInitiatedSso: 'set',
+  // ASVS 5.0.0 7.6.2: whether single sign-on asks first (common/sso_consent).
+  saml2SsoConsent: 'set',
+  saml11SsoConsent: 'set',
+  wsfedSsoConsent: 'set',
   oauthThirdPartyInitiatedLogin: 'set',
   oauthSpInitiatedSso: 'set',
   oauthInitiateLoginUri: 'set',
@@ -2212,6 +2216,8 @@ const BOOLEAN_ATTRIBUTES = [
   'saml2IdpInitiatedSso', 'saml2SpInitiatedSso', 'saml11IdpInitiatedSso',
   'saml11SpInitiatedSso', 'wsfedIdpInitiatedSso', 'wsfedSpInitiatedSso',
   'oauthThirdPartyInitiatedLogin', 'oauthSpInitiatedSso',
+  // ASVS 5.0.0 7.6.2: whether single sign-on asks first.
+  'saml2SsoConsent', 'saml11SsoConsent', 'wsfedSsoConsent',
   // UMA 2.0 (#1168): whether the resource server may own resources itself.
   'umaOwnsResources'
 ];
@@ -3449,7 +3455,10 @@ const FIELD_SECTIONS = [
                  'saml11IdpInitiatedSso', 'saml11SpInitiatedSso',
                  'wsfedIdpInitiatedSso', 'wsfedSpInitiatedSso',
                  'oauthThirdPartyInitiatedLogin', 'oauthSpInitiatedSso',
-                 'oauthInitiateLoginUri'] }
+                 'oauthInitiateLoginUri'] },
+  // ASVS 5.0.0 7.6.2: whether single sign-on asks the person first.
+  { id: 'sso-consent', label: 'Asking before single sign-on',
+    attributes: ['saml2SsoConsent', 'saml11SsoConsent', 'wsfedSsoConsent'] }
 ];
 
 // ---------------------------------------------------------------------------

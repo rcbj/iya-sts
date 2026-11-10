@@ -1394,5 +1394,17 @@
   "mode.requirements.audit-destination.product": {
     "en": "e082de544e11ddcb",
     "text": "请添加审计导出目标，使日志副本在此服务遭入侵时不受影响。在添加之前，服务会为该信任域记录警告。"
+  },
+  "mode.requirements.sso-consent.what": {
+    "en": "2b06d195aa0a395d",
+    "text": "单点登录在让用户登录某个应用前先询问"
+  },
+  "mode.requirements.sso-consent.development": {
+    "en": "e519a44984791111",
+    "text": "SAML 2.0、SAML 1.1 和 WS-Federation 直接用用户的会话让其登录，不作询问。"
+  },
+  "mode.requirements.sso-consent.product": {
+    "en": "0a4ee080bb81a76f",
+    "text": "在 SAML 2.0、SAML 1.1 或 WS-Federation 让用户登录某个应用前，每个应用询问一次，并保存回答。saml2.ssoConsent、saml11.ssoConsent 和 wsfed.ssoConsent 可按协议关闭此功能，应用自身的值优先于它们。"
   }
 }

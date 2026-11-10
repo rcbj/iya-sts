@@ -29,6 +29,7 @@
   "refusal.STS-WSFED-0026": "This sign-in link names a reply address (<code>wreply</code>), and a sign-in started here goes only to the address registered for the relying party. Remove <code>wreply</code> from the link.",
   "refusal.STS-WSFED-0027": "No usable reply address is registered for relying party <code>{realm}</code>, so there is nowhere to send the token.",
   "refusal.STS-WSFED-0028": "Relying party <code>{realm}</code> may not start a sign-in here: that is turned off for it.",
+  "refusal.STS-WSFED-0031": "You chose not to sign in to this application, so nothing was sent to it.",
   "accepts.heading": "What it accepts",
   "accepts.note": "It refuses rather than answering with a password sign-in on purpose: <code>wauth</code> is how a relying party demands a method, and ignoring it would make the demand appear to have been met.",
   "forward.heading": "Two ways forward",

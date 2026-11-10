@@ -2010,5 +2010,17 @@
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "PEP 註冊時對自己所做的任何說明。"
+  },
+  "applications.schema.attributes.saml2SsoConsent.what": {
+    "en": "f7ca67bc2031ec08",
+    "text": "TRUE 或 FALSE：在 SAML 2.0 以使用者既有的工作階段將其登入此應用程式之前，是否先詢問使用者一次，覆寫 saml2.ssoConsent（ASVS 5.0.0 7.6.2）。FALSE 適合領域內所有人都要使用的應用程式；項目上的全域同意代表所有人回答，並保留誰同意過的紀錄。"
+  },
+  "applications.schema.attributes.saml11SsoConsent.what": {
+    "en": "0cb7bbf2fb684481",
+    "text": "TRUE 或 FALSE：在 SAML 1.1 以使用者既有的工作階段將其登入此應用程式之前，是否先詢問使用者一次，覆寫 saml11.ssoConsent（ASVS 5.0.0 7.6.2）。FALSE 適合領域內所有人都要使用的應用程式；項目上的全域同意代表所有人回答，並保留誰同意過的紀錄。"
+  },
+  "applications.schema.attributes.wsfedSsoConsent.what": {
+    "en": "9a3541460bedfa45",
+    "text": "TRUE 或 FALSE：在 WS-Federation 以使用者既有的工作階段將其登入此應用程式之前，是否先詢問使用者一次，覆寫 wsfed.ssoConsent（ASVS 5.0.0 7.6.2）。FALSE 適合領域內所有人都要使用的應用程式；項目上的全域同意代表所有人回答，並保留誰同意過的紀錄。"
   }
 }

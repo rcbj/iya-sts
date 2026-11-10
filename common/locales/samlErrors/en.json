@@ -46,6 +46,7 @@
   "refusal.STS-SAML-0114": "Sign-in started by this relying party is turned off. It can be signed in to only from a link at this identity provider.",
   "refusal.STS-SAML-0115": "This sign-in still needs a stronger sign-in than the one you completed, so no assertion was sent.",
   "refusal.STS-SAML-0117": "The application asked for a phishing-resistant sign-in, and this sign-in did not provide one.",
+  "refusal.STS-SAML-0120": "You chose not to sign in to this application, so nothing was sent to it.",
   "refusal.STS-RISK-0017": "This sign-in needs a second factor or a security key, and this page cannot ask for one.",
   "refusal.STS-CORE-0121": "This part of the service is being removed, so it no longer issues anything.",
   "background.saml2": "This is a page rather than a SAML Response because the request never got as far as naming somewhere this service may send one. Once an assertion consumer service is known, a failure is delivered there as a Response carrying a status code, as saml-core-2.0-os section 3.2.2 requires.",

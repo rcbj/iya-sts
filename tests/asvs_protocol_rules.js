@@ -376,6 +376,51 @@ async function run(t) {
                                       { allowedTransforms: allowed });
   t.equal(enveloped.transformRefused, undefined,
           'and enveloped-signature is not');
+  // 7.6.2: single sign-on asks, per protocol and per application.
+  const SsoConsent = require(ROOT + '/common/sso_consent');
+  const appsMod = require(ROOT + '/common/applications');
+  const consentMod = require(ROOT + '/common/consent');
+  const realSettingFor = appsMod.settingFor;
+  const realOutstanding = consentMod.outstanding;
+  let switchedOn = true;
+  let agreed = false;
+  appsMod.settingFor = function (application, key) {
+    return key === 'saml2.ssoConsent' ? switchedOn : realSettingFor
+      .apply(appsMod, arguments);
+  };
+  consentMod.outstanding = function (request) {
+    const rows = agreed ? [] : [{ scope: request.scope, signsIn: true }];
+    return { outstanding: rows, names: rows.map(function (one) {
+      return one.scope;
+    }) };
+  };
+  const step = function (extra) {
+    return SsoConsent.check(Object.assign({ setting: 'saml2.ssoConsent',
+      application: 'https://sp.example/metadata', username: 'alice' },
+    extra || {}));
+  };
+  try {
+    t.equal(step().action, 'ask',
+            'a person not yet agreed is asked before single sign-on');
+    t.equal(step().decision.outstanding[0].scope,
+            consentMod.SSO_SIGN_IN_SCOPE, 'under the sign-in scope');
+    const passive = step({ passive: true });
+    t.equal(passive.action === 'refuse' && passive.passive, true,
+            'a passive request is refused rather than shown the screen');
+    t.equal(step({ denied: true }).action, 'refuse',
+            'a Deny is a refusal');
+    agreed = true;
+    t.equal(step().action, 'proceed', 'an earlier Allow answers it');
+    agreed = false;
+    switchedOn = false;
+    t.equal(step().action, 'proceed',
+            'and the setting, or the application\'s own value, turns it off');
+    t.equal(step({ username: '' }).action, 'proceed',
+            'nobody signed in is nobody to ask');
+  } finally {
+    appsMod.settingFor = realSettingFor;
+    consentMod.outstanding = realOutstanding;
+  }
   t.equal(asks('sts-client-3f9a'), true,
           'a dynamically registered public client is always asked');
   t.equal(asks('sts-user-portal'), false,

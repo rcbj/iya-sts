@@ -2010,5 +2010,17 @@
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "Lo que el PEP dijo de sí mismo cuando se registró."
+  },
+  "applications.schema.attributes.saml2SsoConsent.what": {
+    "en": "f7ca67bc2031ec08",
+    "text": "TRUE o FALSE: ¿se pregunta a una persona, una vez, antes de que SAML 2.0 inicie su sesión en esta aplicación desde una sesión que ya tiene?, reemplazando saml2.ssoConsent (ASVS 5.0.0 7.6.2). FALSE conviene a una aplicación que se espera que todos en el dominio usen; un consentimiento global en la entrada responde por todos y conserva el registro de quién aceptó."
+  },
+  "applications.schema.attributes.saml11SsoConsent.what": {
+    "en": "0cb7bbf2fb684481",
+    "text": "TRUE o FALSE: ¿se pregunta a una persona, una vez, antes de que SAML 1.1 inicie su sesión en esta aplicación desde una sesión que ya tiene?, reemplazando saml11.ssoConsent (ASVS 5.0.0 7.6.2). FALSE conviene a una aplicación que se espera que todos en el dominio usen; un consentimiento global en la entrada responde por todos y conserva el registro de quién aceptó."
+  },
+  "applications.schema.attributes.wsfedSsoConsent.what": {
+    "en": "9a3541460bedfa45",
+    "text": "TRUE o FALSE: ¿se pregunta a una persona, una vez, antes de que WS-Federation inicie su sesión en esta aplicación desde una sesión que ya tiene?, reemplazando wsfed.ssoConsent (ASVS 5.0.0 7.6.2). FALSE conviene a una aplicación que se espera que todos en el dominio usen; un consentimiento global en la entrada responde por todos y conserva el registro de quién aceptó."
   }
 }
