@@ -110,9 +110,11 @@ function childMain() {
   // An artifact's shape: its type code, endpoint index and length.
   function artifactShape(value) {
     const bytes = Buffer.from(String(value), 'base64');
-    return { length: bytes.length,
-             typeCode: bytes.length >= 2 ? bytes.readUInt16BE(0) : -1,
-             endpointIndex: bytes.length >= 4 ? bytes.readUInt16BE(2) : -1 };
+    // SAML 1.1's type 0x0001 has no endpoint index: its SourceID follows.
+    const typeCode = bytes.length >= 2 ? bytes.readUInt16BE(0) : -1;
+    return { length: bytes.length, typeCode: typeCode,
+             endpointIndex: typeCode === 4 && bytes.length >= 4
+               ? bytes.readUInt16BE(2) : -1 };
   }
 
   function unescapeHtml(text) {
@@ -235,6 +237,7 @@ function childMain() {
     const ldap = require(ROOT + '/ldap/ldap_server');
     const saml2Sso = require(ROOT + '/saml/saml2_sso');
     const kit = require(ROOT + '/tests/tools/saml_signing_kit');
+    const consent = require(ROOT + '/common/consent');
 
     const MODES = [
       { name: 'development', id: 'samlwire', product: false },
@@ -440,7 +443,7 @@ function childMain() {
       await step('SAML 1.1 metadata for one relying party', 'GET',
                  P + '/saml11/metadata/' + encodeURIComponent(RP));
       await step('the WS-Federation view of the entity', 'GET',
-                 P + '/wsfed/metadata');
+                 P + '/FederationMetadata/2007-06/FederationMetadata.xml');
 
       // --- SAML 2.0 sign-in --------------------------------------------------
       // Product requires a signed AuthnRequest by default: once refused, the
@@ -451,6 +454,15 @@ function childMain() {
       await step('Redirect, no session: to the sign-in screen', 'GET',
                  redirect(authnRequest({}), '&RelayState=rs-2'));
       const alice = signIn();
+      await step('signed in, the sign-in not yet agreed to', 'GET',
+                 redirect(authnRequest({})), alice.cookie);
+      // Product asks the person before single sign-on (ASVS 5.0.0 7.6.2);
+      // agreed as the screen files it, for both parties, in both realms.
+      inRealm(function () {
+        [SP, RP].forEach(function (party) {
+          consent.record(PERSON, party, [consent.SSO_SIGN_IN_SCOPE]);
+        });
+      });
       await step('Redirect, signed in: the POST binding answers', 'GET',
                  redirect(authnRequest({ destination: 'http://127.0.0.1:' +
                                          port + P + '/saml2/sso' }),
@@ -514,10 +526,13 @@ function childMain() {
       await step('saml2.signResponse off', 'GET', redirect(authnRequest({})),
                  alice.cookie);
       clear('saml2.signResponse');
-      set('saml2.signAssertion', false);
-      await step('saml2.signAssertion off', 'GET', redirect(authnRequest({})),
-                 alice.cookie);
-      clear('saml2.signAssertion');
+      // Product signs every assertion and refuses the write (#181).
+      if (!mode.product) {
+        set('saml2.signAssertion', false);
+        await step('saml2.signAssertion off', 'GET',
+                   redirect(authnRequest({})), alice.cookie);
+        clear('saml2.signAssertion');
+      }
       set('saml2.nameIdFormat',
           'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress');
       await step('saml2.nameIdFormat emailAddress', 'GET',
@@ -751,7 +766,9 @@ function childMain() {
 // The attributes whose values this service draws at random. Each distinct
 // value is replaced by a placeholder numbered within its step, everywhere
 // it appears in that step, so a reference to it still names it.
-const MINTED = /\b(ID|AssertionID|ResponseID|SessionIndex|RequestID|Id)="([^"]+)"/g;
+// The text is a step's JSON, so a quote may be escaped.
+const MINTED =
+  /\b(ID|AssertionID|ResponseID|SessionIndex|RequestID|Id)=\\?"([^"\\]+)\\?"/g;
 
 // The elements whose text is key material or a value drawn at random.
 const OPAQUE = ['SignatureValue', 'DigestValue', 'X509Certificate',
@@ -785,12 +802,19 @@ function normalise(record) {
   const opaque = new RegExp('(<(?:[A-Za-z0-9]+:)?(?:' + OPAQUE.join('|') +
                             ')(?:\\s[^>]*)?>)[^<]*(</)', 'g');
   const PATTERNS = [
+    // A message or an artifact in a URL or a form, which `decoded` holds.
+    ['param', /\b(SAMLart|SAMLResponse|SAMLRequest|Signature)=[^&"\\\s]+/g],
+    ['value', /value=\\"[^"\\]{40,}\\"/g],
     ['uuid', /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi],
     ['time', /\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d+)?Z/g],
     ['port', /127\.0\.0\.1(:|%3A|%253A)\d+/g],
     ['epoch', /\b1[789]\d{11}\b/g],
     ['cookie', /\b(sts_[a-z_]+)=[^;"\s]+/g],
-    ['nameid', /(Format="urn:oasis:names:tc:SAML:2\.0:nameid-format:(?:transient|persistent)"[^>]*>)[^<]+/g],
+    ['nameid', /(Format=\\?"urn:oasis:names:tc:SAML:2\.0:nameid-format:(?:transient|persistent)\\?"[^>]*>)[^<]+/g],
+    // A page's incident number, a held request's and a pending sign-in's
+    // handle.
+    ['incident', /(Incident ID<\/dt><dd><code>)\d+/g],
+    ['handle', /\b(authn|rid|fid)=[A-Za-z0-9_-]{12,}/g],
     ['hex', /\b[0-9a-f]{24,}\b/g],
     ['random', /(?<![A-Za-z0-9_+/=-])(?=[A-Za-z0-9_+/=-]*[A-Z])(?=[A-Za-z0-9_+/=-]*[0-9])[A-Za-z0-9_+/=-]{24,}/g]
   ];
@@ -798,7 +822,15 @@ function normalise(record) {
     let text = numberMinted(JSON.stringify(one));
     text = text.replace(opaque, '$1<opaque>$2');
     PATTERNS.forEach(function (pair) {
-      if (pair[0] === 'nameid') {
+      if (pair[0] === 'param') {
+        text = text.replace(pair[1], '$1=<value>');
+      } else if (pair[0] === 'value') {
+        text = text.replace(pair[1], 'value=\\"<value>\\"');
+      } else if (pair[0] === 'incident') {
+        text = text.replace(pair[1], '$1<incident>');
+      } else if (pair[0] === 'handle') {
+        text = text.replace(pair[1], '$1=<handle>');
+      } else if (pair[0] === 'nameid') {
         text = text.replace(pair[1], '$1<nameid>');
       } else if (pair[0] === 'cookie') {
         text = text.replace(pair[1], '$1=<cookie>');
