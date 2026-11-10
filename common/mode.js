@@ -3334,8 +3334,10 @@ const REQUIREMENTS = [
                  'responses, and the database may use a demonstration ' +
                  'password.',
     product: 'Request logs leave out credentials and bodies at every ' +
-             'level, and a default database password stops the service ' +
-             'unless persistence.allowDefaultDatabasePassword is on.',
+             'level, a signed token or assertion is logged by its size and ' +
+             'digest only, and a default database password stops the ' +
+             'service unless persistence.allowDefaultDatabasePassword is ' +
+             'on.',
     where: 'common/helpers.js, persistence/persistence.js' },
   // ASVS 5.0.0 13.3.1.
   { id: 'secrets-from-store',

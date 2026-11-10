@@ -1368,8 +1368,8 @@
     "text": "På debugnivå innehåller loggen hela förfrågningar och svar, och databasen kan använda ett demonstrationslösenord."
   },
   "mode.requirements.no-known-secrets.product": {
-    "en": "a037c255a759deb1",
-    "text": "Förfrågningsloggar utelämnar autentiseringsuppgifter och innehåll på alla nivåer, och ett standardlösenord för databasen stoppar tjänsten om inte persistence.allowDefaultDatabasePassword är på."
+    "en": "9dc455e8deb093a6",
+    "text": "Förfrågningsloggar utelämnar autentiseringsuppgifter och innehåll på alla nivåer, en signerad token eller ett signerat intyg loggas bara med sin storlek och sitt kontrollvärde, och ett standardlösenord för databasen stoppar tjänsten om inte persistence.allowDefaultDatabasePassword är på."
   },
   "mode.requirements.secrets-from-store.what": {
     "en": "51a0285e7263826e",

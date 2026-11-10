@@ -312,6 +312,70 @@ async function run(t) {
                         } } } }, clientId);
     });
   };
+  // 16.2.5: a token logged at debug in product is its size and digest.
+  const helpersMod = require(ROOT + '/common/helpers');
+  const seen = [];
+  // THROUGH THE SETTING, not log.level(): config.js re-applies
+  // global.logLevel to the shared logger whenever a setting changes, and
+  // switching to product mode is one.
+  helpersMod.log.addStream({ type: 'raw', level: 'debug',
+                             stream: { write: function (rec) {
+                               if (rec && rec.artifact === 'JWT') {
+                                 seen.push(rec);
+                               }
+                             } } });
+  config.setOverride('global.logLevel', 'debug');
+  try {
+    inProduct(function () {
+      helpersMod.logArtifact('JWT', 'after signing', 'eyJhbGciOi.secret.sig');
+    });
+    helpersMod.logArtifact('JWT', 'after signing', 'eyJhbGciOi.dev.sig');
+  } finally {
+    config.clearOverride('global.logLevel');
+  }
+  const logged = seen.filter(function (rec) {
+    return rec.artifact === 'JWT';
+  });
+  t.check(logged.length === 2 && logged[0].value === undefined &&
+          logged[0].length === 21 && /^[0-9a-f]{16}$/.test(logged[0].sha256) &&
+          JSON.stringify(logged[0]).indexOf('secret') < 0,
+          'product logs a signed token by size and digest, never its text',
+          JSON.stringify(logged[0]));
+  t.equal(logged[1] && logged[1].value, 'eyJhbGciOi.dev.sig',
+          'development still logs it whole');
+  // 16.5.1: /KdcProxy keeps an internal error's text in the log in product.
+  const kdcSource = require('fs').readFileSync(ROOT + '/kerberos/krb5_kdc.js',
+                                               'utf8');
+  t.check(/mode\.hidesFailureDetail\(\)\s*\?\s*'the KDC could not answer\.'/
+            .test(kdcSource),
+          '/KdcProxy answers a failure without its text in product');
+  // An XML signature naming a transform outside the list is refused before
+  // anything is digested (1.2.7, the allowlist).
+  const xmldsig = require(ROOT + '/common/crypto_impl/xmldsig.js');
+  const DS = 'http://www.w3.org/2000/09/xmldsig#';
+  const signed = function (transform) {
+    return '<r ID="a"><ds:Signature xmlns:ds="' + DS + '"><ds:SignedInfo>' +
+      '<ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/' +
+      'xml-exc-c14n#"/><ds:SignatureMethod Algorithm="http://www.w3.org/' +
+      '2001/04/xmldsig-more#rsa-sha256"/><ds:Reference URI="#a">' +
+      '<ds:Transforms><ds:Transform Algorithm="' + transform + '"/>' +
+      '</ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/' +
+      '04/xmlenc#sha256"/><ds:DigestValue>AA==</ds:DigestValue>' +
+      '</ds:Reference></ds:SignedInfo><ds:SignatureValue>AA==' +
+      '</ds:SignatureValue></ds:Signature></r>';
+  };
+  const allowed = [xmldsig.TRANSFORM_ENVELOPED,
+                   'http://www.w3.org/2001/10/xml-exc-c14n#'];
+  const xpath = xmldsig.verifyXml(
+    signed('http://www.w3.org/TR/1999/REC-xpath-19991116'),
+    { allowedTransforms: allowed });
+  t.equal(xpath.valid === false && xpath.transformRefused,
+          'http://www.w3.org/TR/1999/REC-xpath-19991116',
+          'an XPath transform is refused by name before any digest');
+  const enveloped = xmldsig.verifyXml(signed(xmldsig.TRANSFORM_ENVELOPED),
+                                      { allowedTransforms: allowed });
+  t.equal(enveloped.transformRefused, undefined,
+          'and enveloped-signature is not');
   t.equal(asks('sts-client-3f9a'), true,
           'a dynamically registered public client is always asked');
   t.equal(asks('sts-user-portal'), false,

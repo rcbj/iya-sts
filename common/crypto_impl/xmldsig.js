@@ -2787,8 +2787,15 @@ function rsaKeyFromKeyValue(sig) {
 // signature checkable: the references resolve into that document rather than
 // into the one carrying the Signature.
 //
-// opts: { certPem, publicKeyPem, referencedXml,
+// opts: { certPem, publicKeyPem, referencedXml, allowedTransforms,
 //         verifier(octets, signatureBytes, spec, sigAlgUri) -> bool }
+//
+// `allowedTransforms`, a list of Transform Algorithm URIs, refuses a
+// signature any of whose References names another, before anything is
+// canonicalized or digested. A service verifying a message from outside
+// passes one: an XPath or XSLT transform the SENDER chose is work the
+// verifier does on the sender's terms, and the SAML and WS-Federation profiles
+// name only enveloped-signature and canonicalization.
 function verifyXml(xml, opts) {
   log.debug("Entering verifyXml().");
   var o = opts || {};
@@ -2836,6 +2843,19 @@ function verifyXml(xml, opts) {
   }
   var cmIncl = cmEl ? firstByLocal(cmEl, 'InclusiveNamespaces') : null;
   var cmPrefixes = cmIncl ? prefixSet(cmIncl.getAttribute('PrefixList')) : null;
+  if (Array.isArray(o.allowedTransforms)) {
+    var named = si.getElementsByTagNameNS(DS_NS, 'Transform');
+    for (var n = 0; n < named.length; n++) {
+      var named_alg = String(named[n].getAttribute('Algorithm') || '');
+      if (o.allowedTransforms.indexOf(named_alg) < 0) {
+        log.debug("Leaving verifyXml(). A transform outside the list.");
+        return { valid: false, transformRefused: named_alg,
+                 error: 'The Transform "' + named_alg + '" is not one this ' +
+                   'verifier accepts (' + o.allowedTransforms.join(', ') +
+                   ').', signatureMethod: sigAlg, canonicalization: c14nAlg };
+      }
+    }
+  }
 
   var certB64 = '';
   var x509El = firstByLocal(sig, 'X509Certificate');

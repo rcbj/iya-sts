@@ -1368,8 +1368,8 @@
     "text": "Au niveau debug, le journal contient les requêtes et réponses entières, et la base peut utiliser un mot de passe de démonstration."
   },
   "mode.requirements.no-known-secrets.product": {
-    "en": "a037c255a759deb1",
-    "text": "Les journaux de requêtes omettent les identifiants et les corps à tous les niveaux, et un mot de passe de base par défaut arrête le service sauf si persistence.allowDefaultDatabasePassword est activé."
+    "en": "9dc455e8deb093a6",
+    "text": "Les journaux de requêtes omettent les identifiants et les corps à tous les niveaux, un jeton ou une assertion signés ne sont journalisés que par leur taille et leur empreinte, et un mot de passe de base de données par défaut arrête le service sauf si persistence.allowDefaultDatabasePassword est activé."
   },
   "mode.requirements.secrets-from-store.what": {
     "en": "51a0285e7263826e",

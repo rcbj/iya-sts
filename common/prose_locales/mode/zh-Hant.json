@@ -1368,8 +1368,8 @@
     "text": "偵錯層級下，日誌包含完整的要求和回應，資料庫可以使用示範密碼。"
   },
   "mode.requirements.no-known-secrets.product": {
-    "en": "a037c255a759deb1",
-    "text": "要求日誌在任何層級都不包含認證資料和本文；預設資料庫密碼會使服務停止，除非開啟 persistence.allowDefaultDatabasePassword。"
+    "en": "9dc455e8deb093a6",
+    "text": "要求日誌在任何層級都不包含認證資料和本文；已簽署的權杖或斷言只按其大小和摘要記錄；預設的資料庫密碼會使服務停止，除非開啟 persistence.allowDefaultDatabasePassword。"
   },
   "mode.requirements.secrets-from-store.what": {
     "en": "51a0285e7263826e",
