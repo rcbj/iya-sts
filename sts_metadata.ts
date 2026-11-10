@@ -4660,8 +4660,8 @@ const ENDPOINTS: EndpointEntry[] = [
           'each member id into its DN and puts it in member, and clears ' +
           'the other two so that a client which removed everybody does not ' +
           'find the group still populated. A member naming nothing is ' +
-          'ACCEPTED and logged: a dangling member is a state worth being ' +
-          'able to produce.' },
+          'REFUSED (400 invalidValue): a group lists only what is there, ' +
+          'and a delete takes an entry out of every group.' },
   { path: '/scim/v2/.search', group: 'SCIM', name: 'Search across both ' +
                                                    'resource types',
     specs: ['rfc7644'],

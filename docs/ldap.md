@@ -461,9 +461,10 @@ changes one, and a runtime setting can be set per trust realm. See
   directory is still a tree, a leaf is still a leaf, and one person is still one
   entry. Inventing a schema would hide the difference from a real directory
   instead of stating it.
-* **No referential integrity on a write.** It is a feature of some
-  directories, not of the protocol. A group member that names nothing is
-  accepted, and the console reports it as dangling.
+* **A group lists only what is there.** Adding a group member that names no
+  entry is refused, over LDAP with `constraintViolation` (19), and over SCIM,
+  the console and `/admin-api` with a 400 naming the missing member. The
+  console still reports a dangling member that an older store holds.
 * **A delete takes the entry out of every group and role.** Deleting a person,
   a group or an application removes its DN from every group that listed it and
   its name from every role. Something created again under the same name starts

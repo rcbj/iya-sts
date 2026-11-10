@@ -556,8 +556,8 @@
     "text": "清單包含依此目錄「兩種」規則判定的每個群組——位於 ou=groups 之下，或不論位置為何、帶有群組 objectClass——因為此處的 SCIM 是該目錄的一個檢視，而對於何謂群組的第三種意見，終究會是產生分歧的那一個。建立的群組會同時獲得位置「與」groupOfNames objectClass，因此即使客戶端移動它，它仍是一個群組。"
   },
   "stsmetadata.endpoints./scim/v2/Groups/:id.what": {
-    "en": "6f6ca2ae30df56a4",
-    "text": "「讀取」時一視同仁地解析 member、uniqueMember 與 memberUid，並以 id 傳回每個成員——對三者區別對待，正是每個 posixGroup 成員資格悄悄消失的原因。「寫入」時將每個成員 id 轉為其 DN 並放入 member，並清除另外兩者，讓移除了所有人的客戶端不會發現群組仍有成員。未指向任何對象的成員會被「接受」並記錄：懸空成員是一種值得能夠產生的狀態。"
+    "en": "c85629ec6fc43a6f",
+    "text": "「讀取」時一視同仁地解析 member、uniqueMember 與 memberUid，並以 id 傳回每個成員——對三者區別對待，正是每個 posixGroup 成員資格悄悄消失的原因。「寫入」時將每個成員 id 轉為其 DN 並放入 member，並清除另外兩者，讓移除了所有人的客戶端不會發現群組仍有成員。未指向任何對象的成員會被「拒絕」（400 invalidValue）：群組只列出存在之物，刪除會將項目從每個群組中移除。"
   },
   "stsmetadata.endpoints./scim/v2/Bulk.what": {
     "en": "e83d18c7b2d3e453",

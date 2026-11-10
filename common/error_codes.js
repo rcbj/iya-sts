@@ -16149,6 +16149,13 @@ const CODES = [
       'sends back, and a code is recorded, never sent (#1416).',
     spec: 'HTTP 400 JSON (the sentence; the code is recorded). LDAP ' +
       'constraintViolation (19). Nothing is stored' },
+  { code: 'STS-LDAP-0212',
+    summary: 'A group write was refused because a member it adds names no ' +
+      'entry: a member, uniqueMember or memberUid must name something stored ' +
+      'in the realm, so a group can never list a person, group or ' +
+      'application that is not there (2026-11-10).',
+    spec: 'HTTP 400 (console, /admin-api), SCIM 400 invalidValue, LDAP ' +
+      'constraintViolation (19). Nothing is stored' },
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
       'dialect\'s package is an optional one, installed into the image with ' +

@@ -72,8 +72,8 @@
     "text": "SIN ETag Y SIN changePassword, ambos anunciados como no admitidos en lugar de implementados a medias. Una versión construida sobre una marca de tiempo con resolución de un segundo sería un control de concurrencia en el que un cliente confía y que es incorrecto; y ninguna contraseña de este servicio se comprueba, así que no hay ninguna que cambiar."
   },
   "scim.doesNotDo.member": {
-    "en": "3cce88d4d02d3509",
-    "text": "SE ACEPTA UN MIEMBRO QUE NO NOMBRA NADA. Este directorio no aplica integridad referencial a propósito — eliminar un usuario deja su DN en todos los grupos que lo listaban — así que rechazar aquí un miembro colgante haría imposible reproducir ese estado. /admin/groups los informa."
+    "en": "fc37b8e96ac4cde8",
+    "text": "SE RECHAZA UN MIEMBRO QUE NO NOMBRA NADA (400 invalidValue). Un grupo solo lista personas, grupos y aplicaciones que existen, y eliminar uno lo saca de todos los grupos que lo listaban."
   },
   "scim.endpoints.serviceProviderConfig": {
     "en": "ec5c59eeb4453e91",

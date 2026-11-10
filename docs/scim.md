@@ -124,7 +124,9 @@ class. A group list includes everything the directory counts as a group: entries
 under `ou=groups` and entries carrying a group object class anywhere. On a read,
 `member`, `uniqueMember` and `memberUid` are all resolved as members. A write
 puts values in `member` and clears the other two. **A member that names nothing
-is accepted** and logged, because this directory does no referential integrity.
+is refused** with 400 `invalidValue`, naming what isn't there: a group lists only
+people, groups and applications that exist. Deleting a person, group or
+application takes it out of every group that listed it.
 
 **Being provisioned is not authenticating.** A person created over SCIM has an
 entry with `origin: scim` and no row on `/admin/users` until they sign in

@@ -72,8 +72,8 @@
     "text": "INGEN ETag OCH INGEN changePassword, båda annonserade som ej stödda snarare än halvt implementerade. En version byggd på en tidsstämpel med en sekunds upplösning skulle vara en samtidighetskontroll som en klient litar på och som är fel; och inget lösenord i den här tjänsten kontrolleras, så det finns inget att ändra."
   },
   "scim.doesNotDo.member": {
-    "en": "3cce88d4d02d3509",
-    "text": "EN MEDLEM SOM INTE NAMNGER NÅGOT ACCEPTERAS. Den här katalogen gör avsiktligt ingen referensintegritet — att ta bort en användare lämnar deras DN i varje grupp som listade dem — så att vägra en hängande medlem här skulle göra det tillståndet omöjligt att återskapa. /admin/groups rapporterar dem."
+    "en": "fc37b8e96ac4cde8",
+    "text": "EN MEDLEM SOM INTE NAMNGER NÅGOT AVVISAS (400 invalidValue). En grupp listar bara personer, grupper och applikationer som finns, och att ta bort en tar bort den ur varje grupp som listade den."
   },
   "scim.endpoints.serviceProviderConfig": {
     "en": "ec5c59eeb4453e91",

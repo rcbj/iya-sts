@@ -1140,8 +1140,8 @@
     "text": "Sección 3.4.3, para grupos."
   },
   "stsmetadata.endpoints./scim/v2/Groups/:id.what": {
-    "en": "6f6ca2ae30df56a4",
-    "text": "La LECTURA resuelve member, uniqueMember y memberUid por igual y devuelve cada miembro por su id: tratar los tres de forma distinta es la manera en que desaparece silenciosamente toda pertenencia a un posixGroup. La ESCRITURA convierte cada id de miembro en su DN y lo pone en member, y vacía los otros dos para que un cliente que eliminó a todos no encuentre el grupo todavía con miembros. Un miembro que no nombra nada se ACEPTA y se registra: un miembro colgante es un estado que vale la pena poder producir."
+    "en": "c85629ec6fc43a6f",
+    "text": "La LECTURA resuelve member, uniqueMember y memberUid por igual y devuelve cada miembro por su id: tratar los tres de forma distinta es la manera en que desaparece silenciosamente toda pertenencia a un posixGroup. La ESCRITURA convierte cada id de miembro en su DN y lo pone en member, y vacía los otros dos para que un cliente que eliminó a todos no encuentre el grupo todavía con miembros. Un miembro que no nombra nada se RECHAZA (400 invalidValue): un grupo solo lista lo que existe, y una eliminación saca una entrada de todos los grupos."
   },
   "stsmetadata.endpoints./scim/v2/Groups/:id.effect": {
     "en": "590332223e3866ae",
@@ -2131,6 +2131,10 @@
     "en": "6c8c19ee983ea097",
     "text": "NON-SPEC (#717). save escribe juntos los ajustes branding del dominio y rechaza texto o enlaces por debajo de 4,5:1 frente a la tarjeta; remove-logo quita el logotipo y se audita."
   },
+  "stsmetadata.endpoints./admin-api/audit/integrity.what": {
+    "en": "80d0dc13ebf1f23b",
+    "text": "Compara cada fila de auditoría conservada con su suma de verificación con clave e informa de las que ya no coinciden. No cambia nada."
+  },
   "stsmetadata.endpoints./admin-api/audit.what": {
     "en": "55d3dcbe157b0e3f",
     "text": "NO ESTÁNDAR. Lo que ocurrió aquí, en orden, como JSON: cada autenticación, sesión de inicio de sesión, operación del directorio LDAP, interacción con la consola, llamada a la API de gestión y llamada a un endpoint de protocolo, de la más reciente a la más antigua, filtrado por categoría, acción, resultado, actor y texto libre, y paginado con ?page= y ?per=. NUNCA HAY UNA CREDENCIAL EN UNA FILA (ninguna contraseña, token bearer, aserción ni cuerpo); una modificación nombra los atributos que cambió y nunca sus valores. REANUDE POR `at`, no por `seq` (#465). `seq` es único en todos los procesos del servicio y nunca se reutiliza, y crece dentro de cada proceso, pero cada hilo de trabajo numera desde un bloque propio, así que los números no son un orden y \"todo lo posterior a 4102\" omite un evento posterior anotado con un número menor. `origin` desempata con `seq`. La página 2 tomada un segundo después de la página 1 puede repetir una fila que se desplazó a ella. DE SOLO LECTURA: uno de los dos recursos de aquí que lo son, junto con /admin-api/delegation. No hay operación de vaciado, porque un control de borrado en una API sin protección dejaría a un registro de auditoría incapaz de responder la única pregunta para la que existe. Refleja GET /admin/audit."
@@ -2158,6 +2162,14 @@
   "stsmetadata.endpoints./admin-api/cells/people.what": {
     "en": "dc30d3b633728d57",
     "text": "NO ESTÁNDAR (#98 D11). Una página de los residentes de otra celda, respondida por esa celda solo cuando su política de divulgación lo permite."
+  },
+  "stsmetadata.endpoints./admin-api/malware-scanning.what": {
+    "en": "14ed85bab8488344",
+    "text": "NON-SPEC (#1501). GET /admin/malware-scanning en JSON: si se analizan los archivos subidos y el servicio ICAP que los analiza. No cambia nada."
+  },
+  "stsmetadata.endpoints./admin-api/malware-scanning/:action.what": {
+    "en": "1bf7c4937a9313c4",
+    "text": "NON-SPEC (#1501). Envía al servicio ICAP configurado el archivo de prueba EICAR y solo tiene éxito si el servicio lo marca."
   },
   "stsmetadata.endpoints./admin-api/listeners.what": {
     "en": "6a6a1ecfd0643325",
@@ -3950,17 +3962,5 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "un parámetro"
-  },
-  "stsmetadata.endpoints./admin-api/malware-scanning.what": {
-    "en": "14ed85bab8488344",
-    "text": "NON-SPEC (#1501). GET /admin/malware-scanning en JSON: si se analizan los archivos subidos y el servicio ICAP que los analiza. No cambia nada."
-  },
-  "stsmetadata.endpoints./admin-api/malware-scanning/:action.what": {
-    "en": "1bf7c4937a9313c4",
-    "text": "NON-SPEC (#1501). Envía al servicio ICAP configurado el archivo de prueba EICAR y solo tiene éxito si el servicio lo marca."
-  },
-  "stsmetadata.endpoints./admin-api/audit/integrity.what": {
-    "en": "80d0dc13ebf1f23b",
-    "text": "Compara cada fila de auditoría conservada con su suma de verificación con clave e informa de las que ya no coinciden. No cambia nada."
   }
 }

@@ -9229,11 +9229,11 @@ function consoleKeyFor(dn, stored) {
 // the far end.
 //
 // A member that names nothing is reported as DANGLING rather than dropped, and
-// that is the whole reason this resolution exists: this directory does not
-// enforce referential integrity on a WRITE (a member that names nothing is
-// accepted; a DELETE has taken its DN out of every group since 2026-11-10,
-// forgetGroupMemberships()), so a dangling member is a state a client
-// can reach in two operations and a page that quietly showed six members where
+// that is the whole reason this resolution exists: since 2026-11-10 a write
+// may not add a member that names nothing (membersNamingNothing()) and a
+// delete takes its DN out of every group (forgetGroupMemberships()), so a
+// dangling member is now only what a store written before then holds — and a
+// page that quietly showed six members where
 // the entry lists seven would be hiding the very thing it was built to show.
 function resolveMember(value, attribute) {
   log.debug('Entering resolveMember().');
@@ -20312,6 +20312,24 @@ function ldapAddNow(req, res, next) {
       }
     }
   }
+  // A GROUP ADDED HERE LISTS ONLY WHAT IS THERE (membersNamingNothing(),
+  // 2026-11-10): constraintViolation (19), naming the values, and nothing
+  // stored.
+  const addedLowered = {};
+  Object.keys(attributes).forEach(function (key) {
+    addedLowered[key.toLowerCase()] = attributes[key];
+  });
+  if (groupRuleFor({ dn: dn, attributes: addedLowered })) {
+    const nothing = membersNamingNothing(null, addedLowered);
+    if (nothing.length) {
+      log.debug('Leaving the LDAP add handler. A member names nothing.');
+      return next(ldapRefusal(req, 'STS-LDAP-0212', 'an add of ' + dn +
+        ' listed ' + nothing.join(', ') + ' as a member, and nothing is ' +
+        'stored there',
+        new ldap.ConstraintViolationError('a group lists only entries that ' +
+          'exist; nothing is stored at ' + nothing.join(', ')), dn));
+    }
+  }
   stampLdapRegistration(req, dn, attributes);
   const addedEntry = putEntry(dn, attributes, { origin: 'ldap add' });
   // An application added over the socket WITH credentials (#221): each is
@@ -21057,6 +21075,21 @@ function ldapModifyNow(req, res, next) {
   delete working[ENTRY_UUID_ALIAS];
   if (stored.attributes[ENTRY_UUID_ALIAS]) {
     working[ENTRY_UUID_ALIAS] = stored.attributes[ENTRY_UUID_ALIAS];
+  }
+  // A GROUP MODIFIED HERE GAINS ONLY MEMBERS THAT ARE THERE
+  // (membersNamingNothing(), 2026-11-10): a value it already held is not
+  // asked about, so a store written before this can still be edited.
+  if (groupRuleFor(stored) || groupRuleFor({ dn: stored.dn,
+                                             attributes: working })) {
+    const nothing = membersNamingNothing(stored.attributes, working);
+    if (nothing.length) {
+      log.debug('Leaving the LDAP modify handler. A member names nothing.');
+      return next(ldapRefusal(req, 'STS-LDAP-0212', 'a modify of ' + dn +
+        ' added ' + nothing.join(', ') + ' as a member, and nothing is ' +
+        'stored there',
+        new ldap.ConstraintViolationError('a group lists only entries that ' +
+          'exist; nothing is stored at ' + nothing.join(', ')), dn));
+    }
   }
   working.modifytimestamp = [generalizedTime()];
   stored.attributes = working;
@@ -27676,7 +27709,8 @@ function removePersonEntry(stored, door) {
 // of every group and role that named it (removePersonEntry()), so somebody made
 // again under the username inherits nothing and has to be added back. Until
 // then the DN was left behind on purpose, as a dangling member for
-// /admin/groups to report; a member ADDED that names nothing still is.
+// /admin/groups to report; a member that names nothing can no longer be
+// ADDED either (membersNamingNothing()).
 /**
  * Deletes a person's entry, taking its DN out of every group and role.
  *
@@ -27863,6 +27897,62 @@ function claimCreate(what) {
   return createClaims.claim(spec);
 }
 
+// ---------------------------------------------------------------------------
+// A GROUP NEVER LISTS SOMETHING THAT IS NOT THERE (rcbj, 2026-11-10).
+//
+// The other half of forgetGroupMemberships(): a delete takes a DN out of every
+// group, and a write may not put one in that names nothing. Together a group's
+// members are always entries that exist, so a DN cannot sit in a group waiting
+// for whatever is made at it next — the inheritance #1612 closed from the
+// delete side. Until today a dangling member was accepted on purpose, so that
+// the state /admin/groups reports could be produced; it can no longer be, and
+// the page still reports one an older store holds.
+//
+// Only the values a write ADDS are asked about: a group already holding a
+// dangling member (written before this) can still be rewritten — by
+// forgetGroupMemberships() above all — without first being repaired. A
+// `member` or `uniqueMember` names a DN and must be an entry; a `memberUid`
+// names a person and must be one.
+// ---------------------------------------------------------------------------
+/**
+ * The members a group write adds that name no stored entry.
+ *
+ * @param before - the group's attributes now, or null for a new group
+ * @param after - the attributes the write would store
+ * @returns the values refused, as written; empty when every one is there
+ */
+function membersNamingNothing(before, after) {
+  log.debug('Entering membersNamingNothing().');
+  const keysIn = function (attributes, attribute) {
+    const name = Object.keys(attributes || {}).filter(function (one) {
+      return one.toLowerCase() === attribute.name;
+    })[0];
+    return name ? attributes[name] : [];
+  };
+  const missing = [];
+  MEMBER_ATTRIBUTES.forEach(function (attribute) {
+    const had = new Set(keysIn(before, attribute).map(function (value) {
+      return attribute.holds === 'uid' ? String(value).trim().toLowerCase()
+                                       : normalizeDn(String(value));
+    }));
+    keysIn(after, attribute).forEach(function (value) {
+      const raw = String(value == null ? '' : value).trim();
+      const key = attribute.holds === 'uid' ? raw.toLowerCase()
+                                            : normalizeDn(raw);
+      if (had.has(key)) {
+        return;
+      }
+      const there = attribute.holds === 'uid' ? !!existingUserEntry(raw)
+                                              : !!(raw && getEntry(raw));
+      if (!there) {
+        missing.push(raw);
+      }
+    });
+  });
+  log.debug('Leaving membersNamingNothing(). ' + missing.length + '.');
+  return missing;
+}
+
 // `origin` says WHICH DOOR wrote it, and it is a parameter rather than the
 // constant it used to be because there are now three: SCIM (the caller this
 // function was written for), the admin console's RBAC screen, and the
@@ -27905,6 +27995,17 @@ function writeGroupEntry(dn, attributes, origin) {
         'in this realm.');
     return coded('STS-LDAP-0006', { ok: false, reason: 'noParent', dn: dn,
                                     parent: parentDn(dn) });
+  }
+  // NO MEMBER THAT NAMES NOTHING (membersNamingNothing(), 2026-11-10).
+  const nothing = membersNamingNothing(existing && existing.attributes,
+                                       attributes);
+  if (nothing.length) {
+    log.info(errorCodes.tag('STS-LDAP-0212') + 'ldap: not writing ' + dn +
+             '; it would list ' + nothing.join(', ') + ', and nothing is ' +
+             'stored there.');
+    log.debug('Leaving writeGroupEntry(). A member names nothing.');
+    return coded('STS-LDAP-0212', { ok: false, reason: 'danglingMember',
+                                    dn: dn, members: nothing });
   }
   const created = existing ? existing.createdAt : generalizedTime();
   const stored = putEntry(dn, attributes,
@@ -28081,6 +28182,16 @@ function createGroup(displayName, options) {
       dangling.push(value.dn);
     }
   });
+  // NO MEMBER THAT NAMES NOTHING (membersNamingNothing(), 2026-11-10): said
+  // here, by name, before anything is written.
+  if (dangling.length) {
+    log.debug('Leaving createGroup(). A member names nothing.');
+    return coded('STS-LDAP-0212', { ok: false, errors: ['Nothing is stored ' +
+      'at ' + dangling.join(', ') + ', so ' + (dangling.length === 1
+        ? 'it' : 'they') + ' cannot be a member of "' + wanted + '". A ' +
+      'group lists only people, groups and applications that are there: ' +
+      'create ' + (dangling.length === 1 ? 'it' : 'them') + ' first.'] });
+  }
   const note = String(opts.note || '').trim() ||
     'created by hand rather than by a directory client';
   // THE GROUP'S OWN ADDRESS (#989): `mail` on the group entry, where a
@@ -28219,13 +28330,9 @@ function memberDnFor(nameOrDn) {
 // THREE THINGS IT DELIBERATELY DOES NOT DO, and each is a rule stated somewhere
 // else in this service that would be contradicted by doing it:
 //
-//   * **IT DOES NOT REFUSE A MEMBER THAT NAMES NOTHING.** The SCIM ingress
-//     gives the argument in full and it is the same one: this directory does no
-//     referential integrity on a write, so refusing a dangling member here would
-//     make it impossible to produce, from this door, the state /admin/groups
-//     exists to report. (A DELETE takes the DN out of every group since
-//     2026-11-10, forgetGroupMemberships().) It is
-//     LOGGED and it is on the answer, so it is visible rather than silent.
+//   * (IT REFUSES A MEMBER THAT NAMES NOTHING since 2026-11-10, rcbj: a group
+//     lists only what is there, as membersNamingNothing() argues. Until then
+//     it accepted one, so the state /admin/groups reports could be produced.)
 //   * **IT DOES NOT WRITE `memberOf` ONTO THE PERSON.** Nothing in this service
 //     maintains that attribute — it is not even standard — and `admin_rbac.js`
 //     refuses a revoke of a membership held that way for exactly this reason.
@@ -28291,6 +28398,14 @@ function addGroupMember(group, member, options) {
                  'would then be a new group rather than an error.'] });
   }
   const target = memberDnFor(wantedMember);
+  // NO MEMBER THAT NAMES NOTHING (membersNamingNothing(), 2026-11-10).
+  if (!target.present) {
+    log.debug('Leaving addGroupMember(). Nothing is there.');
+    return coded('STS-LDAP-0212', { ok: false, errors: ['Nothing is stored ' +
+      'at ' + target.dn + ', so it cannot be added to ' + existing.dn + '. ' +
+      'A group lists only people, groups and applications that are there: ' +
+      'create it first.'] });
+  }
   // ASKED ACROSS ALL THREE MEMBERSHIP ATTRIBUTES, because the answer has to be
   // the one /admin/groups and the groups claim give: somebody listed as
   // `memberUid` is in this group, and an add that could not see that would
@@ -28343,12 +28458,6 @@ function addGroupMember(group, member, options) {
              errors: ['The membership could not be written onto ' +
                       existing.dn +
                       ' (' + written.reason + ').'] });
-  }
-  if (!target.present) {
-    log.info('ldap: ' + existing.dn + ' now lists ' + target.dn + ' and ' +
-             'nothing is stored there. It is written anyway — this directory ' +
-             'does no referential integrity, and a dangling member is a ' +
-             'state worth being able to produce.');
   }
   audit.recordDirectory({
     action: 'group.add-member',
