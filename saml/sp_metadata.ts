@@ -141,6 +141,8 @@ import fedHttp = require('../federation/federation_http');
 // Which build is calling, in RFC 9110 product form — the rule every outbound
 // requester in this service follows. Built once: the version cannot change.
 import version = require('../common/version');
+// SAML's vocabularies (#1579). A leaf.
+import SamlModel = require('./saml_model');
 const USER_AGENT = version.userAgent('saml-sp-metadata');
 
 // What parse() answers. It answers rather than throws; see that method.
@@ -166,9 +168,10 @@ interface ParsedMetadata {
 }
 
 // The protocol namespace an SPSSODescriptor's
-// protocolSupportEnumeration must name to be read here.
-const NS_SAMLP = 'urn:oasis:names:tc:SAML:2.0:protocol';
-const NS_SAMLP11 = 'urn:oasis:names:tc:SAML:1.1:protocol';
+// protocolSupportEnumeration must name to be read here: the model's terms
+// (#1579), as both identity providers publish them.
+const NS_SAMLP = SamlModel.term('saml2.namespace', 'protocol');
+const NS_SAMLP11 = SamlModel.term('saml11.protocol', 'saml11');
 
 // What fetchMetadata() resolves to.
 interface FetchAnswer {
