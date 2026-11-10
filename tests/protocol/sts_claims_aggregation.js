@@ -532,7 +532,8 @@ async function test() {
     assert.ok(!said.problem, "the callback refused the link: " +
               said.problem + " (" + back.at + ")");
     assert.ok(said.notice, "the callback said nothing: " + back.at);
-    assert.ok(/sts_claim_link=[^;]+;.*Path=\/realm\/[^;]+\/portal\/claim-sources\/callback/i
+    // Path=/ since ASVS 3.3.3, so the cookie can carry the __Host- prefix.
+    assert.ok(/sts_claim_link=[^;]+;\s*Path=\/\s*(;|$)/i
       .test(String(started.headers.get("set-cookie"))),
       "Link's answer binds the browser: " + started.headers.get("set-cookie"));
     // Back at the portal's page: the shell, which the portal draws from
