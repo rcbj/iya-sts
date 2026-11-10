@@ -68664,6 +68664,10 @@ op `getMalwareScanning`(`responses/200/content/application~1json/schema`: {
         `description`:"How the service answered.",
         `content`:#{`application/json`:#{`schema`:null}}
       },
+      `400`:#{
+        `description`:"The test failed or no ICAP service is set; `errors` says why.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
       `default`:#{
         `description`:"A refusal or a failure.",
         `content`:#{`application/json`:#{`schema`:null}}
@@ -68675,6 +68679,7 @@ op `testMalwareScanning`(`responses/200/content/application~1json/schema`: {
     `ok`: boolean;
     `message`: string
   },
+  `responses/400/content/application~1json/schema`: `SharedModel9`,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
 
 @endpoint("/admin-api/sessions/end-all",
@@ -68689,6 +68694,10 @@ op `testMalwareScanning`(`responses/200/content/application~1json/schema`: {
         `description`:"Every session has ended.",
         `content`:#{`application/json`:#{`schema`:null}}
       },
+      `400`:#{
+        `description`:"The operation was refused; `errors` says why and nothing changed.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
       `default`:#{
         `description`:"A refusal or a failure.",
         `content`:#{`application/json`:#{`schema`:null}}
@@ -68700,6 +68709,7 @@ op `endAllSessions`(`responses/200/content/application~1json/schema`: {
     `ok`: boolean;
     `message`: string
   },
+  `responses/400/content/application~1json/schema`: `SharedModel9`,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
 
 @endpoint("/admin-api/audit/integrity",

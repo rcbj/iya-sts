@@ -215,6 +215,20 @@ Scope: `admin:write`.
 | `message` | string | yes |  |
 | `ok` | boolean | yes |  |
 
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `accepted` | boolean |  |  |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `run` | string |  | The address to follow the run at. |
+| `runId` | string |  |  |
+
 ## POST /admin-api/sessions/revoke
 
 `revokeSession`
