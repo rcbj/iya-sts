@@ -65,7 +65,8 @@ const GENERATED = ['application', 'role', 'device', 'serviceAccount', 'spiffe',
     'models/generated/scim.json',
     'models/generated/oauth.json',
     'models/generated/gnap.json',
-    'models/generated/authzen.json']);
+    'models/generated/authzen.json',
+    'models/generated/ssf.json']);
 
 /**
  * The top-level directories that are not the service's own sources, as the

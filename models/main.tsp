@@ -43,6 +43,8 @@ import "./oauth/oauth_members.tsp";
 import "./gnap/gnap.tsp";
 import "./authzen/authzen.tsp";
 import "./authzen/authzen_members.tsp";
+import "./ssf/ssf.tsp";
+import "./ssf/ssf_events.tsp";
 import "./persistence/persistence.tsp";
 import "./persistence/persistence_mariadb.tsp";
 import "./api/report.tsp";

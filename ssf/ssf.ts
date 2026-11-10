@@ -206,6 +206,8 @@ import ssfAuth = require('./ssf_auth');
 // transition, one prober for the cluster, and a GNAP key proof spent across
 // every node before the gate reads it. A LIBRARY; see its header.
 import ssfCluster = require('./ssf_cluster');
+// The model the answers are held to (#1579): a leaf.
+import SsfModel = require('./ssf_model');
 // The error-code registry, a LEAF. An HTTP refusal is marked on the response
 // (the call-log funnel records it); a refusal with no response of its own — a
 // transmission, a console action, an automatic emission — is an audit row.
@@ -464,6 +466,14 @@ class SharedSignals {
                headers?: Json): void {
     const { log } = this.deps;
     log.debug('Entering SharedSignals.fail(). ' + status + ' ' + err);
+    // HELD TO THE MODEL (#1579): every `err` this family sends is declared
+    // in `models/ssf/ssf.tsp`. One that is not is recorded, and sent as it
+    // was built — the model describes the wire, it does not reshape it.
+    if (SsfModel.unknownError(err)) {
+      log.error(this.deps.errorCodes.tag('STS-SSF-0160') + 'the err value "' +
+                err + '" is not declared in models/ssf/ssf.tsp; it is sent ' +
+                'as it is.');
+    }
     const extra = headers || {};
     Object.keys(extra).forEach(function (name) {
       res.set(name, extra[name]);
@@ -472,6 +482,34 @@ class SharedSignals {
        .set('Cache-Control', 'no-store')
        .send(JSON.stringify({ err: err, description: description }, null, 2));
     log.debug('Leaving SharedSignals.fail().');
+  }
+
+  /**
+   * Holds an answer to its document in the model (#1579) and records what
+   * the document does not allow, under STS-SSF-0159. The answer is not
+   * changed: the model describes the wire and does not reshape it, so a
+   * problem here is a model gap. A stream configuration's `delivery` is held
+   * to its own document too.
+   *
+   * @param id - the document's id in `models/ssf/ssf.tsp`
+   * @param value - the answer as it is about to be sent
+   * @returns the value, unchanged
+   */
+  holdToModel(id: string, value: Json): Json {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering SharedSignals.holdToModel(). ' + id);
+    let problems = SsfModel.undeclared(id, value);
+    if (id === 'stream-configuration' && value && value.delivery) {
+      problems = problems.concat(SsfModel.undeclared('stream-delivery',
+                                                     value.delivery));
+    }
+    if (problems.length > 0) {
+      log.error(errorCodes.tag('STS-SSF-0159') + 'the ' + id + ' answer is ' +
+                'not the model\'s (models/ssf/ssf.tsp): ' +
+                problems.join('; ') + '.');
+    }
+    log.debug('Leaving SharedSignals.holdToModel().');
+    return value;
   }
 
   // Answers 501 rather than 404 when the family is switched off: the feature
@@ -2177,7 +2215,7 @@ class SharedSignals {
       includeSecrets: !!(decision && !decision.anonymous)
     });
     log.debug('Leaving SharedSignals.streamView().');
-    return view;
+    return this.holdToModel('stream-configuration', view);
   }
 
   // -------------------------------------------------------------------------
@@ -2274,7 +2312,8 @@ class SharedSignals {
       log.debug('Entering GET ' + WELL_KNOWN + '.');
       res.status(200).type('application/json')
          .set('Cache-Control', 'no-store')
-         .send(JSON.stringify(this.metadata(req), null, 2));
+         .send(JSON.stringify(this.holdToModel('transmitter-metadata',
+                                               this.metadata(req)), null, 2));
       log.debug('Leaving GET ' + WELL_KNOWN + '.');
     });
 
@@ -2336,7 +2375,8 @@ class SharedSignals {
       }
       res.status(200).type('application/json')
          .set('Cache-Control', 'no-store')
-         .send(JSON.stringify(found, null, 2));
+         .send(JSON.stringify(this.holdToModel('transmitter-metadata',
+                                               found), null, 2));
       log.debug('Leaving GET ' + WELL_KNOWN + '/*. ' + found.issuer);
     });
 
@@ -2532,8 +2572,9 @@ class SharedSignals {
       }
       res.status(200).type('application/json')
          .set('Cache-Control', 'no-store')
-         .send(JSON.stringify({ stream_id: record.stream_id,
-           status: record.status, reason: record.statusReason }, null, 2));
+         .send(JSON.stringify(this.holdToModel('stream-status',
+           { stream_id: record.stream_id, status: record.status,
+             reason: record.statusReason }), null, 2));
       log.debug('Leaving GET /ssf/status. ' + record.status);
     });
 
@@ -2583,9 +2624,10 @@ class SharedSignals {
               ? (changed.report.ok ? 'sent' : changed.report.why) : 'none' } });
         res.status(200).type('application/json')
            .set('Cache-Control', 'no-store')
-           .send(JSON.stringify({ stream_id: changed.stream.stream_id,
-             status: changed.stream.status,
-             reason: changed.stream.statusReason }, null, 2));
+           .send(JSON.stringify(this.holdToModel('stream-status',
+             { stream_id: changed.stream.stream_id,
+               status: changed.stream.status,
+               reason: changed.stream.statusReason }), null, 2));
         log.debug('Leaving POST /ssf/status. ' + changed.stream.status);
       });
     });
@@ -2919,8 +2961,9 @@ class SharedSignals {
       }
       res.status(200).type('application/json')
          .set('Cache-Control', 'no-store')
-         .send(JSON.stringify({ sets: result.sets,
-           moreAvailable: result.moreAvailable }, null, 2));
+         .send(JSON.stringify(this.holdToModel('poll-response',
+           { sets: result.sets, moreAvailable: result.moreAvailable }), null,
+                              2));
       log.debug('Leaving POST /ssf/poll. ' + Object.keys(result.sets).length +
                 ' set(s).');
     });

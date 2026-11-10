@@ -19331,6 +19331,34 @@ const CODES = [
     summary: 'A push delivery address is internal or could not be ' +
       'resolved, in product (ASVS 5.0.0 1.3.6).',
     spec: 'the delivery fails' },
+  { code: 'STS-SSF-0159',
+    summary: 'A Shared Signals answer — the transmitter metadata, a stream ' +
+      'configuration, a status or a poll — carried a member its model in ' +
+      'models/ssf/ssf.tsp does not name, one of a type the model does not ' +
+      'allow, or lacked one it requires (#1579). The answer is sent as it ' +
+      'was built: the model describes the wire and does not reshape it, so ' +
+      'this is a model gap to close.',
+    spec: 'none (recorded only; the answer is unchanged)' },
+  { code: 'STS-SSF-0160',
+    summary: 'A Shared Signals refusal carried an err value ' +
+      'models/ssf/ssf.tsp does not declare (#1579). The refusal is sent as ' +
+      'it was built; the value is to be declared, or the refusal to use a ' +
+      'declared one.',
+    spec: 'none (recorded only; the refusal is unchanged)' },
+  { code: 'STS-SSF-0161',
+    summary: 'A Security Event Token this service built carried a claim ' +
+      'models/ssf/ssf.tsp does not name, one of a type it does not allow, ' +
+      'or lacked one RFC 8417 requires (#1579). The SET is sent as it was ' +
+      'built; this is a model gap to close.',
+    spec: 'none (recorded only; the SET is unchanged)' },
+  { code: 'STS-SSF-0162',
+    summary: 'A document this realm exchanged with a federation partner\'s ' +
+      'Shared Signals transmitter is not the shape models/ssf/ssf.tsp gives ' +
+      'it (#1579): a configuration or a SET the partner sent, or a stream ' +
+      'request or poll this realm sent. Recorded; what was received is ' +
+      'still judged by the receiver\'s own checks, and what is sent is sent ' +
+      'unchanged.',
+    spec: 'none (recorded only)' },
   // ===== RISK ==============================================================
   { code: 'STS-RISK-0001',
     summary: 'A dataset import was refused before anything was loaded: the ' +
