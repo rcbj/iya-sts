@@ -105,6 +105,17 @@ function declarations(t) {
     'domain.d.ts'), 'utf8');
   t.check(committed === built, 'types/domain.generated.d.ts is what the ' +
     'model generates (tests/tools/regenerate-model-docs.sh)');
+  const classes = fs.readFileSync(path.join(ROOT, 'models', 'generated',
+    'domain_classes.txt'), 'utf8');
+  t.check(fs.readFileSync(path.join(ROOT, 'common', 'domain_classes.ts'),
+    'utf8') === classes, 'common/domain_classes.ts is what the model generates');
+  const api = fs.readFileSync(path.join(ROOT, 'models', 'generated', 'api.d.ts'),
+    'utf8');
+  t.check(fs.readFileSync(path.join(ROOT, 'types', 'api.generated.d.ts'),
+    'utf8') === api, 'types/api.generated.d.ts is what the model generates');
+  const Classes = require('../common/domain_classes');
+  t.equal(Classes.User.fromEntry({ uid: ['a'] }).username, 'a',
+    'a generated class makes its concept');
   t.check(/interface User \{/.test(built) &&
     !/interface User \{[^}]*password/i.test(built),
   'the User declaration has no password');

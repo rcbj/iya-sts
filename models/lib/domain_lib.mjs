@@ -380,3 +380,51 @@ export function renderTypes(concepts) {
   log.debug("Leaving renderTypes().");
   return lines.join('\n');
 }
+
+/**
+ * The classes of every concept, one for each, each made from an entry or a
+ * record by `DomainMap`, so a caller holds a named thing rather than a bag.
+ *
+ * @param concepts - from `readDomains()`
+ * @returns the text of `common/domain_classes.ts`
+ */
+export function renderClasses(concepts) {
+  log.debug("Entering renderClasses().");
+  const lines = ['// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, ' +
+    'LLC', '// SPDX-License-Identifier: BUSL-1.1', '',
+  '\'use strict\';', '//', '// File: domain_classes.ts', '//',
+  '// GENERATED from models/domain/ (#1390). Do not edit: change the model and',
+  '// run tests/tools/regenerate-model-docs.sh. tests/model_domain.js fails',
+  '// when this differs.', '',
+  'import bunyan = require(\'bunyan\');',
+  'import DomainMap = require(\'./domain_map\');', '',
+  'const log = bunyan.createLogger({',
+  '  name: \'sts-domain-classes\',',
+  '  level: process.env.LOG_LEVEL || process.env.STS_LOG_LEVEL || \'info\'',
+  '});', ''];
+  concepts.forEach(function (concept) {
+    const source = concept.record ? 'fromRecord' : 'fromEntry';
+    const fullName = concept.name + '.' + source;
+    lines.push.apply(lines, commentLines(concept.what, ''));
+    lines.push('class ' + concept.name + ' {');
+    lines.push('  /**', '   * Makes one from what holds it.', '   *',
+      '   * @param held - the attributes or the record',
+      '   * @param options - what it alone cannot say',
+      '   * @returns the concept', '   */');
+    lines.push('  static ' + source + '(held: any, options?: any):');
+    lines.push('      IyaDomain.' + concept.name + ' {');
+    lines.push('    log.debug("Entering ' + fullName + '().");');
+    lines.push('    const made = DomainMap.' + source + '(\'' + concept.name +
+      '\', held, options);');
+    lines.push('    log.debug("Leaving ' + fullName + '().");');
+    lines.push('    return made;', '  }', '}', '');
+  });
+  lines.push('export = {');
+  concepts.forEach(function (concept, index) {
+    lines.push('  ' + concept.name + ': ' + concept.name +
+      (index < concepts.length - 1 ? ',' : ''));
+  });
+  lines.push('};', '');
+  log.debug("Leaving renderClasses().");
+  return lines.join('\n');
+}

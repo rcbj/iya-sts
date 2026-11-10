@@ -18,8 +18,9 @@ import fs from 'fs';
 import path from 'path';
 import url from 'url';
 import bunyan from 'bunyan';
-import { documents, everyOperation } from '../lib/api_lib.mjs';
-import { checkDomains, readDomains, renderTypes }
+import { documents, everyOperation, renderApiTypes }
+  from '../lib/api_lib.mjs';
+import { checkDomains, readDomains, renderClasses, renderTypes }
   from '../lib/domain_lib.mjs';
 import { factsOf, fieldsOf, linksIn, readDirectory, readPersistence, readSpellings,
   renderScript, schemaOf } from '../lib/model_lib.mjs';
@@ -80,6 +81,8 @@ async function generate() {
   fs.writeFileSync(path.join(out, 'domain.json'),
     JSON.stringify({ concepts: concepts }));
   fs.writeFileSync(path.join(out, 'domain.d.ts'), renderTypes(concepts));
+  fs.writeFileSync(path.join(out, 'domain_classes.txt'),
+    renderClasses(concepts));
   const persistence = readPersistence(program);
   fs.writeFileSync(path.join(out, 'persistence.postgres.json'),
     JSON.stringify({ objects: persistence.objects,
@@ -92,6 +95,7 @@ async function generate() {
     fs.writeFileSync(path.join(out, 'openapi.' + name + '.json'),
       JSON.stringify(served[name]));
   });
+  fs.writeFileSync(path.join(out, 'api.d.ts'), renderApiTypes(served));
   fs.writeFileSync(path.join(out, 'openapi.every.json'),
     JSON.stringify(everyOperation(program)));
   const mariadb = readPersistence(program, 'mariadb');

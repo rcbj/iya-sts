@@ -341,3 +341,120 @@ export function everyOperation(program) {
   log.debug("Leaving everyOperation().");
   return out;
 }
+
+/**
+ * A JSON Schema as a TypeScript type.
+ *
+ * @param schema - the schema
+ * @returns the type's text
+ */
+function typeOf(schema) {
+  if (!schema || typeof schema !== 'object') {
+    return 'unknown';
+  }
+  if (schema.$ref) {
+    return schema.$ref.split('/').pop().replace(/[^A-Za-z0-9_]/g, '_');
+  }
+  const options = schema.anyOf || schema.oneOf;
+  if (options) {
+    return Array.from(new Set(options.map(typeOf))).join(' | ');
+  }
+  if (schema.const !== undefined) {
+    return JSON.stringify(schema.const);
+  }
+  if (schema.enum) {
+    return schema.enum.map(function (one) {
+      return JSON.stringify(one);
+    }).join(' | ');
+  }
+  if (Array.isArray(schema.type)) {
+    return schema.type.map(function (one) {
+      return typeOf(Object.assign({}, schema, { type: one }));
+    }).join(' | ');
+  }
+  if (schema.type === 'string') {
+    return 'string';
+  }
+  if (schema.type === 'integer' || schema.type === 'number') {
+    return 'number';
+  }
+  if (schema.type === 'boolean') {
+    return 'boolean';
+  }
+  if (schema.type === 'null') {
+    return 'null';
+  }
+  if (schema.type === 'array') {
+    return 'Array<' + typeOf(schema.items || {}) + '>';
+  }
+  if (schema.properties) {
+    const required = schema.required || [];
+    return '{ ' + Object.keys(schema.properties).map(function (name) {
+      return JSON.stringify(name) + (required.indexOf(name) < 0 ? '?: ' : ': ') +
+        typeOf(schema.properties[name]);
+    }).join('; ') + ' }';
+  }
+  return schema.type === 'object' ? 'Record<string, unknown>' : 'unknown';
+}
+
+/**
+ * The declarations of every request and response of every document.
+ *
+ * @param served - the documents, by name
+ * @returns the text of `types/api.generated.d.ts`
+ */
+export function renderApiTypes(served) {
+  log.debug("Entering renderApiTypes().");
+  const lines = ['// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, ' +
+    'LLC', '// SPDX-License-Identifier: BUSL-1.1', '//',
+  '// GENERATED from models/api/ (#1390). Do not edit: change the model and',
+  '// run tests/tools/regenerate-model-docs.sh. tests/model_openapi.js fails',
+  '// when this differs.', ''];
+  Object.keys(served).sort().forEach(function (name) {
+    const document = served[name];
+    lines.push('declare namespace IyaApi.' + name.charAt(0).toUpperCase() +
+      name.slice(1) + ' {');
+    const schemas = (document.components && document.components.schemas) || {};
+    Object.keys(schemas).sort().forEach(function (key) {
+      lines.push('  type ' + key.replace(/[^A-Za-z0-9_]/g, '_') + ' = ' +
+        typeOf(schemas[key]) + ';');
+    });
+    Object.keys(document.paths).sort().forEach(function (path) {
+      Object.keys(document.paths[path]).sort().forEach(function (method) {
+        const operation = document.paths[path][method];
+        const id = operation.operationId;
+        if (!id) {
+          return;
+        }
+        const body = operation.requestBody && operation.requestBody.content &&
+          operation.requestBody.content['application/json'];
+        if (body) {
+          lines.push('  type ' + id + 'Body = ' + typeOf(body.schema) + ';');
+        }
+        const query = {};
+        const required = [];
+        (operation.parameters || []).filter(function (one) {
+          return one.in === 'query';
+        }).forEach(function (one) {
+          query[one.name] = one.schema;
+          if (one.required) {
+            required.push(one.name);
+          }
+        });
+        if (Object.keys(query).length > 0) {
+          lines.push('  type ' + id + 'Query = ' + typeOf({ properties: query,
+            required: required }) + ';');
+        }
+        const answer = (operation.responses || {})['200'];
+        const media = answer && answer.content &&
+          answer.content['application/json'];
+        if (media) {
+          lines.push('  type ' + id + 'Answer = ' + typeOf(media.schema) + ';');
+        }
+      });
+    });
+    lines.push('}', '');
+  });
+  log.debug("Leaving renderApiTypes().");
+  return lines.join('\n');
+}
