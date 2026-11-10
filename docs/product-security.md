@@ -34,6 +34,8 @@ Level 1. Turn one on only for the clients that need it.
 |---|---|---|
 | `krb5.allowSha1Enctypes` | Kerberos enctypes 17 and 18 (AES with HMAC-SHA1-96) | Kerberos clients that speak nothing newer |
 | `scep.allowInProduct` | SCEP, which requires RSAES-PKCS1-v1.5 and AES-CBC | Devices that can only enroll over SCEP |
+| `ldap.plainListener` | The plain LDAP listener on 389, where a password can cross in the clear even though the bind is refused | Directory clients that cannot use LDAPS on 636 |
+| `federation.allowAssertionWithoutAudience` | A partner's SAML 1.1 or WS-Federation assertion that names no audience | A partner that cannot send one |
 | `oauth2.allowUndeclaredGrants` | Any grant for a client that lists none | Test stacks |
 | `admin.allowDefaultUsername` | A bootstrap administrator named `admin`, `root`, `sa` or `administrator` | Test stacks |
 | `security.fileRoots` | Where a file an administrator names may be read from. Set only in the environment or appconfig file | Add the directory your certificates and tokens are mounted in |
