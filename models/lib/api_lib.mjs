@@ -360,8 +360,24 @@ function typeOf(schema) {
     return schema.$ref.split('/').pop().replace(/[^A-Za-z0-9_]/g, '_');
   }
   const options = schema.anyOf || schema.oneOf;
-  if (options) {
+  // ALTERNATIVES THAT ONLY CONSTRAIN (`anyOf: [{ required: ['profile'] },
+  // { required: ['id'] }]`) say which members must be present, not what the
+  // value is: the value is the rest of the schema (#1579). They were read as
+  // `unknown`, which typed such a body as nothing.
+  const shaping = options && options.some(function (one) {
+    return one && typeof one === 'object' && ['type', 'properties', '$ref',
+      'enum', 'const', 'items', 'anyOf', 'oneOf'].some(function (key) {
+      return one[key] !== undefined;
+    });
+  });
+  if (options && shaping) {
     return Array.from(new Set(options.map(typeOf))).join(' | ');
+  }
+  if (options) {
+    const rest = Object.assign({}, schema);
+    delete rest.anyOf;
+    delete rest.oneOf;
+    return typeOf(rest);
   }
   if (schema.const !== undefined) {
     return JSON.stringify(schema.const);
@@ -393,25 +409,35 @@ function typeOf(schema) {
   }
   if (schema.properties) {
     const required = schema.required || [];
-    return '{ ' + Object.keys(schema.properties).map(function (name) {
+    const members = Object.keys(schema.properties).map(function (name) {
       return JSON.stringify(name) + (required.indexOf(name) < 0 ? '?: ' : ': ') +
         typeOf(schema.properties[name]);
-    }).join('; ') + ' }';
+    });
+    // AN OPEN OBJECT (#1579): a member the schema does not name is still
+    // allowed, so reading one is too.
+    if (schema.additionalProperties === true ||
+        (schema.additionalProperties &&
+         typeof schema.additionalProperties === 'object')) {
+      members.push('[member: string]: unknown');
+    }
+    return '{ ' + members.join('; ') + ' }';
   }
   return schema.type === 'object' ? 'Record<string, unknown>' : 'unknown';
 }
 
 /**
- * One operation as the handler that serves it is typed (#1579): what it
- * takes — the JSON body, the query's names and types — and what it answers,
+ * One operation as the handler that serves it is typed (#1579): its method
+ * and path (which a table of actions is found by), what it takes — the JSON body, the query's names and types — and what it answers,
  * by status, for every 2xx status the model gives a JSON answer. A body the
  * model does not declare is `{}`, so reading a member of it fails to
  * compile; a body that is not JSON (an upload) is `unknown`.
  *
+ * @param method - the operation's method
+ * @param path - its path, as the document writes it
  * @param operation - the OpenAPI operation
  * @returns the type's text
  */
-function operationType(operation) {
+function operationType(method, path, operation) {
   log.debug("Entering operationType().");
   const content = (operation.requestBody && operation.requestBody.content) ||
     null;
@@ -441,7 +467,8 @@ function operationType(operation) {
     }
   });
   log.debug("Leaving operationType().");
-  return '{ body: ' + body + '; query: ' + (Object.keys(query).length > 0
+  return '{ method: ' + JSON.stringify(method.toUpperCase()) + '; path: ' +
+    JSON.stringify(path) + '; body: ' + body + '; query: ' + (Object.keys(query).length > 0
     ? typeOf({ properties: query, required: required }) : '{}') +
     '; answers: { ' + answers.join('; ') + (answers.length ? ' }' : '}') +
     ' }';
@@ -480,7 +507,7 @@ export function renderApiTypes(served) {
         const key = operation.operationId ||
           method.toUpperCase() + ' ' + path;
         lines.push('    ' + JSON.stringify(key) + ': ' +
-          operationType(operation) + ';');
+          operationType(method, path, operation) + ';');
       });
     });
     lines.push('  }', '}', '');

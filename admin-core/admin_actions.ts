@@ -1416,7 +1416,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  tokenAction(body, setWarmed?) {
+  tokenAction(body: IyaApi.AdminActionBody<
+    '/admin-api/tokens'>, setWarmed?) {
     const { log, stats } = this.deps;
     log.debug("Entering AdminActions.tokenAction(). action=" + (body.action ||
                                                                 '(none)'));
@@ -1810,7 +1811,8 @@ class AdminActions {
    * @param opts - who is acting (`actor`) and from where (`by`)
    * @returns `{ ok, errors, … }` reporting what was ended and what could not be
    */
-  sessionsAction(body, opts) {
+  sessionsAction(body: IyaApi.AdminActionBody<
+    '/admin-api/sessions'>, opts) {
     const { log } = this.deps;
     log.debug("Entering AdminActions.sessionsAction().");
     if (!logoutReader) {
@@ -1902,7 +1904,9 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  logoutAction(body) {
+  logoutAction(body: IyaApi.AdminActionBody<
+    '/admin-api/logout'> &
+    IyaApi.NotInModel<'actor' | 'id' | 'target' | 'username'>) {
     const { log, stats, krb5Principals, mode } = this.deps;
     log.debug("Entering AdminActions.logoutAction(). action=" + (body.action ||
                                                                  '(none)'));
@@ -2076,7 +2080,9 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  permissionsAction(body) {
+  permissionsAction(body: IyaApi.AdminActionBody<
+    '/admin-api/permissions'> &
+    IyaApi.NotInModel<'actor' | 'application' | 'value'>) {
     const { log, numberWord, appPermissions } = this.deps;
     log.debug("Entering AdminActions.permissionsAction(). action=" +
               (body.action || '(none)'));
@@ -2226,7 +2232,8 @@ class AdminActions {
    * @param body - the parsed body, whose `action` names the act
    * @returns `{ ok, errors, why, … }`, or a promise of it
    */
-  xacmlAction(body) {
+  xacmlAction(body: IyaApi.AdminActionBody<
+    '/admin-api/xacml'>) {
     const { log } = this.deps;
     const self = this;
     log.debug('Entering AdminActions.xacmlAction(). action=' + (body ||
@@ -4101,7 +4108,10 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  usersAction(body, context?) {
+  usersAction(body: IyaApi.AdminActionBody<
+    '/admin-api/users'> &
+    IyaApi.NotInModel<'actor' | 'aud_sub' | 'client_id' | 'enrolment_id' |
+      'risc_reason' | 'upgrade_id'>, context?) {
     const { log, numberWord, credentials, auditLog,
             accountSignals } = this.deps;
     log.debug("Entering AdminActions.usersAction(). action=" + (body.action ||
@@ -5484,7 +5494,9 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  groupsAction(body) {
+  groupsAction(body: IyaApi.AdminActionBody<
+    '/admin-api/groups'> &
+    IyaApi.NotInModel<'actor' | 'cn'>) {
     const { log } = this.deps;
     log.debug("Entering AdminActions.groupsAction(). action=" + (body.action ||
                                                                  '(none)'));
@@ -6803,7 +6815,9 @@ class AdminActions {
    * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
    *   with the sentence naming every action
    */
-  applicationsAction(body, protocols, context) {
+  applicationsAction(body: IyaApi.AdminActionBody<
+    '/admin-api/applications' | '/admin-api/console/applications'> &
+    IyaApi.NotInModel<'actor' | 'filename'>, protocols, context) {
     const { log, numberWord, applications, spMetadata, resourceMetadata,
       softwareStatement, tlsClientCertificates } = this.deps;
     const self = this;
@@ -8065,7 +8079,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  asAction(body) {
+  asAction(body: IyaApi.AdminActionBody<
+    '/admin-api/authorization-servers'>) {
     const { log, authorizationServers } = this.deps;
     log.debug("Entering AdminActions.asAction(). action=" + (body.action ||
                                                              '(none)'));
@@ -8441,7 +8456,7 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  mfaAction(body, context) {
+  mfaAction(body: IyaApi.AdminActionBody<'/admin-api/mfa'>, context) {
     const { log } = this.deps;
     log.debug("Entering AdminActions.mfaAction(). action=" + (body.action ||
                                                               '(none)'));
@@ -8476,7 +8491,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  rbacAction(body, context) {
+  rbacAction(body: IyaApi.AdminActionBody<'/admin-api/rbac'> &
+    IyaApi.NotInModel<'user'>, context) {
     const { log, realms, rbac } = this.deps;
     log.debug("Entering AdminActions.rbacAction(). action=" + (body.action ||
                                                                '(none)'));
@@ -8518,7 +8534,9 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  consentAction(body) {
+  consentAction(body: IyaApi.AdminActionBody<
+    '/admin-api/consent'> &
+    IyaApi.NotInModel<'actor' | 'application' | 'user'>) {
     const { log, numberWord, auditLog, consent } = this.deps;
     log.debug("Entering AdminActions.consentAction(). action=" + (body.action ||
                                                                   '(none)'));
@@ -8649,7 +8667,9 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  rolesAction(body, context) {
+  rolesAction(body: IyaApi.AdminActionBody<
+    '/admin-api/roles'> &
+    IyaApi.NotInModel<'actor' | 'name'>, context) {
     const { log, numberWord, auditLog, applications, roles } = this.deps;
     log.debug("Entering AdminActions.rolesAction(). action=" + (body.action ||
                                                                 '(none)'));
@@ -9157,7 +9177,9 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  policiesAction(body, context) {
+  policiesAction(body: IyaApi.AdminActionBody<
+    '/admin-api/policies'> &
+    IyaApi.NotInModel<'actor' | 'form'>, context) {
     const { log, auditLog, policyKinds, numberWord } = this.deps;
     log.debug("Entering AdminActions.policiesAction(). action=" +
               (body.action || '(none)'));
@@ -9336,7 +9358,10 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  claimsAction(body, names, allowed) {
+  claimsAction(body: IyaApi.AdminActionBody<
+    '/admin-api/claims' | '/admin-api/kerberos/claims' |
+    '/admin-api/saml-attributes' | '/admin-api/userinfo-claims'> &
+    IyaApi.NotInModel<'multi'>, names, allowed) {
     const { log, stats, claimAttributes } = this.deps;
     log.debug("Entering AdminActions.claimsAction(). action=" + (body.action ||
                                                                  '(none)'));
@@ -9600,7 +9625,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  vcAction(body, names) {
+  vcAction(body: IyaApi.AdminActionBody<
+    '/admin-api/credential-claims'>, names) {
     const { log, vcClaims } = this.deps;
     log.debug("Entering AdminActions.vcAction(). action=" + (body.action ||
                                                              '(none)'));
@@ -9738,7 +9764,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  vpConfigAction(body, names) {
+  vpConfigAction(body: IyaApi.AdminActionBody<
+    '/admin-api/verifier-request'>, names) {
     const { log, vpConfig } = this.deps;
     log.debug("Entering AdminActions.vpConfigAction(). action=" +
               (body.action || '(none)'));
@@ -9849,7 +9876,8 @@ class AdminActions {
    * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
    *   with the sentence naming every action
    */
-  realmsAction(body) {
+  realmsAction(body: IyaApi.AdminActionBody<
+    '/admin-api/realms'>) {
     const { log, credentials, realms, rbac, mode, errorCodes } = this.deps;
     log.debug("Entering AdminActions.realmsAction(). action=" + (body &&
                                                                  body.action));
@@ -10195,7 +10223,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  configAction(body) {
+  configAction(body: IyaApi.AdminActionBody<
+    '/admin-api/config'>) {
     const { log, config } = this.deps;
     const self = this;
     log.debug("Entering AdminActions.configAction(). action=" + (body &&
@@ -10430,7 +10459,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  tokenLifetimesAction(body) {
+  tokenLifetimesAction(body: IyaApi.AdminActionBody<
+    '/admin-api/token-lifetimes'>) {
     const { log, config } = this.deps;
     const self = this;
     log.debug("Entering AdminActions.tokenLifetimesAction(). action=" + (body &&
@@ -10569,7 +10599,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  samlAssertionsAction(body) {
+  samlAssertionsAction(body: IyaApi.AdminActionBody<
+    '/admin-api/saml-assertions'>) {
     const { log, config } = this.deps;
     const self = this;
     log.debug("Entering AdminActions.samlAssertionsAction(). action=" + (body &&
@@ -10686,7 +10717,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  signalsAction(body) {
+  signalsAction(body: IyaApi.AdminActionBody<
+    '/admin-api/signals'>) {
     const { log, signals } = this.deps;
     log.debug("Entering AdminActions.signalsAction(). action=" + String((body ||
         {}).action));
@@ -10734,7 +10766,7 @@ class AdminActions {
    * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
    *   with the sentence naming every action
    */
-  ssfAction(body) {
+  ssfAction(body: IyaApi.AdminActionBody<'/admin-api/ssf'>) {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering AdminActions.ssfAction().");
@@ -10761,7 +10793,7 @@ class AdminActions {
    * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
    *   with the sentence naming every action
    */
-  caepAction(body) {
+  caepAction(body: IyaApi.AdminActionBody<'/admin-api/caep'>) {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering AdminActions.caepAction().");
@@ -10788,7 +10820,7 @@ class AdminActions {
    * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
    *   with the sentence naming every action
    */
-  riscAction(body) {
+  riscAction(body: IyaApi.AdminActionBody<'/admin-api/risc'>) {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering AdminActions.riscAction().");
@@ -10818,7 +10850,8 @@ class AdminActions {
    * @param context - `{ actor, via }`
    * @returns a promise of the answer
    */
-  async pkiTrustAction(body, context) {
+  async pkiTrustAction(body: IyaApi.AdminActionBody<
+    '/admin-api/pki/trust'>, context) {
     const { log, auditLog, config } = this.deps;
     log.debug("Entering AdminActions.pkiTrustAction().");
     const asked = body || {};
@@ -10941,7 +10974,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  truststoreAction(body, context) {
+  truststoreAction(body: IyaApi.AdminActionBody<
+    '/admin-api/tls/trust'>, context) {
     const { log, numberWord, auditLog } = this.deps;
     log.debug("Entering AdminActions.truststoreAction(). action=" +
               String((body || {}).action));
@@ -11130,7 +11164,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  spiffeEntriesAction(body) {
+  spiffeEntriesAction(body: IyaApi.AdminActionBody<
+    '/admin-api/spiffe/entries'>) {
     const { log, spiffeCa, spiffeRegistry, spiffeIdLib } = this.deps;
     log.debug("Entering AdminActions.spiffeEntriesAction(). action=" +
               (body.action || '(none)'));
@@ -11264,7 +11299,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  spiffeAgentsAction(body, context?) {
+  spiffeAgentsAction(body: IyaApi.AdminActionBody<
+    '/admin-api/spiffe/agents'>, context?) {
     const { log, spiffeRegistry } = this.deps;
     log.debug("Entering AdminActions.spiffeAgentsAction(). action=" +
               (body.action || '(none)'));
@@ -11383,7 +11419,8 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  spiffeBrokersAction(body) {
+  spiffeBrokersAction(body: IyaApi.AdminActionBody<
+    '/admin-api/spiffe/brokers'>) {
     const { log, config, spiffeAuth } = this.deps;
     log.debug("Entering AdminActions.spiffeBrokersAction(). action=" +
               (body.action || '(none)'));
@@ -11470,7 +11507,9 @@ class AdminActions {
    * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
    *   with the sentence naming every action
    */
-  async federationAction(body, ctx?) {
+  async federationAction(body: IyaApi.AdminActionBody<
+    '/admin-api/federation'> &
+    IyaApi.NotInModel<'relationship'>, ctx?) {
     const { log, federation, fedEncryption, loadSignals } = this.deps;
     log.debug("Entering AdminActions.federationAction(). action=" +
               (body.action || '(none)'));
@@ -11709,7 +11748,8 @@ class AdminActions {
    * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
    *   with the sentence naming every action
    */
-  async spiffeAction(body) {
+  async spiffeAction(body: IyaApi.AdminActionBody<
+    '/admin-api/spiffe'>) {
     const { log, auditLog, spiffeCa } = this.deps;
     log.debug("Entering AdminActions.spiffeAction(). action=" + (body.action ||
                                                                  '(none)'));
@@ -11932,7 +11972,8 @@ class AdminActions {
    * @returns a promise of `{ ok, errors, … }`; an unknown action is refused
    *   with the sentence naming every action
    */
-  kerberosPrincipalsAction(body, context) {
+  kerberosPrincipalsAction(body: IyaApi.AdminActionBody<
+    '/admin-api/kerberos/principals'>, context) {
     const self = this;
     const { log, numberWord, realms, krb5PersonKeys } = this.deps;
     log.debug("Entering AdminActions.kerberosPrincipalsAction(). action=" +
@@ -12099,7 +12140,8 @@ class AdminActions {
    * @returns `{ ok, errors, trust, shown, … }`; never a key but a generated
    *   one, once, in `shown`
    */
-  kerberosTrustsAction(body, context) {
+  kerberosTrustsAction(body: IyaApi.AdminActionBody<
+    '/admin-api/kerberos/trusts'>, context) {
     const { log, numberWord, realms, auditLog } = this.deps;
     const asked = body || {};
     const action = String(asked.action || '');

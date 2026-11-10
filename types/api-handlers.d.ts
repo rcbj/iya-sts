@@ -102,6 +102,40 @@ declare namespace IyaApi {
     [member: string]: any;
   }
 
+  // THE OPERATIONS OF A TABLE OF ACTIONS (#1579): every POST the model
+  // declares one segment under `P` (`/admin-api/users` names
+  // `/admin-api/users/create`, `/admin-api/users/set-password`, …), which
+  // is what a `POST …/:action` row serves.
+  type ActionsAt<Ops, P extends string> = {
+    [K in keyof Ops]: Ops[K] extends { method: 'POST'; path: `${P}/${infer A}` }
+      ? (A extends `${string}/${string}` ? never : K)
+      : never
+  }[keyof Ops];
+
+  // EVERY MEMBER ANY OF SEVERAL BODIES DECLARES, each optional, with the
+  // union of the types they give it: what a function serving all of them
+  // may read. `action` is the URL's, which the row adds to the body.
+  type MergedBody<B> = {
+    [K in (B extends unknown ? keyof B : never)]?:
+      B extends unknown ? (K extends keyof B ? B[K] : never) : never;
+  };
+
+  // WHAT AN ADMIN-CORE ACTION IS HANDED (#1579): the merged bodies of the
+  // tables of actions it serves, named by their paths.
+  type AdminActionBody<P extends string> =
+    MergedBody<AdminOperations[ActionsAt<AdminOperations, P>]['body']> &
+    { action?: string };
+
+  // WHAT AN ACTION READS THAT NO OPERATION DECLARES (#1579), named where it
+  // is read so the checker holds every other read to the model. Each is an
+  // older spelling of a member (`user` beside `username`), a member an
+  // in-process caller adds (`actor`, `form`), or a value an in-process
+  // caller sends in another type (`multi: 'on'`). `/admin-api`'s bodies are
+  // closed, so none of them reaches an action from the API: only a direct
+  // call (a test) sends them. Typed `any`, because the model says nothing
+  // of them to check against.
+  type NotInModel<N extends string> = { [K in N]?: any };
+
   // ONE ROW OF A ROUTE TABLE, discriminated by its operationId: the row's
   // `handler` is typed by the operation the same row names. `Extra` is what
   // a table hands a handler after the request and the response. Every other
