@@ -22,6 +22,7 @@ import { documents, everyOperation, projections, renderApiTypes }
   from '../lib/api_lib.mjs';
 import { checkDomains, readDomains, renderClasses, renderTypes }
   from '../lib/domain_lib.mjs';
+import { checkScim, readScim } from '../lib/scim_lib.mjs';
 import { factsOf, fieldsOf, linksIn, readDirectory, readPersistence, readSpellings,
   renderScript, schemaOf } from '../lib/model_lib.mjs';
 
@@ -83,6 +84,13 @@ async function generate() {
   fs.writeFileSync(path.join(out, 'domain.d.ts'), renderTypes(concepts));
   fs.writeFileSync(path.join(out, 'domain_classes.txt'),
     renderClasses(concepts));
+  const scim = readScim(program);
+  const scimProblems = checkScim(scim, objects);
+  if (scimProblems.length > 0) {
+    log.debug("Leaving generate(). The SCIM model is wrong.");
+    throw new Error('The SCIM model is wrong: ' + scimProblems.join('; '));
+  }
+  fs.writeFileSync(path.join(out, 'scim.json'), JSON.stringify(scim));
   const persistence = readPersistence(program);
   fs.writeFileSync(path.join(out, 'persistence.postgres.json'),
     JSON.stringify({ objects: persistence.objects,

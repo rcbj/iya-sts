@@ -59,6 +59,8 @@ model Group {
   uniqueMember?: (string)[];
   @attr(#{what: "Named on the Groups section."})
   memberUid?: (string)[];
+  @attr(#{what: "SCIM's externalId of a Group, which /scim/v2 stores verbatim (models/scim/scim.tsp). The People section names it on people and groups."})
+  scimExternalId?: string;
   @attr(#{what: "Named on the Groups section."})
   @link(#{to: "policy.passkey", cardinality: "single", owns: false, what: "The named passkey policy of its members."})
   stsPasskeyPolicy?: string;
