@@ -49,11 +49,15 @@ upload has to arrive in that time. For a very large risk dataset, use
 
 ## What you must add
 
-The service limits credential attempts and the costly features above. It has no
-general per-client or per-address request-rate limit on other endpoints, and no
-limit on how many requests one client can run at once. Put a rate limit in front
-of the service, in your load balancer or gateway, and size the thread pool and
-the workers for your load.
+The service limits credential attempts and the costly features above. It also
+puts a ceiling on all requests from one address:
+`security.requestsPerAddressPerMinute`, 6000 a minute in product mode and off in
+development. Behind a proxy, set `global.trustedProxies` so the address is read
+correctly. The ceiling is counted per process, so a cluster of N nodes allows N
+times as much. There is no per-client limit and no limit on how many requests
+one client can run at once. Put a rate limit sized for your users in front of
+the service, in your load balancer or gateway, and size the thread pool and the
+workers for your load.
 
 ## Related
 
