@@ -319,7 +319,7 @@ Scope: `admin:write`.
 | `identifier` | string | yes | The username or application identifier. |
 | `keyAlg` | one of `rsa-2048`, `rsa-3072`, `rsa-4096`, `ec-p256`, `ec-p384`, `ec-p521`, `ed25519`, `ml-dsa-44`, `ml-dsa-65`, `ml-dsa-87`, `slh-dsa-sha2-128s`, `slh-dsa-sha2-128f`, `slh-dsa-sha2-192s`, `slh-dsa-sha2-192f`, `slh-dsa-sha2-256s`, `slh-dsa-sha2-256f`, `slh-dsa-shake-128s`, `slh-dsa-shake-128f`, `slh-dsa-shake-192s`, `slh-dsa-shake-192f`, `slh-dsa-shake-256s`, `slh-dsa-shake-256f`, `mldsa44-rsa2048-pss-sha256`, `mldsa44-rsa2048-pkcs15-sha256`, `mldsa44-ed25519-sha512`, `mldsa44-ecdsa-p256-sha256`, `mldsa65-rsa3072-pss-sha512`, `mldsa65-rsa3072-pkcs15-sha512`, `mldsa65-rsa4096-pss-sha512`, `mldsa65-rsa4096-pkcs15-sha512`, `mldsa65-ecdsa-p256-sha512`, `mldsa65-ecdsa-p384-sha512`, `mldsa65-ed25519-sha512`, `mldsa87-ecdsa-p384-sha512`, `mldsa87-ed448-shake256`, `mldsa87-rsa3072-pss-sha512`, `mldsa87-rsa4096-pss-sha512`, `mldsa87-ecdsa-p521-sha512`, `ml-kem-512`, `ml-kem-768`, `ml-kem-1024` |  | A key algorithm id from GET /admin-api/est `keyAlgorithms`; ec-p256 when omitted. |
 | `kind` | one of `person`, `application` | yes | Whether `identifier` names a person (a username) or an application (its identifier). |
-| `profile` | string |  | One of the nine profiles; `est.defaultProfile` when omitted. |
+| `profile` | one of `tls-server`, `tls-client`, `tls-server-client`, `digital-signature`, `key-encipherment`, `code-signing`, `email`, `timestamping`, `smartcard-logon` |  | One of the nine profiles; `est.defaultProfile` when omitted. |
 
 **200**: The certificate, its chain and the private key, once.
 
