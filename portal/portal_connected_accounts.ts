@@ -249,11 +249,13 @@ class PortalConnectedAccounts {
   recentEnough(signOn: Json): boolean {
     const { log, config, now } = this.deps;
     log.debug("Entering PortalConnectedAccounts.recentEnough().");
-    const events = signOn && Array.isArray(signOn.events) ? signOn.events : [];
+    // Read through the `Session` concept (#1579).
+    const view = Classes.Session.fromRecord(signOn || {});
+    const events = view.events || [];
     const latest = events.length ? events[events.length - 1] : null;
     const minutes = Number(config.value('federation.connectRecentAuthMinutes'));
     const at = latest ? Number(latest.at || 0) * 1000
-                      : Number((signOn && signOn.authTime) || 0) * 1000;
+                      : Number(view.authTime || 0) * 1000;
     log.debug("Leaving PortalConnectedAccounts.recentEnough().");
     return at > 0 && now() - at <= minutes * 60 * 1000;
   }
