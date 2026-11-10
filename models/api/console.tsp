@@ -250,112 +250,13 @@ namespace IyaSts.Api.Console {
       `description`:"When this snapshot was taken, in milliseconds, so that every age in it can be worked out without trusting the caller's clock."
     }) `now`?: numeric;
     `uptimeMs`?: numeric;
-    @js(#{`description`:"The custom claim sets and how many claims each holds."}) `claims`?: ({
-      `id`?: string;
-      `label`?: string;
-      `count`?: integer;
-      `claims`?: ({
-        `name`?: string;
-        `value`?: StringOrNumericOrBooleanEtc4;
-        `nameFormat`?: string;
-        `namespace`?: string;
-        `attribute`?: string;
-        `multi`?: boolean;
-        `type`?: string
-      })[]
-    })[];
-    @js(#{`description`:"Endpoint calls, in total and per matched route."}) `calls`?: {
-      `total`?: integer;
-      `paths`?: integer;
-      `pathsHere`?: integer;
-      `pathsElsewhere`?: integer;
-      `byStatusClass`?: Record<numeric>;
-      `pathsCollapsed`?: integer;
-      `healthProbes`?: integer;
-      `rows`?: ({
-        `method`?: string;
-        `path`?: string;
-        `matched`?: boolean;
-        `count`?: numeric;
-        `totalMs`?: numeric;
-        `maxMs`?: numeric;
-        `lastAt`?: numeric;
-        `lastStatus`?: NullableInteger;
-        `statuses`?: Record<numeric>
-      })[]
-    };
-    @js(#{`description`:"JWTs by kind, with the state of each."}) `tokens`?: {
-      `held`?: integer;
-      `heldOnly`?: boolean;
-      `forgotten`?: integer;
-      `cap`?: integer;
-      `revoked`?: integer;
-      `byKind`?: ({
-        `kind`?: string;
-        `issued`?: integer;
-        `valid`?: integer;
-        `expired`?: integer;
-        `revoked`?: integer;
-        `notYetValid`?: integer;
-        `noExpiry`?: integer;
-        `bound`?: integer
-      })[]
-    };
-    `artifacts`?: {
-      `held`?: integer;
-      `heldHere`?: integer;
-      `forgotten`?: integer;
-      `cap`?: integer;
-      `byKind`?: ({
-        `kind`?: string;
-        `issued`?: integer;
-        `valid`?: integer;
-        `expired`?: integer;
-        `noExpiry`?: integer
-      })[]
-    };
-    `users`?: {
-      `known`?: integer;
-      `cap`?: integer;
-      `heldOnly`?: boolean;
-      `forgotten`?: integer;
-      `authenticatedHere`?: integer;
-      `clients`?: integer;
-      `authentications`?: integer
-    };
-    `sessions`?: {
-      `families`?: ({`family`?: string; `subjects`?: integer; `who`?: (string)[]})[];
-      `distinctSubjects`?: integer
-    };
-    `signOnSessions`?: {
-      `held`?: NullableInteger;
-      `active`?: NullableInteger;
-      `windowed`?: boolean;
-      `unread`?: boolean;
-      `rows`?: ({
-        `id`?: string;
-        `username`?: string;
-        `sub`?: string;
-        `amr`?: string;
-        `acr`?: string;
-        `startedAt`?: numeric;
-        `authTime`?: numeric;
-        `authentications`?: integer;
-        `expires`?: numeric;
-        `expired`?: boolean;
-        `wsfedRealms`?: (string)[];
-        `deviceBound`?: {
-          `bound`?: boolean;
-          `alg`?: string;
-          `boundAt`?: numeric;
-          `refreshes`?: numeric;
-          `refreshedAt`?: numeric;
-          `fact`?: string;
-          `reasons`?: (string)[]
-        };
-        `accountSet`?: string
-      })[]
-    }
+    @js(#{`description`:"The custom claim sets and how many claims each holds."}) `claims`?: (WithIdLabelCountEtc4)[];
+    @js(#{`description`:"Endpoint calls, in total and per matched route."}) `calls`?: WithTotalPathsPathsHereEtc8;
+    @js(#{`description`:"JWTs by kind, with the state of each."}) `tokens`?: WithHeldHeldOnlyForgottenEtc6;
+    `artifacts`?: WithHeldHeldHereForgottenEtc5;
+    `users`?: WithKnownCapHeldOnlyEtc7;
+    `sessions`?: WithFamiliesDistinctSubjects;
+    `signOnSessions`?: WithHeldActiveWindowedEtc5
   }
 
 @js(#{
@@ -415,33 +316,9 @@ namespace IyaSts.Api.Console {
     }) `realm`?: string;
     @js(#{
       `description`:"The settings this page draws, described: the same rows GET /config returns, filtered to the ones this page owns."
-    }) `settings`?: {
-      `page`?: string;
-      @js(#{`description`:"In the order `config.js` declares them."}) `groups`?: (WithGroupSettings)[];
-      `settingCount`?: integer;
-      @js(#{`description`:"How many of them can be changed while the service runs."}) `editableCount`?: integer;
-      @js(#{`description`:"The keys on this page with a runtime override in force."}) `overridden`?: (string)[];
-      @js(#{`description`:"The operation that writes them."}) `setWith`?: string;
-      `context`?: {
-        `configFile`?: NullableString;
-        `defaultsFile`?: string;
-        `persistsAppconfig`?: boolean;
-        `persistsRealms`?: boolean;
-        `persistenceMode`?: string;
-        `inRealm`?: boolean;
-        `realmId`?: string
-      };
-      @js(#{`description`:"A group drawn on another page as well, and those pages."}) `sharedWith`?: Record<({`path`?: string; `label`?: NullableString})[]>
-    };
+    }) `settings`?: WithPageDescriptionGroupsEtc15;
     `regeneratedEveryStart`?: boolean;
-    `residency`?: {
-      `persisting`?: boolean;
-      `retention`?: string;
-      `plaintextTtlS`?: numeric;
-      `note`?: string;
-      `realmsHeld`?: (string)[];
-      `plaintextHeld`?: (string)[]
-    };
+    `residency`?: WithPersistingRetentionPlaintextTtlSEtc6;
     @js(#{
       `description`:"Every format the exporter knows. What a PARTICULAR key offers is its own `formats`."
     }) `formats`?: (string)[];
@@ -478,306 +355,23 @@ namespace IyaSts.Api.Console {
 @js(#{
     `description`:"What this service does when it signs, verifies, encrypts or decrypts, for every identity service it advertises. Every algorithm list is READ FROM THE MODULE THAT PERFORMS THE ALGORITHM, so it cannot claim something this service does not do."
   }) @component model `CryptoMetadata` {
-    `signaturePolicy`?: {
-      `pqcOnly`?: boolean;
-      `surfaces`?: {
-        `jose`?: {
-          @js(#{`description`:"The setting holding what this surface signs with."}) `signSetting`?: string;
-          @js(#{`description`:"The setting holding what this surface accepts."}) `acceptSetting`?: string;
-          `rows`?: ({
-            @js(#{`description`:"The algorithm."}) `id`?: string;
-            @js(#{`description`:"Its name on this surface."}) `spelling`?: string;
-            @js(#{`description`:"pq or composite, or empty for a classical algorithm."}) `pqc`?: string;
-            `weak`?: boolean;
-            @js(#{`description`:"Whether this realm signs with it now."}) `signs`?: boolean;
-            @js(#{`description`:"Why not, or empty."}) `signRefusal`?: string;
-            @js(#{`description`:"Whether this realm accepts it now."}) `accepts`?: boolean;
-            @js(#{`description`:"Why not, or empty."}) `acceptRefusal`?: string
-          })[]
-        };
-        `httpsig`?: {
-          @js(#{`description`:"The setting holding what this surface signs with."}) `signSetting`?: string;
-          @js(#{`description`:"The setting holding what this surface accepts."}) `acceptSetting`?: string;
-          `rows`?: ({
-            @js(#{`description`:"The algorithm."}) `id`?: string;
-            @js(#{`description`:"Its name on this surface."}) `spelling`?: string;
-            @js(#{`description`:"pq or composite, or empty for a classical algorithm."}) `pqc`?: string;
-            `weak`?: boolean;
-            @js(#{`description`:"Whether this realm signs with it now."}) `signs`?: boolean;
-            @js(#{`description`:"Why not, or empty."}) `signRefusal`?: string;
-            @js(#{`description`:"Whether this realm accepts it now."}) `accepts`?: boolean;
-            @js(#{`description`:"Why not, or empty."}) `acceptRefusal`?: string
-          })[]
-        };
-        `cose`?: {
-          @js(#{`description`:"The setting holding what this surface signs with."}) `signSetting`?: string;
-          @js(#{`description`:"The setting holding what this surface accepts."}) `acceptSetting`?: string;
-          `rows`?: ({
-            @js(#{`description`:"The algorithm."}) `id`?: string;
-            @js(#{`description`:"Its name on this surface."}) `spelling`?: string;
-            @js(#{`description`:"pq or composite, or empty for a classical algorithm."}) `pqc`?: string;
-            `weak`?: boolean;
-            @js(#{`description`:"Whether this realm signs with it now."}) `signs`?: boolean;
-            @js(#{`description`:"Why not, or empty."}) `signRefusal`?: string;
-            @js(#{`description`:"Whether this realm accepts it now."}) `accepts`?: boolean;
-            @js(#{`description`:"Why not, or empty."}) `acceptRefusal`?: string
-          })[]
-        };
-        `xml`?: {
-          @js(#{`description`:"The setting holding what this surface signs with."}) `signSetting`?: string;
-          @js(#{`description`:"The setting holding what this surface accepts."}) `acceptSetting`?: string;
-          `rows`?: ({
-            @js(#{`description`:"The algorithm."}) `id`?: string;
-            @js(#{`description`:"Its name on this surface."}) `spelling`?: string;
-            @js(#{`description`:"pq or composite, or empty for a classical algorithm."}) `pqc`?: string;
-            `weak`?: boolean;
-            @js(#{`description`:"Whether this realm signs with it now."}) `signs`?: boolean;
-            @js(#{`description`:"Why not, or empty."}) `signRefusal`?: string;
-            @js(#{`description`:"Whether this realm accepts it now."}) `accepts`?: boolean;
-            @js(#{`description`:"Why not, or empty."}) `acceptRefusal`?: string
-          })[]
-        };
-        `di`?: {
-          @js(#{`description`:"The setting holding what this surface signs with."}) `signSetting`?: string;
-          @js(#{`description`:"The setting holding what this surface accepts."}) `acceptSetting`?: string;
-          `rows`?: ({
-            @js(#{`description`:"The algorithm."}) `id`?: string;
-            @js(#{`description`:"Its name on this surface."}) `spelling`?: string;
-            @js(#{`description`:"pq or composite, or empty for a classical algorithm."}) `pqc`?: string;
-            `weak`?: boolean;
-            @js(#{`description`:"Whether this realm signs with it now."}) `signs`?: boolean;
-            @js(#{`description`:"Why not, or empty."}) `signRefusal`?: string;
-            @js(#{`description`:"Whether this realm accepts it now."}) `accepts`?: boolean;
-            @js(#{`description`:"Why not, or empty."}) `acceptRefusal`?: string
-          })[]
-        };
-        `x509`?: {
-          @js(#{`description`:"The setting holding what this surface signs with."}) `signSetting`?: string;
-          @js(#{`description`:"The setting holding what this surface accepts."}) `acceptSetting`?: string;
-          `rows`?: ({
-            @js(#{`description`:"The algorithm."}) `id`?: string;
-            @js(#{`description`:"Its name on this surface."}) `spelling`?: string;
-            @js(#{`description`:"pq or composite, or empty for a classical algorithm."}) `pqc`?: string;
-            `weak`?: boolean;
-            @js(#{`description`:"Whether this realm signs with it now."}) `signs`?: boolean;
-            @js(#{`description`:"Why not, or empty."}) `signRefusal`?: string;
-            @js(#{`description`:"Whether this realm accepts it now."}) `accepts`?: boolean;
-            @js(#{`description`:"Why not, or empty."}) `acceptRefusal`?: string
-          })[]
-        }
-      }
-    };
+    `signaturePolicy`?: WithPqcOnlySurfaces;
     @js(#{`description`:"This service as the request reached it."}) `issuer`?: string;
     @js(#{
       `description`:"The trust realm the key material below belongs to. The ALGORITHM tables are process-wide; the SIGNING KEYS are per realm."
     }) `realm`?: string;
     `generatedAt`?: string;
     @js(#{`description`:"Where all of this happens."}) `oneModule`?: string;
-    `drift`?: {
-      `checked`?: boolean;
-      `undescribed`?: (string)[];
-      `stale`?: (string)[];
-      `envelopes`?: (string)[]
-    };
-    `keys`?: {
-      `realm`?: string;
-      `regeneratedEveryStart`?: boolean;
-      `signing`?: {
-        `kty`?: string;
-        `bits`?: integer;
-        `alg`?: string;
-        `kid`?: string;
-        `certificate`?: string;
-        `certificateFingerprint`?: NullableString;
-        `what`?: string
-      };
-      `curveKeys`?: ({
-        `alg`?: string;
-        `kty`?: string;
-        `crv`?: string;
-        `kid`?: NullableString;
-        `certificateFingerprint`?: NullableString
-      })[];
-      `postQuantum`?: {
-        `algorithms`?: (string)[];
-        `generated`?: boolean;
-        `keys`?: ({
-          `alg`?: string;
-          `kty`?: string;
-          `kid`?: NullableString;
-          `certificateFingerprint`?: NullableString
-        })[];
-        `what`?: string
-      };
-      `signerGroups`?: {
-        `model`?: string;
-        `keys`?: ({
-          `group`?: string;
-          `slot`?: string;
-          `alg`?: string;
-          `kind`?: NullableString;
-          `kid`?: NullableString;
-          `pairedSlot`?: NullableString;
-          `certificateFingerprint`?: NullableString
-        })[]
-      };
-      `bbs`?: {`cryptosuite`?: string; `curve`?: string; `what`?: string};
-      `tls`?: {
-        `subject`?: NullableString;
-        `names`?: (string)[];
-        `fingerprint256`?: NullableString;
-        `certificates`?: ({
-          `algorithm`?: NullableString;
-          `certificateFingerprint`?: NullableString
-        })[];
-        `notAfter`?: NullableString;
-        `perRealm`?: boolean;
-        `what`?: string
-      };
-      `spiffe`?: {
-        `enabled`?: boolean;
-        `ready`?: boolean;
-        `perRealm`?: boolean;
-        `trustDomain`?: NullableString;
-        `authoritySource`?: string;
-        `svidKeyType`?: string;
-        `authorityKeyType`?: string;
-        `x509KeyType`?: string;
-        `jwtKeyType`?: string;
-        `x509Authorities`?: integer;
-        `authorityFingerprint`?: NullableString;
-        `trustAnchors`?: integer;
-        `jwtAuthorities`?: integer
-      }
-    };
-    `families`?: ({
-      `name`?: string;
-      `signs`?: string;
-      `verifies`?: string;
-      `encrypts`?: string;
-      `decrypts`?: string;
-      `hashes`?: string;
-      `keys`?: string;
-      `whatItDoesNot`?: string;
-      `envelopes`?: (string)[];
-      `algorithms`?: ({
-        `what`?: string;
-        `values`?: (StringOrNumeric)[];
-        `how`?: string
-      })[]
-    })[];
-    `hashing`?: {
-      `jws`?: (string)[];
-      `xmlDigestMethods`?: ({`uri`?: string; `label`?: string})[];
-      `scimDigest`?: ({`token`?: string; `hash`?: string})[];
-      `fixed`?: ({`where`?: string; `hash`?: string; `what`?: string})[];
-      `weak`?: ({`hash`?: string; `where`?: string; `why`?: string})[]
-    };
-    `signatures`?: {
-      `jws`?: ({
-        `alg`?: string;
-        `family`?: NullableString;
-        `kty`?: string;
-        `crv`?: string;
-        `hash`?: string;
-        `asymmetric`?: boolean;
-        `postQuantum`?: boolean;
-        `composite`?: boolean;
-        `dpop`?: boolean
-      })[];
-      `xml`?: ({
-        `uri`?: string;
-        `label`?: string;
-        `family`?: NullableString;
-        `hash`?: NullableString;
-        `keyKind`?: NullableString;
-        `verifiedHere`?: boolean;
-        `signsWith`?: boolean
-      })[];
-      `canonicalization`?: ({
-        `uri`?: string;
-        `label`?: string;
-        `exclusive`?: NullableBoolean;
-        `comments`?: NullableBoolean;
-        `usedHere`?: NullableBoolean
-      })[];
-      `cose`?: ({`coseAlg`?: integer; `jose`?: string})[];
-      `other`?: ({`name`?: string; `what`?: string})[]
-    };
-    `encryption`?: {
-      `jwe`?: {
-        `keyManagementOut`?: (string)[];
-        `keyManagementIn`?: (string)[];
-        `contentEncryption`?: ({
-          `enc`?: string;
-          `bits`?: numeric;
-          `mode`?: string;
-          `cekBytes`?: numeric;
-          `authenticated`?: boolean;
-          `note`?: NullableString
-        })[]
-      };
-      `xml`?: {
-        `blockCiphers`?: ({
-          `name`?: string;
-          `uri`?: string;
-          `keyBits`?: numeric;
-          `mode`?: string;
-          `ivBytes`?: numeric;
-          `authenticated`?: boolean
-        })[];
-        `keyTransports`?: ({`name`?: string; `uri`?: string; `scheme`?: string; `safe`?: boolean})[];
-        `configured`?: {
-          `blockCipher`?: string;
-          `keyTransport`?: string;
-          `encryptAssertion`?: boolean;
-          `encryptLogoutNameId`?: boolean
-        }
-      };
-      `kerberos`?: {
-        `performed`?: ({`id`?: integer; `name`?: string})[];
-        `decodeOnly`?: ({`id`?: integer; `name`?: string})[];
-        `preference`?: (integer)[]
-      };
-      `tls`?: {`what`?: string; `sockets`?: (string)[]}
-    };
+    `drift`?: WithCheckedUndescribedStaleEtc4;
+    `keys`?: WithRealmRegeneratedEveryStartSigningEtc9;
+    `families`?: (WithNameSignsVerifiesEtc10)[];
+    `hashing`?: WithJwsXmlDigestMethodsScimDigestEtc5;
+    `signatures`?: WithJwsXmlCanonicalizationEtc5;
+    `encryption`?: WithJweXmlKerberosEtc4;
     @js(#{
       `description`:"The one to read before quoting this reply: signatures and key establishment are reported separately, because a signature is checked when it is presented while captured ciphertext can be kept and opened later."
-    }) `postQuantum`?: {
-      `algorithms`?: {
-        `mlDsa`?: (string)[];
-        `slhDsa`?: (string)[];
-        `composite`?: ({
-          `alg`?: string;
-          `mlDsa`?: NullableString;
-          `traditional`?: NullableString;
-          `prehash`?: NullableString;
-          `domainSeparator`?: NullableString
-        })[];
-        `keyType`?: string;
-        `what`?: string;
-        `independence`?: string
-      };
-      `signatures`?: ({`surface`?: string; `state`?: string; `how`?: string})[];
-      `keyEstablishment`?: {
-        `state`?: string;
-        `surfaces`?: ({`surface`?: string; `state`?: string; `how`?: string})[];
-        `mechanisms`?: (string)[];
-        `postQuantum`?: (string)[];
-        `hybrid`?: (string)[];
-        `drafts`?: {`mlKem`?: string; `hpke`?: string; `hybrid`?: string};
-        `what`?: string;
-        `whatWouldClose`?: string
-      };
-      `symmetric`?: {`state`?: string; `strongest`?: string; `what`?: string}
-    };
-    `standards`?: ({
-      `key`?: string;
-      `name`?: string;
-      `specs`?: (string)[];
-      `coverage`?: string;
-      `what`?: string
-    })[]
+    }) `postQuantum`?: WithAlgorithmsSignaturesKeyEstablishmentEtc4;
+    `standards`?: (WithKeyNameSpecsEtc5)[]
   }
 
 @js(#{
@@ -789,10 +383,7 @@ namespace IyaSts.Api.Console {
     `matched`?: numeric;
     `shown`?: numeric;
     `heldByKind`?: Record<numeric>;
-    `filter`?: {
-      `q`?: NullableString;
-      `protocol`?: NullableString
-    };
+    `filter`?: WithQProtocol;
     `protocols`?: (string)[];
     `at`?: numeric;
     `expiryRules`?: Record<string>;
@@ -800,33 +391,15 @@ namespace IyaSts.Api.Console {
     `unauthenticatedHeld`?: numeric;
     `unauthenticatedKept`?: boolean;
     `unauthenticatedSessions`?: (`SessionRow`)[];
-    `unauthenticatedPaging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: string;
-      `noun`?: string
-    };
+    `unauthenticatedPaging`?: WithPagePagesPerPageEtc8;
     `windowed`?: boolean;
-    `accountChoices`?: {`enabled`?: boolean; `counts`?: Record<numeric>};
+    `accountChoices`?: WithEnabledCounts;
     `page`?: integer;
     `pages`?: integer;
     `perPage`?: integer;
     `firstRow`?: integer;
     `lastRow`?: integer;
-    `paging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: string;
-      `noun`?: string
-    }
+    `paging`?: WithPagePagesPerPageEtc8
   }
 
 @js(#{`description`:"One live session of any kind."}) @component model `SessionRow` {
@@ -926,26 +499,11 @@ namespace IyaSts.Api.Console {
     }) `backchannelDeliveries`?: (`BackchannelDelivery`)[];
     @js(#{
       `description`:"Where `backchannelDeliveries` came from in the whole list: the page, how many there are, and the 1-based row numbers this page covers. Same member names the flat lists carry at the top level, one level down."
-    }) `backchannelDeliveriesPaging`?: {
-      @js(#{
-        `description`:"How many there are in all, which is what to page through rather than the length of this array."
-      }) `total`?: integer;
-      @js(#{
-        `description`:"The page these rows are from, CLAMPED — `?page=999` on a two-page list reports 2, which is the page in the reply."
-      }) `page`?: integer;
-      @js(#{`description`:"How many pages the match has."}) `pages`?: integer;
-      @js(#{`description`:"Rows per page, clamped to the cap."}) `perPage`?: integer;
-      @js(#{`description`:"1-based and inclusive; 0 when nothing matched."}) `firstRow`?: integer;
-      @js(#{`description`:"1-based and inclusive."}) `lastRow`?: integer
-    };
+    }) `backchannelDeliveriesPaging`?: WithDescriptionTotalDescriptionEtc12;
     @js(#{
       `description`:"How many deliveries this realm holds in each state.",
       `additionalProperties`:true
-    }) `backchannelCounts`?: {
-      `pending`?: integer;
-      `sent`?: integer;
-      @js(#{`description`:"The dead letters."}) `dead`?: integer
-    };
+    }) `backchannelCounts`?: WithPendingSentDescriptionEtc4;
     @js(#{`description`:"The state asked for, or empty."}) `deliveryState`?: string;
     @js(#{`description`:"The search asked for, or empty."}) `deliveryq`?: string;
     @js(#{
@@ -964,15 +522,7 @@ namespace IyaSts.Api.Console {
     `matched`?: numeric;
     `shown`?: numeric;
     `authenticatedHere`?: numeric;
-    `factors`?: {
-      `withSecond`?: numeric;
-      `withTotp`?: numeric;
-      `withKeys`?: numeric;
-      `primaryKeys`?: numeric;
-      `passwordOnly`?: numeric;
-      `unreadable`?: numeric;
-      `noCredential`?: numeric
-    };
+    `factors`?: WithWithSecondWithTotpWithKeysEtc7;
     `store`?: boolean;
     `scanned`?: numeric;
     `capped`?: boolean;
@@ -982,12 +532,7 @@ namespace IyaSts.Api.Console {
     `directoryCountedAt`?: NullableString;
     `directoryCountsKeptFor`?: NullableNumber;
     `registryCap`?: numeric;
-    `filter`?: {
-      `q`?: NullableString;
-      `protocol`?: NullableString;
-      `factor`?: NullableString;
-      `kind`?: NullableString
-    };
+    `filter`?: WithQProtocolFactorEtc4;
     `serviceAccounts`?: numeric;
     `protocols`?: (string)[];
     `page`?: integer;
@@ -995,1029 +540,75 @@ namespace IyaSts.Api.Console {
     `perPage`?: integer;
     `firstRow`?: integer;
     `lastRow`?: integer;
-    `paging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: string;
-      `noun`?: string
-    };
+    `paging`?: WithPagePagesPerPageEtc8;
     `withActiveSession`?: NullableNumber;
     `personFieldCount`?: numeric;
     `newUserContainer`?: string;
     `registryKeeps`?: numeric;
-    `users`?: ({
-      `key`?: string;
-      `name`?: string;
-      `forms`?: ({`form`?: string; `count`?: numeric})[];
-      `realms`?: ({`realm`?: string; `count`?: numeric})[];
-      `protocols`?: ({
-        `protocol`?: string;
-        `count`?: numeric;
-        `firstAt`?: numeric;
-        `lastAt`?: numeric;
-        `methods`?: ({`method`?: string; `count`?: numeric})[]
-      })[];
-      `authentications`?: numeric;
-      `firstAt`?: numeric;
-      `lastAt`?: numeric;
-      `isClient`?: boolean;
-      `authenticated`?: boolean;
-      `knownBy`?: string;
-      `events`?: ({
-        `at`?: numeric;
-        `protocol`?: string;
-        `method`?: string;
-        `presented`?: string;
-        `realm`?: string;
-        `sub`?: string;
-        `address`?: string;
-        `client_id`?: string;
-        `amr`?: StringOrString;
-        `acr`?: string;
-        `sessionId`?: string;
-        `note`?: string
-      })[];
-      `eventsForgotten`?: numeric;
-      `tokens`?: {
-        `issued`?: numeric;
-        `valid`?: numeric;
-        `expired`?: numeric;
-        `revoked`?: numeric;
-        `other`?: numeric
-      };
-      `artifactKinds`?: ({`kind`?: string; `count`?: numeric})[];
-      `artifacts`?: numeric;
-      `lastActivityAt`?: numeric;
-      `factors`?: NullableObject42;
-      `inDirectory`?: boolean;
-      `serviceAccount`?: boolean;
-      `liveSessions`?: NullableNumber;
-      `dn`?: string
-    })[]
+    `users`?: (WithKeyNameFormsEtc22)[]
   }
 
 @js(#{
     `description`:"One identity: the names it has been seen under, how it authenticated, every sign-on session it holds with the tokens issued on each, and its directory entry."
   }) @component model `UserDetail` {
     `known`?: boolean;
-    `user`?: {
-      `key`?: string;
-      `name`?: string;
-      `forms`?: ({`form`?: string; `count`?: numeric})[];
-      `realms`?: ({`realm`?: string; `count`?: numeric})[];
-      `protocols`?: ({
-        `protocol`?: string;
-        `count`?: numeric;
-        `firstAt`?: numeric;
-        `lastAt`?: numeric;
-        `methods`?: ({`method`?: string; `count`?: numeric})[]
-      })[];
-      `authentications`?: numeric;
-      `firstAt`?: numeric;
-      `lastAt`?: numeric;
-      `isClient`?: boolean;
-      `authenticated`?: boolean;
-      `knownBy`?: string;
-      `events`?: ({
-        `at`?: numeric;
-        `protocol`?: string;
-        `method`?: string;
-        `presented`?: string;
-        `realm`?: string;
-        `sub`?: string;
-        `address`?: string;
-        `client_id`?: string;
-        `amr`?: StringOrString;
-        `acr`?: string;
-        `sessionId`?: string;
-        `note`?: string
-      })[];
-      `eventsForgotten`?: numeric;
-      `tokens`?: {
-        `issued`?: numeric;
-        `valid`?: numeric;
-        `expired`?: numeric;
-        `revoked`?: numeric;
-        `other`?: numeric
-      };
-      `artifactKinds`?: ({`kind`?: string; `count`?: numeric})[];
-      `artifacts`?: numeric;
-      `lastActivityAt`?: numeric
-    };
+    `user`?: WithKeyNameFormsEtc17;
     `subject`?: string;
     `serviceAccount`?: NullableObject43;
     `risk`?: NullableObject44;
     `factors`?: NullableObject45;
-    `sessions`?: ({
-      `id`?: string;
-      `username`?: string;
-      `sub`?: string;
-      `amr`?: string;
-      `acr`?: string;
-      `startedAt`?: numeric;
-      `authTime`?: numeric;
-      `authentications`?: numeric;
-      `expires`?: numeric;
-      `expired`?: boolean;
-      `wsfedRealms`?: (string)[];
-      `deviceBound`?: NullableObject40;
-      `accountSet`?: string;
-      `tokens`?: ({
-        `state`?: string;
-        `key`?: string;
-        `jti`?: string;
-        `kind`?: string;
-        `typ`?: string;
-        `revocable`?: boolean;
-        `sub`?: string;
-        `iss`?: string;
-        `username`?: string;
-        `client_id`?: StringOrString;
-        `audience`?: string;
-        `scope`?: StringOrString;
-        `jkt`?: string;
-        `x5t`?: string;
-        `x5tSpki`?: string;
-        `iat`?: numeric;
-        `nbf`?: numeric;
-        `exp`?: numeric;
-        `sessionId`?: string;
-        `sessionAuthenticated`?: boolean;
-        `setId`?: string;
-        `grant`?: string;
-        `grantId`?: string;
-        `grantRefresh`?: boolean;
-        `issuedAt`?: numeric;
-        `revoked`?: boolean;
-        `revokedAt`?: numeric;
-        `revokedVia`?: string;
-        `length`?: numeric
-      })[];
-      `tokensPaging`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `perPage`?: integer;
-        `firstRow`?: integer;
-        `lastRow`?: integer;
-        `total`?: integer;
-        `param`?: string;
-        `noun`?: string
-      }
-    })[];
-    `sessionsPaging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: string;
-      `noun`?: string
-    };
-    `tokensOnEndedSessions`?: ({
-      `state`?: string;
-      `key`?: string;
-      `jti`?: string;
-      `kind`?: string;
-      `typ`?: string;
-      `revocable`?: boolean;
-      `sub`?: string;
-      `iss`?: string;
-      `username`?: string;
-      `client_id`?: StringOrString;
-      `audience`?: string;
-      `scope`?: StringOrString;
-      `jkt`?: string;
-      `x5t`?: string;
-      `x5tSpki`?: string;
-      `iat`?: numeric;
-      `nbf`?: numeric;
-      `exp`?: numeric;
-      `sessionId`?: string;
-      `sessionAuthenticated`?: boolean;
-      `setId`?: string;
-      `grant`?: string;
-      `grantId`?: string;
-      `grantRefresh`?: boolean;
-      `issuedAt`?: numeric;
-      `revoked`?: boolean;
-      `revokedAt`?: numeric;
-      `revokedVia`?: string;
-      `length`?: numeric
-    })[];
-    `tokensOnEndedSessionsPaging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: string;
-      `noun`?: string
-    };
-    `tokensWithNoSession`?: ({
-      `state`?: string;
-      `key`?: string;
-      `jti`?: string;
-      `kind`?: string;
-      `typ`?: string;
-      `revocable`?: boolean;
-      `sub`?: string;
-      `iss`?: string;
-      `username`?: string;
-      `client_id`?: StringOrString;
-      `audience`?: string;
-      `scope`?: StringOrString;
-      `jkt`?: string;
-      `x5t`?: string;
-      `x5tSpki`?: string;
-      `iat`?: numeric;
-      `nbf`?: numeric;
-      `exp`?: numeric;
-      `sessionId`?: string;
-      `sessionAuthenticated`?: boolean;
-      `setId`?: string;
-      `grant`?: string;
-      `grantId`?: string;
-      `grantRefresh`?: boolean;
-      `issuedAt`?: numeric;
-      `revoked`?: boolean;
-      `revokedAt`?: numeric;
-      `revokedVia`?: string;
-      `length`?: numeric
-    })[];
-    `tokensWithNoSessionPaging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: string;
-      `noun`?: string
-    };
-    `artifacts`?: ({
-      `state`?: string;
-      `kind`?: string;
-      `issuedAt`?: numeric;
-      `expiresAt`?: NullOrStringOrNumeric;
-      `subject`?: string;
-      `key`?: string;
-      `id`?: string;
-      `audience`?: string;
-      `signed`?: boolean;
-      `revoked`?: boolean;
-      `revokedAt`?: numeric;
-      `revokedVia`?: string;
-      `realm`?: string;
-      `service`?: string;
-      `etype`?: StringOrNumeric;
-      `claimSet`?: string;
-      `username`?: string;
-      `pacClaims`?: numeric;
-      `entryId`?: string;
-      `serial`?: string;
-      `hint`?: string;
-      `person`?: string;
-      `configId`?: string
-    })[];
-    `artifactsPaging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: string;
-      `noun`?: string
-    };
+    `sessions`?: (WithIdUsernameSubEtc15)[];
+    `sessionsPaging`?: WithPagePagesPerPageEtc8;
+    `tokensOnEndedSessions`?: (WithStateKeyJtiEtc29)[];
+    `tokensOnEndedSessionsPaging`?: WithPagePagesPerPageEtc8;
+    `tokensWithNoSession`?: (WithStateKeyJtiEtc29)[];
+    `tokensWithNoSessionPaging`?: WithPagePagesPerPageEtc8;
+    `artifacts`?: (WithStateKindIssuedAtEtc23)[];
+    `artifactsPaging`?: WithPagePagesPerPageEtc8;
     `ldap`?: NullableObject46;
-    `credentials`?: {
-      `storable`?: boolean;
-      `found`?: boolean;
-      `keyPairs`?: ({
-        `purpose`?: string;
-        `label`?: string;
-        `held`?: boolean;
-        `keys`?: ({
-          `handle`?: string;
-          `label`?: string;
-          `source`?: string;
-          `state`?: string;
-          `reason`?: string;
-          `revokedAt`?: string;
-          `serialHex`?: string;
-          `expiresAt`?: string;
-          `notAfter`?: string;
-          `privateKeyHeld`?: boolean;
-          `certificate`?: NullableObject47;
-          `chain`?: ({
-            `subject`?: string;
-            `issuer`?: string;
-            `serialHex`?: string;
-            `notBefore`?: string;
-            `notAfter`?: string;
-            `expired`?: boolean;
-            `selfSigned`?: boolean;
-            `keyType`?: string;
-            `thumbprint`?: string;
-            `unreadable`?: string
-          })[]
-        })[];
-        `valid`?: numeric;
-        `atCap`?: boolean;
-        `handleLabel`?: string;
-        `issuers`?: (string)[];
-        `effectiveIssuers`?: (string)[];
-        `attributes`?: {`issuer`?: string; `keys`?: string; `privateKey`?: string}
-      })[];
-      `maxPerPerson`?: numeric;
-      `revocationReasons`?: (string)[];
-      `caAvailable`?: boolean;
-      `sealsAtRest`?: boolean;
-      `selfService`?: boolean;
-      `sources`?: (string)[]
-    };
-    `federationLinks`?: ({
-      `link`?: string;
-      `relationship`?: string;
-      `issuer`?: string;
-      `subject`?: string;
-      `relationshipExists`?: boolean
-    })[];
-    `federationLinksPaging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: string;
-      `noun`?: string
-    };
-    `kerberos`?: {
-      `kdc`?: boolean;
-      `realm`?: string;
-      `trustRealm`?: string;
-      `reason`?: string;
-      `productKdc`?: NullableBoolean;
-      `personKeys`?: boolean;
-      `principal`?: string;
-      `nameUsable`?: boolean;
-      `person`?: boolean;
-      `disabled`?: boolean;
-      `keys`?: NullableObject48
-    };
+    `credentials`?: WithStorableFoundKeyPairsEtc9;
+    `federationLinks`?: (WithLinkRelationshipIssuerEtc5)[];
+    `federationLinksPaging`?: WithPagePagesPerPageEtc8;
+    `kerberos`?: WithKdcRealmTrustRealmEtc11;
     `attributeEditor`?: NullableObject49;
-    `gnapGrants`?: ({
-      `id`?: string;
-      `state`?: string;
-      `finalization`?: NullableObject;
-      `client`?: NullableString;
-      `clientName`?: NullableString;
-      `authorizationServer`?: NullableString;
-      `createdAt`?: NullableNumber;
-      `updatedAt`?: NullableNumber;
-      `grantExpiresAt`?: NullableNumber;
-      `approvedBy`?: string;
-      @js(#{
-        `x-free-form`:"An RFC 9635 access right as the client asked for it: a reference string or an object in the access type the resource server defines.",
-        `description`:"An RFC 9635 access right as the client asked for it: a reference string or an object in the access type the resource server defines."
-      }) `rights`?: unknown;
-      `rightsAre`?: string;
-      `subjectReleasedAt`?: NullableNumber;
-      `derivedFrom`?: NullableString;
-      `tokens`?: ({
-        `jti`?: string;
-        `label`?: NullableString;
-        `format`?: string;
-        `issuedAt`?: NullableNumber;
-        `expiresAt`?: NullableNumber;
-        `state`?: string;
-        `bearer`?: boolean;
-        @js(#{
-          `x-free-form`:"An RFC 9635 access right as the client asked for it: a reference string or an object in the access type the resource server defines.",
-          `description`:"An RFC 9635 access right as the client asked for it: a reference string or an object in the access type the resource server defines."
-        }) `access`?: unknown;
-        `revokedWhy`?: NullableString
-      })[];
-      `revocable`?: boolean
-    })[];
+    `gnapGrants`?: (WithIdStateFinalizationEtc18)[];
     `gnapGrantsPaging`?: NullableObject50;
     `gnapGrantsCells`?: NullableObject51;
     `uma`?: NullableObject52;
-    `authenticationEvents`?: ({
-      `seq`?: numeric;
-      `origin`?: string;
-      `at`?: numeric;
-      `category`?: string;
-      `action`?: string;
-      `outcome`?: string;
-      `errorCode`?: string;
-      `actor`?: string;
-      `actorForm`?: string;
-      `target`?: string;
-      `protocol`?: string;
-      `channel`?: string;
-      `address`?: string;
-      `summary`?: string;
-      @js(#{
-        `x-free-form`:"What the call site that wrote the audit row chose to record, which differs at each of hundreds of them; the keys and the values are data.",
-        `description`:"What the call site that wrote the audit row chose to record, which differs at each of hundreds of them; the keys and the values are data."
-      }) `detail`?: unknown
-    })[];
-    `authenticationEventsPaging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: string;
-      `noun`?: string
-    };
+    `authenticationEvents`?: (WithSeqOriginAtEtc17)[];
+    `authenticationEventsPaging`?: WithPagePagesPerPageEtc8;
     `authenticationEventsMatched`?: numeric;
     `authenticationEventsKnownActors`?: Record<boolean>;
-    `authenticationEventsLog`?: {
-      `held`?: numeric;
-      `recorded`?: numeric;
-      `dropped`?: numeric;
-      `maxEvents`?: numeric
-    };
+    `authenticationEventsLog`?: WithHeldRecordedDroppedEtc4;
     `page`?: {
       `key`?: string;
       `riskAsked`?: boolean;
-      `counts`?: {
-        `live`?: numeric;
-        `tokens`?: numeric;
-        `valid`?: numeric;
-        `expired`?: numeric;
-        `artifacts`?: numeric;
-        `ended`?: numeric;
-        `sessionless`?: numeric
-      };
+      `counts`?: WithLiveTokensValidEtc7;
       `back`?: string;
       `params`?: Record<StringOrNumericOrBooleanEtcOrStringOrNumericOrBooleanEtc>;
       `blocksPerPage`?: numeric;
       `perPage`?: numeric;
       `maxEventsPerUser`?: numeric;
       `directoryLoaded`?: boolean;
-      `mfa`?: {
-        `storable`?: boolean;
-        `mech`?: {
-          `username`?: string;
-          `password`?: boolean;
-          `primaryKeys`?: numeric;
-          `mfaKeys`?: numeric;
-          `keys`?: ({
-            `credentialId`?: string;
-            `publicKeyJwk`?: {
-              `kty`?: string;
-              `crv`?: string;
-              `alg`?: string;
-              `use`?: string;
-              `kid`?: string;
-              `x`?: string;
-              `y`?: string;
-              `n`?: string;
-              `e`?: string;
-              `pub`?: string;
-              `ext`?: boolean;
-              `key_ops`?: (string)[]
-            };
-            `signCount`?: numeric;
-            `enrolledAt`?: numeric;
-            `lastUsedAt`?: numeric;
-            `label`?: string;
-            `attachment`?: NullableString;
-            `userVerified`?: NullableBoolean;
-            `aaguid`?: NullableString;
-            `algorithm`?: NameStringCoseAlgNullableNumberTextStringPostQuantumBooleanInsecureBooleanLaneStringOrNullOrString;
-            `coseAlg`?: NullableNumber;
-            `attestation`?: NullableObject53;
-            `backupEligible`?: NullableBoolean;
-            `backupState`?: NullableBoolean;
-            `transports`?: (string)[];
-            `discoverable`?: NullableBoolean;
-            `minPinLength`?: NullableNumber;
-            `userHandle`?: string;
-            `lane`?: string;
-            `enrolledBy`?: {`username`?: string; `sub`?: string; `at`?: numeric};
-            `provider`?: NullableString;
-            `providerSource`?: string;
-            `name`?: string;
-            `group`?: string;
-            `upgradedAt`?: numeric;
-            `upgradedTo`?: string;
-            `previousAlgorithm`?: string;
-            `previousCoseAlg`?: NullableNumber;
-            `previousCredentialId`?: string;
-            `upgradeMode`?: string;
-            `possiblyReplacedBy`?: string;
-            `possiblyReplacedAt`?: numeric;
-            `policyRefused`?: Record<{`why`?: string; `at`?: numeric}>;
-            `attestationRefused`?: {`why`?: string; `at`?: numeric}
-          })[];
-          `totp`?: boolean;
-          `totpUsable`?: boolean;
-          `totpDetail`?: NullableObject54;
-          `usable`?: boolean;
-          `backupCodes`?: NullableObject55;
-          `mfaRequired`?: boolean;
-          `mailFactor`?: {
-            `held`?: string;
-            `optedIn`?: string;
-            `why`?: string;
-            `verified`?: boolean
-          };
-          `secondFactor`?: NullableString;
-          `activated`?: boolean;
-          `recoveryAdvised`?: boolean;
-          `mfaRequirement`?: {
-            `required`?: boolean;
-            `byUser`?: boolean;
-            `byRealm`?: boolean;
-            `byAdministrator`?: boolean;
-            `offered`?: boolean;
-            `exemptServiceAccount`?: boolean
-          };
-          `passwordResetLink`?: NullableObject56;
-          `disabled`?: boolean
-        };
-        `totp`?: {
-          `enabled`?: boolean;
-          `issuer`?: string;
-          `digits`?: numeric;
-          `period`?: numeric;
-          `algorithm`?: string;
-          `window`?: numeric;
-          `secretBytes`?: numeric;
-          `enrolmentTtlMs`?: numeric
-        };
-        `webauthn`?: {
-          `enabled`?: boolean;
-          `rpName`?: string;
-          `rpId`?: string;
-          `algorithms`?: (string)[];
-          `attestation`?: string;
-          `userVerification`?: string;
-          `residentKey`?: string;
-          `authenticatorAttachment`?: string;
-          `timeoutMs`?: numeric;
-          `credProps`?: boolean;
-          `minPinLength`?: NullOrBooleanOrNumeric;
-          `hints`?: (string)[];
-          `maxKeysPerPerson`?: numeric;
-          `primaryAllowed`?: boolean;
-          `mfaAllowed`?: boolean;
-          `usernameless`?: boolean;
-          `insecureAlgorithms`?: boolean;
-          `pqcOnly`?: boolean;
-          `pqcAlongsideClassical`?: boolean
-        };
-        `recovery`?: {
-          `enabled`?: boolean;
-          `count`?: numeric;
-          `length`?: numeric;
-          `groupSize`?: numeric
-        };
-        `appPasswords`?: {
-          `ok`?: boolean;
-          `unreadable`?: boolean;
-          `passwords`?: ({
-            `id`?: string;
-            `name`?: string;
-            `doors`?: (string)[];
-            `doorLabels`?: (string)[];
-            `createdAt`?: numeric;
-            `createdBy`?: string;
-            `lastUsedAt`?: numeric;
-            `lastUsedDoor`?: string
-          })[];
-          `errors`?: (string)[]
-        };
-        `doors`?: {
-          `secondFactor`?: boolean;
-          `refused`?: (string)[];
-          `accepted`?: (string)[];
-          `passwordAloneDoors`?: (string)[];
-          `sentence`?: string
-        };
-        `verifications`?: {
-          `user`?: string;
-          `trustFrameworks`?: (string)[];
-          `evidenceTypes`?: (string)[];
-          `documentTypes`?: (string)[];
-          `checkMethods`?: (string)[];
-          `electronicRecordTypes`?: (string)[];
-          `attestationTypes`?: (string)[];
-          `verifiableClaims`?: (string)[];
-          `verifications`?: ({
-            `id`?: string;
-            `recorded`?: NullOrStringOrNumeric2;
-            `source`?: string;
-            `by`?: string;
-            @js(#{
-              `x-free-form`:"The OpenID Connect for Identity Assurance `verification` element: a caller may post it whole as JSON, and a wallet or a certificate may supply it, so its evidence is that specification's to shape.",
-              `description`:"The OpenID Connect for Identity Assurance `verification` element: a caller may post it whole as JSON, and a wallet or a certificate may supply it, so its evidence is that specification's to shape."
-            }) `verification`?: unknown;
-            @js(#{
-              `x-free-form`:"The verified claims and their values, as the OpenID Connect claim each is: a string for most, an object for `address`, a list for `nationalities`.",
-              `description`:"The verified claims and their values, as the OpenID Connect claim each is: a string for most, an object for `address`, a list for `nationalities`."
-            }) `claims`?: unknown
-          })[];
-          `page`?: integer;
-          `pages`?: integer;
-          `perPage`?: integer;
-          `total`?: integer;
-          `paging`?: {
-            `page`?: integer;
-            `pages`?: integer;
-            `perPage`?: integer;
-            `firstRow`?: integer;
-            `lastRow`?: integer;
-            `total`?: integer;
-            `param`?: string;
-            `noun`?: string
-          }
-        };
-        `inventsClaimValues`?: boolean;
-        `devices`?: {
-          `user`?: string;
-          `maxPerPerson`?: numeric;
-          `devices`?: ({
-            `id`?: string;
-            `dn`?: string;
-            `owner`?: string;
-            `ownerKind`?: string;
-            `label`?: string;
-            `applications`?: (string)[];
-            `keys`?: ({
-              `id`?: string;
-              `kind`?: string;
-              `thumbprint`?: string;
-              `label`?: string;
-              `added`?: NullOrStringOrNumeric;
-              `addedBy`?: string;
-              `proof`?: string;
-              `attestation`?: {
-                `level`?: string;
-                `format`?: string;
-                `summary`?: string;
-                `verifiedAt`?: NullOrStringOrNumeric2;
-                `chainSerials`?: (string)[];
-                `revocation`?: {
-                  `status`?: string;
-                  `reason`?: string;
-                  `serial`?: string;
-                  `listVersion`?: string;
-                  `checkedAt`?: NullOrStringOrNumeric2;
-                  `chainSerials`?: (string)[];
-                  `why`?: string
-                };
-                `freshness`?: {`status`?: string; `detail`?: string}
-              };
-              @js(#{
-                `x-free-form`:"A device key's public material as its kind carries it: a client's JWK, a certificate, or a WebAuthn credential.",
-                `description`:"A device key's public material as its kind carries it: a client's JWK, a certificate, or a WebAuthn credential."
-              }) `material`?: unknown
-            })[];
-            `keyKinds`?: (string)[];
-            `attestation`?: {
-              `level`?: string;
-              `format`?: string;
-              `summary`?: string;
-              `keyId`?: string
-            };
-            `compliance`?: string;
-            `complianceChange`?: NullableObject57;
-            `status`?: string;
-            `statusChange`?: NullableObject57;
-            `riskLevel`?: string;
-            `riskChange`?: NullableObject57;
-            `platform`?: string;
-            `model`?: string;
-            `os`?: string;
-            `enrolment`?: {
-              `method`?: string;
-              `at`?: NullOrStringOrNumeric;
-              `actor`?: string
-            };
-            `nativeSso`?: boolean;
-            `rememberedBrowser`?: NullableObject58;
-            `sessionLive`?: boolean;
-            `lastUsed`?: NullOrStringOrNumeric;
-            `created`?: NullOrStringOrNumeric
-          })[]
-        };
-        `selfIssued`?: {
-          `user`?: string;
-          `entryFound`?: boolean;
-          `signInEnabled`?: boolean;
-          `maxPerPerson`?: numeric;
-          `subjectSyntaxTypes`?: (string)[];
-          `subjects`?: ({
-            `subject`?: string;
-            `label`?: string;
-            `enrolledAt`?: NullOrStringOrNumeric;
-            `by`?: string;
-            `proof`?: string;
-            `provedAt`?: NullOrStringOrNumeric;
-            `keyAlg`?: string;
-            `location`?: {`kind`?: string; `value`?: string};
-            `preferred`?: boolean;
-            `pinnedKeys`?: (string)[]
-          })[]
-        };
-        `publishedDids`?: {
-          `user`?: string;
-          `entryFound`?: boolean;
-          `publishing`?: boolean;
-          `custody`?: string;
-          `maxPerPerson`?: numeric;
-          `dids`?: ({
-            `rid`?: string;
-            `did`?: string;
-            `custody`?: string;
-            `documentUrl`?: string;
-            `createdAt`?: NullOrStringOrNumeric;
-            `by`?: string;
-            `state`?: string;
-            `deactivated`?: NullOrBooleanOrStringOrAtNullOrStringOrNumeric2ByStringReasonStringViaString;
-            `proof`?: string;
-            `preferred`?: boolean;
-            `currentVersion`?: StringOrNumeric;
-            `pending`?: NullableObject59;
-            `versions`?: ({
-              `versionId`?: StringOrNumeric;
-              `created`?: NullOrStringOrNumeric2;
-              `change`?: string;
-              `keys`?: ({`id`?: string; `kty`?: string; `crv`?: string; `alg`?: string})[];
-              `authorizedBy`?: ({
-                `kind`?: string;
-                `subject`?: string;
-                `actor`?: string;
-                `at`?: NullOrStringOrNumeric2;
-                `keyThumbprint`?: string;
-                `versionId`?: StringOrNumeric;
-                `transaction`?: string
-              })[]
-            })[]
-          })[]
-        };
-        `certificates`?: {
-          `ok`?: boolean;
-          `errors`?: (string)[];
-          `user`?: string;
-          `dn`?: string;
-          `certificates`?: ({
-            `sha256`?: string;
-            `subject`?: string;
-            `issuer`?: string;
-            `serialNumber`?: string;
-            `notBefore`?: string;
-            `notAfter`?: string;
-            `expired`?: boolean;
-            `readable`?: boolean
-          })[];
-          `rule`?: string
-        };
-        `signing`?: {
-          `ok`?: boolean;
-          `kind`?: string;
-          `holder`?: string;
-          `implicitName`?: string;
-          `certificates`?: ({
-            `serialHex`?: string;
-            `label`?: string;
-            `subject`?: string;
-            `keyAlg`?: string;
-            `notBefore`?: NullOrStringOrNumeric;
-            `notAfter`?: NullOrStringOrNumeric;
-            `thumbprint`?: string;
-            `state`?: string;
-            `reason`?: NullableString;
-            `revokedAt`?: NullOrStringOrNumeric;
-            `certificatePem`?: string
-          })[];
-          `active`?: numeric;
-          `max`?: numeric;
-          `keyAlgorithms`?: (string)[];
-          `defaultKeyAlg`?: string;
-          `revocationReasons`?: (string)[];
-          `passwordMin`?: numeric;
-          `caAvailable`?: boolean
-        };
-        `mail`?: {
-          `status`?: {
-            `optedIn`?: string;
-            `kind`?: string;
-            `usable`?: boolean;
-            `why`?: string;
-            `verified`?: boolean;
-            `address`?: string;
-            `offered`?: {`code`?: boolean; `link`?: boolean};
-            `failures`?: numeric
-          };
-          `usable`?: boolean;
-          `audSubs`?: (string)[]
-        }
-      };
-      `fieldGroups`?: ({
-        `id`?: string;
-        `label`?: string;
-        `what`?: string;
-        `attributes`?: (string)[]
-      })[];
-      `delegation`?: {
-        `found`?: boolean;
-        `person`?: boolean;
-        `username`?: string;
-        `dn`?: string;
-        `sub`?: string;
-        `notDelegated`?: boolean;
-        `mayAct`?: string;
-        `delegate`?: NullOrStringOrDnStringNameStringKindStringPresentBooleanSubString;
-        `semantics`?: (string)[];
-        `defaultSemantics`?: string;
-        `groups`?: ({`dn`?: string; `cn`?: string})[]
-      };
-      `keyPairs`?: {
-        `storable`?: boolean;
-        `found`?: boolean;
-        `username`?: string;
-        `purposes`?: ({
-          `id`?: string;
-          `label`?: string;
-          `held`?: boolean;
-          `keys`?: ({
-            `handle`?: string;
-            `label`?: string;
-            `source`?: string;
-            `state`?: string;
-            `reason`?: string;
-            `revokedAt`?: string;
-            `serialHex`?: string;
-            `expiresAt`?: string;
-            `notAfter`?: string;
-            `privateKeyHeld`?: boolean;
-            `certificate`?: NullableObject47;
-            `chain`?: ({
-              `subject`?: string;
-              `issuer`?: string;
-              `serialHex`?: string;
-              `notBefore`?: string;
-              `notAfter`?: string;
-              `expired`?: boolean;
-              `selfSigned`?: boolean;
-              `keyType`?: string;
-              `thumbprint`?: string;
-              `unreadable`?: string
-            })[]
-          })[];
-          `valid`?: numeric;
-          `atCap`?: boolean;
-          `handleLabel`?: string;
-          `issuers`?: (string)[];
-          `effectiveIssuers`?: (string)[];
-          `attributes`?: {`issuer`?: string; `keys`?: string; `privateKey`?: string}
-        })[];
-        `ca`?: {
-          `available`?: boolean;
-          `keyAlg`?: string;
-          `leafLifetimeDays`?: numeric;
-          `keyAlgorithms`?: ({`id`?: string; `label`?: string; `kind`?: string})[]
-        };
-        `sealsAtRest`?: boolean;
-        `selfService`?: boolean;
-        `sources`?: (string)[];
-        `maxPerPerson`?: numeric;
-        `revocationReasons`?: (string)[]
-      };
-      `serviceAccountRules`?: {`requiresOwner`?: boolean; `maxOwners`?: numeric; `dn`?: string};
-      `serviceProviders`?: ({`fedId`?: string; `fedPeer`?: string})[]
+      `mfa`?: WithStorableMechTotpEtc15;
+      `fieldGroups`?: (WithIdLabelWhatEtc4)[];
+      `delegation`?: WithFoundPersonUsernameEtc11;
+      `keyPairs`?: WithStorableFoundUsernameEtc10;
+      `serviceAccountRules`?: WithRequiresOwnerMaxOwnersDn;
+      `serviceProviders`?: (WithFedIdFedPeer)[]
     }
   }
 
 @component model `Saml2ServiceProviderList` {
-    `protocolEndpoints`?: ({
-      `name`?: string;
-      `methods`?: StringOrString;
-      `url`?: string;
-      `route`?: string;
-      `transport`?: string;
-      `registered`?: boolean
-    })[];
-    `serviceProviders`?: ({
-      `name`?: NullableString;
-      `authentications`?: numeric;
-      `sessions`?: numeric;
-      `users`?: numeric;
-      `firstSeen`?: string;
-      `lastSeen`?: string;
-      `assertionConsumerServices`?: (string)[];
-      `singleLogoutServices`?: (string)[];
-      `nameIdFormats`?: (string)[];
-      `responseBindings`?: (string)[];
-      `lastRequestSigned`?: boolean;
-      `lastRequestVerification`?: string;
-      `identifier`?: string;
-      `slug`?: NullableString;
-      `idpEntityId`?: NullableString;
-      `metadataUrl`?: string;
-      `ssoUrl`?: string;
-      `sloUrl`?: string;
-      `arsUrl`?: string
-    })[];
-    `paging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `offset`?: integer;
-      `total`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `param`?: NullableString;
-      `noun`?: NullableString
-    };
+    `protocolEndpoints`?: (WithNameMethodsUrlEtc6)[];
+    `serviceProviders`?: (WithNameAuthenticationsSessionsEtc19)[];
+    `paging`?: WithPagePagesPerPageEtc9;
     `unscopedMetadata`?: string;
-    `settings`?: {
-      `page`?: string;
-      `groups`?: ({
-        `group`?: string;
-        `settings`?: ({
-          `key`?: string;
-          `group`?: string;
-          `label`?: string;
-          `description`?: string;
-          `type`?: string;
-          `enumValues`?: (string)[];
-          `csvValues`?: (string)[];
-          `ordered`?: boolean;
-          @js(#{`description`:"The sentence beside each value."}) `csvValueNotes`?: Record<string>;
-          @js(#{`description`:"The rules by kind: onlyWhileOn and aloneWhileOn."}) `selectAll`?: Record<({
-            `setting`?: string;
-            `values`?: (string)[];
-            `on`?: boolean;
-            `canBeOn`?: boolean
-          })[]>;
-          `min`?: numeric;
-          `max`?: numeric;
-          `step`?: numeric;
-          `value`?: BooleanOrNumericOrStringEtc;
-          `text`?: NullableString;
-          `source`?: string;
-          `editable`?: boolean;
-          `restartReason`?: string;
-          `editRefusal`?: string;
-          `env`?: NullableString;
-          `legacyEnv`?: NullableString;
-          `appconfigPath`?: string;
-          `default`?: BooleanOrNumericOrStringEtc;
-          `masked`?: boolean;
-          `realmSettable`?: boolean;
-          `overridden`?: boolean
-        })[]
-      })[];
-      `settingCount`?: integer;
-      `editableCount`?: integer;
-      `overridden`?: (string)[];
-      `setWith`?: string;
-      `context`?: {
-        `configFile`?: NullableString;
-        `defaultsFile`?: NullableString;
-        `persistsAppconfig`?: boolean;
-        `persistsRealms`?: boolean;
-        `persistenceMode`?: string;
-        `inRealm`?: boolean;
-        `realmId`?: NullableString
-      };
-      @js(#{`description`:"The other pages, by settings group."}) `sharedWith`?: Record<({`path`?: string; `label`?: string})[]>
-    };
+    `settings`?: WithPageGroupsSettingCountEtc11;
     `artifactsAwaitingResolution`?: numeric;
     `requestsHeldForSignIn`?: numeric;
-    `mdqRefused`?: ({
-      `entityId`?: string;
-      `why`?: string;
-      `firstAt`?: NullableString;
-      `lastAt`?: NullableString;
-      `count`?: numeric
-    })[];
-    `mdqRefusedPaging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `offset`?: integer;
-      `total`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `param`?: NullableString;
-      `noun`?: NullableString
-    };
+    `mdqRefused`?: (WithEntityIdWhyFirstAtEtc5)[];
+    `mdqRefusedPaging`?: WithPagePagesPerPageEtc9;
     `kind`?: string;
     `found`?: boolean;
     `name`?: string;
@@ -2027,50 +618,12 @@ namespace IyaSts.Api.Console {
     `nameIdFormats`?: (string)[];
     `responseBindings`?: (string)[];
     `lastRequestSigned`?: boolean;
-    `lastRequestVerification`?: {
-      `outcome`?: string;
-      `binding`?: string;
-      `signatureMethod`?: string;
-      `weak`?: boolean
-    };
+    `lastRequestVerification`?: WithOutcomeBindingSignatureMethodEtc4;
     `signingCertificate`?: string;
     `signingCertificates`?: (string)[];
     `observedSigningCertificate`?: string;
-    `signedRequestsRequired`?: {`required`?: boolean; `why`?: string};
-    `metadata`?: {
-      `state`?: string;
-      `stateWhy`?: string;
-      `expiresAt`?: string;
-      `staleAt`?: string;
-      `refreshable`?: boolean;
-      `refresh`?: NullableObject60;
-      `refresherEnabled`?: boolean;
-      `refresherRunning`?: boolean;
-      `trustAnchors`?: numeric;
-      `trustAnchorProblems`?: (string)[];
-      `mdqUrl`?: string;
-      `consumed`?: boolean;
-      `consumedAt`?: string;
-      `how`?: string;
-      `url`?: string;
-      `signature`?: string;
-      `signingCertificateConfigured`?: boolean;
-      `validUntil`?: string;
-      `expired`?: boolean;
-      `cacheDuration`?: string;
-      `authnRequestsSigned`?: boolean;
-      `wantAssertionsSigned`?: boolean;
-      `wantAssertionsEncrypted`?: boolean;
-      `nameIdFormats`?: (string)[];
-      `assertionConsumerServices`?: ({
-        `index`?: string;
-        `isDefault`?: NullableBoolean;
-        `binding`?: string;
-        `location`?: string
-      })[];
-      `singleLogoutServices`?: ({`binding`?: string; `location`?: string; `responseLocation`?: string})[];
-      `encryptionCertificate`?: boolean
-    };
+    `signedRequestsRequired`?: WithRequiredWhy;
+    `metadata`?: WithStateStateWhyExpiresAtEtc27;
     `identifier`?: string;
     `slug`?: NullableString;
     `idpEntityId`?: NullableString;
@@ -2085,11 +638,7 @@ namespace IyaSts.Api.Console {
     `matched`?: integer;
     `shown`?: integer;
     `ready`?: IntegerOrBoolean;
-    `filter`?: {
-      `q`?: NullableString;
-      `role`?: NullableString;
-      `category`?: NullableString
-    };
+    `filter`?: WithQRoleCategory;
     `page`?: integer;
     `pages`?: integer;
     `perPage`?: integer;
@@ -2098,95 +647,16 @@ namespace IyaSts.Api.Console {
     `container`?: NullableString;
     `max`?: numeric;
     `settings`?: NullableObject61;
-    `roles`?: ({`role`?: string; `label`?: string; `short`?: string; `what`?: string})[];
-    `protocols`?: ({
-      `protocol`?: string;
-      `label`?: string;
-      `family`?: string;
-      `what`?: string;
-      `needs`?: (string)[];
-      `spec`?: string;
-      `signalsOnly`?: boolean
-    })[];
-    `paths`?: {
-      `base`?: string;
-      `login`?: string;
-      `acs`?: string;
-      `metadata`?: string;
-      `link`?: string;
-      `notifications`?: string;
-      `stepup`?: string;
-      `profile`?: string;
-      `slo`?: string;
-      `backchannelLogout`?: string;
-      `frontchannelLogout`?: string;
-      `jwks`?: string;
-      `atprotoClient`?: string;
-      `initiateLogin`?: string;
-      `fragmentScript`?: string;
-      `requestObject`?: string;
-      `webfinger`?: string;
-      `signals`?: string
-    };
-    `paging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: string;
-      `noun`?: string
-    };
+    `roles`?: (WithRoleLabelShortEtc4)[];
+    `protocols`?: (WithProtocolLabelFamilyEtc7)[];
+    `paths`?: WithBaseLoginAcsEtc18;
+    `paging`?: WithPagePagesPerPageEtc8;
     `roleCounts`?: Record<numeric>;
     `categoryCounts`?: Record<numeric>;
-    `consumerProviders`?: {
-      `on`?: boolean;
-      `catalogue`?: ({
-        `id`?: string;
-        `label`?: string;
-        `protocol`?: string;
-        `generic`?: boolean;
-        `docs`?: string;
-        `note`?: string;
-        `defaults`?: Record<string>;
-        `needs`?: (string)[];
-        `adapters`?: (string)[];
-        `subject`?: string;
-        `emailVerified`?: string;
-        `claims`?: (string)[]
-      })[]
-    };
+    `consumerProviders`?: WithOnCatalogue;
     `enabledNotConfigured`?: integer;
     `authentications`?: integer;
-    `relationships`?: ({
-      `id`?: string;
-      `name`?: string;
-      `role`?: string;
-      `roleLabel`?: string;
-      `protocol`?: string;
-      `protocolLabel`?: string;
-      `peer`?: string;
-      `application`?: string;
-      `category`?: string;
-      `provider`?: string;
-      `providerLabel`?: string;
-      `enabled`?: boolean;
-      `ready`?: boolean;
-      `missing`?: (string)[];
-      `usable`?: boolean;
-      `signsIn`?: boolean;
-      `signalsEnabled`?: boolean;
-      `releases`?: (string)[];
-      `mappings`?: (string)[];
-      `authentications`?: integer;
-      `users`?: integer;
-      `lastUser`?: string;
-      `lastSeen`?: string;
-      `lastError`?: string;
-      `lastErrorAt`?: string;
-      `dn`?: string
-    })[];
+    `relationships`?: (WithIdNameRoleEtc26)[];
     `found`?: boolean;
     `id`?: string;
     `name`?: string;
@@ -2212,217 +682,20 @@ namespace IyaSts.Api.Console {
     `lastError`?: string;
     `lastErrorAt`?: string;
     `dn`?: string;
-    `endpoints`?: {
-      `assertionConsumerService`?: string;
-      `login`?: string;
-      `metadata`?: NullableString;
-      `jwks`?: NullableString;
-      `initiateLogin`?: NullableString;
-      `singleLogout`?: string;
-      `signOutCleanup`?: string;
-      `backchannelLogout`?: string;
-      `frontchannelLogout`?: string;
-      `postLogoutRedirect`?: string
-    };
-    `fields`?: {
-      `fedId`?: string;
-      `cn`?: string;
-      `fedName`?: string;
-      `fedRole`?: string;
-      `fedProtocol`?: string;
-      `fedProvider`?: string;
-      `fedPeer`?: string;
-      `fedLocalEntityId`?: string;
-      `fedEnabled`?: string;
-      `fedSsoUrl`?: string;
-      `fedTokenUrl`?: string;
-      `fedUserinfoUrl`?: string;
-      `fedJwksUri`?: string;
-      `fedEmailsUrl`?: string;
-      `fedJwks`?: string;
-      `fedTrustAnchor`?: string;
-      `fedSigningCertificate`?: string;
-      `fedClientId`?: string;
-      `fedClientSecret`?: string;
-      `fedResponseMode`?: string;
-      `fedTeamId`?: string;
-      `fedKeyId`?: string;
-      `fedClientSigningKey`?: string;
-      `fedTokenAuth`?: string;
-      `fedScope`?: string;
-      `fedResponseType`?: string;
-      `fedIdTokenSignedResponseAlg`?: string;
-      `fedUserinfoSignedResponseAlg`?: string;
-      `fedRefreshTokens`?: string;
-      `fedRefreshEverySeconds`?: string;
-      `fedRegister`?: string;
-      `fedRegisteredIssuer`?: string;
-      `fedRequestObject`?: string;
-      `fedRequestObjectSigningAlg`?: string;
-      `fedWebFinger`?: string;
-      `fedDiscovery`?: string;
-      `fedInitiateLogin`?: string;
-      `fedBinding`?: string;
-      `fedSignRequest`?: string;
-      `fedUsernameSource`?: string;
-      `fedSubjectClaim`?: string;
-      `fedAutocreateUsers`?: string;
-      `fedUpdateUserAttributes`?: string;
-      `fedProvisionGroups`?: string;
-      `fedProvisionCap`?: string;
-      `fedProvisionIdleMinutes`?: string;
-      `fedSubjectPolicy`?: string;
-      `fedSubjectPattern`?: string;
-      `fedMayAssertAdministrators`?: string;
-      `fedSignalEmailMatch`?: string;
-      `fedSignalsEnabled`?: string;
-      `fedSignalsIssuer`?: string;
-      `fedSignalsDelivery`?: string;
-      `fedSignalsTokenUrl`?: string;
-      `fedSignalsClientId`?: string;
-      `fedSignalsClientSecret`?: string;
-      `fedSignalsScope`?: string;
-      `fedSignalsBearer`?: string;
-      `fedSloUrl`?: string;
-      `fedSloBinding`?: string;
-      `fedEndSessionUrl`?: string;
-      `fedAcceptSignout`?: string;
-      `fedRequireSignedLogout`?: string;
-      `fedEncryptionKeyType`?: string;
-      `fedKeyManagementAlgorithm`?: string;
-      `fedContentEncryptionAlgorithm`?: string;
-      `fedAllowUnencrypted`?: string;
-      `fedAllowUnsolicited`?: string;
-      `fedApplication`?: string;
-      `fedAuthnMechanism`?: string;
-      `fedAuthnRelationship`?: string;
-      `fedFirstSeen`?: string;
-      `fedLastSeen`?: string;
-      `fedAuthentications`?: string;
-      `fedUsers`?: string;
-      `fedLastUser`?: string;
-      `fedLastError`?: string;
-      `fedLastErrorAt`?: string;
-      `description`?: (string)[];
-      `fedAllowedTenants`?: (string)[];
-      `fedAuthorizeParams`?: (string)[];
-      `fedAttributeMap`?: (string)[];
-      `fedSubjectGroup`?: (string)[];
-      `fedSubjectDomain`?: (string)[];
-      `fedHomeRealmDomain`?: (string)[];
-      `fedSignalsEvents`?: (string)[];
-      `fedEncryptionKey`?: string;
-      `fedRelease`?: (string)[];
-      `fedApplicationUse`?: (string)[]
-    };
-    `editable`?: ({
-      `name`?: string;
-      `kind`?: string;
-      `role`?: string;
-      `from`?: string;
-      `what`?: string;
-      `standard`?: boolean;
-      `sensitive`?: boolean;
-      `enum`?: (string)[];
-      `editable`?: BooleanOrString
-    })[];
-    `unmappedAttributes`?: ({`name`?: string; `refused`?: string; `first`?: string; `last`?: string})[];
+    `endpoints`?: WithAssertionConsumerServiceLoginMetadataEtc10;
+    `fields`?: WithFedIdCnFedNameEtc89;
+    `editable`?: (WithNameKindRoleEtc9)[];
+    `unmappedAttributes`?: (WithNameRefusedFirstEtc4)[];
     `signals`?: NullableObject62;
-    `signalArrivals`?: ({
-      `relationship`?: string;
-      `jti`?: string;
-      `via`?: string;
-      `receivedAt`?: string;
-      `verified`?: boolean;
-      `refusal`?: string;
-      `why`?: string;
-      `events`?: (string)[];
-      @js(#{
-        `x-free-form`:"An RFC 9493 subject identifier as a partner's SET carried it, in whatever format that partner chose.",
-        `description`:"An RFC 9493 subject identifier as a partner's SET carried it, in whatever format that partner chose."
-      }) `subject`?: unknown;
-      `person`?: string;
-      `mapping`?: string;
-      `reactions`?: ({
-        `event`?: string;
-        `reaction`?: string;
-        `done`?: boolean;
-        `skipped`?: string;
-        `observed`?: boolean;
-        `why`?: string;
-        `ended`?: integer;
-        `revoked`?: integer;
-        `gnapGrants`?: integer;
-        `oauthGrants`?: integer;
-        `tokens`?: integer;
-        `codes`?: integer;
-        `status`?: string
-      })[];
-      `iat`?: numeric
-    })[];
+    `signalArrivals`?: (WithRelationshipJtiViaEtc15)[];
     `outboundSignals`?: NullableObject63;
     `encryption`?: NullableObject64;
-    `links`?: ({
-      `username`?: string;
-      `dn`?: string;
-      `link`?: string;
-      `issuer`?: string;
-      `subject`?: string
-    })[];
-    `linksPaging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: string;
-      `noun`?: string
-    };
-    `setFields`?: ({
-      `name`?: string;
-      `kind`?: string;
-      `role`?: string;
-      `from`?: string;
-      `what`?: string;
-      `standard`?: boolean;
-      `sensitive`?: boolean;
-      `enum`?: (string)[];
-      `editable`?: BooleanOrString
-    })[];
-    `multiFields`?: ({
-      `name`?: string;
-      `kind`?: string;
-      `role`?: string;
-      `from`?: string;
-      `what`?: string;
-      `standard`?: boolean;
-      `sensitive`?: boolean;
-      `enum`?: (string)[];
-      `editable`?: BooleanOrString
-    })[];
-    `signalSetFields`?: ({
-      `name`?: string;
-      `kind`?: string;
-      `role`?: string;
-      `from`?: string;
-      `what`?: string;
-      `standard`?: boolean;
-      `sensitive`?: boolean;
-      `enum`?: (string)[];
-      `editable`?: BooleanOrString
-    })[];
-    `schema`?: ({
-      `name`?: string;
-      `kind`?: string;
-      `role`?: string;
-      `from`?: string;
-      `what`?: string;
-      `standard`?: boolean;
-      `sensitive`?: boolean;
-      `enum`?: (string)[];
-      `editable`?: BooleanOrString
-    })[];
+    `links`?: (WithUsernameDnLinkEtc5)[];
+    `linksPaging`?: WithPagePagesPerPageEtc8;
+    `setFields`?: (WithNameKindRoleEtc9)[];
+    `multiFields`?: (WithNameKindRoleEtc9)[];
+    `signalSetFields`?: (WithNameKindRoleEtc9)[];
+    `schema`?: (WithNameKindRoleEtc9)[];
     `enumLabels`?: Record<string>;
     `defaultSubjectPolicy`?: string;
     `autocreateDefault`?: boolean;
@@ -2431,115 +704,16 @@ namespace IyaSts.Api.Console {
     `base`?: string;
     `loginHref`?: string;
     `metadataUrl`?: string;
-    `signOut`?: {
-      `singleLogout`?: string;
-      `signOutCleanup`?: string;
-      `backchannelLogout`?: string;
-      `frontchannelLogout`?: string;
-      `postLogoutRedirect`?: string
-    };
-    `protocolEndpoints`?: ({
-      `name`?: string;
-      `methods`?: StringOrString;
-      `url`?: string;
-      `route`?: string;
-      `transport`?: string;
-      `registered`?: boolean;
-      `listening`?: boolean
-    })[]
+    `signOut`?: WithSingleLogoutSignOutCleanupBackchannelLogoutEtc5;
+    `protocolEndpoints`?: (WithNameMethodsUrlEtc72)[]
   }
 
 @component model `Saml11RelyingPartyList` {
-    `protocolEndpoints`?: ({
-      `name`?: string;
-      `methods`?: StringOrString;
-      `url`?: string;
-      `route`?: string;
-      `transport`?: string;
-      `registered`?: boolean
-    })[];
-    `relyingParties`?: ({
-      `name`?: NullableString;
-      `authentications`?: numeric;
-      `sessions`?: numeric;
-      `users`?: numeric;
-      `firstSeen`?: string;
-      `lastSeen`?: string;
-      `assertionConsumerServices`?: (string)[];
-      `nameIdFormats`?: (string)[];
-      `profiles`?: (string)[];
-      `identifier`?: string;
-      `slug`?: NullableString;
-      `idpProviderId`?: NullableString;
-      `metadataUrl`?: string;
-      `ssoUrl`?: string;
-      `responderUrl`?: string
-    })[];
-    `paging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `offset`?: integer;
-      `total`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `param`?: NullableString;
-      `noun`?: NullableString
-    };
+    `protocolEndpoints`?: (WithNameMethodsUrlEtc6)[];
+    `relyingParties`?: (WithNameAuthenticationsSessionsEtc15)[];
+    `paging`?: WithPagePagesPerPageEtc9;
     `unscopedMetadata`?: string;
-    `settings`?: {
-      `page`?: string;
-      `groups`?: ({
-        `group`?: string;
-        `settings`?: ({
-          `key`?: string;
-          `group`?: string;
-          `label`?: string;
-          `description`?: string;
-          `type`?: string;
-          `enumValues`?: (string)[];
-          `csvValues`?: (string)[];
-          `ordered`?: boolean;
-          @js(#{`description`:"The sentence beside each value."}) `csvValueNotes`?: Record<string>;
-          @js(#{`description`:"The rules by kind: onlyWhileOn and aloneWhileOn."}) `selectAll`?: Record<({
-            `setting`?: string;
-            `values`?: (string)[];
-            `on`?: boolean;
-            `canBeOn`?: boolean
-          })[]>;
-          `min`?: numeric;
-          `max`?: numeric;
-          `step`?: numeric;
-          `value`?: BooleanOrNumericOrStringEtc;
-          `text`?: NullableString;
-          `source`?: string;
-          `editable`?: boolean;
-          `restartReason`?: string;
-          `editRefusal`?: string;
-          `env`?: NullableString;
-          `legacyEnv`?: NullableString;
-          `appconfigPath`?: string;
-          `default`?: BooleanOrNumericOrStringEtc;
-          `masked`?: boolean;
-          `realmSettable`?: boolean;
-          `overridden`?: boolean
-        })[]
-      })[];
-      `settingCount`?: integer;
-      `editableCount`?: integer;
-      `overridden`?: (string)[];
-      `setWith`?: string;
-      `context`?: {
-        `configFile`?: NullableString;
-        `defaultsFile`?: NullableString;
-        `persistsAppconfig`?: boolean;
-        `persistsRealms`?: boolean;
-        `persistenceMode`?: string;
-        `inRealm`?: boolean;
-        `realmId`?: NullableString
-      };
-      @js(#{`description`:"The other pages, by settings group."}) `sharedWith`?: Record<({`path`?: string; `label`?: string})[]>
-    };
+    `settings`?: WithPageGroupsSettingCountEtc11;
     `artifactsAwaitingResolution`?: numeric;
     `assertionsHeldByReference`?: numeric;
     `flowsHeldForSignIn`?: numeric;
@@ -2560,99 +734,20 @@ namespace IyaSts.Api.Console {
   }
 
 @component model `SamlIdpInitiatedList` {
-    `protocolEndpoints`?: ({
-      `name`?: string;
-      `methods`?: StringOrString;
-      `url`?: string;
-      `route`?: string;
-      `transport`?: string;
-      `registered`?: boolean
-    })[];
-    `idpInitiated`?: ({
-      `identifier`?: string;
-      `name`?: string;
-      `entityId`?: string;
-      `protocol`?: string;
-      `label`?: string;
-      `attribute`?: string;
-      `launchUrl`?: string;
-      `endpoint`?: NullableString;
-      `missing`?: (string)[]
-    })[];
-    `idpInitiatedPaging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: NullableString;
-      `noun`?: NullableString
-    };
-    `realmSwitches`?: ({
-      `protocol`?: string;
-      `label`?: string;
-      `setting`?: string;
-      `attribute`?: string;
-      `enabled`?: boolean
-    })[]
+    `protocolEndpoints`?: (WithNameMethodsUrlEtc6)[];
+    `idpInitiated`?: (WithIdentifierNameEntityIdEtc9)[];
+    `idpInitiatedPaging`?: WithPagePagesPerPageEtc82;
+    `realmSwitches`?: (WithProtocolLabelSettingEtc5)[]
   }
 
 @component model `AuthorizationServerList` {
     `profileCount`?: integer;
     `shown`?: integer;
-    `members`?: ({
-      `name`?: string;
-      `group`?: string;
-      `kind`?: string;
-      `what`?: string;
-      `enforces`?: string;
-      `document`?: string
-    })[];
-    `paging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: string;
-      `noun`?: string
-    };
+    `members`?: (WithNameGroupKindEtc6)[];
+    `paging`?: WithPagePagesPerPageEtc8;
     `overrideTotal`?: integer;
     `driftTotal`?: integer;
-    `authorizationServers`?: ({
-      `id`?: string;
-      `label`?: string;
-      `description`?: string;
-      @js(#{`description`:"The members this server overrides."}) `overrides`?: Record<Shape4>;
-      `removed`?: (string)[];
-      `changedAt`?: string;
-      `memberCount`?: integer;
-      `autoCreated`?: boolean;
-      `seen`?: numeric;
-      `seenAt`?: string;
-      `createdAt`?: string;
-      `urls`?: {
-        `oauth`?: string;
-        `oidc`?: string;
-        `authorize`?: string;
-        `token`?: string
-      };
-      `drift`?: ({
-        `member`?: string;
-        @js(#{
-          `x-free-form`:"An RFC 8414 metadata member's value as the operator chose to publish it: any JSON, deliberately, including what no specification defines.",
-          `description`:"An RFC 8414 metadata member's value as the operator chose to publish it: any JSON, deliberately, including what no specification defines."
-        }) `published`?: unknown;
-        @js(#{
-          `x-free-form`:"An RFC 8414 metadata member's value as the operator chose to publish it: any JSON, deliberately, including what no specification defines.",
-          `description`:"An RFC 8414 metadata member's value as the operator chose to publish it: any JSON, deliberately, including what no specification defines."
-        }) `actual`?: unknown;
-        `kind`?: string;
-        `what`?: string
-      })[]
-    })[];
+    `authorizationServers`?: (WithIdLabelDescriptionEtc14)[];
     `page`?: integer;
     `pages`?: integer;
     `perPage`?: integer;
@@ -2669,26 +764,9 @@ namespace IyaSts.Api.Console {
     `seen`?: numeric;
     `seenAt`?: string;
     `createdAt`?: string;
-    `urls`?: {
-      `oauth`?: string;
-      `oidc`?: string;
-      `authorize`?: string;
-      `token`?: string
-    };
+    `urls`?: WithOauthOidcAuthorizeEtc4;
     `found`?: boolean;
-    `drift`?: ({
-      `member`?: string;
-      @js(#{
-        `x-free-form`:"An RFC 8414 metadata member's value as the operator chose to publish it: any JSON, deliberately, including what no specification defines.",
-        `description`:"An RFC 8414 metadata member's value as the operator chose to publish it: any JSON, deliberately, including what no specification defines."
-      }) `published`?: unknown;
-      @js(#{
-        `x-free-form`:"An RFC 8414 metadata member's value as the operator chose to publish it: any JSON, deliberately, including what no specification defines.",
-        `description`:"An RFC 8414 metadata member's value as the operator chose to publish it: any JSON, deliberately, including what no specification defines."
-      }) `actual`?: unknown;
-      `kind`?: string;
-      `what`?: string
-    })[];
+    `drift`?: (WithMemberXFreeFormDescriptionEtc9)[];
     @js(#{
       `x-free-form`:"The RFC 8414 document this server would publish: what this service builds, with the operator's overrides, whose values are any JSON.",
       `description`:"The RFC 8414 document this server would publish: what this service builds, with the operator's overrides, whose values are any JSON."
@@ -2702,128 +780,8 @@ namespace IyaSts.Api.Console {
     integer,
     {
       @js(#{`description`:"What each attribute of the entry is."}) `notes`?: Record<{`text`?: string; `sensitive`?: boolean}>;
-      `config`?: {
-        `fields`?: ({
-          `attribute`?: string;
-          `type`?: string;
-          `long`?: boolean;
-          `editable`?: StringOrBoolean;
-          `sensitive`?: boolean;
-          `overrides`?: string;
-          `choices`?: NullableArray;
-          `example`?: NullableString;
-          `what`?: string;
-          `families`?: (string)[];
-          `everyFamily`?: boolean;
-          `declaration`?: boolean;
-          `primaryName`?: boolean;
-          `simple`?: boolean;
-          `group`?: string;
-          `section`?: string;
-          `sectionLabel`?: string;
-          `described`?: {
-            `key`?: string;
-            `group`?: string;
-            `label`?: string;
-            `description`?: string;
-            `type`?: string;
-            `enumValues`?: (string)[];
-            `csvValues`?: (string)[];
-            `ordered`?: boolean;
-            @js(#{`description`:"The sentence beside each of a list's values."}) `csvValueNotes`?: Record<string>;
-            `selectAll`?: {
-              `onlyWhileOn`?: ({
-                `setting`?: string;
-                `values`?: (string)[];
-                `on`?: boolean;
-                `canBeOn`?: boolean
-              })[];
-              `aloneWhileOn`?: ({
-                `setting`?: string;
-                `values`?: (string)[];
-                `on`?: boolean;
-                `canBeOn`?: boolean
-              })[]
-            };
-            `min`?: numeric;
-            `max`?: numeric;
-            `step`?: numeric;
-            `value`?: StringOrNumericOrBooleanEtc2;
-            `text`?: string;
-            `source`?: string;
-            `editable`?: boolean;
-            `restartReason`?: string;
-            `editRefusal`?: string;
-            `env`?: NullableString;
-            `legacyEnv`?: NullableString;
-            `appconfigPath`?: string;
-            `default`?: StringOrNumericOrBooleanEtc2;
-            `masked`?: boolean;
-            `realmSettable`?: boolean;
-            `overridden`?: boolean
-          };
-          `inSimple`?: boolean
-        })[];
-        @js(#{`description`:"Each field's values, by attribute."}) `values`?: Record<(string)[]>;
-        `groups`?: ({`id`?: string; `label`?: string; `families`?: (string)[]})[];
-        `familyChoices`?: ({
-          `id`?: string;
-          `label`?: string;
-          `families`?: (string)[];
-          `kind`?: string;
-          `what`?: string
-        })[];
-        `protocols`?: ({
-          `id`?: string;
-          `label`?: string;
-          `kind`?: string;
-          `kinds`?: (string)[];
-          `identifierAttribute`?: string;
-          `redirectAttribute`?: string;
-          `logoutAttribute`?: string;
-          `deliveryAttribute`?: string;
-          `eventsAttribute`?: string;
-          `secretAttribute`?: string;
-          `what`?: string
-        })[];
-        `longTextAttributes`?: (string)[];
-        @js(#{`description`:"What each attribute's search looks through."}) `fieldSearches`?: Record<string>;
-        `observed`?: {
-          `oauthGrantTypeObserved`?: ({`value`?: string; `declared`?: boolean})[];
-          `oauthResponseTypeObserved`?: ({`value`?: string; `declared`?: boolean})[];
-          `appRedirectUriObserved`?: ({`value`?: string; `declared`?: boolean})[];
-          `oauthScope`?: ({`value`?: string; `declared`?: boolean})[];
-          `appAuthorizationServer`?: ({`value`?: string; `declared`?: boolean})[];
-          `samlNameIdFormat`?: ({`value`?: string; `declared`?: boolean})[];
-          `samlResponseBinding`?: ({`value`?: string; `declared`?: boolean})[];
-          `samlLastRequest`?: NullableObject66;
-          `samlObservedSigningCertificate`?: NullableObject67;
-          `oauthAllowedTokenResponseTypes`?: {`enabled`?: (string)[]; `enforced`?: boolean; `waived`?: boolean}
-        };
-        `derived`?: {
-          `oauthAllowedScope`?: ({
-            `value`?: string;
-            `permission`?: string;
-            `api`?: string;
-            `apiName`?: string
-          })[]
-        };
-        @js(#{`description`:"By attribute."}) `fieldWarnings`?: Record<({
-          `attribute`?: string;
-          `value`?: string;
-          `reason`?: string;
-          `dropped`?: boolean;
-          `text`?: string
-        })[]>
-      };
-      `passkeyPolicies`?: {
-        `named`?: string;
-        `missing`?: boolean;
-        `applies`?: string;
-        `precedence`?: numeric;
-        `groupPolicies`?: integer;
-        `link`?: string
-      };
+      `config`?: WithFieldsDescriptionValuesEtc18;
+      `passkeyPolicies`?: WithNamedMissingAppliesEtc6;
       @js(#{`description`:"By protocol."}) `launchUrls`?: Record<{
         `protocol`?: string;
         `label`?: string;
@@ -2834,928 +792,29 @@ namespace IyaSts.Api.Console {
         `missing`?: (string)[];
         `endpoint`?: NullableString
       }>;
-      `cors`?: ({`stored`?: string; `canonical`?: string})[];
-      `accessTypes`?: ({
-        `stored`?: string;
-        `type`?: string;
-        `description`?: string;
-        `locations`?: (string)[];
-        @js(#{
-          `x-free-form`:"The JSON an operator wrote into an access type's definition: a JSON Schema (RFC 9396 leaves a type's fields to its definition), or the definition.",
-          `description`:"The JSON an operator wrote into an access type's definition: a JSON Schema (RFC 9396 leaves a type's fields to its definition), or the definition."
-        }) `schema`?: unknown;
-        `validate`?: null;
-        `problem`?: string;
-        `actions`?: NullableArray;
-        `datatypes`?: NullableArray;
-        `privileges`?: NullableArray;
-        `required`?: (string)[];
-        `interaction`?: string;
-        `consentActions`?: (string)[];
-        `bearer`?: StringOrNumericOrBooleanEtc4;
-        `maxLifetimeS`?: NullableNumber;
-        `acr`?: string;
-        `derivableFrom`?: (string)[];
-        `introspectionClaims`?: (string)[];
-        @js(#{
-          `x-free-form`:"The JSON an operator wrote into an access type's definition: a JSON Schema (RFC 9396 leaves a type's fields to its definition), or the definition.",
-          `description`:"The JSON an operator wrote into an access type's definition: a JSON Schema (RFC 9396 leaves a type's fields to its definition), or the definition."
-        }) `limits`?: unknown;
-        `validateLimits`?: null;
-        `xacml`?: ({
-          `path`?: string;
-          `attributeId`?: string;
-          `category`?: string;
-          `dataType`?: string;
-          `multiplicity`?: string;
-          `description`?: string
-        })[];
-        `notForPolicy`?: (string)[];
-        @js(#{
-          `x-free-form`:"The JSON an operator wrote into an access type's definition: a JSON Schema (RFC 9396 leaves a type's fields to its definition), or the definition.",
-          `description`:"The JSON an operator wrote into an access type's definition: a JSON Schema (RFC 9396 leaves a type's fields to its definition), or the definition."
-        }) `source`?: unknown
-      })[];
+      `cors`?: (WithStoredCanonical)[];
+      `accessTypes`?: (WithStoredTypeDescriptionEtc29)[];
       `fga`?: NullableObject68;
-      `permissionClaims`?: {
-        `permissions`?: ({
-          `name`?: string;
-          `description`?: NullableString;
-          `id`?: NullableString;
-          `attributes`?: (string)[]
-        })[];
-        `stale`?: (string)[];
-        `catalogue`?: ({`ldap`?: string; `claim`?: string; `label`?: string})[]
-      };
+      `permissionClaims`?: WithPermissionsStaleCatalogue;
       `grantsUncataloguedAccess`?: boolean;
       `acceptsUnregisteredAddresses`?: boolean;
-      `protocolRows`?: ({`id`?: string; `label`?: string; `kinds`?: (string)[]; `kind`?: string})[];
-      `editable`?: {
-        `set`?: ({`name`?: string; `sensitive`?: boolean})[];
-        `multi`?: ({`name`?: string; `sensitive`?: boolean})[];
-        `multiAll`?: ({`name`?: string; `sensitive`?: boolean})[]
-      };
-      `did`?: {
-        `did`?: NullableString;
-        `url`?: string;
-        `ok`?: boolean;
-        `why`?: string;
-        `methods`?: ({
-          `kid`?: string;
-          `kty`?: string;
-          `crv`?: string;
-          `alg`?: string;
-          `kept`?: boolean
-        })[];
-        `origins`?: (string)[]
-      };
-      `credentials`?: {
-        `oauthDeclared`?: boolean;
-        `clientSecret`?: {
-          `held`?: boolean;
-          `authMethod`?: string;
-          `registered`?: boolean;
-          `registrationAccessTokenHeld`?: boolean;
-          `expiresAt`?: numeric;
-          `secrets`?: ({
-            `id`?: string;
-            `createdAt`?: numeric;
-            `expiresAt`?: numeric;
-            `description`?: NullableString;
-            `expired`?: boolean;
-            `primary`?: boolean
-          })[];
-          `max`?: numeric;
-          `defaultLifetimeDays`?: numeric;
-          `overlapS`?: numeric
-        };
-        `purposes`?: ({
-          `label`?: string;
-          `held`?: boolean;
-          `source`?: string;
-          `privateKeyHeld`?: boolean;
-          `certificate`?: NullableObject69;
-          `chain`?: ({
-            `subject`?: string;
-            `issuer`?: string;
-            `serialHex`?: string;
-            `notBefore`?: string;
-            `notAfter`?: string;
-            `expired`?: boolean;
-            `selfSigned`?: boolean;
-            `keyType`?: NullableString;
-            `thumbprint`?: string;
-            `unreadable`?: string
-          })[];
-          `handle`?: string;
-          `handleLabel`?: string;
-          `issuers`?: (string)[];
-          `attributes`?: {
-            `issuer`?: string;
-            `certificate`?: string;
-            `chain`?: string;
-            `privateKey`?: string;
-            `handle`?: string;
-            `handleLabel`?: string;
-            `expires`?: string;
-            `source`?: string;
-            `jwks`?: string;
-            `registered`?: string
-          };
-          `registered`?: {
-            `attribute`?: string;
-            `problem`?: string;
-            `keys`?: ({
-              `kid`?: string;
-              `kty`?: string;
-              `alg`?: string;
-              `use`?: string;
-              `certificate`?: NullableObject69
-            })[];
-            `certificates`?: ({
-              `subject`?: string;
-              `issuer`?: string;
-              `serialHex`?: string;
-              `notBefore`?: string;
-              `notAfter`?: string;
-              `expired`?: boolean;
-              `selfSigned`?: boolean;
-              `keyType`?: NullableString;
-              `thumbprint`?: string;
-              `unreadable`?: string
-            })[]
-          };
-          `id`?: string;
-          `sealedAtRest`?: boolean;
-          `certificatePem`?: string
-        })[];
-        `ca`?: {
-          `available`?: boolean;
-          `keyAlg`?: string;
-          `keyAlgorithms`?: ({`id`?: string; `label`?: string; `kind`?: string})[];
-          `leafLifetimeDays`?: numeric
-        };
-        `sources`?: (string)[];
-        `mtls`?: {
-          `certificates`?: ({
-            `serialHex`?: string;
-            `label`?: NullableString;
-            `subject`?: NullableString;
-            `keyAlg`?: NullableString;
-            `notBefore`?: StringOrNumericOrNull;
-            `notAfter`?: StringOrNumericOrNull;
-            `thumbprint`?: NullableString;
-            `state`?: string;
-            `reason`?: NullableString;
-            `revokedAt`?: StringOrNumericOrNull;
-            `certificatePem`?: NullableString
-          })[];
-          `active`?: integer;
-          `max`?: numeric;
-          `keyAlgorithms`?: (string)[];
-          `defaultKeyAlg`?: string;
-          `revocationReasons`?: (string)[];
-          `passwordMin`?: numeric;
-          `implicitName`?: string;
-          `caAvailable`?: boolean;
-          `authMethod`?: string;
-          `certificateMethod`?: boolean;
-          `subjects`?: ({
-            `member`?: string;
-            `attribute`?: string;
-            `label`?: string;
-            `value`?: string
-          })[];
-          `registeredSubject`?: (string)[];
-          `boundTokensAttribute`?: string;
-          `boundTokens`?: boolean;
-          `adminApiBound`?: boolean;
-          `selfSignedThumbprint`?: string;
-          `bindingAvailable`?: boolean
-        };
-        `signing`?: {
-          `certificates`?: ({
-            `serialHex`?: string;
-            `label`?: NullableString;
-            `subject`?: NullableString;
-            `keyAlg`?: NullableString;
-            `notBefore`?: StringOrNumericOrNull;
-            `notAfter`?: StringOrNumericOrNull;
-            `thumbprint`?: NullableString;
-            `state`?: string;
-            `reason`?: NullableString;
-            `revokedAt`?: StringOrNumericOrNull;
-            `certificatePem`?: NullableString
-          })[];
-          `active`?: integer;
-          `max`?: numeric;
-          `keyAlgorithms`?: (string)[];
-          `defaultKeyAlg`?: string;
-          `revocationReasons`?: (string)[];
-          `passwordMin`?: numeric;
-          `implicitName`?: string;
-          `caAvailable`?: boolean;
-          `ok`?: boolean;
-          `kind`?: string;
-          `holder`?: string;
-          `wstrustDeclared`?: boolean
-        };
-        `stored`?: {
-          `ok`?: boolean;
-          `errors`?: (string)[];
-          `application`?: string;
-          `dn`?: NullableString;
-          `certificates`?: ({
-            `sha256`?: string;
-            `subject`?: string;
-            `issuer`?: string;
-            `serialNumber`?: string;
-            `notBefore`?: string;
-            `notAfter`?: string;
-            `expired`?: boolean;
-            `readable`?: boolean
-          })[];
-          `rule`?: string
-        }
-      };
-      `signals`?: {
-        `installed`?: boolean;
-        `streams`?: ({
-          `stream_id`?: string;
-          `status`?: string;
-          `statusReason`?: NullableString;
-          `aud`?: StringOrNumericOrBooleanEtc4;
-          `delivery`?: {
-            `method`?: string;
-            `endpoint_url`?: NullableString
-          };
-          `events_requested`?: (string)[];
-          `events_delivered`?: (string)[];
-          `format`?: string;
-          `description`?: string;
-          `createdBy`?: string;
-          `createdAt`?: StringOrNumeric;
-          `updatedAt`?: StringOrNumeric;
-          `lastPushAt`?: StringOrNumeric;
-          `lastPushError`?: string
-        })[];
-        `settings`?: ({
-          `setting`?: string;
-          `attribute`?: string;
-          `value`?: StringOrNumericOrBooleanEtc2;
-          `source`?: string
-        })[];
-        `json`?: {
-          `installed`?: boolean;
-          `streams`?: ({
-            `stream_id`?: string;
-            `status`?: string;
-            `statusReason`?: NullableString;
-            `aud`?: StringOrNumericOrBooleanEtc4;
-            `delivery`?: {
-              `method`?: string;
-              `endpoint_url`?: NullableString
-            };
-            `events_requested`?: (string)[];
-            `events_delivered`?: (string)[];
-            `format`?: string;
-            `description`?: string;
-            `createdBy`?: string;
-            `createdAt`?: StringOrNumeric;
-            `updatedAt`?: StringOrNumeric;
-            `lastPushAt`?: StringOrNumeric;
-            `lastPushError`?: string
-          })[];
-          `settings`?: ({
-            `setting`?: string;
-            `attribute`?: string;
-            `value`?: StringOrNumericOrBooleanEtc2;
-            `source`?: string
-          })[]
-        }
-      };
-      `softwareStatement`?: {
-        `issuers`?: (string)[];
-        `usableKeys`?: integer;
-        `keyProblems`?: (StringOrNumericOrBooleanEtc4)[];
-        `issuedToken`?: string;
-        `issued`?: NullableObject70;
-        `registeredWith`?: NullableObject71;
-        `settings`?: {
-          `requireTrustedIssuer`?: boolean;
-          `opensRegistration`?: boolean;
-          `required`?: boolean;
-          `lifetimeSeconds`?: numeric
-        };
-        `json`?: {
-          `declaredIssuers`?: (string)[];
-          `usableKeys`?: integer;
-          `issued`?: NullableObject72;
-          `registeredWith`?: NullableObject71;
-          `settings`?: {
-            `requireTrustedIssuer`?: boolean;
-            `opensRegistration`?: boolean;
-            `required`?: boolean;
-            `lifetimeSeconds`?: numeric
-          }
-        }
-      };
-      `roles`?: {
-        `held`?: ({
-          `name`?: string;
-          `id`?: string;
-          `displayName`?: string;
-          `application`?: string;
-          `carriedAs`?: string;
-          `permissions`?: (string)[]
-        })[];
-        `offerable`?: (string)[];
-        `required`?: ({
-          `name`?: string;
-          `resolves`?: string;
-          `displayName`?: string;
-          `role`?: string
-        })[];
-        `requirable`?: (string)[]
-      };
-      `permissions`?: {
-        `held`?: ({
-          `client`?: string;
-          `clientName`?: string;
-          `permissionId`?: string;
-          `resource`?: string;
-          `resourceName`?: string;
-          `baseUri`?: NullableString;
-          `permissionName`?: string;
-          `description`?: NullableString;
-          `dangling`?: boolean;
-          `asked`?: boolean
-        })[];
-        `exposes`?: ({
-          `resource`?: string;
-          `resourceName`?: string;
-          `baseUri`?: NullableString;
-          `name`?: string;
-          `description`?: NullableString;
-          `id`?: NullableString;
-          `raw`?: NullableString;
-          `grantedTo`?: ({`identifier`?: string; `name`?: string; `asked`?: boolean})[]
-        })[];
-        `offerable`?: ({
-          `resource`?: string;
-          `resourceName`?: string;
-          `baseUri`?: NullableString;
-          `name`?: string;
-          `description`?: NullableString;
-          `id`?: NullableString;
-          `raw`?: NullableString;
-          `grantedTo`?: ({`identifier`?: string; `name`?: string; `asked`?: boolean})[]
-        })[];
-        `clients`?: ({`identifier`?: string; `name`?: string})[];
-        `heldPage`?: {
-          `paging`?: {
-            `page`?: integer;
-            `perPage`?: integer;
-            `pages`?: integer;
-            `offset`?: integer;
-            `total`?: integer;
-            `firstRow`?: integer;
-            `lastRow`?: integer;
-            `param`?: string;
-            `noun`?: string
-          };
-          `shown`?: ({
-            `client`?: string;
-            `clientName`?: string;
-            `permissionId`?: string;
-            `resource`?: string;
-            `resourceName`?: string;
-            `baseUri`?: NullableString;
-            `permissionName`?: string;
-            `description`?: NullableString;
-            `dangling`?: boolean;
-            `asked`?: boolean
-          })[]
-        };
-        `exposedPage`?: {
-          `paging`?: {
-            `page`?: integer;
-            `perPage`?: integer;
-            `pages`?: integer;
-            `offset`?: integer;
-            `total`?: integer;
-            `firstRow`?: integer;
-            `lastRow`?: integer;
-            `param`?: string;
-            `noun`?: string
-          };
-          `shown`?: ({
-            `resource`?: string;
-            `resourceName`?: string;
-            `baseUri`?: NullableString;
-            `name`?: string;
-            `description`?: NullableString;
-            `id`?: NullableString;
-            `raw`?: NullableString;
-            `grantedTo`?: ({`identifier`?: string; `name`?: string; `asked`?: boolean})[]
-          })[]
-        };
-        `grantedOutPage`?: {
-          `paging`?: {
-            `page`?: integer;
-            `perPage`?: integer;
-            `pages`?: integer;
-            `offset`?: integer;
-            `total`?: integer;
-            `firstRow`?: integer;
-            `lastRow`?: integer;
-            `param`?: string;
-            `noun`?: string
-          };
-          `shown`?: ({
-            `client`?: string;
-            `clientName`?: string;
-            `permissionId`?: string;
-            `resource`?: string;
-            `resourceName`?: string;
-            `baseUri`?: NullableString;
-            `permissionName`?: string;
-            `description`?: NullableString;
-            `dangling`?: boolean;
-            `asked`?: boolean
-          })[]
-        };
-        `registerPermissions`?: integer
-      };
-      `lifetimes`?: {
-        `rows`?: ({
-          `setting`?: string;
-          `attribute`?: string;
-          `label`?: string;
-          `value`?: numeric;
-          `realmValue`?: numeric;
-          `source`?: string
-        })[];
-        `skew`?: numeric
-      };
-      `claims`?: ({
-        `id`?: string;
-        `label`?: string;
-        `attribute`?: string;
-        `realm`?: ({
-          `name`?: string;
-          `value`?: StringOrNumericOrBooleanEtc4;
-          `nameFormat`?: string;
-          `namespace`?: string;
-          `attribute`?: string;
-          `multi`?: boolean;
-          `type`?: string
-        })[];
-        `own`?: ({
-          `name`?: string;
-          `value`?: StringOrNumericOrBooleanEtc4;
-          `nameFormat`?: string;
-          `namespace`?: string;
-          `attribute`?: string;
-          `multi`?: boolean;
-          `type`?: string
-        })[];
-        `effective`?: ({
-          `name`?: string;
-          `value`?: StringOrNumericOrBooleanEtc4;
-          `nameFormat`?: string;
-          `namespace`?: string;
-          `attribute`?: string;
-          `multi`?: boolean;
-          `type`?: string;
-          `source`?: string;
-          `replacesRealm`?: boolean
-        })[]
-      })[];
-      `claimSelections`?: {
-        `catalogue`?: ({
-          `ldap`?: string;
-          `claim`?: string;
-          `label`?: string;
-          `schema`?: string;
-          `ldpTerm`?: string;
-          `generated`?: boolean
-        })[];
-        `preview`?: {
-          `user`?: string;
-          @js(#{`description`:"By lower-cased attribute name."}) `byLdap`?: Record<{
-            `ldap`?: string;
-            `claim`?: string;
-            `value`?: StringOrNumericOrBooleanEtc4;
-            `source`?: string;
-            `ldpTerm`?: NullableString
-          }>;
-          `entryFound`?: boolean
-        };
-        `sets`?: ({
-          `id`?: string;
-          `label`?: string;
-          `attribute`?: string;
-          `realm`?: (string)[];
-          `own`?: NullableArray;
-          `inherited`?: boolean;
-          `effective`?: (string)[];
-          @js(#{`description`:"The claims, by name."}) `claims`?: Record<StringOrNumericOrBooleanEtc4OrListOfRecordStringOrNumericOrBooleanEtc4>;
-          `report`?: ({
-            `ldap`?: string;
-            `claim`?: string;
-            `value`?: StringOrNumericOrBooleanEtc4;
-            `source`?: string;
-            `ldpTerm`?: NullableString
-          })[]
-        })[];
-        `credential`?: NullableObject73
-      };
-      `enrollment`?: {
-        `credentials`?: {
-          `families`?: (string)[];
-          `rules`?: ({
-            `family`?: string;
-            `label`?: string;
-            `allowedProfiles`?: (string)[];
-            `allowedProfilesSource`?: string;
-            `defaultProfile`?: NullableString;
-            `defaultProfileSource`?: string;
-            `certificateLifetimeDays`?: numeric;
-            `certificateLifetimeSource`?: string
-          })[];
-          `cap`?: {`value`?: numeric; `source`?: string};
-          `est`?: NullableObject74;
-          `certificates`?: ({
-            `serialHex`?: string;
-            `family`?: string;
-            `profile`?: string;
-            `subject`?: string;
-            `names`?: (string)[];
-            `thumbprint`?: string;
-            `keyAlg`?: string;
-            `notBefore`?: StringOrNumeric;
-            `notAfter`?: StringOrNumeric;
-            `issuedAt`?: string;
-            `requestedBy`?: NullableObject12;
-            `via`?: string;
-            `keySource`?: string;
-            `replaces`?: NullableString;
-            `certificatePem`?: string;
-            `chainPem`?: (string)[];
-            `device`?: string;
-            `attestation`?: StringOrNumericOrBooleanEtc4;
-            `revoked`?: {
-              `at`?: StringOrNumeric;
-              `reason`?: string;
-              `by`?: string
-            };
-            `expired`?: boolean;
-            `status`?: string
-          })[];
-          `paged`?: {
-            `paging`?: {
-              `page`?: integer;
-              `perPage`?: integer;
-              `pages`?: integer;
-              `offset`?: integer;
-              `total`?: integer;
-              `firstRow`?: integer;
-              `lastRow`?: integer;
-              `param`?: string;
-              `noun`?: string
-            };
-            `shown`?: ({
-              `serialHex`?: string;
-              `family`?: string;
-              `profile`?: string;
-              `subject`?: string;
-              `names`?: (string)[];
-              `thumbprint`?: string;
-              `keyAlg`?: string;
-              `notBefore`?: StringOrNumeric;
-              `notAfter`?: StringOrNumeric;
-              `issuedAt`?: string;
-              `requestedBy`?: NullableObject12;
-              `via`?: string;
-              `keySource`?: string;
-              `replaces`?: NullableString;
-              `certificatePem`?: string;
-              `chainPem`?: (string)[];
-              `device`?: string;
-              `attestation`?: StringOrNumericOrBooleanEtc4;
-              `revoked`?: {
-                `at`?: StringOrNumeric;
-                `reason`?: string;
-                `by`?: string
-              };
-              `expired`?: boolean;
-              `status`?: string
-            })[]
-          };
-          `eabKeys`?: ({
-            `kid`?: string;
-            `createdAt`?: StringOrNumeric;
-            `expiresAt`?: StringOrNumeric;
-            `createdBy`?: NullableString;
-            `boundAccount`?: NullableString;
-            `boundAt`?: StringOrNumericOrNull;
-            `status`?: string
-          })[];
-          `challenges`?: ({
-            `id`?: string;
-            `profile`?: NullableString;
-            `createdAt`?: StringOrNumeric;
-            `expiresAt`?: StringOrNumeric;
-            `createdBy`?: NullableString;
-            `usedAt`?: StringOrNumericOrNull;
-            `status`?: string
-          })[];
-          `hostNames`?: (string)[];
-          `keyAlgorithms`?: (string)[];
-          `json`?: {
-            `families`?: (string)[];
-            `rules`?: ({
-              `family`?: string;
-              `label`?: string;
-              `allowedProfiles`?: (string)[];
-              `allowedProfilesSource`?: string;
-              `defaultProfile`?: NullableString;
-              `defaultProfileSource`?: string;
-              `certificateLifetimeDays`?: numeric;
-              `certificateLifetimeSource`?: string
-            })[];
-            `certificateCap`?: {`value`?: numeric; `source`?: string};
-            `est`?: NullableObject74;
-            `certificates`?: ({
-              `serialHex`?: string;
-              `family`?: string;
-              `profile`?: string;
-              `subject`?: string;
-              `names`?: (string)[];
-              `thumbprint`?: string;
-              `keyAlg`?: string;
-              `notBefore`?: StringOrNumeric;
-              `notAfter`?: StringOrNumeric;
-              `issuedAt`?: string;
-              `requestedBy`?: NullableObject12;
-              `via`?: string;
-              `keySource`?: string;
-              `replaces`?: NullableString;
-              `certificatePem`?: string;
-              `chainPem`?: (string)[];
-              `device`?: string;
-              `attestation`?: StringOrNumericOrBooleanEtc4;
-              `revoked`?: {
-                `at`?: StringOrNumeric;
-                `reason`?: string;
-                `by`?: string
-              };
-              `expired`?: boolean;
-              `status`?: string
-            })[];
-            `certificatesPaging`?: {
-              `page`?: integer;
-              `pages`?: integer;
-              `perPage`?: integer;
-              `firstRow`?: integer;
-              `lastRow`?: integer;
-              `total`?: integer;
-              `param`?: string;
-              `noun`?: string
-            };
-            `certificatesTotal`?: integer;
-            `eabKeys`?: ({
-              `kid`?: string;
-              `createdAt`?: StringOrNumeric;
-              `expiresAt`?: StringOrNumeric;
-              `createdBy`?: NullableString;
-              `boundAccount`?: NullableString;
-              `boundAt`?: StringOrNumericOrNull;
-              `status`?: string
-            })[];
-            `scepChallenges`?: ({
-              `id`?: string;
-              `profile`?: NullableString;
-              `createdAt`?: StringOrNumeric;
-              `expiresAt`?: StringOrNumeric;
-              `createdBy`?: NullableString;
-              `usedAt`?: StringOrNumericOrNull;
-              `status`?: string
-            })[];
-            `hostNames`?: (string)[]
-          }
-        };
-        `config`?: {
-          `families`?: (string)[];
-          `rules`?: ({
-            `family`?: string;
-            `label`?: string;
-            `allowedProfiles`?: (string)[];
-            `allowedProfilesSource`?: string;
-            `defaultProfile`?: NullableString;
-            `defaultProfileSource`?: string;
-            `certificateLifetimeDays`?: numeric;
-            `certificateLifetimeSource`?: string
-          })[];
-          `cap`?: {`value`?: numeric; `source`?: string};
-          `est`?: NullableObject74;
-          `certificates`?: ({
-            `serialHex`?: string;
-            `family`?: string;
-            `profile`?: string;
-            `subject`?: string;
-            `names`?: (string)[];
-            `thumbprint`?: string;
-            `keyAlg`?: string;
-            `notBefore`?: StringOrNumeric;
-            `notAfter`?: StringOrNumeric;
-            `issuedAt`?: string;
-            `requestedBy`?: NullableObject12;
-            `via`?: string;
-            `keySource`?: string;
-            `replaces`?: NullableString;
-            `certificatePem`?: string;
-            `chainPem`?: (string)[];
-            `device`?: string;
-            `attestation`?: StringOrNumericOrBooleanEtc4;
-            `revoked`?: {
-              `at`?: StringOrNumeric;
-              `reason`?: string;
-              `by`?: string
-            };
-            `expired`?: boolean;
-            `status`?: string
-          })[];
-          `paged`?: {
-            `paging`?: {
-              `page`?: integer;
-              `perPage`?: integer;
-              `pages`?: integer;
-              `offset`?: integer;
-              `total`?: integer;
-              `firstRow`?: integer;
-              `lastRow`?: integer;
-              `param`?: string;
-              `noun`?: string
-            };
-            `shown`?: ({
-              `serialHex`?: string;
-              `family`?: string;
-              `profile`?: string;
-              `subject`?: string;
-              `names`?: (string)[];
-              `thumbprint`?: string;
-              `keyAlg`?: string;
-              `notBefore`?: StringOrNumeric;
-              `notAfter`?: StringOrNumeric;
-              `issuedAt`?: string;
-              `requestedBy`?: NullableObject12;
-              `via`?: string;
-              `keySource`?: string;
-              `replaces`?: NullableString;
-              `certificatePem`?: string;
-              `chainPem`?: (string)[];
-              `device`?: string;
-              `attestation`?: StringOrNumericOrBooleanEtc4;
-              `revoked`?: {
-                `at`?: StringOrNumeric;
-                `reason`?: string;
-                `by`?: string
-              };
-              `expired`?: boolean;
-              `status`?: string
-            })[]
-          };
-          `eabKeys`?: ({
-            `kid`?: string;
-            `createdAt`?: StringOrNumeric;
-            `expiresAt`?: StringOrNumeric;
-            `createdBy`?: NullableString;
-            `boundAccount`?: NullableString;
-            `boundAt`?: StringOrNumericOrNull;
-            `status`?: string
-          })[];
-          `challenges`?: ({
-            `id`?: string;
-            `profile`?: NullableString;
-            `createdAt`?: StringOrNumeric;
-            `expiresAt`?: StringOrNumeric;
-            `createdBy`?: NullableString;
-            `usedAt`?: StringOrNumericOrNull;
-            `status`?: string
-          })[];
-          `hostNames`?: (string)[];
-          `keyAlgorithms`?: (string)[];
-          `json`?: {
-            `families`?: (string)[];
-            `rules`?: ({
-              `family`?: string;
-              `label`?: string;
-              `allowedProfiles`?: (string)[];
-              `allowedProfilesSource`?: string;
-              `defaultProfile`?: NullableString;
-              `defaultProfileSource`?: string;
-              `certificateLifetimeDays`?: numeric;
-              `certificateLifetimeSource`?: string
-            })[];
-            `certificateCap`?: {`value`?: numeric; `source`?: string};
-            `est`?: NullableObject74;
-            `certificates`?: ({
-              `serialHex`?: string;
-              `family`?: string;
-              `profile`?: string;
-              `subject`?: string;
-              `names`?: (string)[];
-              `thumbprint`?: string;
-              `keyAlg`?: string;
-              `notBefore`?: StringOrNumeric;
-              `notAfter`?: StringOrNumeric;
-              `issuedAt`?: string;
-              `requestedBy`?: NullableObject12;
-              `via`?: string;
-              `keySource`?: string;
-              `replaces`?: NullableString;
-              `certificatePem`?: string;
-              `chainPem`?: (string)[];
-              `device`?: string;
-              `attestation`?: StringOrNumericOrBooleanEtc4;
-              `revoked`?: {
-                `at`?: StringOrNumeric;
-                `reason`?: string;
-                `by`?: string
-              };
-              `expired`?: boolean;
-              `status`?: string
-            })[];
-            `certificatesPaging`?: {
-              `page`?: integer;
-              `pages`?: integer;
-              `perPage`?: integer;
-              `firstRow`?: integer;
-              `lastRow`?: integer;
-              `total`?: integer;
-              `param`?: string;
-              `noun`?: string
-            };
-            `certificatesTotal`?: integer;
-            `eabKeys`?: ({
-              `kid`?: string;
-              `createdAt`?: StringOrNumeric;
-              `expiresAt`?: StringOrNumeric;
-              `createdBy`?: NullableString;
-              `boundAccount`?: NullableString;
-              `boundAt`?: StringOrNumericOrNull;
-              `status`?: string
-            })[];
-            `scepChallenges`?: ({
-              `id`?: string;
-              `profile`?: NullableString;
-              `createdAt`?: StringOrNumeric;
-              `expiresAt`?: StringOrNumeric;
-              `createdBy`?: NullableString;
-              `usedAt`?: StringOrNumericOrNull;
-              `status`?: string
-            })[];
-            `hostNames`?: (string)[]
-          }
-        }
-      };
-      `observed`?: {
-        `paging`?: {
-          `page`?: integer;
-          `perPage`?: integer;
-          `pages`?: integer;
-          `offset`?: integer;
-          `total`?: integer;
-          `firstRow`?: integer;
-          `lastRow`?: integer;
-          `param`?: string;
-          `noun`?: string
-        };
-        `shown`?: ({
-          `attribute`?: string;
-          `value`?: string;
-          `held`?: boolean;
-          `trusted`?: boolean
-        })[]
-      };
-      `warnings`?: ({
-        `attribute`?: string;
-        `value`?: string;
-        `reason`?: string;
-        `dropped`?: boolean;
-        `text`?: string
-      })[];
-      `owners`?: ({`dn`?: string; `kind`?: string; `name`?: string; `present`?: boolean})[];
+      `protocolRows`?: (WithIdLabelKindsEtc4)[];
+      `editable`?: WithSetMultiMultiAll;
+      `did`?: WithDidUrlOkEtc6;
+      `credentials`?: WithOauthDeclaredClientSecretPurposesEtc8;
+      `signals`?: WithInstalledStreamsSettingsEtc4;
+      `softwareStatement`?: WithIssuersUsableKeysKeyProblemsEtc8;
+      `roles`?: WithHeldOfferableRequiredEtc4;
+      `permissions`?: WithHeldExposesOfferableEtc8;
+      `lifetimes`?: WithRowsSkew;
+      `claims`?: (WithIdLabelAttributeEtc6)[];
+      `claimSelections`?: WithCataloguePreviewSetsEtc4;
+      `enrollment`?: WithCredentialsConfig;
+      `observed`?: WithPagingShown;
+      `warnings`?: (WithAttributeValueReasonEtc5)[];
+      `owners`?: (WithDnKindNameEtc4)[];
       `maxOwners`?: numeric;
-      `ownership`?: {
-        `kind`?: string;
-        `name`?: string;
-        `marked`?: boolean;
-        `protected`?: boolean;
-        `reasons`?: (string)[]
-      };
+      `ownership`?: WithKindNameMarkedEtc5;
       `krb5Across`?: NullableObject75
     }
   }
@@ -3767,60 +826,16 @@ namespace IyaSts.Api.Console {
     `matched`?: integer;
     `shown`?: integer;
     `registered`?: BooleanOrNumeric;
-    `filter`?: {
-      `q`?: NullableString;
-      `kind`?: NullableString;
-      `exclude`?: NullableArray
-    };
+    `filter`?: WithQKindExclude;
     `container`?: NullableString;
     `max`?: NullableNumber;
     `kinds`?: (StringOrKindStringLabelStringWhatString)[];
     `settings`?: NullableObject65;
-    `paging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: string;
-      `noun`?: string
-    };
+    `paging`?: WithPagePagesPerPageEtc8;
     @js(#{`description`:"How many applications are of each kind."}) `kindCounts`?: Record<integer>;
     `authentications`?: numeric;
     `protocols`?: (StringOrIdStringLabelStringKindStringKindsStringIdentifierAttributeStringRedirectAttributeStringLogoutAttributeStringDeliveryAttributeStringEventsAttributeStringSecretAttributeStringWhatString)[];
-    `applications`?: ({
-      `identifier`?: string;
-      `dnLabel`?: NullableString;
-      `dn`?: NullableString;
-      `name`?: NullableString;
-      `kinds`?: (string)[];
-      `protocols`?: (string)[];
-      `allowedProtocols`?: (string)[];
-      `recordedProtocols`?: (string)[];
-      `declaredKinds`?: (string)[];
-      `registeredBy`?: string;
-      `returnAddressesObserved`?: ({
-        `attribute`?: string;
-        `value`?: string;
-        `held`?: boolean;
-        `trusted`?: boolean
-      })[];
-      `registered`?: boolean;
-      `firstSeen`?: string;
-      `lastSeen`?: string;
-      `authentications`?: numeric;
-      `sessions`?: numeric;
-      `users`?: numeric;
-      `description`?: NullableString;
-      `origin`?: NullableString;
-      `createdAt`?: NullableString;
-      `modifiedAt`?: NullableString;
-      `operational`?: (string)[];
-      @js(#{`description`:"By attribute name."}) `attributes`?: Record<StringOrNumericOrBooleanEtc4>;
-      @js(#{`description`:"By attribute name."}) `fields`?: Record<StringOrNumericOrBooleanEtc4>;
-      `secretExpiry`?: {`state`?: string; `at`?: string}
-    })[];
+    `applications`?: (WithIdentifierDnLabelDnEtc27)[];
     `page`?: ApplicationList_page_h466;
     `pages`?: integer;
     `perPage`?: integer;
@@ -3834,12 +849,7 @@ namespace IyaSts.Api.Console {
     `recordedProtocols`?: (string)[];
     `declaredKinds`?: (string)[];
     `registeredBy`?: string;
-    `returnAddressesObserved`?: ({
-      `attribute`?: string;
-      `value`?: string;
-      `held`?: boolean;
-      `trusted`?: boolean
-    })[];
+    `returnAddressesObserved`?: (WithAttributeValueHeldEtc4)[];
     `firstSeen`?: string;
     `lastSeen`?: string;
     `sessions`?: numeric;
@@ -3852,524 +862,26 @@ namespace IyaSts.Api.Console {
     @js(#{`description`:"By attribute name."}) `attributes`?: Record<StringOrNumericOrBooleanEtc4>;
     @js(#{`description`:"By attribute name."}) `fields`?: Record<StringOrNumericOrBooleanEtc3>;
     `found`?: boolean;
-    `warnings`?: ({
-      `attribute`?: string;
-      `value`?: string;
-      `reason`?: string;
-      `dropped`?: boolean;
-      `text`?: string
-    })[];
-    `attributesShown`?: ({
-      `name`?: string;
-      `values`?: (StringOrNumericOrBooleanEtc4)[];
-      `sealedAtRest`?: boolean;
-      `operational`?: boolean
-    })[];
-    `attributesPaging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: string;
-      `noun`?: string
-    };
-    `authenticationEvents`?: ({
-      `seq`?: numeric;
-      `origin`?: StringOrNumericOrNull;
-      `at`?: numeric;
-      `category`?: string;
-      `action`?: string;
-      `outcome`?: string;
-      `errorCode`?: string;
-      `actor`?: string;
-      `actorForm`?: string;
-      `target`?: string;
-      `protocol`?: string;
-      `channel`?: string;
-      `address`?: string;
-      `summary`?: string;
-      @js(#{`description`:"What the event recorded."}) `detail`?: Record<StringOrNumericOrBoolean>
-    })[];
-    `authenticationEventsPaging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: string;
-      `noun`?: string
-    };
+    `warnings`?: (WithAttributeValueReasonEtc5)[];
+    `attributesShown`?: (WithNameValuesSealedAtRestEtc4)[];
+    `attributesPaging`?: WithPagePagesPerPageEtc8;
+    `authenticationEvents`?: (WithSeqOriginAtEtc16)[];
+    `authenticationEventsPaging`?: WithPagePagesPerPageEtc8;
     `authenticationEventsMatched`?: integer;
     @js(#{`description`:"Which actors have a user page."}) `authenticationEventsKnownActors`?: Record<boolean>;
-    `authenticationEventsLog`?: {
-      `held`?: numeric;
-      `recorded`?: numeric;
-      `dropped`?: numeric;
-      `maxEvents`?: numeric
-    };
-    `returnAddressesObservedShown`?: ({
-      `attribute`?: string;
-      `value`?: string;
-      `held`?: boolean;
-      `trusted`?: boolean
-    })[];
-    `returnAddressesObservedPaging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: string;
-      `noun`?: string
-    };
-    `credentials`?: {
-      `clientSecret`?: {
-        `held`?: boolean;
-        `authMethod`?: string;
-        `registered`?: boolean;
-        `registrationAccessTokenHeld`?: boolean;
-        `expiresAt`?: numeric;
-        `secrets`?: ({
-          `id`?: string;
-          `createdAt`?: numeric;
-          `expiresAt`?: numeric;
-          `description`?: NullableString;
-          `expired`?: boolean;
-          `primary`?: boolean
-        })[];
-        `max`?: numeric
-      };
-      `keyPairs`?: ({
-        `label`?: string;
-        `held`?: boolean;
-        `source`?: string;
-        `privateKeyHeld`?: boolean;
-        `certificate`?: NullableObject69;
-        `chain`?: ({
-          `subject`?: string;
-          `issuer`?: string;
-          `serialHex`?: string;
-          `notBefore`?: string;
-          `notAfter`?: string;
-          `expired`?: boolean;
-          `selfSigned`?: boolean;
-          `keyType`?: NullableString;
-          `thumbprint`?: string;
-          `unreadable`?: string
-        })[];
-        `handle`?: string;
-        `handleLabel`?: string;
-        `issuers`?: (string)[];
-        `attributes`?: {
-          `issuer`?: string;
-          `certificate`?: string;
-          `chain`?: string;
-          `privateKey`?: string;
-          `handle`?: string;
-          `handleLabel`?: string;
-          `expires`?: string;
-          `source`?: string;
-          `jwks`?: string;
-          `registered`?: string
-        };
-        `registered`?: {
-          `attribute`?: string;
-          `problem`?: string;
-          `keys`?: ({
-            `kid`?: string;
-            `kty`?: string;
-            `alg`?: string;
-            `use`?: string;
-            `certificate`?: NullableObject69
-          })[];
-          `certificates`?: ({
-            `subject`?: string;
-            `issuer`?: string;
-            `serialHex`?: string;
-            `notBefore`?: string;
-            `notAfter`?: string;
-            `expired`?: boolean;
-            `selfSigned`?: boolean;
-            `keyType`?: NullableString;
-            `thumbprint`?: string;
-            `unreadable`?: string
-          })[]
-        };
-        `purpose`?: string
-      })[];
-      `caAvailable`?: boolean;
-      `oauthDeclared`?: boolean;
-      `sources`?: (string)[];
-      `mtls`?: {
-        `certificates`?: ({
-          `serialHex`?: string;
-          `label`?: NullableString;
-          `subject`?: NullableString;
-          `keyAlg`?: NullableString;
-          `notBefore`?: StringOrNumericOrNull;
-          `notAfter`?: StringOrNumericOrNull;
-          `thumbprint`?: NullableString;
-          `state`?: string;
-          `reason`?: NullableString;
-          `revokedAt`?: StringOrNumericOrNull;
-          `certificatePem`?: NullableString
-        })[];
-        `active`?: integer;
-        `max`?: numeric;
-        `keyAlgorithms`?: (string)[];
-        `defaultKeyAlg`?: string;
-        `revocationReasons`?: (string)[];
-        `passwordMin`?: numeric;
-        `implicitName`?: string;
-        `caAvailable`?: boolean;
-        `authMethod`?: string;
-        `certificateMethod`?: boolean;
-        `subjects`?: ({
-          `member`?: string;
-          `attribute`?: string;
-          `label`?: string;
-          `value`?: string
-        })[];
-        `registeredSubject`?: (string)[];
-        `boundTokensAttribute`?: string;
-        `boundTokens`?: boolean;
-        `adminApiBound`?: boolean;
-        `selfSignedThumbprint`?: string;
-        `bindingAvailable`?: boolean
-      };
-      `signing`?: {
-        `certificates`?: ({
-          `serialHex`?: string;
-          `label`?: NullableString;
-          `subject`?: NullableString;
-          `keyAlg`?: NullableString;
-          `notBefore`?: StringOrNumericOrNull;
-          `notAfter`?: StringOrNumericOrNull;
-          `thumbprint`?: NullableString;
-          `state`?: string;
-          `reason`?: NullableString;
-          `revokedAt`?: StringOrNumericOrNull;
-          `certificatePem`?: NullableString
-        })[];
-        `active`?: integer;
-        `max`?: numeric;
-        `keyAlgorithms`?: (string)[];
-        `defaultKeyAlg`?: string;
-        `revocationReasons`?: (string)[];
-        `passwordMin`?: numeric;
-        `implicitName`?: string;
-        `caAvailable`?: boolean;
-        `ok`?: boolean;
-        `kind`?: string;
-        `holder`?: string;
-        `wstrustDeclared`?: boolean
-      };
-      `stored`?: {
-        `ok`?: boolean;
-        `errors`?: (string)[];
-        `application`?: string;
-        `dn`?: NullableString;
-        `certificates`?: ({
-          `sha256`?: string;
-          `subject`?: string;
-          `issuer`?: string;
-          `serialNumber`?: string;
-          `notBefore`?: string;
-          `notAfter`?: string;
-          `expired`?: boolean;
-          `readable`?: boolean
-        })[];
-        `rule`?: string
-      }
-    };
-    `sharedSignals`?: {
-      `installed`?: boolean;
-      `streams`?: ({
-        `stream_id`?: string;
-        `status`?: string;
-        `statusReason`?: NullableString;
-        `aud`?: StringOrNumericOrBooleanEtc4;
-        `delivery`?: {
-          `method`?: string;
-          `endpoint_url`?: NullableString
-        };
-        `events_requested`?: (string)[];
-        `events_delivered`?: (string)[];
-        `format`?: string;
-        `description`?: string;
-        `createdBy`?: string;
-        `createdAt`?: StringOrNumeric;
-        `updatedAt`?: StringOrNumeric;
-        `lastPushAt`?: StringOrNumeric;
-        `lastPushError`?: string
-      })[];
-      `settings`?: ({
-        `setting`?: string;
-        `attribute`?: string;
-        `value`?: StringOrNumericOrBooleanEtc2;
-        `source`?: string
-      })[]
-    };
-    `certificateEnrollment`?: {
-      `families`?: (string)[];
-      `rules`?: ({
-        `family`?: string;
-        `label`?: string;
-        `allowedProfiles`?: (string)[];
-        `allowedProfilesSource`?: string;
-        `defaultProfile`?: NullableString;
-        `defaultProfileSource`?: string;
-        `certificateLifetimeDays`?: numeric;
-        `certificateLifetimeSource`?: string
-      })[];
-      `certificateCap`?: {`value`?: numeric; `source`?: string};
-      `est`?: NullableObject74;
-      `certificates`?: ({
-        `serialHex`?: string;
-        `family`?: string;
-        `profile`?: string;
-        `subject`?: string;
-        `names`?: (string)[];
-        `thumbprint`?: string;
-        `keyAlg`?: string;
-        `notBefore`?: StringOrNumeric;
-        `notAfter`?: StringOrNumeric;
-        `issuedAt`?: string;
-        `requestedBy`?: NullableObject12;
-        `via`?: string;
-        `keySource`?: string;
-        `replaces`?: NullableString;
-        `certificatePem`?: string;
-        `chainPem`?: (string)[];
-        `device`?: string;
-        `attestation`?: StringOrNumericOrBooleanEtc4;
-        `revoked`?: {
-          `at`?: StringOrNumeric;
-          `reason`?: string;
-          `by`?: string
-        };
-        `expired`?: boolean;
-        `status`?: string
-      })[];
-      `certificatesPaging`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `perPage`?: integer;
-        `firstRow`?: integer;
-        `lastRow`?: integer;
-        `total`?: integer;
-        `param`?: string;
-        `noun`?: string
-      };
-      `certificatesTotal`?: integer;
-      `eabKeys`?: ({
-        `kid`?: string;
-        `createdAt`?: StringOrNumeric;
-        `expiresAt`?: StringOrNumeric;
-        `createdBy`?: NullableString;
-        `boundAccount`?: NullableString;
-        `boundAt`?: StringOrNumericOrNull;
-        `status`?: string
-      })[];
-      `scepChallenges`?: ({
-        `id`?: string;
-        `profile`?: NullableString;
-        `createdAt`?: StringOrNumeric;
-        `expiresAt`?: StringOrNumeric;
-        `createdBy`?: NullableString;
-        `usedAt`?: StringOrNumericOrNull;
-        `status`?: string
-      })[];
-      `hostNames`?: (string)[]
-    };
-    `customClaims`?: ({
-      `id`?: string;
-      `label`?: string;
-      `attribute`?: string;
-      `realm`?: ({
-        `name`?: string;
-        `value`?: StringOrNumericOrBooleanEtc4;
-        `nameFormat`?: string;
-        `namespace`?: string;
-        `attribute`?: string;
-        `multi`?: boolean;
-        `type`?: string
-      })[];
-      `own`?: ({
-        `name`?: string;
-        `value`?: StringOrNumericOrBooleanEtc4;
-        `nameFormat`?: string;
-        `namespace`?: string;
-        `attribute`?: string;
-        `multi`?: boolean;
-        `type`?: string
-      })[];
-      `effective`?: ({
-        `name`?: string;
-        `value`?: StringOrNumericOrBooleanEtc4;
-        `nameFormat`?: string;
-        `namespace`?: string;
-        `attribute`?: string;
-        `multi`?: boolean;
-        `type`?: string;
-        `source`?: string;
-        `replacesRealm`?: boolean
-      })[]
-    })[];
-    `claimSelections`?: {
-      `catalogue`?: ({
-        `ldap`?: string;
-        `claim`?: string;
-        `label`?: string;
-        `schema`?: string;
-        `ldpTerm`?: string;
-        `generated`?: boolean
-      })[];
-      `preview`?: {
-        `user`?: string;
-        @js(#{`description`:"By lower-cased attribute name."}) `byLdap`?: Record<{
-          `ldap`?: string;
-          `claim`?: string;
-          `value`?: StringOrNumericOrBooleanEtc4;
-          `source`?: string;
-          `ldpTerm`?: NullableString
-        }>;
-        `entryFound`?: boolean
-      };
-      `sets`?: ({
-        `id`?: string;
-        `label`?: string;
-        `attribute`?: string;
-        `realm`?: (string)[];
-        `own`?: NullableArray;
-        `inherited`?: boolean;
-        `effective`?: (string)[];
-        @js(#{`description`:"The claims, by name."}) `claims`?: Record<StringOrNumericOrBooleanEtc4OrListOfRecordStringOrNumericOrBooleanEtc4>;
-        `report`?: ({
-          `ldap`?: string;
-          `claim`?: string;
-          `value`?: StringOrNumericOrBooleanEtc4;
-          `source`?: string;
-          `ldpTerm`?: NullableString
-        })[]
-      })[];
-      `credential`?: NullableObject73
-    };
-    `tokenLifetimes`?: {
-      `lifetimes`?: ({
-        `setting`?: string;
-        `attribute`?: string;
-        `label`?: string;
-        `value`?: numeric;
-        `realmValue`?: numeric;
-        `source`?: string
-      })[];
-      `clockSkewS`?: numeric
-    };
-    `softwareStatements`?: {
-      `declaredIssuers`?: (string)[];
-      `usableKeys`?: integer;
-      `issued`?: NullableObject72;
-      `registeredWith`?: NullableObject71;
-      `settings`?: {
-        `requireTrustedIssuer`?: boolean;
-        `opensRegistration`?: boolean;
-        `required`?: boolean;
-        `lifetimeSeconds`?: numeric
-      }
-    };
-    `applicationRoles`?: {
-      `held`?: ({
-        `name`?: string;
-        `id`?: string;
-        `displayName`?: string;
-        `application`?: string;
-        `carriedAs`?: string;
-        `permissions`?: (string)[]
-      })[];
-      `offerable`?: (string)[];
-      `required`?: ({
-        `name`?: string;
-        `resolves`?: string;
-        `displayName`?: string;
-        `role`?: string
-      })[];
-      `requirable`?: (string)[]
-    };
-    `delegatedPermissions`?: {
-      `held`?: ({
-        `client`?: string;
-        `clientName`?: string;
-        `permissionId`?: string;
-        `resource`?: string;
-        `resourceName`?: string;
-        `baseUri`?: NullableString;
-        `permissionName`?: string;
-        `description`?: NullableString;
-        `dangling`?: boolean;
-        `asked`?: boolean
-      })[];
-      `exposes`?: ({
-        `resource`?: string;
-        `resourceName`?: string;
-        `baseUri`?: NullableString;
-        `name`?: string;
-        `description`?: NullableString;
-        `id`?: NullableString;
-        `raw`?: NullableString;
-        `grantedTo`?: ({`identifier`?: string; `name`?: string; `asked`?: boolean})[]
-      })[];
-      `offerable`?: (NullableString)[];
-      `grantedOut`?: ({
-        `client`?: string;
-        `clientName`?: string;
-        `permissionId`?: string;
-        `resource`?: string;
-        `resourceName`?: string;
-        `baseUri`?: NullableString;
-        `permissionName`?: string;
-        `description`?: NullableString;
-        `dangling`?: boolean;
-        `asked`?: boolean
-      })[];
-      `paging`?: {
-        `held`?: {
-          `page`?: integer;
-          `pages`?: integer;
-          `perPage`?: integer;
-          `firstRow`?: integer;
-          `lastRow`?: integer;
-          `total`?: integer;
-          `param`?: string;
-          `noun`?: string
-        };
-        `exposes`?: {
-          `page`?: integer;
-          `pages`?: integer;
-          `perPage`?: integer;
-          `firstRow`?: integer;
-          `lastRow`?: integer;
-          `total`?: integer;
-          `param`?: string;
-          `noun`?: string
-        };
-        `grantedOut`?: {
-          `page`?: integer;
-          `pages`?: integer;
-          `perPage`?: integer;
-          `firstRow`?: integer;
-          `lastRow`?: integer;
-          `total`?: integer;
-          `param`?: string;
-          `noun`?: string
-        }
-      }
-    };
-    `owners`?: ({`dn`?: string; `kind`?: string; `name`?: string; `present`?: boolean})[];
+    `authenticationEventsLog`?: WithHeldRecordedDroppedEtc4;
+    `returnAddressesObservedShown`?: (WithAttributeValueHeldEtc4)[];
+    `returnAddressesObservedPaging`?: WithPagePagesPerPageEtc8;
+    `credentials`?: WithClientSecretKeyPairsCaAvailableEtc8;
+    `sharedSignals`?: WithInstalledStreamsSettings;
+    `certificateEnrollment`?: WithFamiliesRulesCertificateCapEtc10;
+    `customClaims`?: (WithIdLabelAttributeEtc6)[];
+    `claimSelections`?: WithCataloguePreviewSetsEtc4;
+    `tokenLifetimes`?: WithLifetimesClockSkewS;
+    `softwareStatements`?: WithDeclaredIssuersUsableKeysIssuedEtc5;
+    `applicationRoles`?: WithHeldOfferableRequiredEtc4;
+    `delegatedPermissions`?: WithHeldExposesOfferableEtc5;
+    `owners`?: (WithDnKindNameEtc4)[];
     `maxOwners`?: numeric
   }
 
@@ -4379,60 +891,23 @@ namespace IyaSts.Api.Console {
     `directory`?: boolean;
     `container`?: NullableString;
     `why`?: string;
-    `realm`?: {`id`?: string; `name`?: string};
+    `realm`?: WithIdName;
     `mode`?: string;
     `offersExampleData`?: boolean;
-    `fields`?: ({
-      `attribute`?: string;
-      `label`?: string;
-      `schema`?: string;
-      `claim`?: (string)[];
-      `invented`?: boolean
-    })[];
-    `fieldGroups`?: ({
-      `id`?: string;
-      `label`?: string;
-      `what`?: string;
-      `attributes`?: (string)[]
-    })[];
-    `gridFields`?: ({
-      `attribute`?: string;
-      `label`?: string;
-      `group`?: string;
-      `multi`?: boolean;
-      `example`?: string;
-      `simple`?: boolean;
-      `takes`?: string;
-      `custom`?: boolean
-    })[];
+    `fields`?: (WithAttributeLabelSchemaEtc5)[];
+    `fieldGroups`?: (WithIdLabelWhatEtc4)[];
+    `gridFields`?: (WithAttributeLabelGroupEtc8)[];
     `requiredAttributes`?: (string)[];
     `requiredEnforced`?: boolean;
-    `credentials`?: ({`id`?: string; `label`?: string; `what`?: string})[];
+    `credentials`?: (WithIdLabelWhat)[];
     `username`?: string;
-    `fieldRows`?: ({
-      `attribute`?: string;
-      `type`?: string;
-      `what`?: string;
-      `example`?: string;
-      `forText`?: string;
-      `families`?: (string)[];
-      `everyFamily`?: boolean;
-      `group`?: string;
-      `simple`?: boolean;
-      `required`?: boolean;
-      `label`?: string;
-      `schema`?: string;
-      `claim`?: (string)[];
-      `multi`?: boolean;
-      `custom`?: boolean;
-      `takes`?: string
-    })[];
+    `fieldRows`?: (WithAttributeTypeWhatEtc16)[];
     `longTextAttributes`?: (string)[];
     `mailAvailable`?: boolean;
-    `persistence`?: {`persistsDirectory`?: boolean; `mode`?: string};
+    `persistence`?: WithPersistsDirectoryMode;
     `defaultCredential`?: string;
     `credential`?: string;
-    `passwordPolicy`?: {`profile`?: string; `enforced`?: boolean; `rules`?: (string)[]};
+    `passwordPolicy`?: WithProfileEnforcedRules;
     `invented`?: NullableObject76;
     `inventRefused`?: string
   }
@@ -4442,114 +917,18 @@ namespace IyaSts.Api.Console {
     `container`?: NullableString;
     `max`?: NullableNumber;
     `applicationCount`?: integer;
-    `realm`?: {`id`?: string; `name`?: string};
-    `kinds`?: ({`kind`?: string; `label`?: string; `what`?: string})[];
-    `protocols`?: ({
-      `id`?: string;
-      `label`?: string;
-      `kind`?: string;
-      `kinds`?: (string)[];
-      `identifierAttribute`?: string;
-      `redirectAttribute`?: string;
-      `logoutAttribute`?: string;
-      `deliveryAttribute`?: string;
-      `eventsAttribute`?: string;
-      `secretAttribute`?: string;
-      `what`?: string
-    })[];
-    `declarations`?: ({
-      `attribute`?: string;
-      `role`?: string;
-      `kind`?: string;
-      `editable`?: StringOrBoolean;
-      `sensitive`?: boolean;
-      `what`?: string;
-      `families`?: ({`id`?: string; `label`?: string})[];
-      `everyFamily`?: boolean
-    })[];
-    `fields`?: ({
-      `attribute`?: string;
-      `type`?: string;
-      `long`?: boolean;
-      `editable`?: StringOrBoolean;
-      `sensitive`?: boolean;
-      `overrides`?: string;
-      `choices`?: NullableArray;
-      `example`?: NullableString;
-      `what`?: string;
-      `families`?: (string)[];
-      `everyFamily`?: boolean;
-      `declaration`?: boolean;
-      `primaryName`?: boolean;
-      `simple`?: boolean;
-      `group`?: string;
-      `section`?: string;
-      `sectionLabel`?: string;
-      `described`?: {
-        `key`?: string;
-        `group`?: string;
-        `label`?: string;
-        `description`?: string;
-        `type`?: string;
-        `enumValues`?: (string)[];
-        `csvValues`?: (string)[];
-        `ordered`?: boolean;
-        @js(#{`description`:"The sentence beside each of a list's values."}) `csvValueNotes`?: Record<string>;
-        `selectAll`?: {
-          `onlyWhileOn`?: ({
-            `setting`?: string;
-            `values`?: (string)[];
-            `on`?: boolean;
-            `canBeOn`?: boolean
-          })[];
-          `aloneWhileOn`?: ({
-            `setting`?: string;
-            `values`?: (string)[];
-            `on`?: boolean;
-            `canBeOn`?: boolean
-          })[]
-        };
-        `min`?: numeric;
-        `max`?: numeric;
-        `step`?: numeric;
-        `value`?: StringOrNumericOrBooleanEtc2;
-        `text`?: string;
-        `source`?: string;
-        `editable`?: boolean;
-        `restartReason`?: string;
-        `editRefusal`?: string;
-        `env`?: NullableString;
-        `legacyEnv`?: NullableString;
-        `appconfigPath`?: string;
-        `default`?: StringOrNumericOrBooleanEtc2;
-        `masked`?: boolean;
-        `realmSettable`?: boolean;
-        `overridden`?: boolean
-      };
-      `inSimple`?: boolean
-    })[];
-    `fieldGroups`?: ({`id`?: string; `label`?: string; `families`?: (string)[]})[];
-    `familyChoices`?: ({
-      `id`?: string;
-      `label`?: string;
-      `families`?: (string)[];
-      `kind`?: string;
-      `what`?: string
-    })[];
+    `realm`?: WithIdName;
+    `kinds`?: (WithKindLabelWhat)[];
+    `protocols`?: (WithIdLabelKindEtc11)[];
+    `declarations`?: (WithAttributeRoleKindEtc8)[];
+    `fields`?: (WithAttributeTypeLongEtc19)[];
+    `fieldGroups`?: (WithIdLabelFamilies)[];
+    `familyChoices`?: (WithIdLabelFamiliesEtc5)[];
     `longTextAttributes`?: (string)[];
     `defaultSecretLifetimeDays`?: numeric;
-    `persistence`?: {`persistsDirectory`?: boolean; `mode`?: string};
-    `resourceMetadataImport`?: {
-      `wellKnown`?: string;
-      `acceptsNonconforming`?: boolean;
-      `dialsInternalAddresses`?: boolean
-    };
-    `editable`?: ({
-      `name`?: string;
-      `mode`?: StringOrBoolean;
-      `sensitive`?: boolean;
-      `families`?: (string)[]
-    })[]
+    `persistence`?: WithPersistsDirectoryMode;
+    `resourceMetadataImport`?: WithWellKnownAcceptsNonconformingDialsInternalAddresses;
+    `editable`?: (WithNameModeSensitiveEtc4)[]
   }
 
 @js(#{`description`:"Every group the embedded directory holds."}) @component model `GroupList` {
@@ -4569,45 +948,15 @@ namespace IyaSts.Api.Console {
     `membershipValues`?: numeric;
     `dangling`?: numeric;
     `settings`?: NullableObject77;
-    `filter`?: {
-      `q`?: NullableString;
-      `exclude`?: NullableArray
-    };
+    `filter`?: WithQExclude;
     `page`?: integer;
     `pages`?: integer;
     `perPage`?: integer;
     `firstRow`?: integer;
     `lastRow`?: integer;
-    `paging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: string;
-      `noun`?: string
-    };
-    `adminGroups`?: {
-      `read`?: NullableString;
-      `write`?: NullableString
-    };
-    `groups`?: ({
-      `dn`?: string;
-      `cn`?: string;
-      `rule`?: string;
-      `description`?: string;
-      `objectClass`?: (string)[];
-      `origin`?: string;
-      `createdAt`?: NullOrStringOrNumeric;
-      `modifiedAt`?: NullOrStringOrNumeric;
-      `memberCount`?: numeric;
-      `presentCount`?: numeric;
-      `danglingCount`?: numeric;
-      `claimedCount`?: numeric;
-      `ownerCount`?: numeric;
-      `attributeCount`?: numeric
-    })[]
+    `paging`?: WithPagePagesPerPageEtc8;
+    `adminGroups`?: WithReadWrite;
+    `groups`?: (WithDnCnRuleEtc14)[]
   }
 
 @component model `DirectoryEntryList` {
@@ -4615,36 +964,18 @@ namespace IyaSts.Api.Console {
     `count`?: integer;
     `matched`?: integer;
     `shown`?: integer;
-    `filter`?: {
-      `q`?: NullableString;
-      `origin`?: NullableString
-    };
+    `filter`?: WithQOrigin;
     `origins`?: (string)[];
     @js(#{`description`:"A count per name."}) `originCounts`?: Record<numeric>;
     `order`?: string;
     `search`?: NullableObject78;
-    `entries`?: ({
-      `dn`?: string;
-      `origin`?: string;
-      @js(#{
-        `description`:"Attribute names, which are data in a schemaless directory, and values."
-      }) `attributes`?: Record<NullOrStringOrString>
-    })[];
+    `entries`?: (WithDnOriginDescriptionEtc4)[];
     `page`?: integer;
     `pages`?: integer;
     `perPage`?: integer;
     `firstRow`?: integer;
     `lastRow`?: integer;
-    `paging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: NullableString;
-      `noun`?: NullableString
-    };
+    `paging`?: WithPagePagesPerPageEtc82;
     `directory`?: boolean;
     `message`?: string
   }
@@ -4658,83 +989,15 @@ namespace IyaSts.Api.Console {
     `max`?: integer;
     `filter`?: {`q`?: NullableString};
     `sourceOfTruth`?: string;
-    `kinds`?: ({`kind`?: string; `label`?: string; `what`?: string})[];
-    `schema`?: {
-      `objectClasses`?: ({
-        `name`?: string;
-        `what`?: string;
-        `where`?: string;
-        `standard`?: boolean
-      })[];
-      `attributes`?: ({
-        `name`?: string;
-        `what`?: string;
-        `kind`?: string;
-        `from`?: string;
-        `role`?: string;
-        `standard`?: boolean;
-        `sensitive`?: boolean;
-        `secret`?: boolean;
-        `identifier`?: boolean;
-        `identifierName`?: string;
-        `editable`?: BooleanOrString;
-        `enum`?: (string)[];
-        `families`?: (string)[];
-        `familyWhy`?: string;
-        `overrides`?: string;
-        `strictOverride`?: boolean
-      })[]
-    };
-    `applications`?: ({
-      `identifier`?: string;
-      `dnLabel`?: NullableString;
-      `dn`?: NullableString;
-      `name`?: NullableString;
-      `kinds`?: (string)[];
-      `protocols`?: (string)[];
-      `allowedProtocols`?: (string)[];
-      `recordedProtocols`?: (string)[];
-      `declaredKinds`?: (string)[];
-      `registeredBy`?: string;
-      `returnAddressesObserved`?: ({
-        `attribute`?: string;
-        `value`?: string;
-        `held`?: boolean;
-        `trusted`?: boolean
-      })[];
-      `registered`?: boolean;
-      `firstSeen`?: string;
-      `lastSeen`?: string;
-      `authentications`?: numeric;
-      `sessions`?: numeric;
-      `users`?: numeric;
-      `description`?: NullableString;
-      `origin`?: NullableString;
-      `createdAt`?: NullableString;
-      `modifiedAt`?: NullableString;
-      `operational`?: (string)[];
-      @js(#{
-        `description`:"Attribute names, which are data in a schemaless directory, and values."
-      }) `attributes`?: Record<NullOrStringOrString>;
-      @js(#{
-        `description`:"Attribute names, which are data in a schemaless directory, and values."
-      }) `fields`?: Record<NullOrStringOrString>
-    })[];
+    `kinds`?: (WithKindLabelWhat)[];
+    `schema`?: WithObjectClassesAttributes;
+    `applications`?: (WithIdentifierDnLabelDnEtc26)[];
     `page`?: integer;
     `pages`?: integer;
     `perPage`?: integer;
     `firstRow`?: integer;
     `lastRow`?: integer;
-    `paging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: NullableString;
-      `noun`?: NullableString
-    };
+    `paging`?: WithPagePagesPerPageEtc82;
     `directory`?: boolean;
     `message`?: string
   }
@@ -4748,160 +1011,17 @@ namespace IyaSts.Api.Console {
     `max`?: integer;
     `filter`?: {`q`?: NullableString};
     `sourceOfTruth`?: string;
-    `roles`?: ({`role`?: string; `label`?: string; `short`?: string; `what`?: string})[];
-    `protocols`?: ({
-      `protocol`?: string;
-      `label`?: string;
-      `family`?: string;
-      `what`?: string;
-      `needs`?: (string)[];
-      `spec`?: string;
-      `signalsOnly`?: boolean
-    })[];
-    `schema`?: {
-      `objectClasses`?: ({
-        `name`?: string;
-        `what`?: string;
-        `where`?: string;
-        `standard`?: boolean
-      })[];
-      `attributes`?: ({
-        `name`?: string;
-        `what`?: string;
-        `kind`?: string;
-        `from`?: string;
-        `role`?: string;
-        `standard`?: boolean;
-        `sensitive`?: boolean;
-        `secret`?: boolean;
-        `identifier`?: boolean;
-        `identifierName`?: string;
-        `editable`?: BooleanOrString;
-        `enum`?: (string)[];
-        `families`?: (string)[];
-        `familyWhy`?: string;
-        `overrides`?: string;
-        `strictOverride`?: boolean
-      })[]
-    };
-    `relationships`?: ({
-      `dn`?: string;
-      `createdAt`?: string;
-      `modifiedAt`?: string;
-      `ready`?: boolean;
-      `missing`?: (string)[];
-      @js(#{
-        `description`:"Attribute names, which are data in a schemaless directory, and values."
-      }) `entryAttributes`?: Record<NullOrStringOrString2>;
-      `roleShort`?: string;
-      `protocolLabel`?: string;
-      `enabled`?: boolean;
-      `fedId`?: string;
-      `cn`?: string;
-      `fedName`?: string;
-      `fedRole`?: string;
-      `fedProtocol`?: string;
-      `fedProvider`?: string;
-      `fedPeer`?: string;
-      `fedLocalEntityId`?: string;
-      `fedEnabled`?: string;
-      `fedSsoUrl`?: string;
-      `fedTokenUrl`?: string;
-      `fedUserinfoUrl`?: string;
-      `fedJwksUri`?: string;
-      `fedEmailsUrl`?: string;
-      `fedJwks`?: string;
-      `fedTrustAnchor`?: string;
-      `fedSigningCertificate`?: string;
-      `fedClientId`?: string;
-      `fedClientSecret`?: string;
-      `fedResponseMode`?: string;
-      `fedTeamId`?: string;
-      `fedKeyId`?: string;
-      `fedClientSigningKey`?: string;
-      `fedTokenAuth`?: string;
-      `fedScope`?: string;
-      `fedResponseType`?: string;
-      `fedIdTokenSignedResponseAlg`?: string;
-      `fedUserinfoSignedResponseAlg`?: string;
-      `fedRefreshTokens`?: string;
-      `fedRefreshEverySeconds`?: string;
-      `fedRegister`?: string;
-      `fedRegisteredIssuer`?: string;
-      `fedRequestObject`?: string;
-      `fedRequestObjectSigningAlg`?: string;
-      `fedWebFinger`?: string;
-      `fedDiscovery`?: string;
-      `fedInitiateLogin`?: string;
-      `fedBinding`?: string;
-      `fedSignRequest`?: string;
-      `fedUsernameSource`?: string;
-      `fedSubjectClaim`?: string;
-      `fedAutocreateUsers`?: string;
-      `fedUpdateUserAttributes`?: string;
-      `fedProvisionGroups`?: string;
-      `fedProvisionCap`?: string;
-      `fedProvisionIdleMinutes`?: string;
-      `fedSubjectPolicy`?: string;
-      `fedSubjectPattern`?: string;
-      `fedMayAssertAdministrators`?: string;
-      `fedSignalEmailMatch`?: string;
-      `fedSignalsEnabled`?: string;
-      `fedSignalsIssuer`?: string;
-      `fedSignalsDelivery`?: string;
-      `fedSignalsTokenUrl`?: string;
-      `fedSignalsClientId`?: string;
-      `fedSignalsClientSecret`?: string;
-      `fedSignalsScope`?: string;
-      `fedSignalsBearer`?: string;
-      `fedSloUrl`?: string;
-      `fedSloBinding`?: string;
-      `fedEndSessionUrl`?: string;
-      `fedAcceptSignout`?: string;
-      `fedRequireSignedLogout`?: string;
-      `fedEncryptionKeyType`?: string;
-      `fedKeyManagementAlgorithm`?: string;
-      `fedContentEncryptionAlgorithm`?: string;
-      `fedAllowUnencrypted`?: string;
-      `fedAllowUnsolicited`?: string;
-      `fedApplication`?: string;
-      `fedAuthnMechanism`?: string;
-      `fedAuthnRelationship`?: string;
-      `fedFirstSeen`?: string;
-      `fedLastSeen`?: string;
-      `fedAuthentications`?: string;
-      `fedUsers`?: string;
-      `fedLastUser`?: string;
-      `fedLastError`?: string;
-      `fedLastErrorAt`?: string;
-      `description`?: (string)[];
-      `fedAllowedTenants`?: (string)[];
-      `fedAuthorizeParams`?: (string)[];
-      `fedAttributeMap`?: (string)[];
-      `fedSubjectGroup`?: (string)[];
-      `fedSubjectDomain`?: (string)[];
-      `fedHomeRealmDomain`?: (string)[];
-      `fedSignalsEvents`?: (string)[];
-      `fedEncryptionKey`?: (string)[];
-      `fedRelease`?: (string)[];
-      `fedApplicationUse`?: (string)[]
-    })[];
+    `roles`?: (WithRoleLabelShortEtc4)[];
+    `protocols`?: (WithProtocolLabelFamilyEtc7)[];
+    `schema`?: WithObjectClassesAttributes;
+    `relationships`?: (WithDnCreatedAtModifiedAtEtc99)[];
     `enabledCount`?: integer;
     `page`?: integer;
     `pages`?: integer;
     `perPage`?: integer;
     `firstRow`?: integer;
     `lastRow`?: integer;
-    `paging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: NullableString;
-      `noun`?: NullableString
-    };
+    `paging`?: WithPagePagesPerPageEtc82;
     `directory`?: boolean;
     `message`?: string
   }
@@ -4917,99 +1037,12 @@ namespace IyaSts.Api.Console {
     `maxAgents`?: integer;
     `sourceOfTruth`?: string;
     `editable`?: (string)[];
-    `schema`?: {
-      `objectClasses`?: ({
-        `name`?: string;
-        `what`?: string;
-        `where`?: string;
-        `standard`?: boolean
-      })[];
-      `attributes`?: ({
-        `name`?: string;
-        `what`?: string;
-        `kind`?: string;
-        `from`?: string;
-        `role`?: string;
-        `standard`?: boolean;
-        `sensitive`?: boolean;
-        `secret`?: boolean;
-        `identifier`?: boolean;
-        `identifierName`?: string;
-        `editable`?: BooleanOrString;
-        `enum`?: (string)[];
-        `families`?: (string)[];
-        `familyWhy`?: string;
-        `overrides`?: string;
-        `strictOverride`?: boolean
-      })[]
-    };
-    `filter`?: {
-      `entryq`?: NullableString;
-      `agentq`?: NullableString
-    };
-    `entriesPaging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: NullableString;
-      `noun`?: NullableString
-    };
-    `agentsPaging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: NullableString;
-      `noun`?: NullableString
-    };
-    `registrationEntries`?: ({
-      `id`?: string;
-      `dn`?: string;
-      `spiffeId`?: string;
-      `parentId`?: string;
-      `selectors`?: ({`type`?: string; `value`?: string})[];
-      `selectorTexts`?: (string)[];
-      `x509SvidTtl`?: numeric;
-      `jwtSvidTtl`?: numeric;
-      `dnsNames`?: (string)[];
-      `federatesWith`?: (string)[];
-      `hint`?: string;
-      `admin`?: boolean;
-      `downstream`?: boolean;
-      `storeSvid`?: boolean;
-      `expiresAt`?: numeric;
-      `expired`?: boolean;
-      `revisionNumber`?: numeric;
-      `origin`?: string;
-      `svidsIssued`?: numeric;
-      `lastSvidAt`?: string;
-      `createdAt`?: string;
-      `modifiedAt`?: string;
-      @js(#{
-        `description`:"Attribute names, which are data in a schemaless directory, and values."
-      }) `attributes`?: Record<NullOrStringOrString>
-    })[];
-    `attestedAgents`?: ({
-      `id`?: string;
-      `dn`?: string;
-      `attestationType`?: string;
-      `selectors`?: ({`type`?: string; `value`?: string})[];
-      `banned`?: boolean;
-      `canReattest`?: boolean;
-      `svidHash`?: string;
-      `expiresAt`?: numeric;
-      `firstSeen`?: string;
-      `lastSeen`?: string;
-      `attestations`?: numeric;
-      @js(#{
-        `description`:"Attribute names, which are data in a schemaless directory, and values."
-      }) `attributes`?: Record<NullOrStringOrString>
-    })[];
+    `schema`?: WithObjectClassesAttributes;
+    `filter`?: WithEntryqAgentq;
+    `entriesPaging`?: WithPagePagesPerPageEtc82;
+    `agentsPaging`?: WithPagePagesPerPageEtc82;
+    `registrationEntries`?: (WithIdDnSpiffeIdEtc24)[];
+    `attestedAgents`?: (WithIdDnAttestationTypeEtc13)[];
     `directory`?: boolean;
     `message`?: string
   }
@@ -5024,59 +1057,15 @@ namespace IyaSts.Api.Console {
     `filter`?: {`q`?: NullableString};
     `sourceOfTruth`?: string;
     `builtIn`?: (string)[];
-    `schema`?: {
-      `objectClasses`?: ({
-        `name`?: string;
-        `what`?: string;
-        `where`?: string;
-        `standard`?: boolean
-      })[];
-      `attributes`?: ({
-        `name`?: string;
-        `what`?: string;
-        `kind`?: string;
-        `from`?: string;
-        `role`?: string;
-        `standard`?: boolean;
-        `sensitive`?: boolean;
-        `secret`?: boolean;
-        `identifier`?: boolean;
-        `identifierName`?: string;
-        `editable`?: BooleanOrString;
-        `enum`?: (string)[];
-        `families`?: (string)[];
-        `familyWhy`?: string;
-        `overrides`?: string;
-        `strictOverride`?: boolean
-      })[]
-    };
-    `roles`?: ({
-      `name`?: string;
-      `dn`?: string;
-      `origin`?: NullableString;
-      `createdAt`?: NullableString;
-      `modifiedAt`?: NullableString;
-      `operational`?: (string)[];
-      @js(#{
-        `description`:"Attribute names, which are data in a schemaless directory, and values."
-      }) `attributes`?: Record<NullOrStringOrString>
-    })[];
-    `builtInCatalogue`?: ({`name`?: string; `what`?: string})[];
+    `schema`?: WithObjectClassesAttributes;
+    `roles`?: (WithNameDnOriginEtc8)[];
+    `builtInCatalogue`?: (WithNameWhat)[];
     `page`?: integer;
     `pages`?: integer;
     `perPage`?: integer;
     `firstRow`?: integer;
     `lastRow`?: integer;
-    `paging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: NullableString;
-      `noun`?: NullableString
-    };
+    `paging`?: WithPagePagesPerPageEtc82;
     `directory`?: boolean;
     `message`?: string
   }
@@ -5093,59 +1082,15 @@ namespace IyaSts.Api.Console {
     `applicationMax`?: integer;
     `filter`?: {`q`?: NullableString};
     `sourceOfTruth`?: string;
-    `schema`?: {
-      `objectClasses`?: ({
-        `name`?: string;
-        `what`?: string;
-        `where`?: string;
-        `standard`?: boolean
-      })[];
-      `attributes`?: ({
-        `name`?: string;
-        `what`?: string;
-        `kind`?: string;
-        `from`?: string;
-        `role`?: string;
-        `standard`?: boolean;
-        `sensitive`?: boolean;
-        `secret`?: boolean;
-        `identifier`?: boolean;
-        `identifierName`?: string;
-        `editable`?: BooleanOrString;
-        `enum`?: (string)[];
-        `families`?: (string)[];
-        `familyWhy`?: string;
-        `overrides`?: string;
-        `strictOverride`?: boolean
-      })[]
-    };
-    `policies`?: ({
-      `name`?: string;
-      `dn`?: string;
-      `origin`?: NullableString;
-      `createdAt`?: NullableString;
-      `modifiedAt`?: NullableString;
-      `operational`?: (string)[];
-      @js(#{
-        `description`:"Attribute names, which are data in a schemaless directory, and values."
-      }) `attributes`?: Record<NullOrStringOrString>
-    })[];
+    `schema`?: WithObjectClassesAttributes;
+    `policies`?: (WithNameDnOriginEtc8)[];
     `enabledCount`?: integer;
     `page`?: integer;
     `pages`?: integer;
     `perPage`?: integer;
     `firstRow`?: integer;
     `lastRow`?: integer;
-    `paging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: NullableString;
-      `noun`?: NullableString
-    };
+    `paging`?: WithPagePagesPerPageEtc82;
     `directory`?: boolean;
     `message`?: string
   }
@@ -5159,59 +1104,15 @@ namespace IyaSts.Api.Console {
     `max`?: integer;
     `filter`?: {`q`?: NullableString};
     `sourceOfTruth`?: string;
-    `schema`?: {
-      `objectClasses`?: ({
-        `name`?: string;
-        `what`?: string;
-        `where`?: string;
-        `standard`?: boolean
-      })[];
-      `attributes`?: ({
-        `name`?: string;
-        `what`?: string;
-        `kind`?: string;
-        `from`?: string;
-        `role`?: string;
-        `standard`?: boolean;
-        `sensitive`?: boolean;
-        `secret`?: boolean;
-        `identifier`?: boolean;
-        `identifierName`?: string;
-        `editable`?: BooleanOrString;
-        `enum`?: (string)[];
-        `families`?: (string)[];
-        `familyWhy`?: string;
-        `overrides`?: string;
-        `strictOverride`?: boolean
-      })[]
-    };
-    `peps`?: ({
-      `name`?: string;
-      `dn`?: string;
-      `origin`?: NullableString;
-      `createdAt`?: NullableString;
-      `modifiedAt`?: NullableString;
-      `operational`?: (string)[];
-      @js(#{
-        `description`:"Attribute names, which are data in a schemaless directory, and values."
-      }) `attributes`?: Record<NullOrStringOrString>
-    })[];
+    `schema`?: WithObjectClassesAttributes;
+    `peps`?: (WithNameDnOriginEtc8)[];
     `enabledCount`?: integer;
     `page`?: integer;
     `pages`?: integer;
     `perPage`?: integer;
     `firstRow`?: integer;
     `lastRow`?: integer;
-    `paging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: NullableString;
-      `noun`?: NullableString
-    };
+    `paging`?: WithPagePagesPerPageEtc82;
     `directory`?: boolean;
     `message`?: string
   }
@@ -5231,143 +1132,13 @@ namespace IyaSts.Api.Console {
     `refusedPassword`?: string;
     `schema`?: string;
     `referentialIntegrity`?: boolean;
-    `persistence`?: {
-      `mode`?: string;
-      `configuredMode`?: string;
-      `enabled`?: boolean;
-      `healthy`?: NullableBoolean;
-      `dataDir`?: NullableString;
-      `database`?: NullableObject79;
-      `engine`?: NullableString;
-      `writeDelayMs`?: numeric;
-      `persistsDirectory`?: boolean;
-      `persistsRealms`?: boolean;
-      `persistsAppconfig`?: boolean;
-      `pending`?: boolean;
-      `writes`?: numeric;
-      `failures`?: numeric;
-      `lastWriteAt`?: NumericOrStringOrNull;
-      `lastError`?: NullableString;
-      `restoredAt`?: NumericOrStringOrNull;
-      `restored`?: {`realms`?: numeric; `entries`?: numeric; `overrides`?: numeric};
-      `entriesTracked`?: numeric;
-      `realmsTracked`?: numeric;
-      `coordinates`?: boolean;
-      `minted`?: {
-        `persisting`?: boolean;
-        `supported`?: boolean;
-        `unsupportedReason`?: string;
-        `sealed`?: boolean;
-        `mode`?: string;
-        `setting`?: boolean;
-        `retentionMs`?: numeric;
-        `stores`?: numeric;
-        `shared`?: numeric;
-        `handles`?: ({`handle`?: string; `shape`?: string; `scope`?: string})[];
-        `pending`?: numeric;
-        `writes`?: numeric;
-        `failures`?: numeric;
-        `rowsWritten`?: numeric;
-        `rowsDeleted`?: numeric;
-        `lastWriteAt`?: NumericOrStringOrNull;
-        `lastError`?: NullableString;
-        `restoredAt`?: NumericOrStringOrNull;
-        `restored`?: numeric;
-        `droppedUnreadable`?: numeric;
-        `droppedUnknown`?: numeric;
-        `droppedPoison`?: numeric;
-        `poisonDrops`?: ({
-          `at`?: string;
-          `code`?: string;
-          `message`?: string;
-          `rows`?: numeric;
-          `handles`?: (string)[];
-          `realms`?: (string)[]
-        })[]
-      };
-      `usedAssertions`?: {
-        `store`?: NullableString;
-        `kind`?: NullableString;
-        `persistent`?: boolean;
-        `atomicAcrossProcesses`?: boolean;
-        `why`?: NullableString;
-        `cap`?: numeric;
-        `live`?: NullableNumber;
-        `liveIsCurrent`?: boolean
-      };
-      `replication`?: {
-        `coordinating`?: boolean;
-        `supported`?: boolean;
-        `startedAt`?: NumericOrStringOrNull;
-        `appliedSeq`?: numeric;
-        `highestSeq`?: numeric;
-        `holes`?: numeric;
-        `holeRanges`?: numeric;
-        `holesAbandoned`?: numeric;
-        `pollIntervalMs`?: numeric;
-        `pulls`?: numeric;
-        `nudges`?: numeric;
-        `failures`?: numeric;
-        `rowsApplied`?: numeric;
-        @js(#{`description`:"A count per name."}) `byKind`?: Record<numeric>;
-        `lastPullAt`?: NumericOrStringOrNull;
-        `lastError`?: NullableString;
-        `otherProcesses`?: numeric;
-        `originsDropped`?: numeric;
-        `retention`?: {
-          `retentionS`?: numeric;
-          `readerTtlS`?: numeric;
-          `reportedAt`?: NullableString;
-          `reportError`?: NullableString;
-          `declaredGoneAt`?: NumericOrStringOrNull;
-          `fanInGraceS`?: numeric;
-          `trimming`?: boolean;
-          `lastTrim`?: NullableObject80
-        };
-        `note`?: string
-      };
-      `cells`?: NullableObject81;
-      `origin`?: NullableObject82;
-      `answersAfterCommit`?: boolean;
-      `commitBacklog`?: boolean;
-      `retryArmed`?: boolean;
-      `liveness`?: NullableObject83;
-      `eventLoop`?: NullableObject84;
-      `note`?: string
-    };
-    `tls`?: {
-      `ldaps`?: boolean;
-      `port`?: NullableInteger;
-      `url`?: string;
-      `listening`?: boolean;
-      `error`?: NullableString;
-      `startTls`?: boolean;
-      `clientCertificateMode`?: string;
-      `saslExternal`?: {
-        `available`?: boolean;
-        `mechanisms`?: (string)[];
-        `outsideCertificateAuthorities`?: boolean;
-        `rule`?: string
-      };
-      `clientCertificates`?: string;
-      `certificate`?: {
-        `subject`?: NullableString;
-        `names`?: NullableArray;
-        `fingerprint256`?: NullableString;
-        `notAfter`?: NullableString;
-        `source`?: string
-      }
-    };
+    `persistence`?: WithModeConfiguredModeEnabledEtc32;
+    `tls`?: WithLdapsPortUrlEtc10;
     `autoCreateUsers`?: boolean;
     `autoCreateRule`?: string;
     `authenticationFacts`?: string;
     `enforcedRules`?: (string)[];
-    `limits`?: {
-      `maxEntries`?: numeric;
-      `maxSearchResults`?: numeric;
-      `currentEntries`?: numeric;
-      `currentEntriesEverywhere`?: numeric
-    };
+    `limits`?: WithMaxEntriesMaxSearchResultsCurrentEntriesEtc4;
     `operations`?: (string)[];
     `specifications`?: (string)[];
     `implementation`?: string;
@@ -5395,101 +1166,15 @@ namespace IyaSts.Api.Console {
     `requested`?: string;
     `notAGroup`?: boolean;
     `canWrite`?: boolean;
-    `group`?: {
-      `dn`?: string;
-      `cn`?: string;
-      `rule`?: string;
-      `origin`?: string;
-      `createdAt`?: NullOrStringOrNumeric;
-      `modifiedAt`?: NullOrStringOrNumeric;
-      `operational`?: (string)[];
-      `memberAttributes`?: (string)[];
-      `attributes`?: Record<StringOrString>;
-      `members`?: ({
-        `value`?: string;
-        `attribute`?: string;
-        `holds`?: string;
-        `dn`?: string;
-        `present`?: boolean;
-        `kind`?: string;
-        `userKey`?: string;
-        `cn`?: string;
-        `mail`?: string;
-        `displayName`?: string
-      })[];
-      `memberCount`?: numeric;
-      `presentCount`?: numeric;
-      `danglingCount`?: numeric;
-      `claimed`?: ({
-        `dn`?: string;
-        `kind`?: string;
-        `userKey`?: string;
-        `cn`?: string;
-        `mail`?: string;
-        `displayName`?: string;
-        `value`?: string;
-        `attribute`?: string;
-        `holds`?: string;
-        `present`?: boolean
-      })[];
-      `owners`?: ({`dn`?: string; `kind`?: string; `name`?: string; `present`?: boolean})[];
-      `maxOwners`?: numeric
-    };
-    `groups`?: ({
-      `dn`?: string;
-      `cn`?: string;
-      `rule`?: string;
-      `description`?: string;
-      `objectClass`?: (string)[];
-      `origin`?: string;
-      `createdAt`?: NullOrStringOrNumeric;
-      `modifiedAt`?: NullOrStringOrNumeric;
-      `memberCount`?: numeric;
-      `presentCount`?: numeric;
-      `danglingCount`?: numeric;
-      `claimedCount`?: numeric;
-      `ownerCount`?: numeric;
-      `attributeCount`?: numeric
-    })[];
+    `group`?: WithDnCnRuleEtc16;
+    `groups`?: (WithDnCnRuleEtc14)[];
     `groupCount`?: numeric;
-    `policyReferences`?: ({
-      `attribute`?: string;
-      `noun`?: string;
-      `choices`?: (string)[];
-      `value`?: string
-    })[];
-    `ownership`?: {
-      `kind`?: string;
-      `name`?: string;
-      `marked`?: boolean;
-      `protected`?: boolean;
-      `reasons`?: (string)[]
-    };
-    `membersPaging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: string;
-      `noun`?: string
-    };
-    `claimedPaging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: string;
-      `noun`?: string
-    };
+    `policyReferences`?: (WithAttributeNounChoicesEtc4)[];
+    `ownership`?: WithKindNameMarkedEtc5;
+    `membersPaging`?: WithPagePagesPerPageEtc8;
+    `claimedPaging`?: WithPagePagesPerPageEtc8;
     `known`?: Record<boolean>;
-    `adminGroups`?: {
-      `read`?: NullableString;
-      `write`?: NullableString
-    }
+    `adminGroups`?: WithReadWrite
   }
 
 @js(#{
@@ -5532,45 +1217,19 @@ namespace IyaSts.Api.Console {
 @component model `IssuedList` {
     `held`?: integer;
     `heldSets`?: integer;
-    `coverage`?: {
-      `source`?: string;
-      `complete`?: boolean;
-      `newest`?: NullableNumber;
-      `session`?: NullableString;
-      `unread`?: boolean;
-      `countEstimated`?: boolean
-    };
+    `coverage`?: WithSourceCompleteNewestEtc6;
     `matched`?: integer;
     `matchedCredentials`?: integer;
     `shown`?: integer;
     `shownCredentials`?: integer;
     @js(#{`description`:"Credentials held in each family."}) `heldByFamily`?: Record<integer>;
-    `filter`?: {
-      `family`?: NullableString;
-      `kind`?: NullableString;
-      `state`?: NullableString;
-      `session`?: NullableString
-    };
-    `families`?: ({
-      `family`?: string;
-      `label`?: string;
-      `kinds`?: (string)[];
-      `what`?: string
-    })[];
+    `filter`?: WithFamilyKindStateEtc4;
+    `families`?: (WithFamilyLabelKindsEtc4)[];
     `revocableKinds`?: (string)[];
     `revokedCount`?: integer;
     `sets`?: (`IssuedSet`)[];
     `issued`?: (`IssuedRecord`)[];
-    `paging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: string;
-      `noun`?: string
-    };
+    `paging`?: WithPagePagesPerPageEtc8;
     `page`?: integer;
     `pages`?: integer;
     `perPage`?: integer;
@@ -5605,24 +1264,7 @@ namespace IyaSts.Api.Console {
     }) `homeProblems`?: (string)[];
     @js(#{
       `description`:"The settings this page draws, described: the same rows GET /config returns, filtered to the ones this page owns."
-    }) `settings`?: {
-      `page`?: string;
-      @js(#{`description`:"In the order `config.js` declares them."}) `groups`?: (WithGroupSettings)[];
-      `settingCount`?: integer;
-      @js(#{`description`:"How many of them can be changed while the service runs."}) `editableCount`?: integer;
-      @js(#{`description`:"The keys on this page with a runtime override in force."}) `overridden`?: (string)[];
-      @js(#{`description`:"The operation that writes them."}) `setWith`?: string;
-      `context`?: {
-        `configFile`?: NullableString;
-        `defaultsFile`?: string;
-        `persistsAppconfig`?: boolean;
-        `persistsRealms`?: boolean;
-        `persistenceMode`?: string;
-        `inRealm`?: boolean;
-        `realmId`?: string
-      };
-      @js(#{`description`:"A group drawn on another page as well, and those pages."}) `sharedWith`?: Record<({`path`?: string; `label`?: NullableString})[]>
-    }
+    }) `settings`?: WithPageDescriptionGroupsEtc15
   }
 
 @js(#{
@@ -5637,635 +1279,86 @@ namespace IyaSts.Api.Console {
     `links`?: (WithHrefWhat)[];
     @js(#{
       `description`:"The settings this page draws, described: the same rows GET /config returns, filtered to the ones this page owns."
-    }) `settings`?: {
-      `page`?: string;
-      @js(#{`description`:"In the order `config.js` declares them."}) `groups`?: (WithGroupSettings)[];
-      `settingCount`?: integer;
-      @js(#{`description`:"How many of them can be changed while the service runs."}) `editableCount`?: integer;
-      @js(#{`description`:"The keys on this page with a runtime override in force."}) `overridden`?: (string)[];
-      @js(#{`description`:"The operation that writes them."}) `setWith`?: string;
-      `context`?: {
-        `configFile`?: NullableString;
-        `defaultsFile`?: string;
-        `persistsAppconfig`?: boolean;
-        `persistsRealms`?: boolean;
-        `persistenceMode`?: string;
-        `inRealm`?: boolean;
-        `realmId`?: string
-      };
-      @js(#{`description`:"A group drawn on another page as well, and those pages."}) `sharedWith`?: Record<({
-        `path`?: string;
-        `label`?: NullableString
-      })[]>
-    };
+    }) `settings`?: WithPageDescriptionGroupsEtc152;
     @js(#{`description`:"The page's first paragraph, as the console draws it."}) `leadHtml`?: string;
     @js(#{`description`:"The caveats, as the console draws them."}) `alsoHtml`?: (string)[];
     `status`?: WithModeConfiguredModeEnabledEtcOrWithSelfModeWhyEtc
   }
 
 @component model `TokenLifetimes` {
-    `lifetimes`?: {
-      `accessTokenTtlS`?: numeric;
-      `idTokenTtlS`?: numeric;
-      `refreshTokenTtlS`?: numeric;
-      `clockSkewS`?: numeric
-    };
-    `settings`?: ({
-      `key`?: string;
-      `group`?: string;
-      `label`?: string;
-      `description`?: string;
-      `type`?: string;
-      `enumValues`?: (string)[];
-      `csvValues`?: (string)[];
-      `ordered`?: boolean;
-      @js(#{`description`:"The sentence beside each of a list's values."}) `csvValueNotes`?: Record<string>;
-      `selectAll`?: {
-        `onlyWhileOn`?: ({
-          `setting`?: string;
-          `values`?: (string)[];
-          `on`?: boolean;
-          `canBeOn`?: boolean
-        })[];
-        `aloneWhileOn`?: ({
-          `setting`?: string;
-          `values`?: (string)[];
-          `on`?: boolean;
-          `canBeOn`?: boolean
-        })[]
-      };
-      `min`?: numeric;
-      `max`?: numeric;
-      `step`?: numeric;
-      `value`?: StringOrNumericOrBooleanEtc2;
-      `text`?: string;
-      `source`?: string;
-      `editable`?: boolean;
-      `restartReason`?: string;
-      `editRefusal`?: string;
-      `env`?: NullableString;
-      `legacyEnv`?: NullableString;
-      `appconfigPath`?: string;
-      `default`?: StringOrNumericOrBooleanEtc2;
-      `masked`?: boolean;
-      `realmSettable`?: boolean;
-      `overridden`?: boolean
-    })[];
-    `tokens`?: {
-      `held`?: integer;
-      `forgotten`?: integer;
-      `cap`?: numeric;
-      `revoked`?: integer;
-      `byKind`?: ({
-        `kind`?: string;
-        `issued`?: integer;
-        `valid`?: integer;
-        `expired`?: integer;
-        `revoked`?: integer;
-        `notYetValid`?: integer;
-        `noExpiry`?: integer;
-        `bound`?: integer
-      })[]
-    };
+    `lifetimes`?: WithAccessTokenTtlSIdTokenTtlSRefreshTokenTtlSEtc4;
+    `settings`?: (WithKeyGroupLabelEtc27)[];
+    `tokens`?: WithHeldForgottenCapEtc5;
     `now`?: numeric;
     `context`?: NullableObject93;
-    `overridable`?: ({`setting`?: string; `attribute`?: string})[]
+    `overridable`?: (WithSettingAttribute)[]
   }
 
 @component model `SamlAssertions` {
-    `protocolEndpoints`?: ({
-      `name`?: string;
-      `methods`?: StringOrString;
-      `url`?: string;
-      `route`?: string;
-      `transport`?: string;
-      `registered`?: boolean
-    })[];
-    `assertions`?: {
-      `saml2LifetimeMin`?: numeric;
-      `saml11LifetimeMin`?: numeric;
-      `clockSkewS`?: numeric;
-      `saml2WindowS`?: numeric;
-      `saml11WindowS`?: numeric
-    };
-    `perApplication`?: ({`setting`?: string; `attribute`?: string; `profile`?: string})[];
-    `settings`?: ({
-      `key`?: string;
-      `group`?: string;
-      `label`?: string;
-      `description`?: string;
-      `type`?: string;
-      `enumValues`?: (string)[];
-      `csvValues`?: (string)[];
-      `ordered`?: boolean;
-      @js(#{`description`:"The sentence beside each value."}) `csvValueNotes`?: Record<string>;
-      @js(#{`description`:"The rules by kind: onlyWhileOn and aloneWhileOn."}) `selectAll`?: Record<({
-        `setting`?: string;
-        `values`?: (string)[];
-        `on`?: boolean;
-        `canBeOn`?: boolean
-      })[]>;
-      `min`?: numeric;
-      `max`?: numeric;
-      `step`?: numeric;
-      `value`?: BooleanOrNumericOrStringEtc;
-      `text`?: NullableString;
-      `source`?: string;
-      `editable`?: boolean;
-      `restartReason`?: string;
-      `editRefusal`?: string;
-      `env`?: NullableString;
-      `legacyEnv`?: NullableString;
-      `appconfigPath`?: string;
-      `default`?: BooleanOrNumericOrStringEtc;
-      `masked`?: boolean;
-      `realmSettable`?: boolean;
-      `overridden`?: boolean
-    })[];
-    `assertionsIssued`?: {
-      `held`?: numeric;
-      `forgotten`?: numeric;
-      `cap`?: numeric;
-      `byKind`?: ({
-        `kind`?: string;
-        `issued`?: numeric;
-        `valid`?: numeric;
-        `expired`?: numeric;
-        `noExpiry`?: numeric
-      })[]
-    };
+    `protocolEndpoints`?: (WithNameMethodsUrlEtc6)[];
+    `assertions`?: WithSaml2LifetimeMinSaml11LifetimeMinClockSkewSEtc5;
+    `perApplication`?: (WithSettingAttributeProfile)[];
+    `settings`?: (WithKeyGroupLabelEtc32)[];
+    `assertionsIssued`?: WithHeldForgottenCapEtc4;
     `now`?: numeric;
     `context`?: NullableObject94;
-    `rows`?: ({
-      `key`?: string;
-      `unit`?: string;
-      `kind`?: NullableString;
-      `profile`?: string;
-      `field`?: string
-    })[];
+    `rows`?: (WithKeyUnitKindEtc5)[];
     @js(#{`description`:"Each setting in seconds, by key."}) `seconds`?: Record<NullableNumber>
   }
 
 @component model `ClaimSets` {
     `reservedJwtClaims`?: (string)[];
     `placeholders`?: (string)[];
-    `attributeCatalogue`?: ({
-      `ldap`?: string;
-      `claim`?: string;
-      `label`?: NullableString;
-      `schema`?: NullableString;
-      @js(#{`description`:"Whether it is ticked, by claim set."}) `sets`?: Record<boolean>;
-      `generated`?: boolean;
-      `custom`?: boolean;
-      `syntax`?: NullableString;
-      `pacClaimId`?: string
-    })[];
+    `attributeCatalogue`?: (WithLdapClaimLabelEtc10)[];
     `precedence`?: string;
-    `sets`?: ({
-      `id`?: string;
-      `label`?: string;
-      `claims`?: ({
-        `name`?: string;
-        `value`?: string;
-        `attribute`?: string;
-        `multi`?: boolean;
-        `type`?: string;
-        `nameFormat`?: string;
-        `namespace`?: string;
-        `claimId`?: string
-      })[];
-      `attributes`?: (string)[];
-      @js(#{
-        `x-free-form`:"The claims one person would be issued, keyed and nested by the claim names the catalogue and an administrator chose.",
-        `description`:"The claims one person would be issued, keyed and nested by the claim names the catalogue and an administrator chose."
-      }) `attributeClaims`?: unknown;
-      `attributeReport`?: ({
-        `ldap`?: string;
-        `claim`?: string;
-        @js(#{
-          `x-free-form`:"A claim value as it would be issued. Its JSON type is the catalogue row's and the person's own data, and a row may nest under a dotted path.",
-          `description`:"A claim value as it would be issued. Its JSON type is the catalogue row's and the person's own data, and a row may nest under a dotted path."
-        }) `value`?: unknown;
-        `source`?: string;
-        `ldpTerm`?: NullableString;
-        `claimId`?: string;
-        `values`?: (Shape5)[]
-      })[];
-      `attributeClaimPreview`?: ({
-        `name`?: string;
-        `attribute`?: string;
-        `carried`?: boolean;
-        @js(#{
-          `x-free-form`:"A claim value as it would be issued. Its JSON type is the catalogue row's and the person's own data, and a row may nest under a dotted path.",
-          `description`:"A claim value as it would be issued. Its JSON type is the catalogue row's and the person's own data, and a row may nest under a dotted path."
-        }) `value`?: unknown
-      })[];
-      @js(#{`description`:"Partners withholding it, by claim."}) `withheldFrom`?: Record<(string)[]>
-    })[];
-    `attributeChoices`?: ({`attribute`?: string; `from`?: (string)[]})[];
-    `preview`?: {
-      `user`?: string;
-      @js(#{`description`:"By directory attribute."}) `byLdap`?: Record<{
-        `ldap`?: string;
-        `claim`?: string;
-        @js(#{
-          `x-free-form`:"A claim value as it would be issued. Its JSON type is the catalogue row's and the person's own data, and a row may nest under a dotted path.",
-          `description`:"A claim value as it would be issued. Its JSON type is the catalogue row's and the person's own data, and a row may nest under a dotted path."
-        }) `value`?: unknown;
-        `source`?: string;
-        `ldpTerm`?: NullableString;
-        `claimId`?: string;
-        `values`?: (Shape5)[]
-      }>;
-      `entryFound`?: boolean
-    };
-    `groups`?: {
-      `enabled`?: boolean;
-      `loaded`?: boolean;
-      `claim`?: NullableString;
-      `valueForm`?: NullableString;
-      `memberOfCounts`?: boolean;
-      `sets`?: (string)[];
-      `problem`?: string;
-      `grants`?: string;
-      `precedence`?: string;
-      `settings`?: (string)[];
-      `preview`?: {
-        `user`?: string;
-        `key`?: NullableString;
-        `application`?: string;
-        `enabled`?: boolean;
-        `loaded`?: boolean;
-        `claim`?: NullableString;
-        `valueForm`?: NullableString;
-        `memberOfCounts`?: boolean;
-        `reason`?: string;
-        `dn`?: NullableString;
-        `entryFound`?: boolean;
-        `groups`?: ({
-          `cn`?: NullableString;
-          `dn`?: string;
-          `rule`?: NullableString;
-          `via`?: (string)[];
-          `viaMemberOf`?: boolean
-        })[];
-        `values`?: (string)[]
-      }
-    };
-    `withholding`?: ({`id`?: string; `names`?: (string)[]})[]
+    `sets`?: (WithIdLabelClaimsEtc11)[];
+    `attributeChoices`?: (WithAttributeFrom)[];
+    `preview`?: WithUserDescriptionByLdapEtc13;
+    `groups`?: WithEnabledLoadedClaimEtc11;
+    `withholding`?: (WithIdNames)[]
   }
 
 @component model `KerberosPacClaims` {
-    `protocolEndpoints`?: ({
-      `name`?: string;
-      `methods`?: StringOrString;
-      `url`?: string;
-      `route`?: string;
-      `transport`?: string;
-      `registered`?: boolean
-    })[];
+    `protocolEndpoints`?: (WithNameMethodsUrlEtc6)[];
     `enabled`?: boolean;
     `setting`?: string;
     `types`?: (string)[];
     `placeholders`?: (string)[];
     `idFormat`?: string;
     `precedence`?: string;
-    `sets`?: ({
-      `id`?: string;
-      `label`?: string;
-      `claims`?: ({
-        `name`?: string;
-        `value`?: string;
-        `attribute`?: string;
-        `multi`?: boolean;
-        `type`?: string;
-        `nameFormat`?: string;
-        `namespace`?: string;
-        `claimId`?: string
-      })[];
-      `attributes`?: (string)[]
-    })[];
-    `attributeCatalogue`?: ({
-      `ldap`?: string;
-      `claim`?: string;
-      `label`?: NullableString;
-      `schema`?: NullableString;
-      @js(#{`description`:"Whether it is ticked, by claim set."}) `sets`?: Record<boolean>;
-      `generated`?: boolean;
-      `custom`?: boolean;
-      `syntax`?: NullableString;
-      `pacClaimId`?: string
-    })[];
-    `attributeChoices`?: ({`attribute`?: string; `from`?: (string)[]})[];
-    `preview`?: {
-      `user`?: string;
-      `entryFound`?: boolean;
-      @js(#{`description`:"By directory attribute."}) `byLdap`?: Record<{
-        `ldap`?: string;
-        `claim`?: string;
-        @js(#{
-          `x-free-form`:"A claim value as it would be issued. Its JSON type is the catalogue row's and the person's own data, and a row may nest under a dotted path.",
-          `description`:"A claim value as it would be issued. Its JSON type is the catalogue row's and the person's own data, and a row may nest under a dotted path."
-        }) `value`?: unknown;
-        `source`?: string;
-        `ldpTerm`?: NullableString;
-        `claimId`?: string;
-        `values`?: (Shape5)[]
-      }>;
-      `claims`?: ({
-        `name`?: string;
-        `id`?: string;
-        `type`?: string;
-        `values`?: (Shape5)[];
-        `from`?: string;
-        `dropped`?: boolean
-      })[]
-    }
+    `sets`?: (WithIdLabelClaimsEtc4)[];
+    `attributeCatalogue`?: (WithLdapClaimLabelEtc10)[];
+    `attributeChoices`?: (WithAttributeFrom)[];
+    `preview`?: WithUserEntryFoundDescriptionEtc14
   }
 
 @component model `UserInfoClaimSets` {
-    `protocolEndpoints`?: ({
-      `name`?: string;
-      `methods`?: StringOrString;
-      `url`?: string;
-      `route`?: string;
-      `transport`?: string;
-      `registered`?: boolean
-    })[];
+    `protocolEndpoints`?: (WithNameMethodsUrlEtc6)[];
     `reservedJwtClaims`?: (string)[];
-    `claimsRequest`?: {
-      `supported`?: boolean;
-      `members`?: (string)[];
-      `maxClaims`?: numeric;
-      `requestable`?: ({
-        `claim`?: string;
-        `ldap`?: string;
-        `label`?: NullableString;
-        `grouped`?: boolean
-      })[];
-      `fromTheSignIn`?: (string)[];
-      `precedence`?: (string)[];
-      `notEnforced`?: (string)[];
-      `directParameter`?: {
-        `note`?: string;
-        `spellings`?: (string)[];
-        `malformedIsRefused`?: string
-      };
-      `preview`?: {
-        `asked`?: boolean;
-        `ok`?: boolean;
-        `error`?: string;
-        `request`?: string;
-        @js(#{
-          `x-free-form`:"The claims request as a caller typed it, parsed: OIDC Core 5.5 keys it by the claims they ask for.",
-          `description`:"The claims request as a caller typed it, parsed: OIDC Core 5.5 keys it by the claims they ask for."
-        }) `parsed`?: unknown;
-        `ignoredMembers`?: (string)[];
-        `idTokenNames`?: (string)[];
-        @js(#{
-          `x-free-form`:"The claims one person would be issued for that request, keyed by the names it asked for.",
-          `description`:"The claims one person would be issued for that request, keyed by the names it asked for."
-        }) `claims`?: unknown;
-        `report`?: ({
-          `requested`?: string;
-          `claim`?: string;
-          `ldap`?: string;
-          @js(#{
-            `x-free-form`:"A claim value as it would be issued. Its JSON type is the catalogue row's and the person's own data, and a row may nest under a dotted path.",
-            `description`:"A claim value as it would be issued. Its JSON type is the catalogue row's and the person's own data, and a row may nest under a dotted path."
-          }) `value`?: unknown;
-          `source`?: string
-        })[];
-        `unresolvable`?: (string)[];
-        `essentialAndAbsent`?: (string)[];
-        `valueMismatches`?: (string)[];
-        `entryFound`?: boolean
-      }
-    };
+    `claimsRequest`?: WithSupportedMembersMaxClaimsEtc9;
     `request`?: string;
     `inventedEmail`?: NullableString;
     `placeholders`?: (string)[];
-    `attributeCatalogue`?: ({
-      `ldap`?: string;
-      `claim`?: string;
-      `label`?: NullableString;
-      `schema`?: NullableString;
-      @js(#{`description`:"Whether it is ticked, by claim set."}) `sets`?: Record<boolean>;
-      `generated`?: boolean;
-      `custom`?: boolean;
-      `syntax`?: NullableString;
-      `pacClaimId`?: string
-    })[];
+    `attributeCatalogue`?: (WithLdapClaimLabelEtc10)[];
     `precedence`?: string;
-    `sets`?: ({
-      `id`?: string;
-      `label`?: string;
-      `claims`?: ({
-        `name`?: string;
-        `value`?: string;
-        `attribute`?: string;
-        `multi`?: boolean;
-        `type`?: string;
-        `nameFormat`?: string;
-        `namespace`?: string;
-        `claimId`?: string
-      })[];
-      `attributes`?: (string)[];
-      @js(#{
-        `x-free-form`:"The claims one person would be issued, keyed and nested by the claim names the catalogue and an administrator chose.",
-        `description`:"The claims one person would be issued, keyed and nested by the claim names the catalogue and an administrator chose."
-      }) `attributeClaims`?: unknown;
-      `attributeReport`?: ({
-        `ldap`?: string;
-        `claim`?: string;
-        @js(#{
-          `x-free-form`:"A claim value as it would be issued. Its JSON type is the catalogue row's and the person's own data, and a row may nest under a dotted path.",
-          `description`:"A claim value as it would be issued. Its JSON type is the catalogue row's and the person's own data, and a row may nest under a dotted path."
-        }) `value`?: unknown;
-        `source`?: string;
-        `ldpTerm`?: NullableString;
-        `claimId`?: string;
-        `values`?: (Shape5)[]
-      })[];
-      `attributeClaimPreview`?: ({
-        `name`?: string;
-        `attribute`?: string;
-        `carried`?: boolean;
-        @js(#{
-          `x-free-form`:"A claim value as it would be issued. Its JSON type is the catalogue row's and the person's own data, and a row may nest under a dotted path.",
-          `description`:"A claim value as it would be issued. Its JSON type is the catalogue row's and the person's own data, and a row may nest under a dotted path."
-        }) `value`?: unknown
-      })[];
-      @js(#{`description`:"Partners withholding it, by claim."}) `withheldFrom`?: Record<(string)[]>
-    })[];
-    `attributeChoices`?: ({`attribute`?: string; `from`?: (string)[]})[];
-    `preview`?: {
-      `user`?: string;
-      @js(#{`description`:"By directory attribute."}) `byLdap`?: Record<{
-        `ldap`?: string;
-        `claim`?: string;
-        @js(#{
-          `x-free-form`:"A claim value as it would be issued. Its JSON type is the catalogue row's and the person's own data, and a row may nest under a dotted path.",
-          `description`:"A claim value as it would be issued. Its JSON type is the catalogue row's and the person's own data, and a row may nest under a dotted path."
-        }) `value`?: unknown;
-        `source`?: string;
-        `ldpTerm`?: NullableString;
-        `claimId`?: string;
-        `values`?: (Shape5)[]
-      }>;
-      `entryFound`?: boolean
-    };
-    `groups`?: {
-      `enabled`?: boolean;
-      `loaded`?: boolean;
-      `claim`?: NullableString;
-      `valueForm`?: NullableString;
-      `memberOfCounts`?: boolean;
-      `sets`?: (string)[];
-      `problem`?: string;
-      `grants`?: string;
-      `precedence`?: string;
-      `settings`?: (string)[];
-      `preview`?: {
-        `user`?: string;
-        `key`?: NullableString;
-        `application`?: string;
-        `enabled`?: boolean;
-        `loaded`?: boolean;
-        `claim`?: NullableString;
-        `valueForm`?: NullableString;
-        `memberOfCounts`?: boolean;
-        `reason`?: string;
-        `dn`?: NullableString;
-        `entryFound`?: boolean;
-        `groups`?: ({
-          `cn`?: NullableString;
-          `dn`?: string;
-          `rule`?: NullableString;
-          `via`?: (string)[];
-          `viaMemberOf`?: boolean
-        })[];
-        `values`?: (string)[]
-      }
-    };
-    `withholding`?: ({`id`?: string; `names`?: (string)[]})[]
+    `sets`?: (WithIdLabelClaimsEtc11)[];
+    `attributeChoices`?: (WithAttributeFrom)[];
+    `preview`?: WithUserDescriptionByLdapEtc13;
+    `groups`?: WithEnabledLoadedClaimEtc11;
+    `withholding`?: (WithIdNames)[]
   }
 
 @component model `SamlAttributeSets` {
-    `protocolEndpoints`?: ({
-      `name`?: string;
-      `methods`?: StringOrString;
-      `url`?: string;
-      `route`?: string;
-      `transport`?: string;
-      `registered`?: boolean
-    })[];
+    `protocolEndpoints`?: (WithNameMethodsUrlEtc6)[];
     `defaultSaml11Namespace`?: string;
     `placeholders`?: (string)[];
-    `attributeCatalogue`?: ({
-      `ldap`?: string;
-      `claim`?: string;
-      `label`?: NullableString;
-      `schema`?: NullableString;
-      @js(#{`description`:"Whether it is ticked, by claim set."}) `sets`?: Record<boolean>;
-      `generated`?: boolean;
-      `custom`?: boolean;
-      `syntax`?: NullableString;
-      `pacClaimId`?: string
-    })[];
+    `attributeCatalogue`?: (WithLdapClaimLabelEtc10)[];
     `precedence`?: string;
-    `sets`?: ({
-      `id`?: string;
-      `label`?: string;
-      `claims`?: ({
-        `name`?: string;
-        `value`?: string;
-        `attribute`?: string;
-        `multi`?: boolean;
-        `type`?: string;
-        `nameFormat`?: string;
-        `namespace`?: string;
-        `claimId`?: string
-      })[];
-      `attributes`?: (string)[];
-      @js(#{
-        `x-free-form`:"The claims one person would be issued, keyed and nested by the claim names the catalogue and an administrator chose.",
-        `description`:"The claims one person would be issued, keyed and nested by the claim names the catalogue and an administrator chose."
-      }) `attributeClaims`?: unknown;
-      `attributeReport`?: ({
-        `ldap`?: string;
-        `claim`?: string;
-        @js(#{
-          `x-free-form`:"A claim value as it would be issued. Its JSON type is the catalogue row's and the person's own data, and a row may nest under a dotted path.",
-          `description`:"A claim value as it would be issued. Its JSON type is the catalogue row's and the person's own data, and a row may nest under a dotted path."
-        }) `value`?: unknown;
-        `source`?: string;
-        `ldpTerm`?: NullableString;
-        `claimId`?: string;
-        `values`?: (Shape5)[]
-      })[];
-      `attributeClaimPreview`?: ({
-        `name`?: string;
-        `attribute`?: string;
-        `carried`?: boolean;
-        @js(#{
-          `x-free-form`:"A claim value as it would be issued. Its JSON type is the catalogue row's and the person's own data, and a row may nest under a dotted path.",
-          `description`:"A claim value as it would be issued. Its JSON type is the catalogue row's and the person's own data, and a row may nest under a dotted path."
-        }) `value`?: unknown
-      })[];
-      @js(#{`description`:"Partners withholding it, by claim."}) `withheldFrom`?: Record<(string)[]>
-    })[];
-    `attributeChoices`?: ({`attribute`?: string; `from`?: (string)[]})[];
-    `preview`?: {
-      `user`?: string;
-      @js(#{`description`:"By directory attribute."}) `byLdap`?: Record<{
-        `ldap`?: string;
-        `claim`?: string;
-        @js(#{
-          `x-free-form`:"A claim value as it would be issued. Its JSON type is the catalogue row's and the person's own data, and a row may nest under a dotted path.",
-          `description`:"A claim value as it would be issued. Its JSON type is the catalogue row's and the person's own data, and a row may nest under a dotted path."
-        }) `value`?: unknown;
-        `source`?: string;
-        `ldpTerm`?: NullableString;
-        `claimId`?: string;
-        `values`?: (Shape5)[]
-      }>;
-      `entryFound`?: boolean
-    };
-    `groups`?: {
-      `enabled`?: boolean;
-      `loaded`?: boolean;
-      `claim`?: NullableString;
-      `valueForm`?: NullableString;
-      `memberOfCounts`?: boolean;
-      `sets`?: (string)[];
-      `problem`?: string;
-      `grants`?: string;
-      `precedence`?: string;
-      `settings`?: (string)[];
-      `preview`?: {
-        `user`?: string;
-        `key`?: NullableString;
-        `application`?: string;
-        `enabled`?: boolean;
-        `loaded`?: boolean;
-        `claim`?: NullableString;
-        `valueForm`?: NullableString;
-        `memberOfCounts`?: boolean;
-        `reason`?: string;
-        `dn`?: NullableString;
-        `entryFound`?: boolean;
-        `groups`?: ({
-          `cn`?: NullableString;
-          `dn`?: string;
-          `rule`?: NullableString;
-          `via`?: (string)[];
-          `viaMemberOf`?: boolean
-        })[];
-        `values`?: (string)[]
-      }
-    };
-    `withholding`?: ({`id`?: string; `names`?: (string)[]})[]
+    `sets`?: (WithIdLabelClaimsEtc11)[];
+    `attributeChoices`?: (WithAttributeFrom)[];
+    `preview`?: WithUserDescriptionByLdapEtc13;
+    `groups`?: WithEnabledLoadedClaimEtc11;
+    `withholding`?: (WithIdNames)[]
   }
 
   
@@ -6274,119 +1367,23 @@ namespace IyaSts.Api.Console {
     `selected`?: (string)[];
     `defaults`?: (string)[];
     `ldpOmitted`?: (string)[];
-    `attributes`?: ({
-      `ldap`?: string;
-      `claim`?: string;
-      `label`?: string;
-      `schema`?: string;
-      `ldpTerm`?: string;
-      `selected`?: boolean;
-      `example`?: {
-        `value`?: StringOrNumericOrBooleanEtc4;
-        `source`?: string
-      }
-    })[];
-    `protocolEndpoints`?: ({
-      `name`?: string;
-      `methods`?: StringOrString;
-      `url`?: string;
-      `route`?: string;
-      `transport`?: string;
-      `registered`?: boolean
-    })[];
-    `preview`?: {
-      `user`?: string;
-      `claims`?: {
-        @js(#{`description`:"The credential subject's claims."}) `claims`?: Record<StringOrNumericOrBooleanEtc4OrListOfRecordStringOrNumericOrBooleanEtc4>;
-        `report`?: ({
-          `ldap`?: string;
-          `claim`?: string;
-          `value`?: StringOrNumericOrBooleanEtc4;
-          `source`?: string;
-          `ldpTerm`?: NullableString
-        })[];
-        `entryFound`?: boolean
-      }
-    }
+    `attributes`?: (WithLdapClaimLabelEtc7)[];
+    `protocolEndpoints`?: (WithNameMethodsUrlEtc6)[];
+    `preview`?: WithUserClaims
   }
 
 @component model `VerifierRequest` {
-    `protocolEndpoints`?: ({
-      `name`?: string;
-      `methods`?: StringOrString;
-      `url`?: string;
-      `route`?: string;
-      `transport`?: string;
-      `registered`?: boolean
-    })[];
+    `protocolEndpoints`?: (WithNameMethodsUrlEtc6)[];
     `requested`?: (string)[];
     `defaults`?: (string)[];
     `format`?: string;
-    `formats`?: ({
-      `id`?: string;
-      `label`?: string;
-      `identifiedBy`?: string;
-      `identifier`?: StringOrString;
-      `selectiveDisclosure`?: string;
-      `holderBinding`?: string;
-      `configurations`?: (string)[];
-      `identifierText`?: string;
-      `what`?: string
-    })[];
+    `formats`?: (WithIdLabelIdentifiedByEtc9)[];
     `ldpOmitted`?: (string)[];
-    `catalogue`?: ({
-      `claim`?: string;
-      `label`?: string;
-      `nested`?: boolean;
-      `attributes`?: ({`ldap`?: string; `schema`?: string})[];
-      `ldpTerms`?: (string)[];
-      `paths`?: ((string)[])[];
-      `requested`?: boolean;
-      `issued`?: {`known`?: boolean; `carried`?: (string)[]; `missing`?: (string)[]}
-    })[];
-    `dcqlQuery`?: {
-      `credentials`?: ({
-        `id`?: string;
-        `format`?: string;
-        `meta`?: {
-          `vct_values`?: (string)[];
-          `doctype_value`?: string;
-          `type_values`?: (StringOrString)[]
-        };
-        `require_cryptographic_holder_binding`?: boolean;
-        `claims`?: ({`path`?: (string)[]})[]
-      })[];
-      `credential_sets`?: ({`options`?: ((string)[])[]; `required`?: boolean})[]
-    };
-    `extras`?: ({`claim`?: string; `paths`?: ((string)[])[]})[];
-    `recentVerifications`?: {
-      `verifications`?: ({
-        `state`?: string;
-        `format`?: string;
-        `responseType`?: string;
-        `responseMode`?: string;
-        `byReference`?: boolean;
-        `clientId`?: string;
-        `requested`?: (string)[];
-        `expiresAt`?: string;
-        `received`?: boolean;
-        `ok`?: NullableBoolean;
-        `decidedAt`?: NullableString;
-        `claims`?: (string)[];
-        `failedChecks`?: (string)[];
-        `error`?: string
-      })[];
-      `total`?: integer;
-      `limit`?: integer
-    };
-    `startChoices`?: {
-      `format`?: (string)[];
-      `by`?: (string)[];
-      `mode`?: (string)[];
-      `response_type`?: (string)[];
-      `response_mode`?: (string)[];
-      `client_id_prefix`?: (string)[]
-    }
+    `catalogue`?: (WithClaimLabelNestedEtc8)[];
+    `dcqlQuery`?: WithCredentialsCredentialSets;
+    `extras`?: (WithClaimPaths)[];
+    `recentVerifications`?: WithVerificationsTotalLimit;
+    `startChoices`?: WithFormatByModeEtc6
   }
 
 @component model `Xacml` {
@@ -6398,15 +1395,7 @@ namespace IyaSts.Api.Console {
     `root`?: NullableString;
     `pipAvailable`?: boolean;
     `settings`?: NullableObject95;
-    `protocolEndpoints`?: ({
-      `name`?: string;
-      `methods`?: (string)[];
-      `url`?: string;
-      `route`?: string;
-      `transport`?: string;
-      `registered`?: boolean;
-      `listening`?: boolean
-    })[]
+    `protocolEndpoints`?: (WithNameMethodsUrlEtc7)[]
   }
 
 @js(#{
@@ -6446,123 +1435,27 @@ namespace IyaSts.Api.Console {
     `xacml`?: boolean;
     `message`?: string;
     `root`?: NullableString;
-    `policies`?: ({
-      `name`?: string;
-      `policyId`?: NullableString;
-      `kind`?: string;
-      `version`?: string;
-      `enabled`?: boolean;
-      `isRoot`?: boolean;
-      `combiningAlgId`?: string;
-      `description`?: string;
-      `application`?: NullableString;
-      `orphanedAt`?: NullableString;
-      `problems`?: (string)[]
-    })[];
-    `applicationPolicies`?: ({
-      `application`?: string;
-      `known`?: boolean;
-      `enforced`?: boolean;
-      `policies`?: ({
-        `name`?: string;
-        `policyId`?: NullableString;
-        `version`?: string;
-        `enabled`?: boolean;
-        `orphanedAt`?: NullableString;
-        `referenced`?: boolean
-      })[]
-    })[];
-    `templates`?: ({
-      `id`?: string;
-      `label`?: string;
-      `blurb`?: string;
-      `what`?: string;
-      `parameters`?: ({
-        `name`?: string;
-        `label`?: string;
-        `help`?: NullableString;
-        `type`?: string;
-        `dflt`?: StringOrNumericOrBooleanEtc
-      })[]
-    })[];
-    `serviceOwn`?: ({
-      `key`?: string;
-      `label`?: string;
-      `decides`?: string;
-      `asked`?: string;
-      `remote`?: boolean;
-      `name`?: string;
-      `ok`?: boolean;
-      `builtIn`?: boolean;
-      `why`?: string;
-      `setting`?: string;
-      `template`?: string;
-      `entry`?: boolean;
-      `enabled`?: NullableBoolean;
-      `effect`?: string;
-      `readsRisk`?: boolean
-    })[];
-    `protocolEndpoints`?: ({
-      `name`?: string;
-      `methods`?: (string)[];
-      `url`?: string;
-      `route`?: string;
-      `transport`?: string;
-      `registered`?: boolean;
-      `listening`?: boolean
-    })[]
+    `policies`?: (WithNamePolicyIdKindEtc11)[];
+    `applicationPolicies`?: (WithApplicationKnownEnforcedEtc4)[];
+    `templates`?: (WithIdLabelBlurbEtc5)[];
+    `serviceOwn`?: (WithKeyLabelDecidesEtc15)[];
+    `protocolEndpoints`?: (WithNameMethodsUrlEtc7)[]
   }
 
 @component model `XacmlEditor` {
     `xacml`?: boolean;
     `message`?: string;
     `policies`?: (string)[];
-    `serviceOwn`?: ({
-      `key`?: string;
-      `label`?: string;
-      `decides`?: string;
-      `asked`?: string;
-      `remote`?: boolean;
-      `name`?: string;
-      `ok`?: boolean;
-      `builtIn`?: boolean;
-      `why`?: string;
-      `setting`?: string;
-      `template`?: string;
-      `entry`?: boolean;
-      `enabled`?: NullableBoolean;
-      `effect`?: string;
-      `readsRisk`?: boolean
-    })[];
+    `serviceOwn`?: (WithKeyLabelDecidesEtc15)[];
     `policy`?: NullableObject96;
     `problem`?: NullableString;
-    `tree`?: ({
-      `path`?: string;
-      `depth`?: integer;
-      `kind`?: string;
-      `label`?: string;
-      `detail`?: string;
-      `options`?: {
-        `kind`?: string;
-        `removable`?: boolean;
-        `additions`?: ({`action`?: string; `label`?: string; `help`?: string})[]
-      };
-      `edit`?: NullableObject97
-    })[];
+    `tree`?: (WithPathDepthKindEtc7)[];
     `menus`?: NullableObject98;
     `problems`?: (NullableString)[];
     `xpathVersionGaps`?: (NullableString)[];
     `document`?: string;
     `alfa`?: NullableString;
-    `protocolEndpoints`?: ({
-      `name`?: string;
-      `methods`?: (string)[];
-      `url`?: string;
-      `route`?: string;
-      `transport`?: string;
-      `registered`?: boolean;
-      `listening`?: boolean
-    })[]
+    `protocolEndpoints`?: (WithNameMethodsUrlEtc7)[]
   }
 
 @component model `XacmlDecision` {
@@ -6577,25 +1470,9 @@ namespace IyaSts.Api.Console {
     `obligations`?: (string)[];
     `advice`?: (string)[];
     `applicablePolicies`?: (StringOrKindStringIdStringVersionString)[];
-    `enforcement`?: {
-      `allowed`?: boolean;
-      `bias`?: string;
-      `why`?: NullableString
-    };
-    `enforcements`?: ({
-      `allowed`?: boolean;
-      `bias`?: string;
-      `why`?: NullableString
-    })[];
-    `protocolEndpoints`?: ({
-      `name`?: string;
-      `methods`?: (string)[];
-      `url`?: string;
-      `route`?: string;
-      `transport`?: string;
-      `registered`?: boolean;
-      `listening`?: boolean
-    })[]
+    `enforcement`?: WithAllowedBiasWhy;
+    `enforcements`?: (WithAllowedBiasWhy)[];
+    `protocolEndpoints`?: (WithNameMethodsUrlEtc7)[]
   }
 
 @component model `GnapServer` {
@@ -6603,148 +1480,14 @@ namespace IyaSts.Api.Console {
     `title`?: string;
     `enabled`?: boolean;
     `specifications`?: (string)[];
-    `endpoints`?: {
-      `grant`?: string;
-      `discovery`?: string;
-      `rsDiscovery`?: string;
-      `continuation`?: string;
-      `tokenManagement`?: string;
-      `introspection`?: string;
-      `resourceRegistration`?: string;
-      `userCode`?: string;
-      `keys`?: string;
-      `zcapController`?: string;
-      `accessTokenStatusList`?: string;
-      `biscuitRevocations`?: string
-    };
-    `capabilities`?: {
-      `grant_request_endpoint`?: string;
-      `interaction_start_modes_supported`?: StringOrStringOrBooleanEtc;
-      `interaction_finish_methods_supported`?: StringOrStringOrBooleanEtc;
-      `key_proofs_supported`?: StringOrStringOrBooleanEtc;
-      `sub_id_formats_supported`?: StringOrStringOrBooleanEtc;
-      `assertion_formats_supported`?: StringOrStringOrBooleanEtc;
-      `key_rotation_supported`?: StringOrStringOrBooleanEtc;
-      `token_formats_supported`?: StringOrStringOrBooleanEtc
-    };
-    `authorizationServers`?: ({
-      `id`?: string;
-      `label`?: string;
-      `capabilities`?: {
-        `grant_request_endpoint`?: string;
-        `interaction_start_modes_supported`?: StringOrStringOrBooleanEtc;
-        `interaction_finish_methods_supported`?: StringOrStringOrBooleanEtc;
-        `key_proofs_supported`?: StringOrStringOrBooleanEtc;
-        `sub_id_formats_supported`?: StringOrStringOrBooleanEtc;
-        `assertion_formats_supported`?: StringOrStringOrBooleanEtc;
-        `key_rotation_supported`?: StringOrStringOrBooleanEtc;
-        `token_formats_supported`?: StringOrStringOrBooleanEtc
-      }
-    })[];
-    `authorizationServersPaging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: string;
-      `noun`?: string
-    };
+    `endpoints`?: WithGrantDiscoveryRsDiscoveryEtc12;
+    `capabilities`?: WithGrantRequestEndpointInteractionStartModesSupportedInteractionFinishMethodsSupportedEtc8;
+    `authorizationServers`?: (WithIdLabelCapabilities)[];
+    `authorizationServersPaging`?: WithPagePagesPerPageEtc8;
     `tokenFormats`?: (string)[];
-    `verificationMaterial`?: {
-      `jwt`?: {
-        `jwks_uri`?: string;
-        `alg`?: string;
-        `kid`?: string;
-        `typ`?: string;
-        `status_list_aggregation_endpoint`?: string
-      };
-      `biscuit`?: {
-        `algorithm`?: string;
-        `root_public_key`?: string;
-        `revocation_endpoint`?: string;
-        `jwk`?: {
-          `kty`?: string;
-          `use`?: string;
-          `alg`?: string;
-          `kid`?: string;
-          `key_ops`?: (string)[];
-          `ext`?: boolean;
-          `crv`?: string;
-          `x`?: string;
-          `y`?: string;
-          `n`?: string;
-          `e`?: string;
-          `pub`?: string;
-          `ek`?: string;
-          `x5c`?: (string)[];
-          `x5t`?: string;
-          `x5t#S256`?: string;
-          `x5u`?: string
-        };
-        `root_public_keys`?: (string)[]
-      };
-      `zcap`?: {`controller`?: string; `cryptosuite`?: string};
-      `macaroon`?: {`root_key`?: string};
-      `jwt-encrypted`?: {`authorization_server`?: string; `resource_server`?: string}
-    };
-    `grants`?: {
-      `state`?: NullableString;
-      `states`?: (string)[];
-      `paging`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `perPage`?: integer;
-        `firstRow`?: integer;
-        `lastRow`?: integer;
-        `total`?: integer;
-        `param`?: string;
-        `noun`?: string
-      };
-      `rows`?: ({
-        `id`?: string;
-        `state`?: string;
-        `authorizationServer`?: NullableString;
-        `grantEndpoint`?: NullableString;
-        `client`?: NullableString;
-        `proof`?: NullableString;
-        `resourceOwner`?: NullableString;
-        `decision`?: NullableString;
-        `interaction`?: NullableObject100;
-        `tokens`?: integer;
-        `derivedFrom`?: NullableString;
-        `createdAt`?: NullOrStringOrNumeric;
-        `updatedAt`?: NullOrStringOrNumeric;
-        `finalization`?: NullableObject101;
-        `grantExpiresAt`?: NullOrStringOrNumeric;
-        `history`?: ({
-          `at`?: NullOrStringOrNumeric;
-          `state`?: string;
-          `note`?: NullableString
-        })[]
-      })[]
-    };
-    `resourceSets`?: {
-      `paging`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `perPage`?: integer;
-        `firstRow`?: integer;
-        `lastRow`?: integer;
-        `total`?: integer;
-        `param`?: string;
-        `noun`?: string
-      };
-      `rows`?: ({
-        `reference`?: string;
-        `resourceServer`?: string;
-        `access`?: (Shape6)[];
-        `tokenFormats`?: NullableArray;
-        `introspectionRequired`?: boolean;
-        `createdAt`?: NullOrStringOrNumeric
-      })[]
-    };
+    `verificationMaterial`?: WithJwtBiscuitZcapEtc6;
+    `grants`?: WithStateStatesPagingEtc4;
+    `resourceSets`?: WithPagingRows;
     `actions`?: (string)[];
     `settings`?: NullableObject61
   }
@@ -6753,163 +1496,28 @@ namespace IyaSts.Api.Console {
     `page`?: string;
     `title`?: string;
     `since`?: NullOrStringOrNumeric;
-    `events`?: ({`event`?: string; `counter`?: string; `label`?: string})[];
+    `events`?: (WithEventCounterLabel)[];
     `totals`?: Record<numeric>;
     `tokensByFormat`?: Record<numeric>;
     `applications`?: integer;
-    `paging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: string;
-      `noun`?: string
-    };
-    `rows`?: ({
-      `identifier`?: string;
-      `name`?: NullableString;
-      `kinds`?: (string)[];
-      `role`?: string;
-      `registered`?: boolean;
-      `finishUris`?: (string)[];
-      `webApplication`?: boolean;
-      `grantsHeld`?: {
-        `total`?: integer;
-        `pending`?: integer;
-        `approved`?: integer;
-        `finalized`?: integer
-      };
-      `activeTokens`?: integer;
-      `counters`?: Record<NumericOrStringOrNullEtc>;
-      `lastAt`?: NullOrStringOrNumeric;
-      `lastEvent`?: NullableString
-    })[]
+    `paging`?: WithPagePagesPerPageEtc8;
+    `rows`?: (WithIdentifierNameKindsEtc12)[]
   }
 
 @component model `XacmlMonitor` {
     `xacml`?: boolean;
     `message`?: string;
-    `policies`?: {
-      `total`?: integer;
-      `enabled`?: integer;
-      `root`?: NullableString
-    };
-    `peps`?: {`embedded`?: integer; `remote`?: integer; `total`?: integer};
-    `decisions`?: {
-      `here`?: {
-        `decisions`?: integer;
-        `allowed`?: integer;
-        `refused`?: integer;
-        `unenforced`?: integer;
-        `undischargeable`?: integer
-      };
-      `remote`?: {
-        `decisions`?: integer;
-        `allowed`?: integer;
-        `refused`?: integer;
-        `unenforced`?: integer;
-        `undischargeable`?: integer
-      };
-      `combined`?: {
-        `decisions`?: integer;
-        `allowed`?: integer;
-        `refused`?: integer;
-        `unenforced`?: integer;
-        `undischargeable`?: integer
-      }
-    };
+    `policies`?: WithTotalEnabledRoot;
+    `peps`?: WithEmbeddedRemoteTotal;
+    `decisions`?: WithHereRemoteCombined;
     `since`?: string;
     `enabled`?: boolean;
     `remotePepsEnabled`?: boolean;
-    `realm`?: {`id`?: string; `name`?: NullableString};
-    `rows`?: ({
-      `id`?: string;
-      `label`?: string;
-      `kind`?: string;
-      `where`?: string;
-      `module`?: string;
-      `guards`?: string;
-      `enforces`?: boolean;
-      `bias`?: NullableString;
-      `dischargesObligations`?: boolean;
-      `decisions`?: integer;
-      `allowed`?: NullableInteger;
-      `refused`?: NullableInteger;
-      `permit`?: NullableInteger;
-      `deny`?: NullableInteger;
-      `notApplicable`?: NullableInteger;
-      `indeterminate`?: NullableInteger;
-      `other`?: NullableInteger;
-      `undischargeable`?: integer;
-      `lastAt`?: StringOrNumericOrNull;
-      `lastDecision`?: NullableString;
-      `lastAllowed`?: NullableBoolean;
-      `remote`?: {
-        `authenticated`?: boolean;
-        `certificateSubject`?: string;
-        `current`?: boolean;
-        `stale`?: boolean;
-        `enabled`?: boolean;
-        `registeredAt`?: NullableString;
-        `lastSeen`?: NullableString;
-        `syncToken`?: string;
-        `policyCount`?: NullableInteger;
-        `version`?: string;
-        `lastNotify`?: string
-      }
-    })[];
-    `remoteRows`?: ({
-      `id`?: string;
-      `label`?: string;
-      `kind`?: string;
-      `where`?: string;
-      `module`?: string;
-      `guards`?: string;
-      `enforces`?: boolean;
-      `bias`?: NullableString;
-      `dischargesObligations`?: boolean;
-      `decisions`?: integer;
-      `allowed`?: NullableInteger;
-      `refused`?: NullableInteger;
-      `permit`?: NullableInteger;
-      `deny`?: NullableInteger;
-      `notApplicable`?: NullableInteger;
-      `indeterminate`?: NullableInteger;
-      `other`?: NullableInteger;
-      `undischargeable`?: integer;
-      `lastAt`?: StringOrNumericOrNull;
-      `lastDecision`?: NullableString;
-      `lastAllowed`?: NullableBoolean;
-      `remote`?: {
-        `authenticated`?: boolean;
-        `certificateSubject`?: string;
-        `current`?: boolean;
-        `stale`?: boolean;
-        `enabled`?: boolean;
-        `registeredAt`?: NullableString;
-        `lastSeen`?: NullableString;
-        `syncToken`?: string;
-        `policyCount`?: NullableInteger;
-        `version`?: string;
-        `lastNotify`?: string
-      }
-    })[];
-    `elsewhere`?: ({
-      `id`?: string;
-      `name`?: NullableString;
-      `count`?: integer
-    })[];
-    `protocolEndpoints`?: ({
-      `name`?: string;
-      `methods`?: (string)[];
-      `url`?: string;
-      `route`?: string;
-      `transport`?: string;
-      `registered`?: boolean;
-      `listening`?: boolean
-    })[]
+    `realm`?: WithIdName3;
+    `rows`?: (WithIdLabelKindEtc22)[];
+    `remoteRows`?: (WithIdLabelKindEtc22)[];
+    `elsewhere`?: (WithIdNameCount)[];
+    `protocolEndpoints`?: (WithNameMethodsUrlEtc7)[]
   }
 
 @component model `XacmlPeps` {
@@ -6919,65 +1527,13 @@ namespace IyaSts.Api.Console {
     `syncToken`?: NullableString;
     `staleAfterS`?: numeric;
     `requiresCertificate`?: boolean;
-    `notify`?: {
-      `on`?: boolean;
-      `allowedHosts`?: (string)[];
-      `timeoutMs`?: numeric;
-      `transport`?: {
-        `allowHttp`?: boolean;
-        `skipTlsVerificationSet`?: boolean;
-        `skipTlsVerification`?: boolean;
-        `caFile`?: string
-      }
-    };
-    `peps`?: ({
-      `name`?: string;
-      `dn`?: string;
-      `identity`?: string;
-      `certificateSubject`?: string;
-      `thumbprint`?: string;
-      `authenticated`?: boolean;
-      `notifyUrl`?: string;
-      `bias`?: string;
-      `resource`?: string;
-      `description`?: string;
-      `version`?: string;
-      `enabled`?: boolean;
-      `registeredAt`?: string;
-      `lastSeen`?: string;
-      `syncToken`?: string;
-      `policyCount`?: NullableNumber;
-      `decisions`?: NullableNumber;
-      `allowed`?: NullableNumber;
-      `refused`?: NullableNumber;
-      `undischargeable`?: NullableNumber;
-      `lastNotify`?: string;
-      `current`?: boolean;
-      `stale`?: boolean;
-      `notifyProblem`?: NullableString;
-      `listenerCertificate`?: NullableObject102
-    })[];
-    `elsewhere`?: ({
-      `id`?: string;
-      `name`?: NullableString;
-      `count`?: integer
-    })[];
-    `listenerCertificates`?: {
-      `useCase`?: string;
-      `keyAlgorithms`?: (string)[];
-      `defaultKeyAlg`?: string
-    };
+    `notify`?: WithOnAllowedHostsTimeoutMsEtc4;
+    `peps`?: (WithNameDnIdentityEtc25)[];
+    `elsewhere`?: (WithIdNameCount)[];
+    `listenerCertificates`?: WithUseCaseKeyAlgorithmsDefaultKeyAlg;
     `current`?: integer;
     `stale`?: integer;
-    `protocolEndpoints`?: ({
-      `name`?: string;
-      `methods`?: (string)[];
-      `url`?: string;
-      `route`?: string;
-      `transport`?: string;
-      `registered`?: boolean;
-      `listening`?: boolean
-    })[]
+    `protocolEndpoints`?: (WithNameMethodsUrlEtc7)[]
   }
 
 @component model `Ssf` {
@@ -6985,215 +1541,28 @@ namespace IyaSts.Api.Console {
     `enabled`?: boolean;
     `issuer`?: string;
     `metadataUrl`?: string;
-    `metadata`?: {
-      `spec_version`?: string;
-      `issuer`?: string;
-      `jwks_uri`?: string;
-      `delivery_methods_supported`?: (string)[];
-      `configuration_endpoint`?: string;
-      `status_endpoint`?: string;
-      `add_subject_endpoint`?: string;
-      `remove_subject_endpoint`?: string;
-      `verification_endpoint`?: string;
-      `default_subjects`?: string;
-      `authorization_schemes`?: ({`spec_urn`?: string})[];
-      `critical_subject_members`?: (string)[]
-    };
+    `metadata`?: WithSpecVersionIssuerJwksUriEtc13;
     `signingAlgorithm`?: string;
-    `delivery`?: ({
-      `method`?: string;
-      `name`?: string;
-      `what`?: string;
-      `offered`?: boolean
-    })[];
-    `push`?: {
-      `allowed`?: boolean;
-      `transport`?: {
-        `allowHttp`?: boolean;
-        `skipTlsVerificationSet`?: boolean;
-        `skipTlsVerification`?: boolean;
-        `caFile`?: string
-      };
-      `allowedHosts`?: (string)[];
-      `retries`?: numeric;
-      `maxResponseBytes`?: numeric;
-      `note`?: string
-    };
-    `eventTypes`?: ({
-      `uri`?: string;
-      `name`?: string;
-      `short`?: string;
-      `family`?: string;
-      `subject`?: BooleanOrStringOrNull;
-      `what`?: string;
-      `offered`?: boolean;
-      `members`?: ({
-        `name`?: string;
-        `required`?: BooleanOrStringOrNull;
-        `what`?: string;
-        `type`?: NullableString;
-        `values`?: (string)[]
-      })[];
-      `required`?: (string)[];
-      `subjectFormats`?: (string)[];
-      `deprecated`?: string
-    })[];
-    `subjectFormats`?: ({
-      `format`?: string;
-      `members`?: (string)[];
-      `what`?: string;
-      `example`?: {
-        `format`?: string;
-        `uri`?: string;
-        `email`?: string;
-        `iss`?: string;
-        `sub`?: string;
-        `id`?: string;
-        `phone_number`?: string;
-        `url`?: string;
-        `jti`?: string;
-        `issuer`?: string;
-        `assertion_id`?: string;
-        `ip-addresses`?: (string)[];
-        `identifiers`?: ({`format`?: string; `email`?: string; `phone_number`?: string})[]
-      }
-    })[];
-    `complexSubjectMembers`?: ({`name`?: string; `what`?: string})[];
+    `delivery`?: (WithMethodNameWhatEtc4)[];
+    `push`?: WithAllowedTransportAllowedHostsEtc6;
+    `eventTypes`?: (WithUriNameShortEtc11)[];
+    `subjectFormats`?: (WithFormatMembersWhatEtc4)[];
+    `complexSubjectMembers`?: (WithNameWhat)[];
     `criticalSubjectMembers`?: (string)[];
-    `authentication`?: {
-      `required`?: boolean;
-      `realm`?: string;
-      `scopes`?: {
-        `read`?: string;
-        `write`?: string;
-        `readAlso`?: (string)[];
-        `writeAlso`?: (string)[];
-        `writeIncludesRead`?: boolean
-      };
-      `refusedPassword`?: string;
-      `metadataIsOpen`?: boolean;
-      `passwordVerified`?: boolean;
-      `schemes`?: ({
-        `id`?: string;
-        `name`?: string;
-        `spec_urn`?: string;
-        `what`?: string;
-        `offered`?: boolean
-      })[];
-      `note`?: string
-    };
-    `streams`?: ({
-      `stream_id`?: string;
-      `status`?: string;
-      `delivery`?: string;
-      `events_delivered`?: (string)[];
-      `subjects`?: integer;
-      `queued`?: integer;
-      `counters`?: Record<numeric>;
-      `createdAt`?: NullOrStringOrNumeric;
-      `lastPushError`?: NullableString
-    })[];
-    `endpoints`?: ({`method`?: string; `path`?: string; `what`?: string})[];
-    `reachableNegatives`?: ({`what`?: string; `answer`?: string})[];
+    `authentication`?: WithRequiredRealmScopesEtc8;
+    `streams`?: (WithStreamIdStatusDeliveryEtc9)[];
+    `endpoints`?: (WithMethodPathWhat)[];
+    `reachableNegatives`?: (WithWhatAnswer)[];
     `doesNotDo`?: (string)[];
-    `streamDetail`?: ({
-      `stream_id`?: string;
-      `iss`?: NullableString;
-      `aud`?: NullOrStringOrString;
-      `status`?: string;
-      `statusReason`?: NullableString;
-      `delivery`?: {
-        `method`?: string;
-        `endpoint_url`?: NullableString
-      };
-      `events_delivered`?: (string)[];
-      `events_requested`?: (string)[];
-      `format`?: NullableString;
-      `description`?: NullableString;
-      `createdAt`?: NullOrStringOrNumeric;
-      `updatedAt`?: NullOrStringOrNumeric;
-      `createdBy`?: NullableString;
-      `internal`?: boolean;
-      `counters`?: Record<numeric>;
-      `lastPushError`?: NullableString;
-      `lastPushAt`?: NullOrStringOrNumeric;
-      `subjects`?: ({
-        `text`?: string;
-        `verified`?: NullableBoolean;
-        `addedAt`?: NullOrStringOrNumeric;
-        @js(#{
-          `x-free-form`:"An RFC 9493 subject identifier, as a stream was given it or a person named it: the format decides the members, an `aliases` nests, and SSF 1.0 section 3.3 lets a receiver add its own.",
-          `description`:"An RFC 9493 subject identifier, as a stream was given it or a person named it: the format decides the members, an `aliases` nests, and SSF 1.0 section 3.3 lets a receiver add its own."
-        }) `subject`?: unknown
-      })[];
-      `queue`?: ({
-        `jti`?: string;
-        `queuedAt`?: NullOrStringOrNumeric;
-        `deliveredAt`?: NullOrStringOrNumeric;
-        `summary`?: NullableObject103
-      })[];
-      `dead`?: boolean;
-      `deadSince`?: string;
-      `deadReason`?: string;
-      `failingSince`?: string;
-      `nextProbeAt`?: string;
-      `deadLetters`?: ({
-        `jti`?: string;
-        `queuedAt`?: NullOrStringOrNumeric;
-        `deadAt`?: NullOrStringOrNumeric;
-        `reason`?: NullableString;
-        `errorCode`?: NullableString;
-        `status`?: NullableInteger;
-        `signed`?: boolean;
-        `summary`?: NullableObject103
-      })[];
-      `log`?: ({`at`?: string; `kind`?: string; `text`?: string})[]
-    })[];
-    `deadLetters`?: {
-      `retentionS`?: numeric;
-      `maxPerStream`?: numeric;
-      `deadStreamTimeoutS`?: numeric;
-      `pushes`?: {
-        `active`?: integer;
-        `waiting`?: integer;
-        `concurrency`?: numeric;
-        `backlog`?: numeric
-      }
-    };
+    `streamDetail`?: (WithStreamIdIssAudEtc26)[];
+    `deadLetters`?: WithRetentionSMaxPerStreamDeadStreamTimeoutSEtc4;
     `settings`?: NullableObject61;
     `statuses`?: (string)[];
-    `streamTotals`?: {
-      `streams`?: integer;
-      `enabled`?: integer;
-      `delivered`?: numeric;
-      `failed`?: numeric;
-      `waiting`?: integer;
-      `dead`?: integer;
-      `deadLetters`?: integer
-    };
+    `streamTotals`?: WithStreamsEnabledDeliveredEtc7;
     `streamFilter`?: NullableString;
-    `paging`?: {
-      `streams`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `perPage`?: integer;
-        `firstRow`?: integer;
-        `lastRow`?: integer;
-        `total`?: integer;
-        `param`?: string;
-        `noun`?: string
-      }
-    };
+    `paging`?: WithStreams;
     `note`?: string;
-    `protocolEndpoints`?: ({
-      `name`?: string;
-      `methods`?: StringOrString;
-      `url`?: string;
-      `route`?: string;
-      `transport`?: string;
-      `registered`?: boolean;
-      `listening`?: boolean
-    })[]
+    `protocolEndpoints`?: (WithNameMethodsUrlEtc72)[]
   }
 
 @component model `CaepApplication` {
@@ -7229,252 +1598,25 @@ namespace IyaSts.Api.Console {
     `autoEmit`?: boolean;
     `autoEmitActs`?: (string)[];
     `omitEventTimestamp`?: boolean;
-    `eventTypes`?: ({
-      `uri`?: string;
-      `name`?: string;
-      `short`?: string;
-      `family`?: string;
-      `subject`?: BooleanOrStringOrNull;
-      `what`?: string;
-      `offered`?: boolean;
-      `members`?: ({
-        `name`?: string;
-        `required`?: BooleanOrStringOrNull;
-        `what`?: string;
-        `type`?: NullableString;
-        `values`?: (string)[]
-      })[];
-      `required`?: (string)[];
-      `subjectFormats`?: (string)[];
-      `deprecated`?: string
-    })[];
+    `eventTypes`?: (WithUriNameShortEtc11)[];
     `totals`?: Record<numeric>;
-    `sessions`?: ({
-      `sessionId`?: string;
-      `sub`?: NullableString;
-      `username`?: NullableString;
-      `iss`?: NullableString;
-      `protocol`?: NullableString;
-      `establishedAt`?: NullOrStringOrNumeric;
-      `updatedAt`?: NullOrStringOrNumeric;
-      `state`?: NullableString;
-      `acr`?: NullableString;
-      `amr`?: (string)[];
-      `assurance`?: {`namespace`?: string; `level`?: string; `previousLevel`?: string};
-      `compliance`?: NullableString;
-      `risk`?: {`level`?: string; `previousLevel`?: string; `reason`?: string};
-      @js(#{
-        `x-free-form`:"The claims a `token-claims-change` event said changed: whichever a person configured or an emitter named.",
-        `description`:"The claims a `token-claims-change` event said changed: whichever a person configured or an emitter named."
-      }) `claims`?: unknown;
-      `credentials`?: ({
-        `at`?: string;
-        `credentialType`?: string;
-        `changeType`?: string;
-        `friendlyName`?: string
-      })[];
-      `counts`?: Record<numeric>;
-      `total`?: integer;
-      `events`?: ({
-        `jti`?: string;
-        `uri`?: string;
-        `name`?: string;
-        `at`?: string;
-        `streamId`?: string;
-        `warnings`?: (string)[]
-      })[];
-      `streams`?: (string)[];
-      `notes`?: (string)[];
-      `subject`?: string
-    })[];
+    `sessions`?: (WithSessionIdSubUsernameEtc23)[];
     `tracked`?: integer;
     `cap`?: numeric;
     `issuer`?: string;
     `ssfEnabled`?: boolean;
-    `applications`?: ({
-      `identifier`?: string;
-      `name`?: NullableString;
-      `registered`?: boolean;
-      `declared`?: boolean;
-      `dn`?: string;
-      `endpoints`?: (string)[];
-      `streams`?: (string)[];
-      `streamCount`?: integer;
-      `enabled`?: integer;
-      `deliveries`?: (string)[];
-      `audiences`?: (string)[];
-      `takes`?: (string)[];
-      `counts`?: Record<numeric>;
-      `total`?: integer;
-      `sessions`?: integer;
-      `accounts`?: integer;
-      `queued`?: integer;
-      `delivered`?: integer;
-      `failed`?: integer;
-      `acknowledged`?: integer;
-      `receiverErrors`?: integer;
-      `lastPushAt`?: NullOrStringOrNumeric;
-      `lastPushError`?: NullableString
-    })[];
-    `streams`?: ({
-      `stream_id`?: string;
-      `aud`?: NullOrStringOrString;
-      `status`?: string;
-      `delivery`?: string;
-      `subjects`?: integer;
-      `takes`?: (string)[]
-    })[];
-    `catalogue`?: ({
-      `uri`?: string;
-      `name`?: string;
-      `short`?: string;
-      `family`?: string;
-      `subject`?: BooleanOrStringOrNull;
-      `what`?: string;
-      `offered`?: boolean;
-      `members`?: ({
-        `name`?: string;
-        `required`?: BooleanOrStringOrNull;
-        `what`?: string;
-        `type`?: NullableString;
-        `values`?: (string)[]
-      })[];
-      `required`?: (string)[];
-      `subjectFormats`?: (string)[];
-      `deprecated`?: string
-    })[];
+    `applications`?: (WithIdentifierNameRegisteredEtc23)[];
+    `streams`?: (WithStreamIdAudStatusEtc6)[];
+    `catalogue`?: (WithUriNameShortEtc11)[];
     `settings`?: NullableObject61;
-    `filter`?: {
-      `sessions`?: NullableString;
-      `applications`?: NullableString
-    };
-    `paging`?: {
-      `sessions`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `perPage`?: integer;
-        `firstRow`?: integer;
-        `lastRow`?: integer;
-        `total`?: integer;
-        `param`?: string;
-        `noun`?: string
-      };
-      `applications`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `perPage`?: integer;
-        `firstRow`?: integer;
-        `lastRow`?: integer;
-        `total`?: integer;
-        `param`?: string;
-        `noun`?: string
-      };
-      `streams`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `perPage`?: integer;
-        `firstRow`?: integer;
-        `lastRow`?: integer;
-        `total`?: integer;
-        `param`?: string;
-        `noun`?: string
-      };
-      `events`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `perPage`?: integer;
-        `firstRow`?: integer;
-        `lastRow`?: integer;
-        `total`?: integer;
-        `param`?: string;
-        `noun`?: string
-      }
-    };
-    `shown`?: {
-      `sessions`?: ({
-        `sessionId`?: string;
-        `sub`?: NullableString;
-        `username`?: NullableString;
-        `iss`?: NullableString;
-        `protocol`?: NullableString;
-        `establishedAt`?: NullOrStringOrNumeric;
-        `updatedAt`?: NullOrStringOrNumeric;
-        `state`?: NullableString;
-        `acr`?: NullableString;
-        `amr`?: (string)[];
-        `assurance`?: {`namespace`?: string; `level`?: string; `previousLevel`?: string};
-        `compliance`?: NullableString;
-        `risk`?: {`level`?: string; `previousLevel`?: string; `reason`?: string};
-        @js(#{
-          `x-free-form`:"The claims a `token-claims-change` event said changed: whichever a person configured or an emitter named.",
-          `description`:"The claims a `token-claims-change` event said changed: whichever a person configured or an emitter named."
-        }) `claims`?: unknown;
-        `credentials`?: ({
-          `at`?: string;
-          `credentialType`?: string;
-          `changeType`?: string;
-          `friendlyName`?: string
-        })[];
-        `counts`?: Record<numeric>;
-        `total`?: integer;
-        `events`?: ({
-          `jti`?: string;
-          `uri`?: string;
-          `name`?: string;
-          `at`?: string;
-          `streamId`?: string;
-          `warnings`?: (string)[]
-        })[];
-        `streams`?: (string)[];
-        `notes`?: (string)[];
-        `subject`?: string
-      })[];
-      `applications`?: ({
-        `identifier`?: string;
-        `name`?: NullableString;
-        `registered`?: boolean;
-        `declared`?: boolean;
-        `dn`?: string;
-        `endpoints`?: (string)[];
-        `streams`?: (string)[];
-        `streamCount`?: integer;
-        `enabled`?: integer;
-        `deliveries`?: (string)[];
-        `audiences`?: (string)[];
-        `takes`?: (string)[];
-        `counts`?: Record<numeric>;
-        `total`?: integer;
-        `sessions`?: integer;
-        `accounts`?: integer;
-        `queued`?: integer;
-        `delivered`?: integer;
-        `failed`?: integer;
-        `acknowledged`?: integer;
-        `receiverErrors`?: integer;
-        `lastPushAt`?: NullOrStringOrNumeric;
-        `lastPushError`?: NullableString
-      })[];
-      `streams`?: ({
-        `stream_id`?: string;
-        `aud`?: NullOrStringOrString;
-        `status`?: string;
-        `delivery`?: string;
-        `subjects`?: integer;
-        `takes`?: (string)[]
-      })[]
-    };
-    `matched`?: {`sessions`?: integer; `applications`?: integer; `streams`?: integer};
-    `streamCounts`?: {`total`?: integer; `taking`?: integer};
+    `filter`?: WithSessionsApplications;
+    `paging`?: WithSessionsApplicationsStreamsEtc4;
+    `shown`?: WithSessionsApplicationsStreams2;
+    `matched`?: WithSessionsApplicationsStreams;
+    `streamCounts`?: WithTotalTaking;
     `id`?: string;
     `session`?: NullableObject104;
-    `events`?: ({
-      `jti`?: string;
-      `uri`?: string;
-      `name`?: string;
-      `at`?: string;
-      `streamId`?: string;
-      `warnings`?: (string)[]
-    })[]
+    `events`?: (WithJtiUriNameEtc6)[]
   }
 
 @component model `Risc` {
@@ -7487,265 +1629,31 @@ namespace IyaSts.Api.Console {
     `googleSubjectType`?: boolean;
     `subjectFormat`?: string;
     `omitEventTimestamp`?: boolean;
-    `eventTypes`?: ({
-      `uri`?: string;
-      `name`?: string;
-      `short`?: string;
-      `family`?: string;
-      `subject`?: BooleanOrStringOrNull;
-      `what`?: string;
-      `offered`?: boolean;
-      `members`?: ({
-        `name`?: string;
-        `required`?: BooleanOrStringOrNull;
-        `what`?: string;
-        `type`?: NullableString;
-        `values`?: (string)[]
-      })[];
-      `required`?: (string)[];
-      `subjectFormats`?: (string)[];
-      `deprecated`?: string
-    })[];
+    `eventTypes`?: (WithUriNameShortEtc11)[];
     `optStates`?: (string)[];
     `lifecycleStates`?: (string)[];
     `totals`?: Record<numeric>;
-    `accounts`?: ({
-      `accountId`?: string;
-      `sub`?: NullableString;
-      `username`?: NullableString;
-      `iss`?: NullableString;
-      `dn`?: NullableString;
-      `realm`?: NullableString;
-      `email`?: NullableString;
-      `phone`?: NullableString;
-      `formerIdentifiers`?: (string)[];
-      `createdAt`?: NullOrStringOrNumeric;
-      `updatedAt`?: NullOrStringOrNumeric;
-      `lifecycle`?: NullableString;
-      `kind`?: string;
-      `application`?: string;
-      `serviceAccount`?: boolean;
-      `optOut`?: NullableString;
-      `optOutApplies`?: boolean;
-      `credentialStanding`?: NullableString;
-      `credentialChangeRequired`?: boolean;
-      `recoveryActivated`?: boolean;
-      `identifierChanges`?: ({`at`?: string; `from`?: string; `to`?: string})[];
-      `credentials`?: ({`at`?: string; `credentialType`?: string; `discoveredAt`?: numeric})[];
-      `counts`?: Record<numeric>;
-      `total`?: integer;
-      `suppressed`?: integer;
-      `events`?: ({
-        `jti`?: string;
-        `uri`?: string;
-        `name`?: string;
-        `at`?: string;
-        `streamId`?: string;
-        `warnings`?: (string)[]
-      })[];
-      `streams`?: (string)[];
-      `notes`?: (string)[];
-      `subject`?: string
-    })[];
+    `accounts`?: (WithAccountIdSubUsernameEtc29)[];
     `tracked`?: integer;
     `cap`?: numeric;
     `issuer`?: string;
     `ssfEnabled`?: boolean;
-    `applications`?: ({
-      `identifier`?: string;
-      `name`?: NullableString;
-      `registered`?: boolean;
-      `declared`?: boolean;
-      `dn`?: string;
-      `endpoints`?: (string)[];
-      `streams`?: (string)[];
-      `streamCount`?: integer;
-      `enabled`?: integer;
-      `deliveries`?: (string)[];
-      `audiences`?: (string)[];
-      `takes`?: (string)[];
-      `counts`?: Record<numeric>;
-      `total`?: integer;
-      `sessions`?: integer;
-      `accounts`?: integer;
-      `queued`?: integer;
-      `delivered`?: integer;
-      `failed`?: integer;
-      `acknowledged`?: integer;
-      `receiverErrors`?: integer;
-      `lastPushAt`?: NullOrStringOrNumeric;
-      `lastPushError`?: NullableString
-    })[];
-    `streams`?: ({
-      `stream_id`?: string;
-      `aud`?: NullOrStringOrString;
-      `status`?: string;
-      `delivery`?: string;
-      `subjects`?: integer;
-      `takes`?: (string)[]
-    })[];
-    `catalogue`?: ({
-      `uri`?: string;
-      `name`?: string;
-      `short`?: string;
-      `family`?: string;
-      `subject`?: BooleanOrStringOrNull;
-      `what`?: string;
-      `offered`?: boolean;
-      `members`?: ({
-        `name`?: string;
-        `required`?: BooleanOrStringOrNull;
-        `what`?: string;
-        `type`?: NullableString;
-        `values`?: (string)[]
-      })[];
-      `required`?: (string)[];
-      `subjectFormats`?: (string)[];
-      `deprecated`?: string
-    })[];
+    `applications`?: (WithIdentifierNameRegisteredEtc23)[];
+    `streams`?: (WithStreamIdAudStatusEtc6)[];
+    `catalogue`?: (WithUriNameShortEtc11)[];
     `settings`?: NullableObject61;
-    `filter`?: {
-      `accounts`?: NullableString;
-      `applications`?: NullableString
-    };
-    `paging`?: {
-      `accounts`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `perPage`?: integer;
-        `firstRow`?: integer;
-        `lastRow`?: integer;
-        `total`?: integer;
-        `param`?: string;
-        `noun`?: string
-      };
-      `applications`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `perPage`?: integer;
-        `firstRow`?: integer;
-        `lastRow`?: integer;
-        `total`?: integer;
-        `param`?: string;
-        `noun`?: string
-      };
-      `streams`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `perPage`?: integer;
-        `firstRow`?: integer;
-        `lastRow`?: integer;
-        `total`?: integer;
-        `param`?: string;
-        `noun`?: string
-      };
-      `events`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `perPage`?: integer;
-        `firstRow`?: integer;
-        `lastRow`?: integer;
-        `total`?: integer;
-        `param`?: string;
-        `noun`?: string
-      }
-    };
-    `shown`?: {
-      `accounts`?: ({
-        `accountId`?: string;
-        `sub`?: NullableString;
-        `username`?: NullableString;
-        `iss`?: NullableString;
-        `dn`?: NullableString;
-        `realm`?: NullableString;
-        `email`?: NullableString;
-        `phone`?: NullableString;
-        `formerIdentifiers`?: (string)[];
-        `createdAt`?: NullOrStringOrNumeric;
-        `updatedAt`?: NullOrStringOrNumeric;
-        `lifecycle`?: NullableString;
-        `kind`?: string;
-        `application`?: string;
-        `serviceAccount`?: boolean;
-        `optOut`?: NullableString;
-        `optOutApplies`?: boolean;
-        `credentialStanding`?: NullableString;
-        `credentialChangeRequired`?: boolean;
-        `recoveryActivated`?: boolean;
-        `identifierChanges`?: ({`at`?: string; `from`?: string; `to`?: string})[];
-        `credentials`?: ({`at`?: string; `credentialType`?: string; `discoveredAt`?: numeric})[];
-        `counts`?: Record<numeric>;
-        `total`?: integer;
-        `suppressed`?: integer;
-        `events`?: ({
-          `jti`?: string;
-          `uri`?: string;
-          `name`?: string;
-          `at`?: string;
-          `streamId`?: string;
-          `warnings`?: (string)[]
-        })[];
-        `streams`?: (string)[];
-        `notes`?: (string)[];
-        `subject`?: string
-      })[];
-      `applications`?: ({
-        `identifier`?: string;
-        `name`?: NullableString;
-        `registered`?: boolean;
-        `declared`?: boolean;
-        `dn`?: string;
-        `endpoints`?: (string)[];
-        `streams`?: (string)[];
-        `streamCount`?: integer;
-        `enabled`?: integer;
-        `deliveries`?: (string)[];
-        `audiences`?: (string)[];
-        `takes`?: (string)[];
-        `counts`?: Record<numeric>;
-        `total`?: integer;
-        `sessions`?: integer;
-        `accounts`?: integer;
-        `queued`?: integer;
-        `delivered`?: integer;
-        `failed`?: integer;
-        `acknowledged`?: integer;
-        `receiverErrors`?: integer;
-        `lastPushAt`?: NullOrStringOrNumeric;
-        `lastPushError`?: NullableString
-      })[];
-      `streams`?: ({
-        `stream_id`?: string;
-        `aud`?: NullOrStringOrString;
-        `status`?: string;
-        `delivery`?: string;
-        `subjects`?: integer;
-        `takes`?: (string)[]
-      })[]
-    };
-    `matched`?: {`accounts`?: integer; `applications`?: integer; `streams`?: integer};
-    `streamCounts`?: {`total`?: integer; `taking`?: integer};
+    `filter`?: WithAccountsApplications;
+    `paging`?: WithAccountsApplicationsStreamsEtc4;
+    `shown`?: WithAccountsApplicationsStreams2;
+    `matched`?: WithAccountsApplicationsStreams;
+    `streamCounts`?: WithTotalTaking;
     `id`?: string;
     `account`?: NullableObject105;
-    `events`?: ({
-      `jti`?: string;
-      `uri`?: string;
-      `name`?: string;
-      `at`?: string;
-      `streamId`?: string;
-      `warnings`?: (string)[]
-    })[]
+    `events`?: (WithJtiUriNameEtc6)[]
   }
 
 @component model `Scim` {
-    `protocolEndpoints`?: ({
-      `name`?: string;
-      `methods`?: StringOrString;
-      `url`?: string;
-      `route`?: string;
-      `transport`?: string;
-      `registered`?: boolean
-    })[];
+    `protocolEndpoints`?: (WithNameMethodsUrlEtc6)[];
     `installed`?: boolean;
     `enabled`?: boolean;
     `baseUrl`?: NullableString;
@@ -7753,108 +1661,21 @@ namespace IyaSts.Api.Console {
     `store`?: NullableObject106;
     `identifiers`?: NullableObject107;
     `authentication`?: NullableObject108;
-    `endpoints`?: ({`method`?: string; `path`?: string; `what`?: string})[];
+    `endpoints`?: (WithMethodPathWhat)[];
     `doesNotDo`?: (string)[];
-    `reachableNegatives`?: ({`what`?: string; `answer`?: string})[];
-    `mapping`?: {
-      `user`?: ({
-        `scim`?: string;
-        `ldap`?: NullableString;
-        `kind`?: NullableString;
-        `type`?: NullableString;
-        `parent`?: NullableString;
-        `extension`?: boolean;
-        `readOnly`?: boolean;
-        `required`?: boolean;
-        `schema`?: string;
-        `note`?: string
-      })[];
-      `group`?: ({
-        `scim`?: string;
-        `ldap`?: NullableString;
-        `kind`?: NullableString;
-        `type`?: NullableString;
-        `parent`?: NullableString;
-        `extension`?: boolean;
-        `readOnly`?: boolean;
-        `required`?: boolean;
-        `schema`?: string;
-        `note`?: string
-      })[]
-    };
-    `counters`?: {
-      `total`?: numeric;
-      `ok`?: numeric;
-      `failed`?: numeric;
-      `firstAt`?: NumericOrStringOrNull;
-      `lastAt`?: NumericOrStringOrNull;
-      `operations`?: ({
-        `operation`?: string;
-        `label`?: string;
-        `method`?: string;
-        `what`?: string;
-        `count`?: numeric
-      })[];
-      `resourceTypes`?: ({
-        `resourceType`?: NullableString;
-        `count`?: numeric
-      })[];
-      @js(#{`description`:"A count per name."}) `byStatus`?: Record<numeric>;
-      @js(#{`description`:"A count per name."}) `byScimType`?: Record<numeric>;
-      @js(#{`description`:"A count per name."}) `byAuthScheme`?: Record<numeric>
-    };
+    `reachableNegatives`?: (WithWhatAnswer)[];
+    `mapping`?: WithUserGroup;
+    `counters`?: WithTotalOkFailedEtc13;
     `settings`?: NullableObject109;
     `scimClients`?: NullableObject110
   }
 
 @component model `Signals` {
     `status`?: NullableObject111;
-    `received`?: ({
-      `jti`?: string;
-      `at`?: NullOrStringOrNumeric;
-      `tokenDigest`?: string;
-      `surface`?: NullableString;
-      `stream`?: NullableString;
-      `name`?: string;
-      `types`?: (string)[];
-      `vocabulary`?: string;
-      `issuer`?: string;
-      `audience`?: string;
-      `audienceOk`?: boolean;
-      `subject`?: string;
-      @js(#{
-        `x-free-form`:"An event's body as this receiver took it in: each event type has its own members, and a refused delivery is held here too.",
-        `description`:"An event's body as this receiver took it in: each event type has its own members, and a refused delivery is held here too."
-      }) `payload`?: unknown;
-      `verified`?: boolean;
-      `verificationNote`?: NullableString;
-      `reactions`?: ({
-        `event`?: string;
-        `reaction`?: string;
-        `skipped`?: string;
-        `observed`?: boolean;
-        `ended`?: integer;
-        `revoked`?: integer;
-        `failed`?: boolean
-      })[];
-      `contentType`?: NullableString;
-      `correctMediaType`?: boolean;
-      `problem`?: string
-    })[];
+    `received`?: (WithJtiAtTokenDigestEtc21)[];
     `total`?: integer;
-    `filter`?: {`received`?: NullableString};
-    `paging`?: {
-      `received`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `perPage`?: integer;
-        `firstRow`?: integer;
-        `lastRow`?: integer;
-        `total`?: integer;
-        `param`?: string;
-        `noun`?: string
-      }
-    }
+    `filter`?: WithReceived;
+    `paging`?: WithReceived2
   }
 
 @component model `SsfDeadLetters` {
@@ -7864,250 +1685,29 @@ namespace IyaSts.Api.Console {
     `realm`?: string;
     `generatedAt`?: string;
     `pushDelivery`?: boolean;
-    `causes`?: ({
-      `id`?: string;
-      `label`?: string;
-      `code`?: string;
-      `what`?: string;
-      `count`?: integer
-    })[];
-    `totals`?: {
-      `held`?: integer;
-      `streamsHolding`?: integer;
-      `signed`?: integer;
-      `unsigned`?: integer;
-      `deadStreams`?: integer;
-      `halfOpenStreams`?: integer;
-      `failingStreams`?: integer;
-      `pushStreams`?: integer;
-      `oldestAt`?: string;
-      `newestAt`?: string;
-      `oldestAgeS`?: NullableNumber;
-      `newestAgeS`?: NullableNumber;
-      `deadLetteredEver`?: numeric
-    };
-    `timeline`?: {
-      `bucketS`?: numeric;
-      `windowS`?: numeric;
-      `from`?: string;
-      `to`?: string;
-      `buckets`?: ({
-        `start`?: string;
-        `startMs`?: numeric;
-        `total`?: integer;
-        `counts`?: Record<numeric>
-      })[];
-      `peak`?: integer;
-      `olderThanWindow`?: integer
-    };
-    `byCode`?: ({
-      `errorCode`?: string;
-      `count`?: integer;
-      `cause`?: string;
-      `summary`?: string
-    })[];
-    `byStatus`?: ({`status`?: numeric; `count`?: integer})[];
-    `byEventType`?: ({`type`?: string; `name`?: string; `count`?: integer})[];
-    `streams`?: ({
-      `stream_id`?: string;
-      `aud`?: NullOrStringOrString;
-      `endpoint_url`?: string;
-      `status`?: string;
-      `state`?: string;
-      `held`?: integer;
-      `causes`?: Record<numeric>;
-      `oldestAt`?: string;
-      `newestAt`?: string;
-      `deadLetteredEver`?: numeric;
-      `deadSince`?: string;
-      `failingSince`?: string;
-      `nextProbeAt`?: string;
-      `deadReason`?: string;
-      `lastPushError`?: string;
-      `lastPushAt`?: NullOrStringOrNumeric
-    })[];
-    `letters`?: ({
-      `stream_id`?: string;
-      `jti`?: string;
-      `queuedAt`?: NullOrStringOrNumeric;
-      `deadAt`?: NullOrStringOrNumeric;
-      `ageS`?: NullableNumber;
-      `cause`?: string;
-      `reason`?: string;
-      `errorCode`?: string;
-      `status`?: numeric;
-      `signed`?: boolean;
-      `streamKnown`?: boolean;
-      `event`?: NullableObject112
-    })[];
-    `settings`?: {
-      `retentionS`?: numeric;
-      `maxPerStream`?: numeric;
-      `deadStreamTimeoutS`?: numeric;
-      `sweepS`?: numeric;
-      `pushConcurrency`?: numeric;
-      `pushBacklog`?: numeric;
-      `pushRetries`?: numeric
-    };
-    `process`?: {
-      `pid`?: integer;
-      `thread`?: NullOrIntegerOrString;
-      `role`?: string;
-      `pushes`?: {
-        `active`?: integer;
-        `waiting`?: integer;
-        `concurrency`?: numeric;
-        `backlog`?: numeric
-      };
-      `sweeps`?: ({
-        `at`?: string;
-        `held`?: integer;
-        `letters`?: integer;
-        `expired`?: integer;
-        `orphaned`?: integer;
-        `trimmed`?: integer;
-        `deadStreams`?: integer;
-        `probes`?: integer
-      })[];
-      `sinceStart`?: {
-        `firstSweepAt`?: string;
-        `sweeps`?: numeric;
-        `letters`?: numeric;
-        `expired`?: numeric;
-        `orphaned`?: numeric;
-        `trimmed`?: numeric;
-        `probes`?: numeric
-      }
-    };
-    `filter`?: {
-      `q`?: NullableString;
-      `stream`?: NullableString;
-      `cause`?: NullableString
-    };
+    `causes`?: (WithIdLabelCodeEtc5)[];
+    `totals`?: WithHeldStreamsHoldingSignedEtc13;
+    `timeline`?: WithBucketSWindowSFromEtc7;
+    `byCode`?: (WithErrorCodeCountCauseEtc4)[];
+    `byStatus`?: (WithStatusCount)[];
+    `byEventType`?: (WithTypeNameCount)[];
+    `streams`?: (WithStreamIdAudEndpointUrlEtc16)[];
+    `letters`?: (WithStreamIdJtiQueuedAtEtc12)[];
+    `settings`?: WithRetentionSMaxPerStreamDeadStreamTimeoutSEtc7;
+    `process`?: WithPidThreadRoleEtc6;
+    `filter`?: WithQStreamCause;
     `matched`?: integer;
-    `paging`?: {
-      `letters`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `perPage`?: integer;
-        `firstRow`?: integer;
-        `lastRow`?: integer;
-        `total`?: integer;
-        `param`?: string;
-        `noun`?: string
-      };
-      `streams`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `perPage`?: integer;
-        `firstRow`?: integer;
-        `lastRow`?: integer;
-        `total`?: integer;
-        `param`?: string;
-        `noun`?: string
-      }
-    }
+    `paging`?: WithLettersStreams
   }
 
 @component model `ScimMonitor` {
     `installed`?: boolean;
     `enabled`?: boolean;
     `baseUrl`?: NullableString;
-    `schemes`?: ({
-      `id`?: string;
-      `type`?: string;
-      `canonical`?: boolean;
-      `name`?: string;
-      `enabled`?: boolean;
-      `refusedByMode`?: string;
-      `setting`?: string;
-      `primary`?: boolean;
-      `scoped`?: boolean;
-      `applicationScoped`?: boolean;
-      `recorded`?: boolean;
-      `challenged`?: boolean;
-      `spec`?: string;
-      `specUri`?: string;
-      `description`?: string
-    })[];
+    `schemes`?: (WithIdTypeCanonicalEtc15)[];
     `authRequired`?: boolean;
     `store`?: NullableObject106;
-    `counters`?: {
-      `calls`?: numeric;
-      `ok`?: numeric;
-      `failed`?: numeric;
-      `successRate`?: NullableNumber;
-      `firstAt`?: NumericOrStringOrNull;
-      `lastAt`?: NumericOrStringOrNull;
-      `since`?: NumericOrStringOrNull;
-      `latency`?: {
-        `totalMs`?: numeric;
-        `averageMs`?: NullableNumber;
-        `maxMs`?: numeric
-      };
-      `bytesOut`?: numeric;
-      `authentication`?: {
-        `distinct`?: numeric;
-        `applications`?: numeric;
-        `identities`?: numeric;
-        `anonymous`?: numeric;
-        `refused`?: numeric;
-        `capped`?: boolean;
-        `cap`?: numeric;
-        @js(#{`description`:"A count per name."}) `byScheme`?: Record<numeric>
-      };
-      `operations`?: ({
-        `operation`?: string;
-        `label`?: string;
-        `method`?: string;
-        `what`?: string;
-        `count`?: numeric;
-        `ok`?: numeric;
-        `failed`?: numeric;
-        `averageMs`?: NullableNumber;
-        `maxMs`?: NullableNumber;
-        `bytes`?: numeric
-      })[];
-      `resourceTypes`?: ({
-        `resourceType`?: NullableString;
-        `count`?: numeric
-      })[];
-      @js(#{`description`:"A count per name."}) `byStatus`?: Record<numeric>;
-      @js(#{`description`:"A count per name."}) `byStatusClass`?: Record<numeric>;
-      @js(#{`description`:"A count per name."}) `byScimType`?: Record<numeric>;
-      `clients`?: ({
-        `principal`?: NullableString;
-        `kind`?: NullableString;
-        `calls`?: numeric;
-        `ok`?: numeric;
-        `failed`?: numeric;
-        `schemes`?: (string)[];
-        `resourceTypes`?: (string)[];
-        `firstAt`?: NumericOrStringOrNull;
-        `lastAt`?: NumericOrStringOrNull;
-        `lastOperation`?: NullableString;
-        `lastStatus`?: NumericOrStringOrNull
-      })[];
-      `recent`?: ({
-        `at`?: NumericOrStringOrNull;
-        `operation`?: NullableString;
-        `resourceType`?: NullableString;
-        `status`?: NumericOrStringOrNull;
-        `ok`?: boolean;
-        `scimType`?: NullableString;
-        `scheme`?: NullableString;
-        `principal`?: NullableString;
-        `ms`?: NullableNumber;
-        `bytes`?: NullableNumber;
-        `method`?: NullableString;
-        `path`?: NullableString
-      })[];
-      `recentCap`?: numeric;
-      `realm`?: {
-        `id`?: NullableString;
-        `name`?: NullableString
-      }
-    }
+    `counters`?: WithCallsOkFailedEtc22
   }
 
 @js(#{
@@ -8237,955 +1837,35 @@ namespace IyaSts.Api.Console {
     `byMode`?: Record<integer>;
     `byOutcome`?: Record<integer>;
     `byProtocol`?: Record<integer>;
-    `filter`?: {
-      `type`?: NullableString;
-      `mode`?: NullableString;
-      `outcome`?: NullableString;
-      `protocol`?: NullableString;
-      `q`?: NullableString
-    };
+    `filter`?: WithTypeModeOutcomeEtc5;
     `page`?: integer;
     `pages`?: integer;
     `perPage`?: integer;
     `firstRow`?: integer;
     `lastRow`?: integer;
-    `types`?: ({
-      `type`?: string;
-      `protocol`?: string;
-      `mode`?: string;
-      `label`?: string;
-      `spec`?: string;
-      `policed`?: boolean;
-      `what`?: string
-    })[];
-    `modes`?: ({`mode`?: string; `label`?: string; `what`?: string})[];
+    `types`?: (WithTypeProtocolModeEtc7)[];
+    `modes`?: (WithModeLabelWhat)[];
     `outcomes`?: (string)[];
-    `roles`?: ({`role`?: string; `label`?: string; `what`?: string})[];
-    `acts`?: ({
-      `seq`?: numeric;
-      `origin`?: string;
-      `at`?: NullableNumber;
-      `protocol`?: string;
-      `type`?: string;
-      `typeLabel`?: string;
-      `mode`?: string;
-      `spec`?: string;
-      `policed`?: boolean;
-      `outcome`?: string;
-      `initial`?: {
-        `key`?: string;
-        `presented`?: string;
-        `application`?: string;
-        `what`?: string
-      };
-      `intermediary`?: {
-        `key`?: string;
-        `presented`?: string;
-        `application`?: string;
-        `what`?: string
-      };
-      `target`?: {
-        `key`?: string;
-        `presented`?: string;
-        `application`?: string;
-        `what`?: string
-      };
-      `authorizedBy`?: string;
-      `reason`?: string;
-      `consumed`?: ({`kind`?: string; `identifier`?: string; `note`?: string})[];
-      `produced`?: ({`kind`?: string; `identifier`?: string; `note`?: string})[];
-      `sessionId`?: string;
-      `note`?: string;
-      `chainKey`?: string
-    })[];
-    `chains`?: ({
-      `chainKey`?: string;
-      `protocol`?: string;
-      `type`?: string;
-      `typeLabel`?: string;
-      `mode`?: string;
-      `initial`?: {
-        `key`?: string;
-        `presented`?: string;
-        `application`?: string;
-        `what`?: string
-      };
-      `intermediary`?: {
-        `key`?: string;
-        `presented`?: string;
-        `application`?: string;
-        `what`?: string
-      };
-      `target`?: {
-        `key`?: string;
-        `presented`?: string;
-        `application`?: string;
-        `what`?: string
-      };
-      `acts`?: integer;
-      `issued`?: integer;
-      `refused`?: integer;
-      `firstAt`?: NullableNumber;
-      `lastAt`?: NullableNumber;
-      `authorizedBy`?: string;
-      `reason`?: string
-    })[];
-    `applications`?: ({
-      `key`?: string;
-      `identifier`?: string;
-      `spellings`?: (string)[];
-      `roles`?: {`initial`?: numeric; `intermediary`?: numeric; `target`?: numeric};
-      `protocols`?: (string)[];
-      `acts`?: integer;
-      `issued`?: integer;
-      `refused`?: integer;
-      `credentials`?: integer;
-      `firstAt`?: NullableNumber;
-      `lastAt`?: NullableNumber;
-      `identityKey`?: string;
-      `chains`?: integer
-    })[];
-    `graph`?: {
-      `realm`?: {
-        `id`?: string;
-        `name`?: NullableString;
-        `isDefault`?: boolean
-      };
-      `issuer`?: string;
-      `nodes`?: ({
-        `id`?: string;
-        `kind`?: string;
-        `key`?: string;
-        `presented`?: string;
-        `application`?: string;
-        `aliases`?: (string)[];
-        `what`?: string;
-        `roles`?: {`initial`?: numeric; `intermediary`?: numeric; `target`?: numeric};
-        `protocols`?: (string)[];
-        `acts`?: integer;
-        `issued`?: integer;
-        `refused`?: integer;
-        `firstAt`?: NullableNumber;
-        `lastAt`?: NullableNumber;
-        `selfTarget`?: boolean;
-        `chiefRole`?: string;
-        `realm`?: {
-          `id`?: string;
-          `name`?: NullableString;
-          `isDefault`?: boolean
-        };
-        `issuer`?: string;
-        `credentials`?: integer;
-        `flows`?: (string)[];
-        `authentications`?: integer;
-        `isSubject`?: boolean;
-        `isClient`?: boolean;
-        `kinds`?: (string)[];
-        `grants`?: integer;
-        `exposes`?: integer;
-        `dangling`?: integer
-      })[];
-      `edges`?: ({
-        `id`?: string;
-        `from`?: string;
-        `to`?: string;
-        `fromRole`?: string;
-        `toRole`?: string;
-        `relation`?: string;
-        `skipped`?: (string)[];
-        `chainKey`?: string;
-        `protocol`?: NullableString;
-        `protocols`?: (string)[];
-        `type`?: NullableString;
-        `typeLabel`?: NullableString;
-        `mode`?: string;
-        `spec`?: NullableString;
-        `policed`?: boolean;
-        `subject`?: NullableString;
-        `actor`?: NullableString;
-        `acts`?: integer;
-        `issued`?: integer;
-        `refused`?: integer;
-        `credentials`?: integer;
-        `firstAt`?: NullableNumber;
-        `lastAt`?: NullableNumber;
-        `authorizedBy`?: string;
-        `reason`?: string;
-        `consumed`?: ({
-          `kind`?: string;
-          `count`?: integer;
-          `identifiers`?: (string)[];
-          `moreIdentifiers`?: integer;
-          `notes`?: (string)[]
-        })[];
-        `produced`?: ({
-          `kind`?: string;
-          `count`?: integer;
-          `identifiers`?: (string)[];
-          `moreIdentifiers`?: integer;
-          `notes`?: (string)[]
-        })[];
-        `consumedFold`?: Record<{
-          `kind`?: string;
-          `count`?: integer;
-          `identifiers`?: (string)[];
-          `moreIdentifiers`?: integer;
-          `notes`?: (string)[]
-        }>;
-        `producedFold`?: Record<{
-          `kind`?: string;
-          `count`?: integer;
-          `identifiers`?: (string)[];
-          `moreIdentifiers`?: integer;
-          `notes`?: (string)[]
-        }>;
-        `attribute`?: string;
-        `mechanism`?: string;
-        `setOn`?: string;
-        `used`?: boolean;
-        `authentications`?: ({
-          `protocol`?: string;
-          `method`?: string;
-          `count`?: integer;
-          `at`?: NullableNumber;
-          `lastAt`?: NullableNumber
-        })[];
-        `audience`?: string;
-        `audienceRegistered`?: boolean;
-        `permissions`?: (string)[];
-        `scopes`?: (string)[];
-        `permissionId`?: string;
-        `permissionName`?: string;
-        `baseUri`?: NullableString;
-        `description`?: NullableString;
-        `asked`?: boolean
-      })[];
-      `tokens`?: ({
-        `seq`?: numeric;
-        `at`?: NullableNumber;
-        `kind`?: string;
-        `identifier`?: string;
-        `note`?: string;
-        `protocol`?: string;
-        `type`?: string;
-        `typeLabel`?: string;
-        `mode`?: string;
-        `chainKey`?: string;
-        `subject`?: NullableString;
-        `actor`?: NullableString;
-        `target`?: NullableString
-      })[];
-      `tokensLeftOff`?: integer;
-      `maxTokenRows`?: integer;
-      `acts`?: integer;
-      `chains`?: integer;
-      `credentials`?: ({
-        `at`?: NullableNumber;
-        `family`?: string;
-        `kind`?: string;
-        `identifier`?: string;
-        `flow`?: string;
-        `flowLabel`?: NullableString;
-        `flowProtocol`?: NullableString;
-        `flowSpec`?: NullableString;
-        `flowOidc`?: NullableString;
-        `flowStated`?: boolean;
-        `holder`?: string;
-        `audience`?: string;
-        `scope`?: string;
-        `issuer`?: string;
-        `state`?: NullableString;
-        `sessionId`?: string;
-        `revocable`?: boolean;
-        `revoked`?: boolean;
-        `detail`?: string;
-        `expiresAtMs`?: NullableNumber
-      })[];
-      `credentialsOnDelegationLines`?: integer;
-      `subject`?: string;
-      `counts`?: {`nodes`?: integer; `edges`?: integer; `grants`?: integer}
-    };
-    `policy`?: {
-      `pairs`?: ({
-        `mechanism`?: string;
-        `type`?: string;
-        `frontEnd`?: string;
-        `target`?: string;
-        `realm`?: string;
-        `attribute`?: string;
-        `setOn`?: string;
-        `setOnRole`?: string;
-        `requires`?: string;
-        `targetKnown`?: boolean;
-        `warning`?: string;
-        `note`?: string
-      })[];
-      `accounts`?: ({
-        `principal`?: string;
-        `realm`?: string;
-        `notDelegated`?: boolean;
-        `trustedToAuthenticateForDelegation`?: boolean;
-        `okAsDelegate`?: boolean;
-        `autoCreated`?: boolean;
-        `description`?: string;
-        `effects`?: (string)[]
-      })[]
-    };
-    `allowed`?: {
-      `resources`?: ({
-        `identifier`?: string;
-        `name`?: string;
-        `baseUri`?: NullableString;
-        `rawBaseUri`?: string;
-        `permissions`?: ({
-          `name`?: NullableString;
-          `description`?: NullableString;
-          `id`?: NullableString;
-          `raw`?: NullableString;
-          `grantedTo`?: ({`identifier`?: string; `name`?: string; `asked`?: boolean})[]
-        })[];
-        `grantsHeld`?: integer
-      })[];
-      `permissions`?: ({
-        `resource`?: string;
-        `resourceName`?: string;
-        `baseUri`?: NullableString;
-        `name`?: NullableString;
-        `description`?: NullableString;
-        `id`?: NullableString;
-        `raw`?: NullableString;
-        `grantedTo`?: ({`identifier`?: string; `name`?: string; `asked`?: boolean})[]
-      })[];
-      `grants`?: ({
-        `client`?: string;
-        `clientName`?: string;
-        `permissionId`?: string;
-        `resource`?: string;
-        `resourceName`?: string;
-        `baseUri`?: NullableString;
-        `permissionName`?: NullableString;
-        `description`?: NullableString;
-        `dangling`?: boolean;
-        `asked`?: boolean
-      })[];
-      `counts`?: {
-        `resources`?: integer;
-        `permissions`?: integer;
-        `unidentified`?: integer;
-        `grants`?: integer;
-        `dangling`?: integer;
-        `unused`?: integer;
-        `ungranted`?: integer;
-        `clients`?: integer
-      };
-      `graph`?: {
-        `realm`?: {
-          `id`?: string;
-          `name`?: NullableString;
-          `isDefault`?: boolean
-        };
-        `issuer`?: string;
-        `nodes`?: ({
-          `id`?: string;
-          `kind`?: string;
-          `key`?: string;
-          `presented`?: string;
-          `application`?: string;
-          `aliases`?: (string)[];
-          `what`?: string;
-          `roles`?: {`initial`?: numeric; `intermediary`?: numeric; `target`?: numeric};
-          `protocols`?: (string)[];
-          `acts`?: integer;
-          `issued`?: integer;
-          `refused`?: integer;
-          `firstAt`?: NullableNumber;
-          `lastAt`?: NullableNumber;
-          `selfTarget`?: boolean;
-          `chiefRole`?: string;
-          `realm`?: {
-            `id`?: string;
-            `name`?: NullableString;
-            `isDefault`?: boolean
-          };
-          `issuer`?: string;
-          `credentials`?: integer;
-          `flows`?: (string)[];
-          `authentications`?: integer;
-          `isSubject`?: boolean;
-          `isClient`?: boolean;
-          `kinds`?: (string)[];
-          `grants`?: integer;
-          `exposes`?: integer;
-          `dangling`?: integer
-        })[];
-        `edges`?: ({
-          `id`?: string;
-          `from`?: string;
-          `to`?: string;
-          `fromRole`?: string;
-          `toRole`?: string;
-          `relation`?: string;
-          `skipped`?: (string)[];
-          `chainKey`?: string;
-          `protocol`?: NullableString;
-          `protocols`?: (string)[];
-          `type`?: NullableString;
-          `typeLabel`?: NullableString;
-          `mode`?: string;
-          `spec`?: NullableString;
-          `policed`?: boolean;
-          `subject`?: NullableString;
-          `actor`?: NullableString;
-          `acts`?: integer;
-          `issued`?: integer;
-          `refused`?: integer;
-          `credentials`?: integer;
-          `firstAt`?: NullableNumber;
-          `lastAt`?: NullableNumber;
-          `authorizedBy`?: string;
-          `reason`?: string;
-          `consumed`?: ({
-            `kind`?: string;
-            `count`?: integer;
-            `identifiers`?: (string)[];
-            `moreIdentifiers`?: integer;
-            `notes`?: (string)[]
-          })[];
-          `produced`?: ({
-            `kind`?: string;
-            `count`?: integer;
-            `identifiers`?: (string)[];
-            `moreIdentifiers`?: integer;
-            `notes`?: (string)[]
-          })[];
-          `consumedFold`?: Record<{
-            `kind`?: string;
-            `count`?: integer;
-            `identifiers`?: (string)[];
-            `moreIdentifiers`?: integer;
-            `notes`?: (string)[]
-          }>;
-          `producedFold`?: Record<{
-            `kind`?: string;
-            `count`?: integer;
-            `identifiers`?: (string)[];
-            `moreIdentifiers`?: integer;
-            `notes`?: (string)[]
-          }>;
-          `attribute`?: string;
-          `mechanism`?: string;
-          `setOn`?: string;
-          `used`?: boolean;
-          `authentications`?: ({
-            `protocol`?: string;
-            `method`?: string;
-            `count`?: integer;
-            `at`?: NullableNumber;
-            `lastAt`?: NullableNumber
-          })[];
-          `audience`?: string;
-          `audienceRegistered`?: boolean;
-          `permissions`?: (string)[];
-          `scopes`?: (string)[];
-          `permissionId`?: string;
-          `permissionName`?: string;
-          `baseUri`?: NullableString;
-          `description`?: NullableString;
-          `asked`?: boolean
-        })[];
-        `tokens`?: ({
-          `seq`?: numeric;
-          `at`?: NullableNumber;
-          `kind`?: string;
-          `identifier`?: string;
-          `note`?: string;
-          `protocol`?: string;
-          `type`?: string;
-          `typeLabel`?: string;
-          `mode`?: string;
-          `chainKey`?: string;
-          `subject`?: NullableString;
-          `actor`?: NullableString;
-          `target`?: NullableString
-        })[];
-        `tokensLeftOff`?: integer;
-        `maxTokenRows`?: integer;
-        `acts`?: integer;
-        `chains`?: integer;
-        `credentials`?: ({
-          `at`?: NullableNumber;
-          `family`?: string;
-          `kind`?: string;
-          `identifier`?: string;
-          `flow`?: string;
-          `flowLabel`?: NullableString;
-          `flowProtocol`?: NullableString;
-          `flowSpec`?: NullableString;
-          `flowOidc`?: NullableString;
-          `flowStated`?: boolean;
-          `holder`?: string;
-          `audience`?: string;
-          `scope`?: string;
-          `issuer`?: string;
-          `state`?: NullableString;
-          `sessionId`?: string;
-          `revocable`?: boolean;
-          `revoked`?: boolean;
-          `detail`?: string;
-          `expiresAtMs`?: NullableNumber
-        })[];
-        `credentialsOnDelegationLines`?: integer;
-        `subject`?: string;
-        `counts`?: {`nodes`?: integer; `edges`?: integer; `grants`?: integer}
-      };
-      `filter`?: {
-        `permissions`?: NullableString;
-        `grants`?: NullableString
-      };
-      `paging`?: {
-        `permissions`?: {
-          `page`?: integer;
-          `pages`?: integer;
-          `perPage`?: integer;
-          `firstRow`?: integer;
-          `lastRow`?: integer;
-          `total`?: integer;
-          `param`?: NullableString;
-          `noun`?: NullableString
-        };
-        `grants`?: {
-          `page`?: integer;
-          `pages`?: integer;
-          `perPage`?: integer;
-          `firstRow`?: integer;
-          `lastRow`?: integer;
-          `total`?: integer;
-          `param`?: NullableString;
-          `noun`?: NullableString
-        }
-      }
-    };
-    `delegationPolicy`?: {
-      `enforced`?: boolean;
-      `attributes`?: Record<string>;
-      `protectedGroups`?: (string)[];
-      `pairs`?: ({
-        `mechanism`?: string;
-        `intermediary`?: string;
-        `target`?: string;
-        `targetApplication`?: NullableString;
-        `attribute`?: string;
-        `setOn`?: string;
-        `setOnRole`?: string;
-        `impersonates`?: boolean;
-        `subjectGroups`?: (string)[];
-        `targetKnown`?: boolean;
-        `warning`?: string
-      })[];
-      `pairsPaging`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `perPage`?: integer;
-        `firstRow`?: integer;
-        `lastRow`?: integer;
-        `total`?: integer;
-        `param`?: NullableString;
-        `noun`?: NullableString
-      };
-      `intermediaries`?: ({
-        `application`?: string;
-        `impersonates`?: boolean;
-        `semantics`?: (string)[];
-        `defaultSemantics`?: string;
-        `notDelegated`?: boolean;
-        `subjectGroups`?: (string)[]
-      })[];
-      `intermediariesPaging`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `perPage`?: integer;
-        `firstRow`?: integer;
-        `lastRow`?: integer;
-        `total`?: integer;
-        `param`?: NullableString;
-        `noun`?: NullableString
-      };
-      `people`?: ({
-        `username`?: string;
-        `dn`?: string;
-        `notDelegated`?: boolean;
-        `mayAct`?: string;
-        `semantics`?: (string)[];
-        `defaultSemantics`?: string
-      })[];
-      `peoplePaging`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `perPage`?: integer;
-        `firstRow`?: integer;
-        `lastRow`?: integer;
-        `total`?: integer;
-        `param`?: NullableString;
-        `noun`?: NullableString
-      }
-    };
+    `roles`?: (WithRoleLabelWhat)[];
+    `acts`?: (WithSeqOriginAtEtc20)[];
+    `chains`?: (WithChainKeyProtocolTypeEtc15)[];
+    `applications`?: (WithKeyIdentifierSpellingsEtc13)[];
+    `graph`?: WithRealmIssuerNodesEtc13;
+    `policy`?: WithPairsAccounts;
+    `allowed`?: WithResourcesPermissionsGrantsEtc7;
+    `delegationPolicy`?: WithEnforcedAttributesProtectedGroupsEtc9;
     `all`?: integer;
-    `paging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: NullableString;
-      `noun`?: NullableString
-    };
+    `paging`?: WithPagePagesPerPageEtc82;
     `delegationPerPage`?: integer;
-    `chainPage`?: {
-      `shown`?: ({
-        `chainKey`?: string;
-        `protocol`?: string;
-        `type`?: string;
-        `typeLabel`?: string;
-        `mode`?: string;
-        `initial`?: {
-          `key`?: string;
-          `presented`?: string;
-          `application`?: string;
-          `what`?: string
-        };
-        `intermediary`?: {
-          `key`?: string;
-          `presented`?: string;
-          `application`?: string;
-          `what`?: string
-        };
-        `target`?: {
-          `key`?: string;
-          `presented`?: string;
-          `application`?: string;
-          `what`?: string
-        };
-        `acts`?: integer;
-        `issued`?: integer;
-        `refused`?: integer;
-        `firstAt`?: NullableNumber;
-        `lastAt`?: NullableNumber;
-        `authorizedBy`?: string;
-        `reason`?: string
-      })[];
-      `paging`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `perPage`?: integer;
-        `firstRow`?: integer;
-        `lastRow`?: integer;
-        `total`?: integer;
-        `param`?: NullableString;
-        `noun`?: NullableString
-      }
-    };
-    `pairPage`?: {
-      `shown`?: ({
-        `mechanism`?: string;
-        `type`?: string;
-        `frontEnd`?: string;
-        `target`?: string;
-        `realm`?: string;
-        `attribute`?: string;
-        `setOn`?: string;
-        `setOnRole`?: string;
-        `requires`?: string;
-        `targetKnown`?: boolean;
-        `warning`?: string;
-        `note`?: string
-      })[];
-      `paging`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `perPage`?: integer;
-        `firstRow`?: integer;
-        `lastRow`?: integer;
-        `total`?: integer;
-        `param`?: NullableString;
-        `noun`?: NullableString
-      }
-    };
-    `flagPage`?: {
-      `shown`?: ({
-        `principal`?: string;
-        `realm`?: string;
-        `notDelegated`?: boolean;
-        `trustedToAuthenticateForDelegation`?: boolean;
-        `okAsDelegate`?: boolean;
-        `autoCreated`?: boolean;
-        `description`?: string;
-        `effects`?: (string)[]
-      })[];
-      `paging`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `perPage`?: integer;
-        `firstRow`?: integer;
-        `lastRow`?: integer;
-        `total`?: integer;
-        `param`?: NullableString;
-        `noun`?: NullableString
-      }
-    };
-    `mechanismPage`?: {
-      `shown`?: ({
-        `type`?: string;
-        `protocol`?: string;
-        `mode`?: string;
-        `label`?: string;
-        `spec`?: string;
-        `policed`?: boolean;
-        `what`?: string
-      })[];
-      `paging`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `perPage`?: integer;
-        `firstRow`?: integer;
-        `lastRow`?: integer;
-        `total`?: integer;
-        `param`?: NullableString;
-        `noun`?: NullableString
-      }
-    };
-    `applicationChooser`?: {
-      `total`?: integer;
-      `entries`?: ({
-        `key`?: string;
-        `names`?: (NullableString)[];
-        `label`?: string;
-        `detail`?: string;
-        `href`?: string
-      })[];
-      `slice`?: {`matched`?: integer; `from`?: integer};
-      `search`?: string;
-      `complete`?: boolean
-    };
-    `userChooser`?: {
-      `total`?: integer;
-      `entries`?: ({
-        `key`?: string;
-        `names`?: (NullableString)[];
-        `label`?: string;
-        `detail`?: string;
-        `href`?: string
-      })[];
-      `slice`?: {`matched`?: integer; `from`?: integer};
-      `search`?: string;
-      `complete`?: boolean
-    };
-    `permissionsView`?: {
-      `register`?: {
-        `resources`?: ({
-          `identifier`?: string;
-          `name`?: string;
-          `baseUri`?: NullableString;
-          `rawBaseUri`?: string;
-          `permissions`?: ({
-            `name`?: NullableString;
-            `description`?: NullableString;
-            `id`?: NullableString;
-            `raw`?: NullableString;
-            `grantedTo`?: ({`identifier`?: string; `name`?: string; `asked`?: boolean})[]
-          })[];
-          `grantsHeld`?: integer
-        })[];
-        `permissions`?: ({
-          `resource`?: string;
-          `resourceName`?: string;
-          `baseUri`?: NullableString;
-          `name`?: NullableString;
-          `description`?: NullableString;
-          `id`?: NullableString;
-          `raw`?: NullableString;
-          `grantedTo`?: ({`identifier`?: string; `name`?: string; `asked`?: boolean})[]
-        })[];
-        `grants`?: ({
-          `client`?: string;
-          `clientName`?: string;
-          `permissionId`?: string;
-          `resource`?: string;
-          `resourceName`?: string;
-          `baseUri`?: NullableString;
-          `permissionName`?: NullableString;
-          `description`?: NullableString;
-          `dangling`?: boolean;
-          `asked`?: boolean
-        })[];
-        `counts`?: {
-          `resources`?: integer;
-          `permissions`?: integer;
-          `unidentified`?: integer;
-          `grants`?: integer;
-          `dangling`?: integer;
-          `unused`?: integer;
-          `ungranted`?: integer;
-          `clients`?: integer
-        }
-      };
-      `listState`?: {
-        `permWanted`?: string;
-        `grantWanted`?: string;
-        `permPage`?: {
-          `shown`?: ({
-            `resource`?: string;
-            `resourceName`?: string;
-            `baseUri`?: NullableString;
-            `name`?: NullableString;
-            `description`?: NullableString;
-            `id`?: NullableString;
-            `raw`?: NullableString;
-            `grantedTo`?: ({`identifier`?: string; `name`?: string; `asked`?: boolean})[]
-          })[];
-          `paging`?: {
-            `page`?: integer;
-            `pages`?: integer;
-            `perPage`?: integer;
-            `firstRow`?: integer;
-            `lastRow`?: integer;
-            `total`?: integer;
-            `param`?: NullableString;
-            `noun`?: NullableString
-          }
-        };
-        `grantPage`?: {
-          `shown`?: ({
-            `client`?: string;
-            `clientName`?: string;
-            `permissionId`?: string;
-            `resource`?: string;
-            `resourceName`?: string;
-            `baseUri`?: NullableString;
-            `permissionName`?: NullableString;
-            `description`?: NullableString;
-            `dangling`?: boolean;
-            `asked`?: boolean
-          })[];
-          `paging`?: {
-            `page`?: integer;
-            `pages`?: integer;
-            `perPage`?: integer;
-            `firstRow`?: integer;
-            `lastRow`?: integer;
-            `total`?: integer;
-            `param`?: NullableString;
-            `noun`?: NullableString
-          }
-        }
-      };
-      `allApplications`?: ({`identifier`?: string; `name`?: string})[]
-    };
-    `exchangePolicyView`?: {
-      `register`?: {
-        `pairs`?: ({
-          `mechanism`?: string;
-          `intermediary`?: string;
-          `target`?: string;
-          `targetApplication`?: NullableString;
-          `attribute`?: string;
-          `setOn`?: string;
-          `setOnRole`?: string;
-          `impersonates`?: boolean;
-          `subjectGroups`?: (string)[];
-          `targetKnown`?: boolean;
-          `warning`?: string
-        })[];
-        `intermediaries`?: ({
-          `application`?: string;
-          `impersonates`?: boolean;
-          `semantics`?: (string)[];
-          `defaultSemantics`?: string;
-          `notDelegated`?: boolean;
-          `subjectGroups`?: (string)[]
-        })[];
-        `people`?: ({
-          `username`?: string;
-          `dn`?: string;
-          `notDelegated`?: boolean;
-          `mayAct`?: string;
-          `semantics`?: (string)[];
-          `defaultSemantics`?: string
-        })[];
-        `protectedGroups`?: (string)[];
-        `enforced`?: boolean;
-        `attributes`?: Record<string>
-      };
-      `pairs`?: {
-        `shown`?: ({
-          `mechanism`?: string;
-          `intermediary`?: string;
-          `target`?: string;
-          `targetApplication`?: NullableString;
-          `attribute`?: string;
-          `setOn`?: string;
-          `setOnRole`?: string;
-          `impersonates`?: boolean;
-          `subjectGroups`?: (string)[];
-          `targetKnown`?: boolean;
-          `warning`?: string
-        })[];
-        `paging`?: {
-          `page`?: integer;
-          `pages`?: integer;
-          `perPage`?: integer;
-          `firstRow`?: integer;
-          `lastRow`?: integer;
-          `total`?: integer;
-          `param`?: NullableString;
-          `noun`?: NullableString
-        }
-      };
-      `intermediaries`?: {
-        `shown`?: ({
-          `application`?: string;
-          `impersonates`?: boolean;
-          `semantics`?: (string)[];
-          `defaultSemantics`?: string;
-          `notDelegated`?: boolean;
-          `subjectGroups`?: (string)[]
-        })[];
-        `paging`?: {
-          `page`?: integer;
-          `pages`?: integer;
-          `perPage`?: integer;
-          `firstRow`?: integer;
-          `lastRow`?: integer;
-          `total`?: integer;
-          `param`?: NullableString;
-          `noun`?: NullableString
-        }
-      };
-      `people`?: {
-        `shown`?: ({
-          `username`?: string;
-          `dn`?: string;
-          `notDelegated`?: boolean;
-          `mayAct`?: string;
-          `semantics`?: (string)[];
-          `defaultSemantics`?: string
-        })[];
-        `paging`?: {
-          `page`?: integer;
-          `pages`?: integer;
-          `perPage`?: integer;
-          `firstRow`?: integer;
-          `lastRow`?: integer;
-          `total`?: integer;
-          `param`?: NullableString;
-          `noun`?: NullableString
-        }
-      }
-    };
-    `facts`?: {
-      `users`?: Record<boolean>;
-      `apps`?: Record<{`name`?: string; `dnLabel`?: string}>
-    }
+    `chainPage`?: WithShownPaging8;
+    `pairPage`?: WithShownPaging2;
+    `flagPage`?: WithShownPaging4;
+    `mechanismPage`?: WithShownPaging;
+    `applicationChooser`?: WithTotalEntriesSliceEtc5;
+    `userChooser`?: WithTotalEntriesSliceEtc5;
+    `permissionsView`?: WithRegisterListStateAllApplications;
+    `exchangePolicyView`?: WithRegisterPairsIntermediariesEtc4;
+    `facts`?: WithUsersAppsNameEtc4
   }
 
 @js(#{
@@ -9253,55 +1933,19 @@ namespace IyaSts.Api.Console {
     `byCategory`?: Record<numeric>;
     `byOutcome`?: Record<numeric>;
     `byAction`?: Record<numeric>;
-    `filter`?: {
-      `category`?: NullableString;
-      `action`?: NullableString;
-      `outcome`?: NullableString;
-      `actor`?: NullableString;
-      `q`?: NullableString;
-      `code`?: NullableString;
-      `address`?: NullableString
-    };
+    `filter`?: WithCategoryActionOutcomeEtc7;
     `page`?: integer;
     `pages`?: integer;
     `perPage`?: integer;
     `firstRow`?: integer;
     `lastRow`?: integer;
-    `categories`?: ({`category`?: string; `label`?: string; `what`?: string})[];
-    `actions`?: ({`action`?: string; `category`?: string; `label`?: string})[];
+    `categories`?: (WithCategoryLabelWhat)[];
+    `actions`?: (WithActionCategoryLabel)[];
     `outcomes`?: (string)[];
-    `events`?: ({
-      `seq`?: numeric;
-      `origin`?: NullableString;
-      `at`?: numeric;
-      `category`?: string;
-      `action`?: string;
-      `outcome`?: string;
-      `errorCode`?: NullableString;
-      `actor`?: string;
-      `actorForm`?: string;
-      `target`?: string;
-      `protocol`?: string;
-      `channel`?: string;
-      `address`?: string;
-      `summary`?: string;
-      @js(#{
-        `x-free-form`:"What this one kind of event recorded about its own act: several hundred call sites each name their members, and values are trimmed by `detailOf()`.",
-        `description`:"What this one kind of event recorded about its own act: several hundred call sites each name their members, and values are trimmed by `detailOf()`."
-      }) `detail`?: unknown
-    })[];
+    `events`?: (WithSeqOriginAtEtc172)[];
     @js(#{
       `description`:"Which page of how many, and the query parameter that moves it."
-    }) `paging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: string;
-      `noun`?: string
-    };
+    }) `paging`?: WithPagePagesPerPageEtc8;
     @js(#{`description`:"The actors on this page that are people known here."}) `knownActors`?: Record<boolean>;
     `settings`?: NullableObject113;
     `verifiesCredentials`?: boolean;
@@ -9373,7 +2017,7 @@ namespace IyaSts.Api.Console {
 
 @component model `SharedModel9` {
     `negotiated`?: `SharedModel10`;
-    `offered`?: ({`tag`?: string; `name`?: string})[];
+    `offered`?: (WithTagName)[];
     @js(#{`description`:"Each catalog along the chain, by language tag."}) `catalogs`?: Record<ListOfRecordString>;
     @js(#{`description`:"Each static catalog, by language tag."}) `catalogFiles`?: Record<string>
   }
@@ -9396,9 +2040,9 @@ namespace IyaSts.Api.Console {
 @component model `SharedModel15` {
     `id`?: string;
     `kind`?: string;
-    `realm`?: {`id`?: string; `name`?: string; `isDefault`?: boolean};
+    `realm`?: WithIdNameIsDefault;
     `issuer`?: string;
-    `roles`?: {`initial`?: integer; `intermediary`?: integer; `target`?: integer};
+    `roles`?: WithInitialIntermediaryTarget2;
     `acts`?: integer;
     `issued`?: integer;
     `refused`?: integer;
@@ -9523,7 +2167,7 @@ namespace IyaSts.Api.Console {
       `detail`?: string;
       `href`?: string
     })[];
-    `slice`?: {`matched`?: integer; `from`?: integer};
+    `slice`?: WithMatchedFrom;
     `search`?: "contains" | "exact";
     `complete`?: boolean
   }
@@ -9596,7 +2240,7 @@ namespace IyaSts.Api.Console {
     `description`?: string;
     `id`?: NullableString;
     `raw`?: string;
-    `grantedTo`?: ({`identifier`?: string; `name`?: string; `asked`?: boolean})[]
+    `grantedTo`?: (WithIdentifierNameAsked)[]
   }
 
 @component model `SharedModel30` is (`SharedModel31`)[];
@@ -9634,7 +2278,7 @@ namespace IyaSts.Api.Console {
   
 
 @component model `SharedModel34` {
-    `realm`?: {`id`?: string; `name`?: string; `isDefault`?: boolean};
+    `realm`?: WithIdNameIsDefault;
     `issuer`?: string;
     `nodes`?: `SharedModel14`;
     `edges`?: `SharedModel16`;
@@ -9643,7 +2287,7 @@ namespace IyaSts.Api.Console {
     `maxTokenRows`?: integer;
     `acts`?: integer;
     `chains`?: integer;
-    `counts`?: {`nodes`?: integer; `edges`?: integer; `grants`?: integer};
+    `counts`?: WithNodesEdgesGrants;
     `credentials`?: `SharedModel35`;
     `credentialsOnDelegationLines`?: integer;
     `subject`?: string
@@ -9654,7 +2298,7 @@ namespace IyaSts.Api.Console {
     `description`?: string;
     `id`?: NullableString;
     `raw`?: string;
-    `grantedTo`?: ({`identifier`?: string; `name`?: string; `asked`?: boolean})[]
+    `grantedTo`?: (WithIdentifierNameAsked)[]
   }
 
 @component model `SharedModel40` is (`SharedModel41`)[];
@@ -9704,13 +2348,7 @@ namespace IyaSts.Api.Console {
 @component model `SharedModel43` {
     `clusters`?: `SharedModel44`;
     @js(#{`description`:"Each application, to its group's key."}) `memberOf`?: Record<string>;
-    `counts`?: {
-      `clusters`?: integer;
-      `applications`?: integer;
-      `largest`?: integer;
-      `alone`?: integer;
-      `joined`?: integer
-    }
+    `counts`?: WithClustersApplicationsLargestEtc5
   }
 
 @component model `SharedModel46` {`shown`?: `SharedModel27`; `paging`?: `SharedModel29`}
@@ -9718,18 +2356,8 @@ namespace IyaSts.Api.Console {
 @component model `SharedModel47` {`shown`?: `SharedModel30`; `paging`?: `SharedModel29`}
 
 @component model `SharedModel49` {
-    `onlyWhileOn`?: ({
-      `setting`?: string;
-      `values`?: (string)[];
-      `on`?: boolean;
-      `canBeOn`?: boolean
-    })[];
-    `aloneWhileOn`?: ({
-      `setting`?: string;
-      `values`?: (string)[];
-      `on`?: boolean;
-      `canBeOn`?: boolean
-    })[]
+    `onlyWhileOn`?: (WithSettingValuesOnEtc4)[];
+    `aloneWhileOn`?: (WithSettingValuesOnEtc4)[]
   }
 
 @component model `SharedModel48` {
@@ -9772,28 +2400,13 @@ namespace IyaSts.Api.Console {
     `spec`?: string;
     `policed`?: boolean;
     `outcome`?: string;
-    `initial`?: {
-      `key`?: string;
-      `presented`?: string;
-      `application`?: string;
-      `what`?: string
-    };
-    `intermediary`?: {
-      `key`?: string;
-      `presented`?: string;
-      `application`?: string;
-      `what`?: string
-    };
-    `target`?: {
-      `key`?: string;
-      `presented`?: string;
-      `application`?: string;
-      `what`?: string
-    };
+    `initial`?: WithKeyPresentedApplicationEtc4;
+    `intermediary`?: WithKeyPresentedApplicationEtc4;
+    `target`?: WithKeyPresentedApplicationEtc4;
     `authorizedBy`?: string;
     `reason`?: string;
-    `consumed`?: ({`kind`?: string; `identifier`?: string; `note`?: string})[];
-    `produced`?: ({`kind`?: string; `identifier`?: string; `note`?: string})[];
+    `consumed`?: (WithKindIdentifierNote)[];
+    `produced`?: (WithKindIdentifierNote)[];
     `sessionId`?: string;
     `note`?: string;
     `chainKey`?: string
@@ -9887,11 +2500,11 @@ namespace IyaSts.Api.Console {
     `signatureAlgorithms`?: ({`id`?: string; `label`?: string; `weak`?: boolean; `kind`?: string})[];
     `signerLabel`?: string;
     `keystoreFormats`?: (string)[];
-    `keyUsageBits`?: ({`name`?: string; `what`?: string})[];
-    `extendedKeyUsages`?: ({`name`?: string; `oid`?: string})[];
+    `keyUsageBits`?: (WithNameWhat)[];
+    `extendedKeyUsages`?: (WithNameOid)[];
     `netscapeTypes`?: ({`name`?: string})[];
     `accessMethods`?: (string)[];
-    `dnFields`?: ({`attr`?: string; `field`?: string})[];
+    `dnFields`?: (WithAttrField)[];
     `issuers`?: `SharedModel58`;
     `objects`?: `SharedModel59`;
     `maxObjects`?: integer;
@@ -10036,7 +2649,7 @@ op `getConsoleShell`(`parameters/0/schema`: "files",
     `gate`?: get_admin_api_console_r200_application_json_gate_h1384;
     `navAuthority`?: string;
     @js(#{`description`:"Each role the gate names, by its id."}) `roleLabels`?: Record<string>;
-    `realm`?: {`id`?: string; `name`?: string};
+    `realm`?: WithIdName;
     `wsTrustIssuer`?: NullableString;
     `realms`?: get_admin_api_console_r200_application_json_realms_h1386;
     `realmRoot`?: string;
@@ -10051,8 +2664,8 @@ op `getConsoleShell`(`parameters/0/schema`: "files",
       `keyEncryptionKey`?: string;
       `databasePassword`?: string
     };
-    `persistence`?: {`enabled`?: boolean; `mode`?: string};
-    `version`?: {`version`?: string; `stamped`?: boolean; `buildInfo`?: string};
+    `persistence`?: WithEnabledMode;
+    `version`?: WithVersionStampedBuildInfo;
     `locale`?: `SharedModel9`
   },
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
@@ -10323,15 +2936,11 @@ op `getDelegationMap`(`parameters/0/schema`: "krb5-s4u2self" | "krb5-s4u2proxy-c
   @js(#{`minimum`:1}) `parameters/25/schema`: integer,
   `responses/200/content/image~1svg+xml/schema`: string,
   `responses/200/content/application~1json/schema`: {
-    `drawing`?: {
-      `width`?: numeric;
-      `height`?: numeric;
-      `failed`?: NullableString
-    };
+    `drawing`?: WithWidthHeightFailed;
     `looks`?: `SharedModel12`;
     `label`?: string;
     `svg`?: string;
-    `realm`?: {`id`?: string; `name`?: string; `isDefault`?: boolean};
+    `realm`?: WithIdNameIsDefault;
     `issuer`?: string;
     `nodes`?: `SharedModel14`;
     `edges`?: `SharedModel16`;
@@ -10340,13 +2949,7 @@ op `getDelegationMap`(`parameters/0/schema`: "krb5-s4u2self" | "krb5-s4u2proxy-c
     `maxTokenRows`?: integer;
     `acts`?: integer;
     `chains`?: integer;
-    `filter`?: {
-      `type`?: NullableString;
-      `mode`?: NullableString;
-      `outcome`?: NullableString;
-      `protocol`?: NullableString;
-      `q`?: NullableString
-    };
+    `filter`?: WithTypeModeOutcomeEtc5;
     `matched`?: integer;
     `held`?: integer;
     `summary`?: {
@@ -10365,16 +2968,8 @@ op `getDelegationMap`(`parameters/0/schema`: "krb5-s4u2self" | "krb5-s4u2proxy-c
       @js(#{`description`:"Acts per protocol."}) `byProtocol`?: Record<integer>
     };
     `all`?: integer;
-    `types`?: ({
-      `type`?: string;
-      `protocol`?: string;
-      `mode`?: string;
-      `label`?: string;
-      `spec`?: string;
-      `policed`?: boolean;
-      `what`?: string
-    })[];
-    `modes`?: ({`mode`?: string; `label`?: string; `what`?: string})[];
+    `types`?: (WithTypeProtocolModeEtc7)[];
+    `modes`?: (WithModeLabelWhat)[];
     `outcomes`?: (string)[];
     `applicationChooser`?: `SharedModel23`;
     `userChooser`?: `SharedModel23`;
@@ -10440,7 +3035,7 @@ op `getFederationMap`(`parameters/0/schema`: string,
   `parameters/3/schema`: "json" | "svg",
   `responses/200/content/image~1svg+xml/schema`: string,
   `responses/200/content/application~1json/schema`: {
-    `realm`?: {`id`?: string; `name`?: string; `isDefault`?: boolean};
+    `realm`?: WithIdNameIsDefault;
     `counts`?: {
       `relationships`?: integer;
       `serviceProvider`?: integer;
@@ -10513,23 +3108,11 @@ op `getFederationMap`(`parameters/0/schema`: string,
       `brokeredTo`?: string;
       `use`?: `SharedModel25`
     })[];
-    `drawing`?: {
-      `width`?: numeric;
-      `height`?: numeric;
-      `failed`?: NullableString
-    };
+    `drawing`?: WithWidthHeightFailed;
     `label`?: string;
     `svg`?: string;
-    `roles`?: ({`role`?: string; `label`?: string; `short`?: string; `what`?: string})[];
-    `protocols`?: ({
-      `protocol`?: string;
-      `label`?: string;
-      `family`?: string;
-      `what`?: string;
-      `needs`?: (string)[];
-      `spec`?: string;
-      `signalsOnly`?: boolean
-    })[];
+    `roles`?: (WithRoleLabelShortEtc4)[];
+    `protocols`?: (WithProtocolLabelFamilyEtc7)[];
     `mapKey`?: string
   },
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
@@ -10796,11 +3379,7 @@ op `getDelegationCluster`(`parameters/0/schema`: string,
   @js(#{`minimum`:1}) `parameters/26/schema`: integer,
   `responses/200/content/image~1svg+xml/schema`: string,
   `responses/200/content/application~1json/schema`: {
-    `drawing`?: {
-      `width`?: numeric;
-      `height`?: numeric;
-      `failed`?: NullableString
-    };
+    `drawing`?: WithWidthHeightFailed;
     `looks`?: `SharedModel12`;
     `label`?: string;
     `svg`?: string;
@@ -10811,13 +3390,7 @@ op `getDelegationCluster`(`parameters/0/schema`: string,
     `permissions`?: `SharedModel30`;
     `permissionsPaging`?: `SharedModel29`;
     `groups`?: `SharedModel32`;
-    `counts`?: {
-      `clusters`?: integer;
-      `applications`?: integer;
-      `largest`?: integer;
-      `alone`?: integer;
-      `joined`?: integer
-    };
+    `counts`?: WithClustersApplicationsLargestEtc5;
     `paging`?: `SharedModel29`;
     `asked`?: string;
     `graph`?: `SharedModel34`;
@@ -11064,11 +3637,7 @@ op `getDelegationAllowed`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/sche
   @js(#{`minimum`:1}) `parameters/25/schema`: integer,
   `responses/200/content/image~1svg+xml/schema`: string,
   `responses/200/content/application~1json/schema`: {
-    `drawing`?: {
-      `width`?: numeric;
-      `height`?: numeric;
-      `failed`?: NullableString
-    };
+    `drawing`?: WithWidthHeightFailed;
     `looks`?: `SharedModel12`;
     `label`?: string;
     `svg`?: string;
@@ -11076,13 +3645,7 @@ op `getDelegationAllowed`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/sche
     `counts`?: `SharedModel42`;
     `grants`?: `SharedModel27`;
     `groups`?: `SharedModel32`;
-    `groupCounts`?: {
-      `clusters`?: integer;
-      `applications`?: integer;
-      `largest`?: integer;
-      `alone`?: integer;
-      `joined`?: integer
-    };
+    `groupCounts`?: WithClustersApplicationsLargestEtc5;
     `groupsPaging`?: `SharedModel29`;
     `register`?: `SharedModel37`;
     `clusters`?: `SharedModel43`;
@@ -11368,10 +3931,7 @@ op `getDelegationSettings`(`parameters/0/schema`: string,
       `permissions`?: `SharedModel30`;
       `grants`?: `SharedModel27`;
       `counts`?: `SharedModel42`;
-      `filter`?: {
-        `permissions`?: NullableString;
-        `grants`?: NullableString
-      };
+      `filter`?: WithPermissionsGrants;
       `paging`?: {`permissions`?: `SharedModel29`; `grants`?: `SharedModel29`}
     };
     `settings`?: get_admin_api_console_delegation_settings_r200_application_json_settings_h1402;
@@ -11382,7 +3942,7 @@ op `getDelegationSettings`(`parameters/0/schema`: string,
       `permPage`?: `SharedModel47`;
       `grantPage`?: `SharedModel46`
     };
-    `allApplications`?: ({`identifier`?: string; `name`?: string})[]
+    `allApplications`?: (WithIdentifierName)[]
   },
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
   
@@ -11475,11 +4035,7 @@ op `getDelegationChain`(`parameters/0/schema`: string,
   `parameters/1/schema`: "json" | "svg",
   `responses/200/content/image~1svg+xml/schema`: string,
   `responses/200/content/application~1json/schema`: {
-    `drawing`?: {
-      `width`?: numeric;
-      `height`?: numeric;
-      `failed`?: NullableString
-    };
+    `drawing`?: WithWidthHeightFailed;
     `looks`?: `SharedModel12`;
     `label`?: string;
     `svg`?: string;
@@ -11529,7 +4085,7 @@ op `getConsoleDashboard`(`responses/200/content/application~1json/schema`: {
     `usersAuthenticatedHere`?: numeric;
     `pages`?: (string)[];
     `base`?: string;
-    `persistence`?: {`enabled`?: boolean; `mode`?: string};
+    `persistence`?: WithEnabledMode;
     `testDouble`?: boolean;
     `sections`?: `SharedModel2`
   },
@@ -11560,8 +4116,8 @@ op `getConsoleNewApplicationForm`(`responses/200/content/application~1json/schem
     `container`?: NullableString;
     `max`?: NullableNumber;
     `applicationCount`?: integer;
-    `realm`?: {`id`?: string; `name`?: string};
-    `kinds`?: ({`kind`?: string; `label`?: string; `what`?: string})[];
+    `realm`?: WithIdName;
+    `kinds`?: (WithKindLabelWhat)[];
     `protocols`?: ({
       `id`?: string;
       `label`?: string;
@@ -11582,7 +4138,7 @@ op `getConsoleNewApplicationForm`(`responses/200/content/application~1json/schem
       `editable`?: Shape9;
       `sensitive`?: boolean;
       `what`?: string;
-      `families`?: ({`id`?: string; `label`?: string})[];
+      `families`?: (WithIdLabel)[];
       `everyFamily`?: boolean
     })[];
     `fields`?: ({
@@ -11606,25 +4162,15 @@ op `getConsoleNewApplicationForm`(`responses/200/content/application~1json/schem
       `inSimple`?: boolean;
       `described`?: `SharedModel48`
     })[];
-    `fieldGroups`?: ({`id`?: string; `label`?: string; `families`?: (string)[]})[];
-    `familyChoices`?: ({
-      `id`?: string;
-      `label`?: string;
-      `families`?: (string)[];
-      `kind`?: string;
-      `what`?: string
-    })[];
+    `fieldGroups`?: (WithIdLabelFamilies)[];
+    `familyChoices`?: (WithIdLabelFamiliesEtc5)[];
     `longTextAttributes`?: (string)[];
     `defaultSecretLifetimeDays`?: numeric;
     `persistence`?: {
       `persistsDirectory`?: boolean;
       `mode`?: NullableString
     };
-    `resourceMetadataImport`?: {
-      `wellKnown`?: string;
-      `acceptsNonconforming`?: boolean;
-      `dialsInternalAddresses`?: boolean
-    };
+    `resourceMetadataImport`?: WithWellKnownAcceptsNonconformingDialsInternalAddresses;
     `editable`?: ({
       `name`?: string;
       `mode`?: Shape9;
@@ -11916,11 +4462,7 @@ op `getConsoleDelegationUser`(@js(#{`examples`:#["alice"]}) `parameters/0/schema
   @js(#{`minimum`:1}) `parameters/26/schema`: integer,
   `responses/200/content/image~1svg+xml/schema`: string,
   `responses/200/content/application~1json/schema`: {
-    `drawing`?: {
-      `width`?: numeric;
-      `height`?: numeric;
-      `failed`?: NullableString
-    };
+    `drawing`?: WithWidthHeightFailed;
     `looks`?: `SharedModel12`;
     `label`?: string;
     `svg`?: string;
@@ -11951,13 +4493,7 @@ op `getConsoleDelegationUser`(@js(#{`examples`:#["alice"]}) `parameters/0/schema
       `isClient`?: boolean;
       `authentications`?: integer;
       `protocols`?: (string)[];
-      `tokens`?: {
-        `issued`?: integer;
-        `valid`?: integer;
-        `expired`?: integer;
-        `revoked`?: integer;
-        `other`?: integer
-      };
+      `tokens`?: WithIssuedValidExpiredEtc52;
       `artifacts`?: integer;
       `lastAt`?: numeric;
       `delegated`?: boolean;
@@ -11965,7 +4501,7 @@ op `getConsoleDelegationUser`(@js(#{`examples`:#["alice"]}) `parameters/0/schema
       `issued`?: integer;
       `refused`?: integer;
       `chains`?: integer;
-      `roles`?: {`initial`?: integer; `intermediary`?: integer; `target`?: integer}
+      `roles`?: WithInitialIntermediaryTarget2
     })[];
     `usersComplete`?: boolean;
     `chooser`?: `SharedModel23`;
@@ -12242,11 +4778,7 @@ op `getConsoleDelegationApplication`(@js(#{`examples`:#["no-such-application"]})
   @js(#{`minimum`:1}) `parameters/26/schema`: integer,
   `responses/200/content/image~1svg+xml/schema`: string,
   `responses/200/content/application~1json/schema`: {
-    `drawing`?: {
-      `width`?: numeric;
-      `height`?: numeric;
-      `failed`?: NullableString
-    };
+    `drawing`?: WithWidthHeightFailed;
     `looks`?: `SharedModel12`;
     `label`?: string;
     `svg`?: string;
@@ -12262,7 +4794,7 @@ op `getConsoleDelegationApplication`(@js(#{`examples`:#["no-such-application"]})
       `key`?: string;
       `identifier`?: string;
       `spellings`?: (string)[];
-      `roles`?: {`initial`?: integer; `intermediary`?: integer; `target`?: integer};
+      `roles`?: WithInitialIntermediaryTarget2;
       `protocols`?: (string)[];
       `acts`?: integer;
       `issued`?: integer;
@@ -12275,7 +4807,7 @@ op `getConsoleDelegationApplication`(@js(#{`examples`:#["no-such-application"]})
     })[];
     `held`?: integer;
     `maxRecords`?: integer;
-    `roles`?: ({`role`?: string; `label`?: string; `what`?: string})[];
+    `roles`?: (WithRoleLabelWhat)[];
     `chooser`?: `SharedModel23`;
     `mapKey`?: string;
     `facts`?: `SharedModel24`
@@ -12406,9 +4938,7 @@ op `generatePkiAltKeyPair`(@js(#{
 op `usePkiStoredKey`(@js(#{
     `examples`:#[#{`objectId`:"ca-1f2e3d4c5b6a7980"}],
     `additionalProperties`:true
-  }) `requestBody/content/application~1json/schema`: {
-    @js(#{`description`:"The `id` of a row in `workbench.objects`."}) `objectId`: string
-  },
+  }) `requestBody/content/application~1json/schema`: WithDescriptionObjectId,
   `responses/200/content/application~1json/schema`: `SharedModel52`,
   `responses/400/content/application~1json/schema`: `SharedModel52`,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;

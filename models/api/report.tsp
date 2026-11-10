@@ -87,7 +87,7 @@ namespace IyaSts.Api.Report {
 
 @component model `OpenApiDocument` {
     `openapi`?: string;
-    `info`?: {`title`?: string; `version`?: string; `description`?: string};
+    `info`?: WithTitleVersionDescription;
     @js(#{
       `x-free-form`:"The operations and components of an OpenAPI document are that specification's vocabulary, not this API's, and this document describes itself with them.",
       `description`:"The operations and components of an OpenAPI document are that specification's vocabulary, not this API's, and this document describes itself with them."
@@ -102,7 +102,7 @@ namespace IyaSts.Api.Report {
     @js(#{`example`:"report"}) `service`?: string;
     `catalog`?: string;
     `realms`?: string;
-    `version`?: {`version`?: string; `stamped`?: boolean; `buildInfo`?: string}
+    `version`?: WithVersionStampedBuildInfo
   }
 
 @component model `Realm` {
@@ -122,7 +122,7 @@ namespace IyaSts.Api.Report {
       `description`:"This service's clock, in milliseconds: the `since` of the next ask."
     }) `now`?: numeric;
     @js(#{`nullable`:true}) `everyMs`?: numeric;
-    `announcements`?: ({`id`?: string; `at`?: string; `message`?: string})[]
+    `announcements`?: (WithIdAtMessage)[]
   }
 
 @component model `SignalPage` {

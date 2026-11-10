@@ -278,20 +278,10 @@ op `getIndex`(`responses/200/content/application~1json/schema`: {
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @endpoint("/account-api/openapi.json",
@@ -323,7 +313,7 @@ op `getIndex`(`responses/200/content/application~1json/schema`: {
   })
 op `getOpenApi`(`responses/200/content/application~1json/schema`: {
     `openapi`?: string;
-    `info`?: {`title`?: string; `version`?: string; `description`?: string};
+    `info`?: WithTitleVersionDescription;
     `servers`?: ({`url`?: string})[];
     `tags`?: ({`name`?: string})[];
     @js(#{
@@ -337,20 +327,10 @@ op `getOpenApi`(`responses/200/content/application~1json/schema`: {
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -402,51 +382,21 @@ op `getMe`(`responses/200/content/application~1json/schema`: {
     `client`?: string;
     `expiresAt`?: NullableNumber;
     `mode`?: string;
-    `locale`?: {
-      `negotiated`?: {
-        `locale`?: string;
-        `chain`?: (string)[];
-        `catalog`?: string;
-        `direction`?: "ltr" | "rtl";
-        `matched`?: boolean
-      };
-      @js(#{`description`:"Each catalog along the chain, by language tag."}) `catalogs`?: Record<ListOfRecordString>;
-      `offered`?: ({`tag`?: string; `name`?: string})[]
-    };
-    `version`?: {`version`?: string; `buildInfo`?: string}
+    `locale`?: WithNegotiatedDescriptionCatalogsEtc4;
+    `version`?: WithVersionBuildInfo
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @endpoint("/account-api/announcements",
@@ -491,43 +441,19 @@ op `getMe`(`responses/200/content/application~1json/schema`: {
     `x-access`:"person"
   })
 op `getAnnouncements`(@js(#{`pattern`:"^[0-9]{1,16}$"}) `parameters/0/schema`: string,
-  `responses/200/content/application~1json/schema`: {
-    `now`?: numeric;
-    `everyMs`?: numeric;
-    `announcements`?: ({`id`?: string; `at`?: string; `message`?: string})[]
-  },
+  `responses/200/content/application~1json/schema`: WithNowEveryMsAnnouncements,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -560,35 +486,15 @@ op `getAnnouncements`(@js(#{`pattern`:"^[0-9]{1,16}$"}) `parameters/0/schema`: s
     `x-access`:"public"
   })
 op `getLocale`(`responses/200/content/application~1json/schema`: {
-    `locale`?: {
-      `negotiated`?: {
-        `locale`?: string;
-        `chain`?: (string)[];
-        `catalog`?: string;
-        `direction`?: "ltr" | "rtl";
-        `matched`?: boolean
-      };
-      @js(#{`description`:"Each catalog along the chain, by language tag."}) `catalogs`?: Record<ListOfRecordString>;
-      `offered`?: ({`tag`?: string; `name`?: string})[]
-    };
-    `version`?: {`version`?: string; `buildInfo`?: string}
+    `locale`?: WithNegotiatedDescriptionCatalogsEtc4;
+    `version`?: WithVersionBuildInfo
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @js(#{
@@ -741,7 +647,7 @@ op `getOverview`(@js(#{`maxLength`:200}) `parameters/0/schema`: string,
         `total`?: numeric
       }
     };
-    `language`?: {`held`?: string; `offered`?: ({`tag`?: string; `name`?: string})[]};
+    `language`?: {`held`?: string; `offered`?: (WithTagName)[]};
     `customAttributes`?: ({
       `name`?: string;
       `label`?: string;
@@ -755,36 +661,16 @@ op `getOverview`(@js(#{`maxLength`:200}) `parameters/0/schema`: string,
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @endpoint("/account-api/language",
@@ -830,39 +716,19 @@ op `setLanguage`(`requestBody/content/application~1json/schema`: {
       `maxLength`:64
     }) `lang`?: string
   },
-  `responses/200/content/application~1json/schema`: {`ok`?: boolean; `message`?: string; `go`?: string},
+  `responses/200/content/application~1json/schema`: WithOkMessageGo,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @endpoint("/account-api/photo",
@@ -916,55 +782,25 @@ op `setProfilePhoto`(`requestBody/content/application~1json/schema`: {
       `description`:"The JPEG or PNG file, base64-encoded."
     }) `image`: string
   },
-  `responses/200/content/application~1json/schema`: {`ok`?: boolean; `message`?: string; `go`?: string; `photo`?: string},
+  `responses/200/content/application~1json/schema`: WithOkMessageGoEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/409/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/409/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/413/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/413/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @endpoint("/account-api/photo/remove",
@@ -1003,39 +839,19 @@ op `setProfilePhoto`(`requestBody/content/application~1json/schema`: {
     `x-access`:"person",
     `x-mirrors`:"POST /portal/photo/remove"
   })
-op `removeProfilePhoto`(`responses/200/content/application~1json/schema`: {`ok`?: boolean; `message`?: string; `go`?: string; `photo`?: string},
+op `removeProfilePhoto`(`responses/200/content/application~1json/schema`: WithOkMessageGoEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -1096,39 +912,19 @@ op `setCustomAttribute`(`requestBody/content/application~1json/schema`: {
     }) `attribute`: string;
     `values`?: post_account_api_attributes_b_application_json_values_h12
   },
-  `responses/200/content/application~1json/schema`: {`ok`?: boolean; `message`?: string; `go`?: string},
+  `responses/200/content/application~1json/schema`: WithOkMessageGo,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -1209,36 +1005,16 @@ op `getApplications`(@js(#{`maxLength`:200}) `parameters/0/schema`: string,
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -1335,36 +1111,16 @@ op `getSecurityActivity`(@js(#{`maxLength`:200}) `parameters/0/schema`: string,
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @endpoint("/account-api/signals",
@@ -1417,55 +1173,25 @@ op `moveRiscParticipation`(`requestBody/content/application~1json/schema`: {
       `description`:"The move: start opting out, cancel that, or opt back in."
     }) `move`?: "optOutInitiated" | "optOutCancelled" | "optIn"
   },
-  `responses/200/content/application~1json/schema`: {`ok`?: boolean; `message`?: string; `go`?: string},
+  `responses/200/content/application~1json/schema`: WithOkMessageGo,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/409/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/409/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/503/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/503/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -1516,62 +1242,19 @@ op `moveRiscParticipation`(`requestBody/content/application~1json/schema`: {
     `x-mirrors`:"GET /portal/sign-ins"
   })
 op `getSignIns`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"integer",`minimum`:1,`maximum`:100000}]}}) `parameters/0/schema`: unknown,
-  `responses/200/content/application~1json/schema`: {
-    `days`?: numeric;
-    `thisSession`?: string;
-    `paging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `per`?: integer;
-      `total`?: integer
-    };
-    `rows`?: ({
-      `id`?: Shape2;
-      `at`?: Shape;
-      `city`?: string;
-      `country`?: string;
-      `asOrg`?: string;
-      `addressPrefix`?: string;
-      `uaFamily`?: string;
-      `uaOs`?: string;
-      `door`?: string;
-      `application`?: string;
-      `level`?: string;
-      `feedback`?: string
-    })[]
-  },
+  `responses/200/content/application~1json/schema`: WithDaysThisSessionPagingEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @endpoint("/account-api/sign-ins",
@@ -1624,63 +1307,20 @@ op `answerSignIn`(`requestBody/content/application~1json/schema`: {
     `message`?: string;
     `go`?: string;
     `ended`?: boolean;
-    `view`?: {
-      `days`?: numeric;
-      `thisSession`?: string;
-      `paging`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `per`?: integer;
-        `total`?: integer
-      };
-      `rows`?: ({
-        `id`?: Shape2;
-        `at`?: Shape;
-        `city`?: string;
-        `country`?: string;
-        `asOrg`?: string;
-        `addressPrefix`?: string;
-        `uaFamily`?: string;
-        `uaOs`?: string;
-        `door`?: string;
-        `application`?: string;
-        `level`?: string;
-        `feedback`?: string
-      })[]
-    }
+    `view`?: WithDaysThisSessionPagingEtc4
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -1730,56 +1370,19 @@ op `answerSignIn`(`requestBody/content/application~1json/schema`: {
     `x-mirrors`:"GET /portal/consents"
   })
 op `getConsents`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"integer",`minimum`:1,`maximum`:100000}]}}) `parameters/0/schema`: unknown,
-  `responses/200/content/application~1json/schema`: {
-    `paging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `per`?: integer;
-      `total`?: integer
-    };
-    `groups`?: ({
-      `client`?: string;
-      `name`?: string;
-      `rows`?: ({`scope`?: string; `at`?: string})[]
-    })[];
-    `administrative`?: ({
-      `client`?: string;
-      `name`?: string;
-      `rows`?: ({`scope`?: string; `at`?: string})[]
-    })[]
-  },
+  `responses/200/content/application~1json/schema`: WithPagingGroupsAdministrative,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -1835,54 +1438,22 @@ op `withdrawConsent`(`requestBody/content/application~1json/schema`: {
     @js(#{`description`:"The scope, for `action=scope`.",`maxLength`:1024}) `scope`?: string;
     `page`?: EmptyTextOrIntegerFrom1To1000003
   },
-  `responses/200/content/application~1json/schema`: {`ok`?: boolean; `message`?: string; `go`?: string},
+  `responses/200/content/application~1json/schema`: WithOkMessageGo,
   `responses/400/content/application~1json/schema`: {
     `ok`: boolean;
     `errors`: (string)[];
     `error`?: string;
-    `view`?: {
-      `paging`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `per`?: integer;
-        `total`?: integer
-      };
-      `groups`?: ({
-        `client`?: string;
-        `name`?: string;
-        `rows`?: ({`scope`?: string; `at`?: string})[]
-      })[];
-      `administrative`?: ({
-        `client`?: string;
-        `name`?: string;
-        `rows`?: ({`scope`?: string; `at`?: string})[]
-      })[]
-    }
+    `view`?: WithPagingGroupsAdministrative
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -1932,86 +1503,19 @@ op `withdrawConsent`(`requestBody/content/application~1json/schema`: {
     `x-mirrors`:"GET /portal/gnap"
   })
 op `getGnapGrants`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"integer",`minimum`:1,`maximum`:100000}]}}) `parameters/0/schema`: unknown,
-  `responses/200/content/application~1json/schema`: {
-    `user`?: string;
-    `total`?: integer;
-    `rows`?: ({
-      `id`?: string;
-      `state`?: string;
-      `finalization`?: NullableObject;
-      `client`?: NullableString;
-      `clientName`?: NullableString;
-      `authorizationServer`?: NullableString;
-      `createdAt`?: Shape;
-      `updatedAt`?: Shape;
-      `grantExpiresAt`?: Shape;
-      `approvedBy`?: string;
-      `rights`?: (Shape3)[];
-      `rightsAre`?: string;
-      `subjectReleasedAt`?: Shape;
-      `derivedFrom`?: NullableString;
-      `tokens`?: ({
-        `jti`?: string;
-        `label`?: NullableString;
-        `format`?: NullableString;
-        `issuedAt`?: Shape;
-        `expiresAt`?: Shape;
-        `state`?: string;
-        `bearer`?: boolean;
-        `access`?: (Shape3)[];
-        `revokedWhy`?: NullableString
-      })[];
-      `revocable`?: boolean
-    })[];
-    `paging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `perPage`?: integer;
-      `firstRow`?: integer;
-      `lastRow`?: integer;
-      `total`?: integer;
-      `param`?: NullableString;
-      `noun`?: NullableString
-    };
-    `cells`?: {
-      `multiCell`?: boolean;
-      `cell`?: string;
-      `complete`?: boolean;
-      `note`?: string
-    }
-  },
+  `responses/200/content/application~1json/schema`: WithUserTotalRowsEtc5,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -2064,84 +1568,22 @@ op `revokeGnapGrant`(`requestBody/content/application~1json/schema`: {
     }) `grant`: string;
     `page`?: EmptyTextOrIntegerFrom1To1000003
   },
-  `responses/200/content/application~1json/schema`: {`ok`?: boolean; `message`?: string; `go`?: string},
+  `responses/200/content/application~1json/schema`: WithOkMessageGo,
   `responses/400/content/application~1json/schema`: {
     `ok`: boolean;
     `errors`: (string)[];
     `error`?: string;
-    `view`?: {
-      `user`?: string;
-      `total`?: integer;
-      `rows`?: ({
-        `id`?: string;
-        `state`?: string;
-        `finalization`?: NullableObject;
-        `client`?: NullableString;
-        `clientName`?: NullableString;
-        `authorizationServer`?: NullableString;
-        `createdAt`?: Shape;
-        `updatedAt`?: Shape;
-        `grantExpiresAt`?: Shape;
-        `approvedBy`?: string;
-        `rights`?: (Shape3)[];
-        `rightsAre`?: string;
-        `subjectReleasedAt`?: Shape;
-        `derivedFrom`?: NullableString;
-        `tokens`?: ({
-          `jti`?: string;
-          `label`?: NullableString;
-          `format`?: NullableString;
-          `issuedAt`?: Shape;
-          `expiresAt`?: Shape;
-          `state`?: string;
-          `bearer`?: boolean;
-          `access`?: (Shape3)[];
-          `revokedWhy`?: NullableString
-        })[];
-        `revocable`?: boolean
-      })[];
-      `paging`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `perPage`?: integer;
-        `firstRow`?: integer;
-        `lastRow`?: integer;
-        `total`?: integer;
-        `param`?: NullableString;
-        `noun`?: NullableString
-      };
-      `cells`?: {
-        `multiCell`?: boolean;
-        `cell`?: string;
-        `complete`?: boolean;
-        `note`?: string
-      }
-    }
+    `view`?: WithUserTotalRowsEtc5
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -2197,58 +1639,27 @@ op `getEmail`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"i
     `verified`?: boolean;
     `changing`?: string;
     `available`?: boolean;
-    `categories`?: ({
-      `id`?: string;
-      `label`?: string;
-      `what`?: string;
-      `optional`?: boolean;
-      `sent`?: boolean
-    })[];
+    `categories`?: (WithIdLabelWhatEtc5)[];
     `sent`?: ({
       `queuedAt`?: Shape;
       `subject`?: NullableString;
       `to`?: NullOrStringOrString;
       `state`?: NullableString
     })[];
-    `sentPaging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `per`?: integer;
-      `total`?: integer
-    }
+    `sentPaging`?: WithPagePagesPerEtc4
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -2313,91 +1724,18 @@ op `postEmail`(`requestBody/content/application~1json/schema`: {
     @js(#{`description`:"The new address, for `change`.",`maxLength`:254}) `address`?: string;
     `notification`?: post_account_api_email_b_application_json_notification_h88
   },
-  `responses/200/content/application~1json/schema`: {`stepUp`?: {`acrValues`?: string; `prompt`?: string; `maxAge`?: numeric}; `ok`?: boolean; `message`?: string; `go`?: string},
-  `responses/400/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `address`?: string;
-      `verified`?: boolean;
-      `changing`?: string;
-      `available`?: boolean;
-      `categories`?: ({
-        `id`?: string;
-        `label`?: string;
-        `what`?: string;
-        `optional`?: boolean;
-        `sent`?: boolean
-      })[];
-      `sent`?: ({
-        `queuedAt`?: Shape;
-        `subject`?: NullableString;
-        `to`?: NullOrStringOrString2;
-        `state`?: NullableString
-      })[];
-      `sentPaging`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `per`?: integer;
-        `total`?: integer
-      }
-    }
-  },
+  `responses/200/content/application~1json/schema`: WithStepUpOkMessageEtc4,
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc48,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/429/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `address`?: string;
-      `verified`?: boolean;
-      `changing`?: string;
-      `available`?: boolean;
-      `categories`?: ({
-        `id`?: string;
-        `label`?: string;
-        `what`?: string;
-        `optional`?: boolean;
-        `sent`?: boolean
-      })[];
-      `sent`?: ({
-        `queuedAt`?: Shape;
-        `subject`?: NullableString;
-        `to`?: NullOrStringOrString2;
-        `state`?: NullableString
-      })[];
-      `sentPaging`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `per`?: integer;
-        `total`?: integer
-      }
-    }
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc48,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -2452,27 +1790,12 @@ op `postEmail`(`requestBody/content/application~1json/schema`: {
   })
 op `getEmailVerification`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`minLength`:1,`maxLength`:256}]}}) `parameters/0/schema`: unknown,
   `parameters/1/schema`: string,
-  `responses/200/content/application~1json/schema`: {`address`?: string; `username`?: string; `token`?: string},
-  `responses/400/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {`refused`?: string}
-  },
-  `responses/429/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {`refused`?: string}
-  },
+  `responses/200/content/application~1json/schema`: WithAddressUsernameToken,
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc5,
+  `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc5,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -2516,36 +1839,13 @@ op `getEmailVerification`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""}
     `x-mirrors`:"POST /portal/verify-email",
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`user`:"nobody-example",`token`:"no-such-token"}}}}
   })
-op `verifyEmail`(`requestBody/content/application~1json/schema`: {
-    `user`?: EmptyTextOrStringMin1Max2562;
-    `token`?: EmptyTextOrStringMin1Max4096Matchingfb79a8
-  },
-  `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `message`?: string;
-    `go`?: string;
-    `view`?: {`verified`?: boolean; `address`?: string; `username`?: string}
-  },
-  `responses/400/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {`refused`?: string}
-  },
-  `responses/429/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {`refused`?: string}
-  },
+op `verifyEmail`(`requestBody/content/application~1json/schema`: WithUserToken,
+  `responses/200/content/application~1json/schema`: WithOkMessageGoEtc42,
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc5,
+  `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc5,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @endpoint("/account-api/forgot-password",
@@ -2580,39 +1880,14 @@ op `verifyEmail`(`requestBody/content/application~1json/schema`: {
     `x-access`:"public",
     `x-mirrors`:"GET /portal/forgot-password"
   })
-op `getForgotPassword`(`responses/200/content/application~1json/schema`: {
-    `threeFields`?: boolean;
-    `note`?: string;
-    `tooMany`?: string;
-    `notOffered`?: string
-  },
+op `getForgotPassword`(`responses/200/content/application~1json/schema`: WithThreeFieldsNoteTooManyEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/404/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `threeFields`?: boolean;
-      `note`?: string;
-      `tooMany`?: string;
-      `notOffered`?: string
-    }
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/404/content/application~1json/schema`: WithOkErrorsErrorEtc44,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @endpoint("/account-api/forgot-password",
@@ -2670,51 +1945,16 @@ op `requestPasswordReset`(`requestBody/content/application~1json/schema`: {
     `ok`?: boolean;
     `message`?: string;
     `go`?: string;
-    `view`?: {
-      `threeFields`?: boolean;
-      `note`?: string;
-      `tooMany`?: string;
-      `notOffered`?: string
-    }
+    `view`?: WithThreeFieldsNoteTooManyEtc4
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/404/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `threeFields`?: boolean;
-      `note`?: string;
-      `tooMany`?: string;
-      `notOffered`?: string
-    }
-  },
-  `responses/429/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `threeFields`?: boolean;
-      `note`?: string;
-      `tooMany`?: string;
-      `notOffered`?: string
-    }
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/404/content/application~1json/schema`: WithOkErrorsErrorEtc44,
+  `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc44,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @endpoint("/account-api/pseudonyms",
@@ -2765,42 +2005,17 @@ op `getPseudonyms`(`responses/200/content/application~1json/schema`: {
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/503/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {`refused`?: string}
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/503/content/application~1json/schema`: WithOkErrorsErrorEtc5,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -2861,67 +2076,19 @@ op `postPseudonyms`(`requestBody/content/application~1json/schema`: {
     `action`?: post_account_api_pseudonyms_b_application_json_action_h110;
     @js(#{`description`:"The name, for `add` and `remove`.",`maxLength`:254}) `value`?: string
   },
-  `responses/200/content/application~1json/schema`: {`ok`?: boolean; `message`?: string; `go`?: string},
-  `responses/400/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `pseudonyms`?: (string)[];
-      `pending`?: NullableString;
-      `cap`?: numeric;
-      `available`?: boolean;
-      `refused`?: string
-    }
-  },
+  `responses/200/content/application~1json/schema`: WithOkMessageGo,
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc43,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/429/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `pseudonyms`?: (string)[];
-      `pending`?: NullableString;
-      `cap`?: numeric;
-      `available`?: boolean;
-      `refused`?: string
-    }
-  },
-  `responses/503/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `pseudonyms`?: (string)[];
-      `pending`?: NullableString;
-      `cap`?: numeric;
-      `available`?: boolean;
-      `refused`?: string
-    }
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc43,
+  `responses/503/content/application~1json/schema`: WithOkErrorsErrorEtc43,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -2980,33 +2147,13 @@ op `postPseudonyms`(`requestBody/content/application~1json/schema`: {
   })
 op `getPseudonymVerification`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`minLength`:1,`maxLength`:256}]}}) `parameters/0/schema`: unknown,
   `parameters/1/schema`: string,
-  `responses/200/content/application~1json/schema`: {`address`?: string; `username`?: string; `token`?: string},
-  `responses/400/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {`refused`?: string}
-  },
-  `responses/429/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {`refused`?: string}
-  },
-  `responses/503/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {`refused`?: string}
-  },
+  `responses/200/content/application~1json/schema`: WithAddressUsernameToken,
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc5,
+  `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc5,
+  `responses/503/content/application~1json/schema`: WithOkErrorsErrorEtc5,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -3054,42 +2201,14 @@ op `getPseudonymVerification`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`
     `x-mirrors`:"POST /portal/verify-pseudonym",
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`user`:"nobody-example",`token`:"no-such-token"}}}}
   })
-op `verifyPseudonym`(`requestBody/content/application~1json/schema`: {
-    `user`?: EmptyTextOrStringMin1Max2562;
-    `token`?: EmptyTextOrStringMin1Max4096Matchingfb79a8
-  },
-  `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `message`?: string;
-    `go`?: string;
-    `view`?: {`verified`?: boolean; `address`?: string; `username`?: string}
-  },
-  `responses/400/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {`refused`?: string}
-  },
-  `responses/429/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {`refused`?: string}
-  },
-  `responses/503/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {`refused`?: string}
-  },
+op `verifyPseudonym`(`requestBody/content/application~1json/schema`: WithUserToken,
+  `responses/200/content/application~1json/schema`: WithOkMessageGoEtc42,
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc5,
+  `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc5,
+  `responses/503/content/application~1json/schema`: WithOkErrorsErrorEtc5,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -3140,55 +2259,19 @@ op `verifyPseudonym`(`requestBody/content/application~1json/schema`: {
     `x-mirrors`:"GET /portal/owned/roles"
   })
 op `getOwnedRoles`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"integer",`minimum`:1,`maximum`:100000}]}}) `parameters/0/schema`: unknown,
-  `responses/200/content/application~1json/schema`: {
-    `kind`?: string;
-    `paging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `per`?: integer;
-      `total`?: integer
-    };
-    `rows`?: ({
-      `name`?: string;
-      `id`?: string;
-      `dn`?: string;
-      `detail`?: NullableString;
-      `via`?: NullableObject2;
-      `closed`?: boolean
-    })[]
-  },
+  `responses/200/content/application~1json/schema`: WithKindPagingRows,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -3239,55 +2322,19 @@ op `getOwnedRoles`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`typ
     `x-mirrors`:"GET /portal/owned/groups"
   })
 op `getOwnedGroups`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"integer",`minimum`:1,`maximum`:100000}]}}) `parameters/0/schema`: unknown,
-  `responses/200/content/application~1json/schema`: {
-    `kind`?: string;
-    `paging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `per`?: integer;
-      `total`?: integer
-    };
-    `rows`?: ({
-      `name`?: string;
-      `id`?: string;
-      `dn`?: string;
-      `detail`?: NullableString;
-      `via`?: NullableObject2;
-      `closed`?: boolean
-    })[]
-  },
+  `responses/200/content/application~1json/schema`: WithKindPagingRows,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -3338,55 +2385,19 @@ op `getOwnedGroups`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`ty
     `x-mirrors`:"GET /portal/owned/service-accounts"
   })
 op `getOwnedServiceAccounts`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"integer",`minimum`:1,`maximum`:100000}]}}) `parameters/0/schema`: unknown,
-  `responses/200/content/application~1json/schema`: {
-    `kind`?: string;
-    `paging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `per`?: integer;
-      `total`?: integer
-    };
-    `rows`?: ({
-      `name`?: string;
-      `id`?: string;
-      `dn`?: string;
-      `detail`?: NullableString;
-      `via`?: NullableObject2;
-      `closed`?: boolean
-    })[]
-  },
+  `responses/200/content/application~1json/schema`: WithKindPagingRows,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -3437,55 +2448,19 @@ op `getOwnedServiceAccounts`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:
     `x-mirrors`:"GET /portal/owned/applications"
   })
 op `getOwnedApplications`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"integer",`minimum`:1,`maximum`:100000}]}}) `parameters/0/schema`: unknown,
-  `responses/200/content/application~1json/schema`: {
-    `kind`?: string;
-    `paging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `per`?: integer;
-      `total`?: integer
-    };
-    `rows`?: ({
-      `name`?: string;
-      `id`?: string;
-      `dn`?: string;
-      `detail`?: NullableString;
-      `via`?: NullableObject2;
-      `closed`?: boolean
-    })[]
-  },
+  `responses/200/content/application~1json/schema`: WithKindPagingRows,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -3535,71 +2510,19 @@ op `getOwnedApplications`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""}
     `x-mirrors`:"GET /portal/shared"
   })
 op `getShared`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"integer",`minimum`:1,`maximum`:100000}]}}) `parameters/0/schema`: unknown,
-  `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `enabled`?: boolean;
-    `resources`?: ({
-      `id`?: string;
-      `name`?: string;
-      `type`?: string;
-      `resourceServer`?: string;
-      `scopes`?: (string)[];
-      `shares`?: ({
-        `id`?: string;
-        `resourceId`?: string;
-        `scopes`?: (string)[];
-        `recipient`?: {`kind`?: string; `value`?: string; `claim`?: string; `label`?: string};
-        `expires`?: string;
-        `acr`?: string;
-        `askMe`?: boolean
-      })[]
-    })[];
-    `paging`?: {`page`?: integer; `pages`?: integer; `total`?: integer};
-    `custom`?: ({`id`?: string; `description`?: string; `alfa`?: string})[];
-    `pending`?: ({
-      `id`?: string;
-      `client`?: string;
-      `requestingParty`?: string;
-      `permissions`?: ({`resource_id`?: string; `resource_scopes`?: (string)[]})[];
-      `expiresAt`?: numeric
-    })[];
-    `alfaEditing`?: boolean;
-    `alfa`?: string;
-    `version`?: Shape;
-    `recipients`?: (string)[]
-  },
+  `responses/200/content/application~1json/schema`: WithOkEnabledResourcesEtc10,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -3779,170 +2702,17 @@ op `actShared`(`requestBody/content/application~1json/schema`: {
     `ok`?: boolean;
     `message`?: string;
     `go`?: string;
-    `view`?: {
-      `ok`?: boolean;
-      `enabled`?: boolean;
-      `resources`?: ({
-        `id`?: string;
-        `name`?: string;
-        `type`?: string;
-        `resourceServer`?: string;
-        `scopes`?: (string)[];
-        `shares`?: ({
-          `id`?: string;
-          `resourceId`?: string;
-          `scopes`?: (string)[];
-          `recipient`?: {`kind`?: string; `value`?: string; `claim`?: string; `label`?: string};
-          `expires`?: string;
-          `acr`?: string;
-          `askMe`?: boolean
-        })[]
-      })[];
-      `paging`?: {`page`?: integer; `pages`?: integer; `total`?: integer};
-      `custom`?: ({`id`?: string; `description`?: string; `alfa`?: string})[];
-      `pending`?: ({
-        `id`?: string;
-        `client`?: string;
-        `requestingParty`?: string;
-        `permissions`?: ({`resource_id`?: string; `resource_scopes`?: (string)[]})[];
-        `expiresAt`?: numeric
-      })[];
-      `alfaEditing`?: boolean;
-      `alfa`?: string;
-      `version`?: Shape;
-      `recipients`?: (string)[]
-    }
+    `view`?: WithOkEnabledResourcesEtc10
   },
-  `responses/400/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `ok`?: boolean;
-      `enabled`?: boolean;
-      `resources`?: ({
-        `id`?: string;
-        `name`?: string;
-        `type`?: string;
-        `resourceServer`?: string;
-        `scopes`?: (string)[];
-        `shares`?: ({
-          `id`?: string;
-          `resourceId`?: string;
-          `scopes`?: (string)[];
-          `recipient`?: {`kind`?: string; `value`?: string; `claim`?: string; `label`?: string};
-          `expires`?: string;
-          `acr`?: string;
-          `askMe`?: boolean
-        })[]
-      })[];
-      `paging`?: {`page`?: integer; `pages`?: integer; `total`?: integer};
-      `custom`?: ({`id`?: string; `description`?: string; `alfa`?: string})[];
-      `pending`?: ({
-        `id`?: string;
-        `client`?: string;
-        `requestingParty`?: string;
-        `permissions`?: ({`resource_id`?: string; `resource_scopes`?: (string)[]})[];
-        `expiresAt`?: numeric
-      })[];
-      `alfaEditing`?: boolean;
-      `alfa`?: string;
-      `version`?: Shape;
-      `recipients`?: (string)[]
-    }
-  },
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc416,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/403/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `ok`?: boolean;
-      `enabled`?: boolean;
-      `resources`?: ({
-        `id`?: string;
-        `name`?: string;
-        `type`?: string;
-        `resourceServer`?: string;
-        `scopes`?: (string)[];
-        `shares`?: ({
-          `id`?: string;
-          `resourceId`?: string;
-          `scopes`?: (string)[];
-          `recipient`?: {`kind`?: string; `value`?: string; `claim`?: string; `label`?: string};
-          `expires`?: string;
-          `acr`?: string;
-          `askMe`?: boolean
-        })[]
-      })[];
-      `paging`?: {`page`?: integer; `pages`?: integer; `total`?: integer};
-      `custom`?: ({`id`?: string; `description`?: string; `alfa`?: string})[];
-      `pending`?: ({
-        `id`?: string;
-        `client`?: string;
-        `requestingParty`?: string;
-        `permissions`?: ({`resource_id`?: string; `resource_scopes`?: (string)[]})[];
-        `expiresAt`?: numeric
-      })[];
-      `alfaEditing`?: boolean;
-      `alfa`?: string;
-      `version`?: Shape;
-      `recipients`?: (string)[]
-    }
-  },
-  `responses/500/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `ok`?: boolean;
-      `enabled`?: boolean;
-      `resources`?: ({
-        `id`?: string;
-        `name`?: string;
-        `type`?: string;
-        `resourceServer`?: string;
-        `scopes`?: (string)[];
-        `shares`?: ({
-          `id`?: string;
-          `resourceId`?: string;
-          `scopes`?: (string)[];
-          `recipient`?: {`kind`?: string; `value`?: string; `claim`?: string; `label`?: string};
-          `expires`?: string;
-          `acr`?: string;
-          `askMe`?: boolean
-        })[]
-      })[];
-      `paging`?: {`page`?: integer; `pages`?: integer; `total`?: integer};
-      `custom`?: ({`id`?: string; `description`?: string; `alfa`?: string})[];
-      `pending`?: ({
-        `id`?: string;
-        `client`?: string;
-        `requestingParty`?: string;
-        `permissions`?: ({`resource_id`?: string; `resource_scopes`?: (string)[]})[];
-        `expiresAt`?: numeric
-      })[];
-      `alfaEditing`?: boolean;
-      `alfa`?: string;
-      `version`?: Shape;
-      `recipients`?: (string)[]
-    }
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc416,
+  `responses/500/content/application~1json/schema`: WithOkErrorsErrorEtc416,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -3994,7 +2764,7 @@ op `actShared`(`requestBody/content/application~1json/schema`: {
 op `getSharedWithMe`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"integer",`minimum`:1,`maximum`:100000}]}}) `parameters/0/schema`: unknown,
   `responses/200/content/application~1json/schema`: {
     `ok`?: boolean;
-    `paging`?: {`page`?: integer; `pages`?: integer; `total`?: integer};
+    `paging`?: WithPagePagesTotal;
     `rows`?: ({
       `resourceId`?: string;
       `name`?: string;
@@ -4007,36 +2777,16 @@ op `getSharedWithMe`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`t
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @endpoint("/account-api/password",
@@ -4075,42 +2825,19 @@ op `getSharedWithMe`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`t
     `x-access`:"person",
     `x-mirrors`:"GET /portal/password"
   })
-op `getPassword`(`responses/200/content/application~1json/schema`: {
-    `hasPassword`?: boolean;
-    `rules`?: {`enforced`?: boolean; `rules`?: (string)[]}
-  },
+op `getPassword`(`responses/200/content/application~1json/schema`: WithHasPasswordRules,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @endpoint("/account-api/password",
@@ -4162,49 +2889,18 @@ op `changePassword`(`requestBody/content/application~1json/schema`: {
     @js(#{`description`:"The new password.",`maxLength`:1024}) `next`?: string;
     @js(#{`description`:"The new password again.",`maxLength`:1024}) `confirm`?: string
   },
-  `responses/200/content/application~1json/schema`: {`ok`?: boolean; `message`?: string; `go`?: string},
-  `responses/400/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `hasPassword`?: boolean;
-      `rules`?: {`enforced`?: boolean; `rules`?: (string)[]}
-    }
-  },
+  `responses/200/content/application~1json/schema`: WithOkMessageGo,
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc45,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/429/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `hasPassword`?: boolean;
-      `rules`?: {`enforced`?: boolean; `rules`?: (string)[]}
-    }
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc45,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @endpoint("/account-api/keys",
@@ -4243,82 +2939,19 @@ op `changePassword`(`requestBody/content/application~1json/schema`: {
     `x-access`:"person",
     `x-mirrors`:"GET /portal/keys"
   })
-op `getKeys`(`responses/200/content/application~1json/schema`: {
-    `password`?: boolean;
-    `mfaRequired`?: boolean;
-    `keys`?: ({
-      `credentialId`?: string;
-      `group`?: string;
-      `name`?: string;
-      `provider`?: string;
-      `enrolledAt`?: Shape;
-      `lastUsedAt`?: Shape;
-      `syncedRefused`?: boolean;
-      `attestationRefused`?: string;
-      `pinRefused`?: string;
-      `postQuantumRefused`?: boolean;
-      `backupEligible`?: NullableBoolean;
-      `backupState`?: boolean;
-      `transports`?: (string)[];
-      `kind`?: string;
-      `withoutUsername`?: string;
-      `algorithm`?: {`text`?: string; `postQuantum`?: boolean; `insecure`?: boolean};
-      `lane`?: string;
-      `upgrade`?: NullableObject3;
-      `possiblyReplaced`?: NullableObject4;
-      `attestation`?: NullableObject5;
-      `aaguid`?: string
-    })[];
-    `enrol`?: {
-      `enabled`?: boolean;
-      `count`?: integer;
-      `atCap`?: boolean;
-      `allowed`?: boolean;
-      `kinds`?: (string)[];
-      `pending`?: NullableObject6;
-      `lanes`?: (string)[]
-    };
-    `signals`?: ({
-      `lane`?: string;
-      `rpId`?: string;
-      `userId`?: string;
-      `accepted`?: (string)[];
-      `name`?: string;
-      `display`?: string
-    })[]
-  },
+op `getKeys`(`responses/200/content/application~1json/schema`: WithPasswordMfaRequiredKeysEtc5,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -4424,129 +3057,18 @@ op `enrolKey`(`requestBody/content/application~1json/schema`: {
       `maxLength`:65536
     }) `credential`?: string
   },
-  `responses/200/content/application~1json/schema`: {`stepUp`?: {`acrValues`?: string; `prompt`?: string; `maxAge`?: numeric}; `ok`?: boolean; `message`?: string; `go`?: string},
-  `responses/400/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `password`?: boolean;
-      `mfaRequired`?: boolean;
-      `keys`?: ({
-        `credentialId`?: string;
-        `group`?: string;
-        `name`?: string;
-        `provider`?: string;
-        `enrolledAt`?: Shape;
-        `lastUsedAt`?: Shape;
-        `syncedRefused`?: boolean;
-        `attestationRefused`?: string;
-        `pinRefused`?: string;
-        `postQuantumRefused`?: boolean;
-        `backupEligible`?: NullableBoolean;
-        `backupState`?: boolean;
-        `transports`?: (string)[];
-        `kind`?: string;
-        `withoutUsername`?: string;
-        `algorithm`?: {`text`?: string; `postQuantum`?: boolean; `insecure`?: boolean};
-        `lane`?: string;
-        `upgrade`?: NullableObject3;
-        `possiblyReplaced`?: NullableObject4;
-        `attestation`?: NullableObject5;
-        `aaguid`?: string
-      })[];
-      `enrol`?: {
-        `enabled`?: boolean;
-        `count`?: integer;
-        `atCap`?: boolean;
-        `allowed`?: boolean;
-        `kinds`?: (string)[];
-        `pending`?: NullableObject6;
-        `lanes`?: (string)[]
-      };
-      `signals`?: ({
-        `lane`?: string;
-        `rpId`?: string;
-        `userId`?: string;
-        `accepted`?: (string)[];
-        `name`?: string;
-        `display`?: string
-      })[]
-    }
-  },
+  `responses/200/content/application~1json/schema`: WithStepUpOkMessageEtc4,
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc414,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/500/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `password`?: boolean;
-      `mfaRequired`?: boolean;
-      `keys`?: ({
-        `credentialId`?: string;
-        `group`?: string;
-        `name`?: string;
-        `provider`?: string;
-        `enrolledAt`?: Shape;
-        `lastUsedAt`?: Shape;
-        `syncedRefused`?: boolean;
-        `attestationRefused`?: string;
-        `pinRefused`?: string;
-        `postQuantumRefused`?: boolean;
-        `backupEligible`?: NullableBoolean;
-        `backupState`?: boolean;
-        `transports`?: (string)[];
-        `kind`?: string;
-        `withoutUsername`?: string;
-        `algorithm`?: {`text`?: string; `postQuantum`?: boolean; `insecure`?: boolean};
-        `lane`?: string;
-        `upgrade`?: NullableObject3;
-        `possiblyReplaced`?: NullableObject4;
-        `attestation`?: NullableObject5;
-        `aaguid`?: string
-      })[];
-      `enrol`?: {
-        `enabled`?: boolean;
-        `count`?: integer;
-        `atCap`?: boolean;
-        `allowed`?: boolean;
-        `kinds`?: (string)[];
-        `pending`?: NullableObject6;
-        `lanes`?: (string)[]
-      };
-      `signals`?: ({
-        `lane`?: string;
-        `rpId`?: string;
-        `userId`?: string;
-        `accepted`?: (string)[];
-        `name`?: string;
-        `display`?: string
-      })[]
-    }
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/500/content/application~1json/schema`: WithOkErrorsErrorEtc414,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -4593,85 +3115,22 @@ op `enrolKey`(`requestBody/content/application~1json/schema`: {
 op `removeKey`(`requestBody/content/application~1json/schema`: {
     `credentialId`?: EmptyTextOrStringMin1Max4096Matchinga5aa8a
   },
-  `responses/200/content/application~1json/schema`: {`stepUp`?: {`acrValues`?: string; `prompt`?: string; `maxAge`?: numeric}; 
+  `responses/200/content/application~1json/schema`: {`stepUp`?: WithAcrValuesPromptMaxAge; 
     `ok`?: boolean;
     `message`?: string;
     `go`?: string;
     `sessionsEnded`?: integer
   },
-  `responses/400/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `password`?: boolean;
-      `mfaRequired`?: boolean;
-      `keys`?: ({
-        `credentialId`?: string;
-        `group`?: string;
-        `name`?: string;
-        `provider`?: string;
-        `enrolledAt`?: Shape;
-        `lastUsedAt`?: Shape;
-        `syncedRefused`?: boolean;
-        `attestationRefused`?: string;
-        `pinRefused`?: string;
-        `postQuantumRefused`?: boolean;
-        `backupEligible`?: NullableBoolean;
-        `backupState`?: boolean;
-        `transports`?: (string)[];
-        `kind`?: string;
-        `withoutUsername`?: string;
-        `algorithm`?: {`text`?: string; `postQuantum`?: boolean; `insecure`?: boolean};
-        `lane`?: string;
-        `upgrade`?: NullableObject3;
-        `possiblyReplaced`?: NullableObject4;
-        `attestation`?: NullableObject5;
-        `aaguid`?: string
-      })[];
-      `enrol`?: {
-        `enabled`?: boolean;
-        `count`?: integer;
-        `atCap`?: boolean;
-        `allowed`?: boolean;
-        `kinds`?: (string)[];
-        `pending`?: NullableObject6;
-        `lanes`?: (string)[]
-      };
-      `signals`?: ({
-        `lane`?: string;
-        `rpId`?: string;
-        `userId`?: string;
-        `accepted`?: (string)[];
-        `name`?: string;
-        `display`?: string
-      })[]
-    }
-  },
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc414,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -4722,80 +3181,17 @@ op `renameKey`(`requestBody/content/application~1json/schema`: {
       `maxLength`:200
     }) `label`?: string
   },
-  `responses/200/content/application~1json/schema`: {`ok`?: boolean; `message`?: string; `go`?: string},
-  `responses/400/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `password`?: boolean;
-      `mfaRequired`?: boolean;
-      `keys`?: ({
-        `credentialId`?: string;
-        `group`?: string;
-        `name`?: string;
-        `provider`?: string;
-        `enrolledAt`?: Shape;
-        `lastUsedAt`?: Shape;
-        `syncedRefused`?: boolean;
-        `attestationRefused`?: string;
-        `pinRefused`?: string;
-        `postQuantumRefused`?: boolean;
-        `backupEligible`?: NullableBoolean;
-        `backupState`?: boolean;
-        `transports`?: (string)[];
-        `kind`?: string;
-        `withoutUsername`?: string;
-        `algorithm`?: {`text`?: string; `postQuantum`?: boolean; `insecure`?: boolean};
-        `lane`?: string;
-        `upgrade`?: NullableObject3;
-        `possiblyReplaced`?: NullableObject4;
-        `attestation`?: NullableObject5;
-        `aaguid`?: string
-      })[];
-      `enrol`?: {
-        `enabled`?: boolean;
-        `count`?: integer;
-        `atCap`?: boolean;
-        `allowed`?: boolean;
-        `kinds`?: (string)[];
-        `pending`?: NullableObject6;
-        `lanes`?: (string)[]
-      };
-      `signals`?: ({
-        `lane`?: string;
-        `rpId`?: string;
-        `userId`?: string;
-        `accepted`?: (string)[];
-        `name`?: string;
-        `display`?: string
-      })[]
-    }
-  },
+  `responses/200/content/application~1json/schema`: WithOkMessageGo,
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc414,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @endpoint("/account-api/mfa",
@@ -4834,67 +3230,19 @@ op `renameKey`(`requestBody/content/application~1json/schema`: {
     `x-access`:"person",
     `x-mirrors`:"GET /portal/mfa"
   })
-op `getMfa`(`responses/200/content/application~1json/schema`: {
-    `username`?: string;
-    `verifiesCredentials`?: boolean;
-    `totp`?: {
-      `enrolled`?: boolean;
-      `usable`?: boolean;
-      `detail`?: NullableObject7;
-      `offered`?: boolean;
-      `digits`?: NullableNumber;
-      `period`?: NullableNumber
-    };
-    `doors`?: {`applies`?: boolean; `refused`?: (string)[]};
-    `setup`?: NullableObject8;
-    `emailFactor`?: NullableObject9;
-    `codes`?: {
-      `enabled`?: boolean;
-      `count`?: NullableNumber;
-      `length`?: NullableNumber;
-      `advised`?: boolean;
-      `present`?: boolean;
-      `usable`?: boolean;
-      `why`?: string;
-      `remaining`?: numeric;
-      `total`?: numeric;
-      `generatedAt`?: Shape;
-      `lastUsedAt`?: Shape
-    };
-    `fresh`?: NullableObject10
-  },
+op `getMfa`(`responses/200/content/application~1json/schema`: WithUsernameVerifiesCredentialsTotpEtc8,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -4962,133 +3310,24 @@ op `changeMfa`(`requestBody/content/application~1json/schema`: {
       `maxLength`:128
     }) `handle`?: string
   },
-  `responses/200/content/application~1json/schema`: {`stepUp`?: {`acrValues`?: string; `prompt`?: string; `maxAge`?: numeric}; 
+  `responses/200/content/application~1json/schema`: {`stepUp`?: WithAcrValuesPromptMaxAge; 
     `ok`?: boolean;
     `message`?: string;
     `go`?: string;
-    `view`?: {
-      `username`?: string;
-      `verifiesCredentials`?: boolean;
-      `totp`?: {
-        `enrolled`?: boolean;
-        `usable`?: boolean;
-        `detail`?: NullableObject7;
-        `offered`?: boolean;
-        `digits`?: NullableNumber;
-        `period`?: NullableNumber
-      };
-      `doors`?: {`applies`?: boolean; `refused`?: (string)[]};
-      `setup`?: NullableObject8;
-      `emailFactor`?: NullableObject9;
-      `codes`?: {
-        `enabled`?: boolean;
-        `count`?: NullableNumber;
-        `length`?: NullableNumber;
-        `advised`?: boolean;
-        `present`?: boolean;
-        `usable`?: boolean;
-        `why`?: string;
-        `remaining`?: numeric;
-        `total`?: numeric;
-        `generatedAt`?: Shape;
-        `lastUsedAt`?: Shape
-      };
-      `fresh`?: NullableObject10
-    };
+    `view`?: WithUsernameVerifiesCredentialsTotpEtc8;
     `sessionsEnded`?: integer
   },
-  `responses/400/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `username`?: string;
-      `verifiesCredentials`?: boolean;
-      `totp`?: {
-        `enrolled`?: boolean;
-        `usable`?: boolean;
-        `detail`?: NullableObject7;
-        `offered`?: boolean;
-        `digits`?: NullableNumber;
-        `period`?: NullableNumber
-      };
-      `doors`?: {`applies`?: boolean; `refused`?: (string)[]};
-      `setup`?: NullableObject8;
-      `emailFactor`?: NullableObject9;
-      `codes`?: {
-        `enabled`?: boolean;
-        `count`?: NullableNumber;
-        `length`?: NullableNumber;
-        `advised`?: boolean;
-        `present`?: boolean;
-        `usable`?: boolean;
-        `why`?: string;
-        `remaining`?: numeric;
-        `total`?: numeric;
-        `generatedAt`?: Shape;
-        `lastUsedAt`?: Shape
-      };
-      `fresh`?: NullableObject10
-    }
-  },
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc411,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/429/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `username`?: string;
-      `verifiesCredentials`?: boolean;
-      `totp`?: {
-        `enrolled`?: boolean;
-        `usable`?: boolean;
-        `detail`?: NullableObject7;
-        `offered`?: boolean;
-        `digits`?: NullableNumber;
-        `period`?: NullableNumber
-      };
-      `doors`?: {`applies`?: boolean; `refused`?: (string)[]};
-      `setup`?: NullableObject8;
-      `emailFactor`?: NullableObject9;
-      `codes`?: {
-        `enabled`?: boolean;
-        `count`?: NullableNumber;
-        `length`?: NullableNumber;
-        `advised`?: boolean;
-        `present`?: boolean;
-        `usable`?: boolean;
-        `why`?: string;
-        `remaining`?: numeric;
-        `total`?: numeric;
-        `generatedAt`?: Shape;
-        `lastUsedAt`?: Shape
-      };
-      `fresh`?: NullableObject10
-    }
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc411,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @endpoint("/account-api/signing-key",
@@ -5127,89 +3366,19 @@ op `changeMfa`(`requestBody/content/application~1json/schema`: {
     `x-access`:"person",
     `x-mirrors`:"GET /portal/signing-key"
   })
-op `getSigningKeys`(`responses/200/content/application~1json/schema`: {
-    `username`?: string;
-    `entry`?: boolean;
-    `holdsAny`?: boolean;
-    `offered`?: boolean;
-    `issuable`?: boolean;
-    `tokenEndpoint`?: string;
-    `maxPerPerson`?: numeric;
-    `reasons`?: (string)[];
-    `profiles`?: ({
-      `id`?: string;
-      `rfc`?: string;
-      `grantType`?: string;
-      `atCap`?: boolean;
-      `held`?: {
-        `keys`?: ({
-          `handle`?: string;
-          `label`?: string;
-          `source`?: string;
-          `serialHex`?: string;
-          `keyAlg`?: string;
-          `notAfter`?: string;
-          `expiresAt`?: string;
-          `state`?: string;
-          `reason`?: string;
-          `revokedAt`?: string;
-          `certificate`?: string
-        })[];
-        `valid`?: integer;
-        `issuers`?: (string)[]
-      }
-    })[];
-    `tls`?: {
-      `signIn`?: string;
-      `trusted`?: boolean;
-      `note`?: string;
-      `maxPerPerson`?: numeric;
-      `keyAlgs`?: (string)[];
-      `defaultKeyAlg`?: NullableString;
-      `held`?: ({
-        `label`?: string;
-        `serialHex`?: string;
-        `keyAlg`?: string;
-        `notAfter`?: string;
-        `state`?: string;
-        `reason`?: string;
-        `revokedAt`?: string
-      })[]
-    };
-    `fresh`?: NullableObject11
-  },
+op `getSigningKeys`(`responses/200/content/application~1json/schema`: WithUsernameEntryHoldsAnyEtc11,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -5309,302 +3478,22 @@ op `changeSigningKeys`(`requestBody/content/application~1json/schema`: {
     `reason`?: post_account_api_signing_key_b_application_json_reason_h295;
     `purpose`?: post_account_api_signing_key_b_application_json_purpose_h297
   },
-  `responses/200/content/application~1json/schema`: {`stepUp`?: {`acrValues`?: string; `prompt`?: string; `maxAge`?: numeric}; 
+  `responses/200/content/application~1json/schema`: {`stepUp`?: WithAcrValuesPromptMaxAge; 
     `ok`?: boolean;
     `message`?: string;
     `go`?: string;
-    `view`?: {
-      `username`?: string;
-      `entry`?: boolean;
-      `holdsAny`?: boolean;
-      `offered`?: boolean;
-      `issuable`?: boolean;
-      `tokenEndpoint`?: string;
-      `maxPerPerson`?: numeric;
-      `reasons`?: (string)[];
-      `profiles`?: ({
-        `id`?: string;
-        `rfc`?: string;
-        `grantType`?: string;
-        `atCap`?: boolean;
-        `held`?: {
-          `keys`?: ({
-            `handle`?: string;
-            `label`?: string;
-            `source`?: string;
-            `serialHex`?: string;
-            `keyAlg`?: string;
-            `notAfter`?: string;
-            `expiresAt`?: string;
-            `state`?: string;
-            `reason`?: string;
-            `revokedAt`?: string;
-            `certificate`?: string
-          })[];
-          `valid`?: integer;
-          `issuers`?: (string)[]
-        }
-      })[];
-      `tls`?: {
-        `signIn`?: string;
-        `trusted`?: boolean;
-        `note`?: string;
-        `maxPerPerson`?: numeric;
-        `keyAlgs`?: (string)[];
-        `defaultKeyAlg`?: NullableString;
-        `held`?: ({
-          `label`?: string;
-          `serialHex`?: string;
-          `keyAlg`?: string;
-          `notAfter`?: string;
-          `state`?: string;
-          `reason`?: string;
-          `revokedAt`?: string
-        })[]
-      };
-      `fresh`?: NullableObject11
-    }
+    `view`?: WithUsernameEntryHoldsAnyEtc11
   },
-  `responses/400/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `username`?: string;
-      `entry`?: boolean;
-      `holdsAny`?: boolean;
-      `offered`?: boolean;
-      `issuable`?: boolean;
-      `tokenEndpoint`?: string;
-      `maxPerPerson`?: numeric;
-      `reasons`?: (string)[];
-      `profiles`?: ({
-        `id`?: string;
-        `rfc`?: string;
-        `grantType`?: string;
-        `atCap`?: boolean;
-        `held`?: {
-          `keys`?: ({
-            `handle`?: string;
-            `label`?: string;
-            `source`?: string;
-            `serialHex`?: string;
-            `keyAlg`?: string;
-            `notAfter`?: string;
-            `expiresAt`?: string;
-            `state`?: string;
-            `reason`?: string;
-            `revokedAt`?: string;
-            `certificate`?: string
-          })[];
-          `valid`?: integer;
-          `issuers`?: (string)[]
-        }
-      })[];
-      `tls`?: {
-        `signIn`?: string;
-        `trusted`?: boolean;
-        `note`?: string;
-        `maxPerPerson`?: numeric;
-        `keyAlgs`?: (string)[];
-        `defaultKeyAlg`?: NullableString;
-        `held`?: ({
-          `label`?: string;
-          `serialHex`?: string;
-          `keyAlg`?: string;
-          `notAfter`?: string;
-          `state`?: string;
-          `reason`?: string;
-          `revokedAt`?: string
-        })[]
-      };
-      `fresh`?: NullableObject11
-    }
-  },
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc417,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/403/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `username`?: string;
-      `entry`?: boolean;
-      `holdsAny`?: boolean;
-      `offered`?: boolean;
-      `issuable`?: boolean;
-      `tokenEndpoint`?: string;
-      `maxPerPerson`?: numeric;
-      `reasons`?: (string)[];
-      `profiles`?: ({
-        `id`?: string;
-        `rfc`?: string;
-        `grantType`?: string;
-        `atCap`?: boolean;
-        `held`?: {
-          `keys`?: ({
-            `handle`?: string;
-            `label`?: string;
-            `source`?: string;
-            `serialHex`?: string;
-            `keyAlg`?: string;
-            `notAfter`?: string;
-            `expiresAt`?: string;
-            `state`?: string;
-            `reason`?: string;
-            `revokedAt`?: string;
-            `certificate`?: string
-          })[];
-          `valid`?: integer;
-          `issuers`?: (string)[]
-        }
-      })[];
-      `tls`?: {
-        `signIn`?: string;
-        `trusted`?: boolean;
-        `note`?: string;
-        `maxPerPerson`?: numeric;
-        `keyAlgs`?: (string)[];
-        `defaultKeyAlg`?: NullableString;
-        `held`?: ({
-          `label`?: string;
-          `serialHex`?: string;
-          `keyAlg`?: string;
-          `notAfter`?: string;
-          `state`?: string;
-          `reason`?: string;
-          `revokedAt`?: string
-        })[]
-      };
-      `fresh`?: NullableObject11
-    }
-  },
-  `responses/429/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `username`?: string;
-      `entry`?: boolean;
-      `holdsAny`?: boolean;
-      `offered`?: boolean;
-      `issuable`?: boolean;
-      `tokenEndpoint`?: string;
-      `maxPerPerson`?: numeric;
-      `reasons`?: (string)[];
-      `profiles`?: ({
-        `id`?: string;
-        `rfc`?: string;
-        `grantType`?: string;
-        `atCap`?: boolean;
-        `held`?: {
-          `keys`?: ({
-            `handle`?: string;
-            `label`?: string;
-            `source`?: string;
-            `serialHex`?: string;
-            `keyAlg`?: string;
-            `notAfter`?: string;
-            `expiresAt`?: string;
-            `state`?: string;
-            `reason`?: string;
-            `revokedAt`?: string;
-            `certificate`?: string
-          })[];
-          `valid`?: integer;
-          `issuers`?: (string)[]
-        }
-      })[];
-      `tls`?: {
-        `signIn`?: string;
-        `trusted`?: boolean;
-        `note`?: string;
-        `maxPerPerson`?: numeric;
-        `keyAlgs`?: (string)[];
-        `defaultKeyAlg`?: NullableString;
-        `held`?: ({
-          `label`?: string;
-          `serialHex`?: string;
-          `keyAlg`?: string;
-          `notAfter`?: string;
-          `state`?: string;
-          `reason`?: string;
-          `revokedAt`?: string
-        })[]
-      };
-      `fresh`?: NullableObject11
-    }
-  },
-  `responses/500/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `username`?: string;
-      `entry`?: boolean;
-      `holdsAny`?: boolean;
-      `offered`?: boolean;
-      `issuable`?: boolean;
-      `tokenEndpoint`?: string;
-      `maxPerPerson`?: numeric;
-      `reasons`?: (string)[];
-      `profiles`?: ({
-        `id`?: string;
-        `rfc`?: string;
-        `grantType`?: string;
-        `atCap`?: boolean;
-        `held`?: {
-          `keys`?: ({
-            `handle`?: string;
-            `label`?: string;
-            `source`?: string;
-            `serialHex`?: string;
-            `keyAlg`?: string;
-            `notAfter`?: string;
-            `expiresAt`?: string;
-            `state`?: string;
-            `reason`?: string;
-            `revokedAt`?: string;
-            `certificate`?: string
-          })[];
-          `valid`?: integer;
-          `issuers`?: (string)[]
-        }
-      })[];
-      `tls`?: {
-        `signIn`?: string;
-        `trusted`?: boolean;
-        `note`?: string;
-        `maxPerPerson`?: numeric;
-        `keyAlgs`?: (string)[];
-        `defaultKeyAlg`?: NullableString;
-        `held`?: ({
-          `label`?: string;
-          `serialHex`?: string;
-          `keyAlg`?: string;
-          `notAfter`?: string;
-          `state`?: string;
-          `reason`?: string;
-          `revokedAt`?: string
-        })[]
-      };
-      `fresh`?: NullableObject11
-    }
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc417,
+  `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc417,
+  `responses/500/content/application~1json/schema`: WithOkErrorsErrorEtc417,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @endpoint("/account-api/certificates",
@@ -5643,80 +3532,19 @@ op `changeSigningKeys`(`requestBody/content/application~1json/schema`: {
     `x-access`:"person",
     `x-mirrors`:"GET /portal/certificates"
   })
-op `getCertificates`(`responses/200/content/application~1json/schema`: {
-    `name`?: string;
-    `resolved`?: boolean;
-    `reasons`?: (string)[];
-    @js(#{`description`:"Each enrollment family's label, by its id."}) `familyLabels`?: Record<string>;
-    `urls`?: {`acmeDirectory`?: string; `scep`?: string; `est`?: string};
-    `fresh`?: {
-      `kind`?: string;
-      `kid`?: string;
-      `hmacKey`?: string;
-      `challenge`?: string;
-      `profile`?: string;
-      `expiresAt`?: Shape;
-      `scepUrl`?: string;
-      `plainScepUrl`?: string
-    };
-    `enrolled`?: ({
-      `serialHex`?: string;
-      `family`?: string;
-      `profile`?: string;
-      `subject`?: string;
-      `names`?: (string)[];
-      `thumbprint`?: string;
-      `keyAlg`?: string;
-      `notBefore`?: string;
-      `notAfter`?: string;
-      `issuedAt`?: string;
-      `requestedBy`?: NullableObject12;
-      `via`?: string;
-      `keySource`?: string;
-      `replaces`?: NullableString;
-      `certificatePem`?: string;
-      `chainPem`?: (string)[];
-      `revoked`?: {`at`?: string; `reason`?: string; `by`?: string};
-      `expired`?: boolean;
-      `status`?: string
-    })[];
-    `hostNames`?: (string)[];
-    `acme`?: NullableObject13;
-    `est`?: NullableObject14;
-    `scep`?: NullableObject15
-  },
+op `getCertificates`(`responses/200/content/application~1json/schema`: WithNameResolvedReasonsEtc12,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -5817,437 +3645,23 @@ op `changeCertificates`(`requestBody/content/application~1json/schema`: {
     }) `serial`?: string;
     `reason`?: post_account_api_certificates_b_application_json_reason_h319
   },
-  `responses/200/content/application~1json/schema`: {`stepUp`?: {`acrValues`?: string; `prompt`?: string; `maxAge`?: numeric}; 
+  `responses/200/content/application~1json/schema`: {`stepUp`?: WithAcrValuesPromptMaxAge; 
     `ok`?: boolean;
     `message`?: string;
     `go`?: string;
-    `view`?: {
-      `name`?: string;
-      `resolved`?: boolean;
-      `reasons`?: (string)[];
-      @js(#{`description`:"Each enrollment family's label, by its id."}) `familyLabels`?: Record<string>;
-      `urls`?: {`acmeDirectory`?: string; `scep`?: string; `est`?: string};
-      `fresh`?: {
-        `kind`?: string;
-        `kid`?: string;
-        `hmacKey`?: string;
-        `challenge`?: string;
-        `profile`?: string;
-        `expiresAt`?: Shape;
-        `scepUrl`?: string;
-        `plainScepUrl`?: string
-      };
-      `enrolled`?: ({
-        `serialHex`?: string;
-        `family`?: string;
-        `profile`?: string;
-        `subject`?: string;
-        `names`?: (string)[];
-        `thumbprint`?: string;
-        `keyAlg`?: string;
-        `notBefore`?: string;
-        `notAfter`?: string;
-        `issuedAt`?: string;
-        `requestedBy`?: NullableObject12;
-        `via`?: string;
-        `keySource`?: string;
-        `replaces`?: NullableString;
-        `certificatePem`?: string;
-        `chainPem`?: (string)[];
-        `revoked`?: {`at`?: string; `reason`?: string; `by`?: string};
-        `expired`?: boolean;
-        `status`?: string
-      })[];
-      `hostNames`?: (string)[];
-      `acme`?: NullableObject13;
-      `est`?: NullableObject14;
-      `scep`?: NullableObject15
-    }
+    `view`?: WithNameResolvedReasonsEtc12
   },
-  `responses/400/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `name`?: string;
-      `resolved`?: boolean;
-      `reasons`?: (string)[];
-      @js(#{`description`:"Each enrollment family's label, by its id."}) `familyLabels`?: Record<string>;
-      `urls`?: {`acmeDirectory`?: string; `scep`?: string; `est`?: string};
-      `fresh`?: {
-        `kind`?: string;
-        `kid`?: string;
-        `hmacKey`?: string;
-        `challenge`?: string;
-        `profile`?: string;
-        `expiresAt`?: Shape;
-        `scepUrl`?: string;
-        `plainScepUrl`?: string
-      };
-      `enrolled`?: ({
-        `serialHex`?: string;
-        `family`?: string;
-        `profile`?: string;
-        `subject`?: string;
-        `names`?: (string)[];
-        `thumbprint`?: string;
-        `keyAlg`?: string;
-        `notBefore`?: string;
-        `notAfter`?: string;
-        `issuedAt`?: string;
-        `requestedBy`?: NullableObject12;
-        `via`?: string;
-        `keySource`?: string;
-        `replaces`?: NullableString;
-        `certificatePem`?: string;
-        `chainPem`?: (string)[];
-        `revoked`?: {`at`?: string; `reason`?: string; `by`?: string};
-        `expired`?: boolean;
-        `status`?: string
-      })[];
-      `hostNames`?: (string)[];
-      `acme`?: NullableObject13;
-      `est`?: NullableObject14;
-      `scep`?: NullableObject15
-    }
-  },
-  `responses/401/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `name`?: string;
-      `resolved`?: boolean;
-      `reasons`?: (string)[];
-      @js(#{`description`:"Each enrollment family's label, by its id."}) `familyLabels`?: Record<string>;
-      `urls`?: {`acmeDirectory`?: string; `scep`?: string; `est`?: string};
-      `fresh`?: {
-        `kind`?: string;
-        `kid`?: string;
-        `hmacKey`?: string;
-        `challenge`?: string;
-        `profile`?: string;
-        `expiresAt`?: Shape;
-        `scepUrl`?: string;
-        `plainScepUrl`?: string
-      };
-      `enrolled`?: ({
-        `serialHex`?: string;
-        `family`?: string;
-        `profile`?: string;
-        `subject`?: string;
-        `names`?: (string)[];
-        `thumbprint`?: string;
-        `keyAlg`?: string;
-        `notBefore`?: string;
-        `notAfter`?: string;
-        `issuedAt`?: string;
-        `requestedBy`?: NullableObject12;
-        `via`?: string;
-        `keySource`?: string;
-        `replaces`?: NullableString;
-        `certificatePem`?: string;
-        `chainPem`?: (string)[];
-        `revoked`?: {`at`?: string; `reason`?: string; `by`?: string};
-        `expired`?: boolean;
-        `status`?: string
-      })[];
-      `hostNames`?: (string)[];
-      `acme`?: NullableObject13;
-      `est`?: NullableObject14;
-      `scep`?: NullableObject15
-    }
-  },
-  `responses/403/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `name`?: string;
-      `resolved`?: boolean;
-      `reasons`?: (string)[];
-      @js(#{`description`:"Each enrollment family's label, by its id."}) `familyLabels`?: Record<string>;
-      `urls`?: {`acmeDirectory`?: string; `scep`?: string; `est`?: string};
-      `fresh`?: {
-        `kind`?: string;
-        `kid`?: string;
-        `hmacKey`?: string;
-        `challenge`?: string;
-        `profile`?: string;
-        `expiresAt`?: Shape;
-        `scepUrl`?: string;
-        `plainScepUrl`?: string
-      };
-      `enrolled`?: ({
-        `serialHex`?: string;
-        `family`?: string;
-        `profile`?: string;
-        `subject`?: string;
-        `names`?: (string)[];
-        `thumbprint`?: string;
-        `keyAlg`?: string;
-        `notBefore`?: string;
-        `notAfter`?: string;
-        `issuedAt`?: string;
-        `requestedBy`?: NullableObject12;
-        `via`?: string;
-        `keySource`?: string;
-        `replaces`?: NullableString;
-        `certificatePem`?: string;
-        `chainPem`?: (string)[];
-        `revoked`?: {`at`?: string; `reason`?: string; `by`?: string};
-        `expired`?: boolean;
-        `status`?: string
-      })[];
-      `hostNames`?: (string)[];
-      `acme`?: NullableObject13;
-      `est`?: NullableObject14;
-      `scep`?: NullableObject15
-    }
-  },
-  `responses/404/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `name`?: string;
-      `resolved`?: boolean;
-      `reasons`?: (string)[];
-      @js(#{`description`:"Each enrollment family's label, by its id."}) `familyLabels`?: Record<string>;
-      `urls`?: {`acmeDirectory`?: string; `scep`?: string; `est`?: string};
-      `fresh`?: {
-        `kind`?: string;
-        `kid`?: string;
-        `hmacKey`?: string;
-        `challenge`?: string;
-        `profile`?: string;
-        `expiresAt`?: Shape;
-        `scepUrl`?: string;
-        `plainScepUrl`?: string
-      };
-      `enrolled`?: ({
-        `serialHex`?: string;
-        `family`?: string;
-        `profile`?: string;
-        `subject`?: string;
-        `names`?: (string)[];
-        `thumbprint`?: string;
-        `keyAlg`?: string;
-        `notBefore`?: string;
-        `notAfter`?: string;
-        `issuedAt`?: string;
-        `requestedBy`?: NullableObject12;
-        `via`?: string;
-        `keySource`?: string;
-        `replaces`?: NullableString;
-        `certificatePem`?: string;
-        `chainPem`?: (string)[];
-        `revoked`?: {`at`?: string; `reason`?: string; `by`?: string};
-        `expired`?: boolean;
-        `status`?: string
-      })[];
-      `hostNames`?: (string)[];
-      `acme`?: NullableObject13;
-      `est`?: NullableObject14;
-      `scep`?: NullableObject15
-    }
-  },
-  `responses/409/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `name`?: string;
-      `resolved`?: boolean;
-      `reasons`?: (string)[];
-      @js(#{`description`:"Each enrollment family's label, by its id."}) `familyLabels`?: Record<string>;
-      `urls`?: {`acmeDirectory`?: string; `scep`?: string; `est`?: string};
-      `fresh`?: {
-        `kind`?: string;
-        `kid`?: string;
-        `hmacKey`?: string;
-        `challenge`?: string;
-        `profile`?: string;
-        `expiresAt`?: Shape;
-        `scepUrl`?: string;
-        `plainScepUrl`?: string
-      };
-      `enrolled`?: ({
-        `serialHex`?: string;
-        `family`?: string;
-        `profile`?: string;
-        `subject`?: string;
-        `names`?: (string)[];
-        `thumbprint`?: string;
-        `keyAlg`?: string;
-        `notBefore`?: string;
-        `notAfter`?: string;
-        `issuedAt`?: string;
-        `requestedBy`?: NullableObject12;
-        `via`?: string;
-        `keySource`?: string;
-        `replaces`?: NullableString;
-        `certificatePem`?: string;
-        `chainPem`?: (string)[];
-        `revoked`?: {`at`?: string; `reason`?: string; `by`?: string};
-        `expired`?: boolean;
-        `status`?: string
-      })[];
-      `hostNames`?: (string)[];
-      `acme`?: NullableObject13;
-      `est`?: NullableObject14;
-      `scep`?: NullableObject15
-    }
-  },
-  `responses/429/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `name`?: string;
-      `resolved`?: boolean;
-      `reasons`?: (string)[];
-      @js(#{`description`:"Each enrollment family's label, by its id."}) `familyLabels`?: Record<string>;
-      `urls`?: {`acmeDirectory`?: string; `scep`?: string; `est`?: string};
-      `fresh`?: {
-        `kind`?: string;
-        `kid`?: string;
-        `hmacKey`?: string;
-        `challenge`?: string;
-        `profile`?: string;
-        `expiresAt`?: Shape;
-        `scepUrl`?: string;
-        `plainScepUrl`?: string
-      };
-      `enrolled`?: ({
-        `serialHex`?: string;
-        `family`?: string;
-        `profile`?: string;
-        `subject`?: string;
-        `names`?: (string)[];
-        `thumbprint`?: string;
-        `keyAlg`?: string;
-        `notBefore`?: string;
-        `notAfter`?: string;
-        `issuedAt`?: string;
-        `requestedBy`?: NullableObject12;
-        `via`?: string;
-        `keySource`?: string;
-        `replaces`?: NullableString;
-        `certificatePem`?: string;
-        `chainPem`?: (string)[];
-        `revoked`?: {`at`?: string; `reason`?: string; `by`?: string};
-        `expired`?: boolean;
-        `status`?: string
-      })[];
-      `hostNames`?: (string)[];
-      `acme`?: NullableObject13;
-      `est`?: NullableObject14;
-      `scep`?: NullableObject15
-    }
-  },
-  `responses/500/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `name`?: string;
-      `resolved`?: boolean;
-      `reasons`?: (string)[];
-      @js(#{`description`:"Each enrollment family's label, by its id."}) `familyLabels`?: Record<string>;
-      `urls`?: {`acmeDirectory`?: string; `scep`?: string; `est`?: string};
-      `fresh`?: {
-        `kind`?: string;
-        `kid`?: string;
-        `hmacKey`?: string;
-        `challenge`?: string;
-        `profile`?: string;
-        `expiresAt`?: Shape;
-        `scepUrl`?: string;
-        `plainScepUrl`?: string
-      };
-      `enrolled`?: ({
-        `serialHex`?: string;
-        `family`?: string;
-        `profile`?: string;
-        `subject`?: string;
-        `names`?: (string)[];
-        `thumbprint`?: string;
-        `keyAlg`?: string;
-        `notBefore`?: string;
-        `notAfter`?: string;
-        `issuedAt`?: string;
-        `requestedBy`?: NullableObject12;
-        `via`?: string;
-        `keySource`?: string;
-        `replaces`?: NullableString;
-        `certificatePem`?: string;
-        `chainPem`?: (string)[];
-        `revoked`?: {`at`?: string; `reason`?: string; `by`?: string};
-        `expired`?: boolean;
-        `status`?: string
-      })[];
-      `hostNames`?: (string)[];
-      `acme`?: NullableObject13;
-      `est`?: NullableObject14;
-      `scep`?: NullableObject15
-    }
-  },
-  `responses/503/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `name`?: string;
-      `resolved`?: boolean;
-      `reasons`?: (string)[];
-      @js(#{`description`:"Each enrollment family's label, by its id."}) `familyLabels`?: Record<string>;
-      `urls`?: {`acmeDirectory`?: string; `scep`?: string; `est`?: string};
-      `fresh`?: {
-        `kind`?: string;
-        `kid`?: string;
-        `hmacKey`?: string;
-        `challenge`?: string;
-        `profile`?: string;
-        `expiresAt`?: Shape;
-        `scepUrl`?: string;
-        `plainScepUrl`?: string
-      };
-      `enrolled`?: ({
-        `serialHex`?: string;
-        `family`?: string;
-        `profile`?: string;
-        `subject`?: string;
-        `names`?: (string)[];
-        `thumbprint`?: string;
-        `keyAlg`?: string;
-        `notBefore`?: string;
-        `notAfter`?: string;
-        `issuedAt`?: string;
-        `requestedBy`?: NullableObject12;
-        `via`?: string;
-        `keySource`?: string;
-        `replaces`?: NullableString;
-        `certificatePem`?: string;
-        `chainPem`?: (string)[];
-        `revoked`?: {`at`?: string; `reason`?: string; `by`?: string};
-        `expired`?: boolean;
-        `status`?: string
-      })[];
-      `hostNames`?: (string)[];
-      `acme`?: NullableObject13;
-      `est`?: NullableObject14;
-      `scep`?: NullableObject15
-    }
-  },
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc412,
+  `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc412,
+  `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc412,
+  `responses/404/content/application~1json/schema`: WithOkErrorsErrorEtc412,
+  `responses/409/content/application~1json/schema`: WithOkErrorsErrorEtc412,
+  `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc412,
+  `responses/500/content/application~1json/schema`: WithOkErrorsErrorEtc412,
+  `responses/503/content/application~1json/schema`: WithOkErrorsErrorEtc412,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @endpoint("/account-api/app-passwords",
@@ -6286,61 +3700,19 @@ op `changeCertificates`(`requestBody/content/application~1json/schema`: {
     `x-access`:"person",
     `x-mirrors`:"GET /portal/app-passwords"
   })
-op `getAppPasswords`(`responses/200/content/application~1json/schema`: {
-    `username`?: string;
-    `doors`?: {`refused`?: (string)[]; `secondFactor`?: boolean; `applies`?: boolean};
-    `doorTable`?: ({`id`?: string; `label`?: string; `what`?: string})[];
-    @js(#{`description`:"Each door's label, by its id."}) `doorLabels`?: Record<string>;
-    `unreadable`?: boolean;
-    `passwords`?: ({
-      `id`?: string;
-      `name`?: string;
-      `doors`?: (string)[];
-      `createdAt`?: Shape;
-      `lastUsedAt`?: Shape;
-      `lastUsedDoor`?: string
-    })[];
-    `enabled`?: boolean;
-    `maxName`?: numeric;
-    `fresh`?: {
-      `id`?: string;
-      `name`?: string;
-      `doors`?: (string)[];
-      `password`?: string
-    }
-  },
+op `getAppPasswords`(`responses/200/content/application~1json/schema`: WithUsernameDoorsDoorTableEtc10,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -6447,142 +3819,24 @@ op `changeAppPasswords`(`requestBody/content/application~1json/schema`: {
     `door_ssf`?: post_account_api_app_passwords_b_application_json_door_ssf_h385;
     `door_est`?: post_account_api_app_passwords_b_application_json_door_est_h387
   },
-  `responses/200/content/application~1json/schema`: {`stepUp`?: {`acrValues`?: string; `prompt`?: string; `maxAge`?: numeric}; 
+  `responses/200/content/application~1json/schema`: {`stepUp`?: WithAcrValuesPromptMaxAge; 
     `ok`?: boolean;
     `message`?: string;
     `go`?: string;
-    `view`?: {
-      `username`?: string;
-      `doors`?: {`refused`?: (string)[]; `secondFactor`?: boolean; `applies`?: boolean};
-      `doorTable`?: ({`id`?: string; `label`?: string; `what`?: string})[];
-      @js(#{`description`:"Each door's label, by its id."}) `doorLabels`?: Record<string>;
-      `unreadable`?: boolean;
-      `passwords`?: ({
-        `id`?: string;
-        `name`?: string;
-        `doors`?: (string)[];
-        `createdAt`?: Shape;
-        `lastUsedAt`?: Shape;
-        `lastUsedDoor`?: string
-      })[];
-      `enabled`?: boolean;
-      `maxName`?: numeric;
-      `fresh`?: {
-        `id`?: string;
-        `name`?: string;
-        `doors`?: (string)[];
-        `password`?: string
-      }
-    }
+    `view`?: WithUsernameDoorsDoorTableEtc10
   },
-  `responses/400/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `username`?: string;
-      `doors`?: {`refused`?: (string)[]; `secondFactor`?: boolean; `applies`?: boolean};
-      `doorTable`?: ({`id`?: string; `label`?: string; `what`?: string})[];
-      @js(#{`description`:"Each door's label, by its id."}) `doorLabels`?: Record<string>;
-      `unreadable`?: boolean;
-      `passwords`?: ({
-        `id`?: string;
-        `name`?: string;
-        `doors`?: (string)[];
-        `createdAt`?: Shape;
-        `lastUsedAt`?: Shape;
-        `lastUsedDoor`?: string
-      })[];
-      `enabled`?: boolean;
-      `maxName`?: numeric;
-      `fresh`?: {
-        `id`?: string;
-        `name`?: string;
-        `doors`?: (string)[];
-        `password`?: string
-      }
-    }
-  },
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc49,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/404/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `username`?: string;
-      `doors`?: {`refused`?: (string)[]; `secondFactor`?: boolean; `applies`?: boolean};
-      `doorTable`?: ({`id`?: string; `label`?: string; `what`?: string})[];
-      @js(#{`description`:"Each door's label, by its id."}) `doorLabels`?: Record<string>;
-      `unreadable`?: boolean;
-      `passwords`?: ({
-        `id`?: string;
-        `name`?: string;
-        `doors`?: (string)[];
-        `createdAt`?: Shape;
-        `lastUsedAt`?: Shape;
-        `lastUsedDoor`?: string
-      })[];
-      `enabled`?: boolean;
-      `maxName`?: numeric;
-      `fresh`?: {
-        `id`?: string;
-        `name`?: string;
-        `doors`?: (string)[];
-        `password`?: string
-      }
-    }
-  },
-  `responses/429/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `username`?: string;
-      `doors`?: {`refused`?: (string)[]; `secondFactor`?: boolean; `applies`?: boolean};
-      `doorTable`?: ({`id`?: string; `label`?: string; `what`?: string})[];
-      @js(#{`description`:"Each door's label, by its id."}) `doorLabels`?: Record<string>;
-      `unreadable`?: boolean;
-      `passwords`?: ({
-        `id`?: string;
-        `name`?: string;
-        `doors`?: (string)[];
-        `createdAt`?: Shape;
-        `lastUsedAt`?: Shape;
-        `lastUsedDoor`?: string
-      })[];
-      `enabled`?: boolean;
-      `maxName`?: numeric;
-      `fresh`?: {
-        `id`?: string;
-        `name`?: string;
-        `doors`?: (string)[];
-        `password`?: string
-      }
-    }
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/404/content/application~1json/schema`: WithOkErrorsErrorEtc49,
+  `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc49,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @endpoint("/account-api/kerberos",
@@ -6621,54 +3875,19 @@ op `changeAppPasswords`(`requestBody/content/application~1json/schema`: {
     `x-access`:"person",
     `x-mirrors`:"GET /portal/kerberos"
   })
-op `getKerberos`(`responses/200/content/application~1json/schema`: {
-    `kdc`?: boolean;
-    `person`?: boolean;
-    `principal`?: string;
-    `productKdc`?: boolean;
-    `disabled`?: boolean;
-    `keys`?: NullableObject16;
-    `made`?: {
-      `principal`?: string;
-      `kvno`?: NullableNumber;
-      `etypes`?: (string)[];
-      `source`?: string;
-      `keytab`?: string;
-      `keytabFilename`?: string
-    }
-  },
+op `getKerberos`(`responses/200/content/application~1json/schema`: WithKdcPersonPrincipalEtc7,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -6727,89 +3946,19 @@ op `makeKeytab`(`requestBody/content/application~1json/schema`: {
     `ok`?: boolean;
     `message`?: string;
     `go`?: string;
-    `view`?: {
-      `kdc`?: boolean;
-      `person`?: boolean;
-      `principal`?: string;
-      `productKdc`?: boolean;
-      `disabled`?: boolean;
-      `keys`?: NullableObject16;
-      `made`?: {
-        `principal`?: string;
-        `kvno`?: NullableNumber;
-        `etypes`?: (string)[];
-        `source`?: string;
-        `keytab`?: string;
-        `keytabFilename`?: string
-      }
-    }
+    `view`?: WithKdcPersonPrincipalEtc7
   },
-  `responses/400/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `kdc`?: boolean;
-      `person`?: boolean;
-      `principal`?: string;
-      `productKdc`?: boolean;
-      `disabled`?: boolean;
-      `keys`?: NullableObject16;
-      `made`?: {
-        `principal`?: string;
-        `kvno`?: NullableNumber;
-        `etypes`?: (string)[];
-        `source`?: string;
-        `keytab`?: string;
-        `keytabFilename`?: string
-      }
-    }
-  },
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc47,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/429/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `kdc`?: boolean;
-      `person`?: boolean;
-      `principal`?: string;
-      `productKdc`?: boolean;
-      `disabled`?: boolean;
-      `keys`?: NullableObject16;
-      `made`?: {
-        `principal`?: string;
-        `kvno`?: NullableNumber;
-        `etypes`?: (string)[];
-        `source`?: string;
-        `keytab`?: string;
-        `keytabFilename`?: string
-      }
-    }
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc47,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @endpoint("/account-api/delegate",
@@ -6848,43 +3997,19 @@ op `makeKeytab`(`requestBody/content/application~1json/schema`: {
     `x-access`:"person",
     `x-mirrors`:"GET /portal/delegate"
   })
-op `getDelegate`(`responses/200/content/application~1json/schema`: {
-    `mayAct`?: string;
-    `delegate`?: NullableObject17;
-    `notDelegated`?: boolean
-  },
+op `getDelegate`(`responses/200/content/application~1json/schema`: WithMayActDelegateNotDelegated,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -6938,41 +4063,22 @@ op `setDelegate`(`requestBody/content/application~1json/schema`: {
       `maxLength`:1024
     }) `delegate`?: string
   },
-  `responses/200/content/application~1json/schema`: {`ok`?: boolean; `message`?: string; `go`?: string},
+  `responses/200/content/application~1json/schema`: WithOkMessageGo,
   `responses/400/content/application~1json/schema`: {
     `ok`: boolean;
     `errors`: (string)[];
     `error`?: string;
-    `view`?: {
-      `mayAct`?: string;
-      `delegate`?: NullableObject17;
-      `notDelegated`?: boolean
-    }
+    `view`?: WithMayActDelegateNotDelegated
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @endpoint("/account-api/delegate/candidates",
@@ -7034,52 +4140,22 @@ op `findDelegateCandidates`(@js(#{`maxLength`:256}) `parameters/0/schema`: strin
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/503/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/503/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -7164,71 +4240,22 @@ op `findDelegateCandidates`(@js(#{`maxLength`:256}) `parameters/0/schema`: strin
 op `getSelfIssued`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`enum`:#["1"]}]}}) `parameters/0/schema`: unknown,
   @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`enum`:#["published","authorized","changed"]}]}}) `parameters/1/schema`: unknown,
   @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`pattern`:"^[A-Za-z0-9_-]{22}(?:[A-Za-z0-9_-]{12})?$"}]}}) `parameters/2/schema`: unknown,
-  `responses/200/content/application~1json/schema`: {
-    `enabled`?: boolean;
-    `turnOn`?: NullableObject18;
-    `loginHint`?: string;
-    `didClaim`?: boolean;
-    `published`?: NullableObject19;
-    `subjects`?: ({
-      `subject`?: string;
-      `label`?: string;
-      `enrolledAt`?: Shape;
-      `by`?: string;
-      `proof`?: string;
-      `preferred`?: boolean;
-      `location`?: NullableObject20;
-      `didDocumentUrl`?: string;
-      `didResolved`?: boolean
-    })[];
-    `notice`?: string;
-    `fresh`?: {
-      `kind`?: string;
-      `rid`?: string;
-      `did`?: string;
-      `file`?: {`name`?: string; `mime`?: string; `base64`?: string}
-    }
-  },
+  `responses/200/content/application~1json/schema`: WithEnabledTurnOnLoginHintEtc8,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/404/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/404/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -7281,90 +4308,17 @@ op `removeSelfIssued`(`requestBody/content/application~1json/schema`: {
     `action`?: post_account_api_self_issued_b_application_json_action_h422;
     @js(#{`maxLength`:2048,`description`:"The enrolled subject, from the list."}) `subject`: string
   },
-  `responses/200/content/application~1json/schema`: {`stepUp`?: {`acrValues`?: string; `prompt`?: string; `maxAge`?: numeric}; 
-    `ok`?: boolean;
-    `message`?: string;
-    `go`?: string;
-    `view`?: {
-      `enabled`?: boolean;
-      `turnOn`?: NullableObject18;
-      `loginHint`?: string;
-      `didClaim`?: boolean;
-      `published`?: NullableObject19;
-      `subjects`?: ({
-        `subject`?: string;
-        `label`?: string;
-        `enrolledAt`?: Shape;
-        `by`?: string;
-        `proof`?: string;
-        `preferred`?: boolean;
-        `location`?: NullableObject20;
-        `didDocumentUrl`?: string;
-        `didResolved`?: boolean
-      })[];
-      `notice`?: string;
-      `fresh`?: {
-        `kind`?: string;
-        `rid`?: string;
-        `did`?: string;
-        `file`?: {`name`?: string; `mime`?: string; `base64`?: string}
-      }
-    }
-  },
-  `responses/400/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `enabled`?: boolean;
-      `turnOn`?: NullableObject18;
-      `loginHint`?: string;
-      `didClaim`?: boolean;
-      `published`?: NullableObject19;
-      `subjects`?: ({
-        `subject`?: string;
-        `label`?: string;
-        `enrolledAt`?: Shape;
-        `by`?: string;
-        `proof`?: string;
-        `preferred`?: boolean;
-        `location`?: NullableObject20;
-        `didDocumentUrl`?: string;
-        `didResolved`?: boolean
-      })[];
-      `notice`?: string;
-      `fresh`?: {
-        `kind`?: string;
-        `rid`?: string;
-        `did`?: string;
-        `file`?: {`name`?: string; `mime`?: string; `base64`?: string}
-      }
-    }
-  },
+  `responses/200/content/application~1json/schema`: WithStepUpOkMessageEtc5,
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc413,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -7434,44 +4388,19 @@ op `getSelfIssuedDidDocument`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/404/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/404/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -7528,90 +4457,17 @@ op `actOnPublishedDid`(`requestBody/content/application~1json/schema`: {
     }) `action`: "publish" | "add-key" | "rotate-key" | "deactivate";
     `rid`?: post_account_api_self_issued_dids_b_application_json_rid_h436
   },
-  `responses/200/content/application~1json/schema`: {`stepUp`?: {`acrValues`?: string; `prompt`?: string; `maxAge`?: numeric}; 
-    `ok`?: boolean;
-    `message`?: string;
-    `go`?: string;
-    `view`?: {
-      `enabled`?: boolean;
-      `turnOn`?: NullableObject18;
-      `loginHint`?: string;
-      `didClaim`?: boolean;
-      `published`?: NullableObject19;
-      `subjects`?: ({
-        `subject`?: string;
-        `label`?: string;
-        `enrolledAt`?: Shape;
-        `by`?: string;
-        `proof`?: string;
-        `preferred`?: boolean;
-        `location`?: NullableObject20;
-        `didDocumentUrl`?: string;
-        `didResolved`?: boolean
-      })[];
-      `notice`?: string;
-      `fresh`?: {
-        `kind`?: string;
-        `rid`?: string;
-        `did`?: string;
-        `file`?: {`name`?: string; `mime`?: string; `base64`?: string}
-      }
-    }
-  },
-  `responses/400/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `enabled`?: boolean;
-      `turnOn`?: NullableObject18;
-      `loginHint`?: string;
-      `didClaim`?: boolean;
-      `published`?: NullableObject19;
-      `subjects`?: ({
-        `subject`?: string;
-        `label`?: string;
-        `enrolledAt`?: Shape;
-        `by`?: string;
-        `proof`?: string;
-        `preferred`?: boolean;
-        `location`?: NullableObject20;
-        `didDocumentUrl`?: string;
-        `didResolved`?: boolean
-      })[];
-      `notice`?: string;
-      `fresh`?: {
-        `kind`?: string;
-        `rid`?: string;
-        `did`?: string;
-        `file`?: {`name`?: string; `mime`?: string; `base64`?: string}
-      }
-    }
-  },
+  `responses/200/content/application~1json/schema`: WithStepUpOkMessageEtc5,
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc413,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -7662,107 +4518,19 @@ op `actOnPublishedDid`(`requestBody/content/application~1json/schema`: {
     `x-mirrors`:"GET /portal/wallet"
   })
 op `getOfferableCredentials`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"integer",`minimum`:1,`maximum`:100000}]}}) `parameters/0/schema`: unknown,
-  `responses/200/content/application~1json/schema`: {
-    `configurations`?: ({
-      `id`?: string;
-      `format`?: string;
-      `name`?: string;
-      `issuerDid`?: boolean;
-      `signingAlgs`?: ({`alg`?: string; `what`?: string; `spec`?: string})[];
-      `defaultSigningAlg`?: string
-    })[];
-    `modes`?: (string)[];
-    `lifetimeSeconds`?: numeric;
-    `wallet`?: NullableString;
-    `batchSize`?: numeric;
-    `issued`?: ({
-      `id`?: string;
-      `configurationId`?: NullableString;
-      `name`?: string;
-      `format`?: NullableString;
-      `issuedAt`?: string;
-      `expiresAt`?: string;
-      `status`?: string;
-      @js(#{`description`:"How many copies are in each status."}) `counts`?: Record<integer>;
-      `removable`?: boolean;
-      `removedAt`?: string;
-      `walletEvent`?: NullableString;
-      `walletEventAt`?: string;
-      `copies`?: ({
-        `id`?: string;
-        `position`?: integer;
-        `of`?: integer;
-        `issuedAt`?: string;
-        `expiresAt`?: string;
-        `status`?: string;
-        `removable`?: boolean;
-        `removedAt`?: string;
-        `walletEvent`?: NullableString;
-        `walletEventAt`?: string;
-        `keyThumbprint`?: NullableString;
-        `holderDid`?: NullableString;
-        `statusIndex`?: Shape
-      })[]
-    })[];
-    `paging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `per`?: integer;
-      `total`?: integer
-    };
-    `offer`?: {
-      `configurationId`?: string;
-      `signingAlg`?: string;
-      `mode`?: string;
-      `credentialOffer`?: {
-        `credential_issuer`?: string;
-        `credential_configuration_ids`?: (string)[];
-        `grants`?: {
-          `urn:ietf:params:oauth:grant-type:pre-authorized_code`?: {
-            `pre-authorized_code`?: string;
-            `tx_code`?: {`input_mode`?: string; `length`?: integer; `description`?: string}
-          };
-          `authorization_code`?: {`issuer_state`?: string}
-        }
-      };
-      `txCode`?: NullableString;
-      `expiresAt`?: string;
-      `byValue`?: {`offerUri`?: string; `walletUrl`?: string};
-      `byReference`?: NullableObject21
-    }
-  },
+  `responses/200/content/application~1json/schema`: WithConfigurationsModesLifetimeSecondsEtc8,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -7825,260 +4593,27 @@ op `createCredentialOffer`(`requestBody/content/application~1json/schema`: {
     `ok`?: boolean;
     `message`?: string;
     `go`?: string;
-    `offer`?: {
-      `configurationId`?: string;
-      `signingAlg`?: string;
-      `mode`?: string;
-      `credentialOffer`?: {
-        `credential_issuer`?: string;
-        `credential_configuration_ids`?: (string)[];
-        `grants`?: {
-          `urn:ietf:params:oauth:grant-type:pre-authorized_code`?: {
-            `pre-authorized_code`?: string;
-            `tx_code`?: {`input_mode`?: string; `length`?: integer; `description`?: string}
-          };
-          `authorization_code`?: {`issuer_state`?: string}
-        }
-      };
-      `txCode`?: NullableString;
-      `expiresAt`?: string;
-      `byValue`?: {`offerUri`?: string; `walletUrl`?: string};
-      `byReference`?: NullableObject21
-    };
-    `view`?: {
-      `configurations`?: ({
-        `id`?: string;
-        `format`?: string;
-        `name`?: string;
-        `issuerDid`?: boolean;
-        `signingAlgs`?: ({`alg`?: string; `what`?: string; `spec`?: string})[];
-        `defaultSigningAlg`?: string
-      })[];
-      `modes`?: (string)[];
-      `lifetimeSeconds`?: numeric;
-      `wallet`?: NullableString;
-      `batchSize`?: numeric;
-      `issued`?: ({
-        `id`?: string;
-        `configurationId`?: NullableString;
-        `name`?: string;
-        `format`?: NullableString;
-        `issuedAt`?: string;
-        `expiresAt`?: string;
-        `status`?: string;
-        @js(#{`description`:"How many copies are in each status."}) `counts`?: Record<integer>;
-        `removable`?: boolean;
-        `removedAt`?: string;
-        `walletEvent`?: NullableString;
-        `walletEventAt`?: string;
-        `copies`?: ({
-          `id`?: string;
-          `position`?: integer;
-          `of`?: integer;
-          `issuedAt`?: string;
-          `expiresAt`?: string;
-          `status`?: string;
-          `removable`?: boolean;
-          `removedAt`?: string;
-          `walletEvent`?: NullableString;
-          `walletEventAt`?: string;
-          `keyThumbprint`?: NullableString;
-          `holderDid`?: NullableString;
-          `statusIndex`?: Shape
-        })[]
-      })[];
-      `paging`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `per`?: integer;
-        `total`?: integer
-      };
-      `offer`?: {
-        `configurationId`?: string;
-        `signingAlg`?: string;
-        `mode`?: string;
-        `credentialOffer`?: {
-          `credential_issuer`?: string;
-          `credential_configuration_ids`?: (string)[];
-          `grants`?: {
-            `urn:ietf:params:oauth:grant-type:pre-authorized_code`?: {
-              `pre-authorized_code`?: string;
-              `tx_code`?: {`input_mode`?: string; `length`?: integer; `description`?: string}
-            };
-            `authorization_code`?: {`issuer_state`?: string}
-          }
-        };
-        `txCode`?: NullableString;
-        `expiresAt`?: string;
-        `byValue`?: {`offerUri`?: string; `walletUrl`?: string};
-        `byReference`?: NullableObject21
-      }
-    }
+    `offer`?: WithConfigurationIdSigningAlgModeEtc8;
+    `view`?: WithConfigurationsModesLifetimeSecondsEtc8
   },
   `responses/400/content/application~1json/schema`: {
     `ok`: boolean;
     `errors`: (string)[];
     `error`?: string;
-    `view`?: {
-      `configurations`?: ({
-        `id`?: string;
-        `format`?: string;
-        `name`?: string;
-        `issuerDid`?: boolean;
-        `signingAlgs`?: ({`alg`?: string; `what`?: string; `spec`?: string})[];
-        `defaultSigningAlg`?: string
-      })[];
-      `modes`?: (string)[];
-      `lifetimeSeconds`?: numeric;
-      `wallet`?: NullableString;
-      `batchSize`?: numeric;
-      `issued`?: ({
-        `id`?: string;
-        `configurationId`?: NullableString;
-        `name`?: string;
-        `format`?: NullableString;
-        `issuedAt`?: string;
-        `expiresAt`?: string;
-        `status`?: string;
-        @js(#{`description`:"How many copies are in each status."}) `counts`?: Record<integer>;
-        `removable`?: boolean;
-        `removedAt`?: string;
-        `walletEvent`?: NullableString;
-        `walletEventAt`?: string;
-        `copies`?: ({
-          `id`?: string;
-          `position`?: integer;
-          `of`?: integer;
-          `issuedAt`?: string;
-          `expiresAt`?: string;
-          `status`?: string;
-          `removable`?: boolean;
-          `removedAt`?: string;
-          `walletEvent`?: NullableString;
-          `walletEventAt`?: string;
-          `keyThumbprint`?: NullableString;
-          `holderDid`?: NullableString;
-          `statusIndex`?: Shape
-        })[]
-      })[];
-      `paging`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `per`?: integer;
-        `total`?: integer
-      };
-      `offer`?: {
-        `configurationId`?: string;
-        `signingAlg`?: string;
-        `mode`?: string;
-        `credentialOffer`?: {
-          `credential_issuer`?: string;
-          `credential_configuration_ids`?: (string)[];
-          `grants`?: {
-            `urn:ietf:params:oauth:grant-type:pre-authorized_code`?: {
-              `pre-authorized_code`?: string;
-              `tx_code`?: {`input_mode`?: string; `length`?: integer; `description`?: string}
-            };
-            `authorization_code`?: {`issuer_state`?: string}
-          }
-        };
-        `txCode`?: NullableString;
-        `expiresAt`?: string;
-        `byValue`?: {`offerUri`?: string; `walletUrl`?: string};
-        `byReference`?: NullableObject21
-      }
-    }
+    `view`?: WithConfigurationsModesLifetimeSecondsEtc8
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   `responses/403/content/application~1json/schema`: {
     `ok`: boolean;
     `errors`: (string)[];
     `error`?: string;
-    `view`?: {
-      `configurations`?: ({
-        `id`?: string;
-        `format`?: string;
-        `name`?: string;
-        `issuerDid`?: boolean;
-        `signingAlgs`?: ({`alg`?: string; `what`?: string; `spec`?: string})[];
-        `defaultSigningAlg`?: string
-      })[];
-      `modes`?: (string)[];
-      `lifetimeSeconds`?: numeric;
-      `wallet`?: NullableString;
-      `batchSize`?: numeric;
-      `issued`?: ({
-        `id`?: string;
-        `configurationId`?: NullableString;
-        `name`?: string;
-        `format`?: NullableString;
-        `issuedAt`?: string;
-        `expiresAt`?: string;
-        `status`?: string;
-        @js(#{`description`:"How many copies are in each status."}) `counts`?: Record<integer>;
-        `removable`?: boolean;
-        `removedAt`?: string;
-        `walletEvent`?: NullableString;
-        `walletEventAt`?: string;
-        `copies`?: ({
-          `id`?: string;
-          `position`?: integer;
-          `of`?: integer;
-          `issuedAt`?: string;
-          `expiresAt`?: string;
-          `status`?: string;
-          `removable`?: boolean;
-          `removedAt`?: string;
-          `walletEvent`?: NullableString;
-          `walletEventAt`?: string;
-          `keyThumbprint`?: NullableString;
-          `holderDid`?: NullableString;
-          `statusIndex`?: Shape
-        })[]
-      })[];
-      `paging`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `per`?: integer;
-        `total`?: integer
-      };
-      `offer`?: {
-        `configurationId`?: string;
-        `signingAlg`?: string;
-        `mode`?: string;
-        `credentialOffer`?: {
-          `credential_issuer`?: string;
-          `credential_configuration_ids`?: (string)[];
-          `grants`?: {
-            `urn:ietf:params:oauth:grant-type:pre-authorized_code`?: {
-              `pre-authorized_code`?: string;
-              `tx_code`?: {`input_mode`?: string; `length`?: integer; `description`?: string}
-            };
-            `authorization_code`?: {`issuer_state`?: string}
-          }
-        };
-        `txCode`?: NullableString;
-        `expiresAt`?: string;
-        `byValue`?: {`offerUri`?: string; `walletUrl`?: string};
-        `byReference`?: NullableObject21
-      }
-    }
+    `view`?: WithConfigurationsModesLifetimeSecondsEtc8
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -8136,174 +4671,23 @@ op `removeIssuedCredential`(`requestBody/content/application~1json/schema`: {
     `go`?: string;
     `scope`?: string;
     `removed`?: integer;
-    `view`?: {
-      `configurations`?: ({
-        `id`?: string;
-        `format`?: string;
-        `name`?: string;
-        `issuerDid`?: boolean;
-        `signingAlgs`?: ({`alg`?: string; `what`?: string; `spec`?: string})[];
-        `defaultSigningAlg`?: string
-      })[];
-      `modes`?: (string)[];
-      `lifetimeSeconds`?: numeric;
-      `wallet`?: NullableString;
-      `batchSize`?: numeric;
-      `issued`?: ({
-        `id`?: string;
-        `configurationId`?: NullableString;
-        `name`?: string;
-        `format`?: NullableString;
-        `issuedAt`?: string;
-        `expiresAt`?: string;
-        `status`?: string;
-        @js(#{`description`:"How many copies are in each status."}) `counts`?: Record<integer>;
-        `removable`?: boolean;
-        `removedAt`?: string;
-        `walletEvent`?: NullableString;
-        `walletEventAt`?: string;
-        `copies`?: ({
-          `id`?: string;
-          `position`?: integer;
-          `of`?: integer;
-          `issuedAt`?: string;
-          `expiresAt`?: string;
-          `status`?: string;
-          `removable`?: boolean;
-          `removedAt`?: string;
-          `walletEvent`?: NullableString;
-          `walletEventAt`?: string;
-          `keyThumbprint`?: NullableString;
-          `holderDid`?: NullableString;
-          `statusIndex`?: Shape
-        })[]
-      })[];
-      `paging`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `per`?: integer;
-        `total`?: integer
-      };
-      `offer`?: {
-        `configurationId`?: string;
-        `signingAlg`?: string;
-        `mode`?: string;
-        `credentialOffer`?: {
-          `credential_issuer`?: string;
-          `credential_configuration_ids`?: (string)[];
-          `grants`?: {
-            `urn:ietf:params:oauth:grant-type:pre-authorized_code`?: {
-              `pre-authorized_code`?: string;
-              `tx_code`?: {`input_mode`?: string; `length`?: integer; `description`?: string}
-            };
-            `authorization_code`?: {`issuer_state`?: string}
-          }
-        };
-        `txCode`?: NullableString;
-        `expiresAt`?: string;
-        `byValue`?: {`offerUri`?: string; `walletUrl`?: string};
-        `byReference`?: NullableObject21
-      }
-    }
+    `view`?: WithConfigurationsModesLifetimeSecondsEtc8
   },
   `responses/400/content/application~1json/schema`: {
     `ok`: boolean;
     `errors`: (string)[];
     `error`?: string;
-    `view`?: {
-      `configurations`?: ({
-        `id`?: string;
-        `format`?: string;
-        `name`?: string;
-        `issuerDid`?: boolean;
-        `signingAlgs`?: ({`alg`?: string; `what`?: string; `spec`?: string})[];
-        `defaultSigningAlg`?: string
-      })[];
-      `modes`?: (string)[];
-      `lifetimeSeconds`?: numeric;
-      `wallet`?: NullableString;
-      `batchSize`?: numeric;
-      `issued`?: ({
-        `id`?: string;
-        `configurationId`?: NullableString;
-        `name`?: string;
-        `format`?: NullableString;
-        `issuedAt`?: string;
-        `expiresAt`?: string;
-        `status`?: string;
-        @js(#{`description`:"How many copies are in each status."}) `counts`?: Record<integer>;
-        `removable`?: boolean;
-        `removedAt`?: string;
-        `walletEvent`?: NullableString;
-        `walletEventAt`?: string;
-        `copies`?: ({
-          `id`?: string;
-          `position`?: integer;
-          `of`?: integer;
-          `issuedAt`?: string;
-          `expiresAt`?: string;
-          `status`?: string;
-          `removable`?: boolean;
-          `removedAt`?: string;
-          `walletEvent`?: NullableString;
-          `walletEventAt`?: string;
-          `keyThumbprint`?: NullableString;
-          `holderDid`?: NullableString;
-          `statusIndex`?: Shape
-        })[]
-      })[];
-      `paging`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `per`?: integer;
-        `total`?: integer
-      };
-      `offer`?: {
-        `configurationId`?: string;
-        `signingAlg`?: string;
-        `mode`?: string;
-        `credentialOffer`?: {
-          `credential_issuer`?: string;
-          `credential_configuration_ids`?: (string)[];
-          `grants`?: {
-            `urn:ietf:params:oauth:grant-type:pre-authorized_code`?: {
-              `pre-authorized_code`?: string;
-              `tx_code`?: {`input_mode`?: string; `length`?: integer; `description`?: string}
-            };
-            `authorization_code`?: {`issuer_state`?: string}
-          }
-        };
-        `txCode`?: NullableString;
-        `expiresAt`?: string;
-        `byValue`?: {`offerUri`?: string; `walletUrl`?: string};
-        `byReference`?: NullableObject21
-      }
-    }
+    `view`?: WithConfigurationsModesLifetimeSecondsEtc8
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @endpoint("/account-api/devices",
@@ -8342,62 +4726,19 @@ op `removeIssuedCredential`(`requestBody/content/application~1json/schema`: {
     `x-access`:"person",
     `x-mirrors`:"GET /portal/devices"
   })
-op `getDevices`(`responses/200/content/application~1json/schema`: {
-    `devices`?: ({
-      `id`?: string;
-      `label`?: string;
-      `applications`?: (string)[];
-      `nativeSso`?: boolean;
-      `sessionLive`?: boolean;
-      `keys`?: ({`kind`?: string; `level`?: string})[];
-      `attestation`?: string;
-      `enrolment`?: string;
-      `lastUsed`?: Shape
-    })[];
-    `platforms`?: (string)[];
-    `proof`?: NullableObject22;
-    `audience`?: string;
-    `proofTyp`?: string;
-    `linking`?: NullableObject23;
-    `link`?: {
-      `enrolled`?: integer;
-      `keys`?: ({`credentialId`?: string; `name`?: string; `trusted`?: boolean})[];
-      `roaming`?: (string)[]
-    };
-    `remember`?: boolean
-  },
+op `getDevices`(`responses/200/content/application~1json/schema`: WithDevicesPlatformsProofEtc8,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -8481,60 +4822,22 @@ op `actOnDevices`(`requestBody/content/application~1json/schema`: {
     @js(#{`description`:"The device's model.",`maxLength`:128}) `model`?: string;
     @js(#{`description`:"The device's operating system.",`maxLength`:128}) `os`?: string
   },
-  `responses/200/content/application~1json/schema`: {`ok`?: boolean; `message`?: string; `go`?: string},
+  `responses/200/content/application~1json/schema`: WithOkMessageGo,
   `responses/400/content/application~1json/schema`: {
     `ok`: boolean;
     `errors`: (string)[];
     `error`?: string;
-    `view`?: {
-      `devices`?: ({
-        `id`?: string;
-        `label`?: string;
-        `applications`?: (string)[];
-        `nativeSso`?: boolean;
-        `sessionLive`?: boolean;
-        `keys`?: ({`kind`?: string; `level`?: string})[];
-        `attestation`?: string;
-        `enrolment`?: string;
-        `lastUsed`?: Shape
-      })[];
-      `platforms`?: (string)[];
-      `proof`?: NullableObject22;
-      `audience`?: string;
-      `proofTyp`?: string;
-      `linking`?: NullableObject23;
-      `link`?: {
-        `enrolled`?: integer;
-        `keys`?: ({`credentialId`?: string; `name`?: string; `trusted`?: boolean})[];
-        `roaming`?: (string)[]
-      };
-      `remember`?: boolean
-    }
+    `view`?: WithDevicesPlatformsProofEtc8
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @endpoint("/account-api/devices/challenge",
@@ -8586,36 +4889,16 @@ op `deviceChallenge`(`requestBody/content/application~1json/schema`: {
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @endpoint("/account-api/devices/proof",
@@ -8679,48 +4962,20 @@ op `deviceProof`(`requestBody/content/application~1json/schema`: {
     @js(#{`maxLength`:128}) `model`?: string;
     @js(#{`maxLength`:128}) `os`?: string
   },
-  `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `device`?: NullableObject24;
-    `key`?: NullableObject25
-  },
-  `responses/201/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `device`?: NullableObject24;
-    `key`?: NullableObject25
-  },
+  `responses/200/content/application~1json/schema`: WithOkDeviceKey,
+  `responses/201/content/application~1json/schema`: WithOkDeviceKey,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @js(#{
@@ -8813,40 +5068,20 @@ op `getSignInRequests`(@js(#{`maxLength`:256}) `parameters/0/schema`: string,
         `parts`?: string
       })[]
     })[];
-    `stepUp`?: {`acrValues`?: string; `prompt`?: string; `maxAge`?: numeric}
+    `stepUp`?: WithAcrValuesPromptMaxAge
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @js(#{`description`:"The GNAP rights ticked.",`$comb`:"oneOf"}) @hoisted union post_account_api_ciba_b_application_json_right_h536 {string, (string)[]}
@@ -8900,37 +5135,22 @@ op `answerSignInRequest`(@js(#{
     `right`?: post_account_api_ciba_b_application_json_right_h536;
     @js(#{`description`:"Release your identity (GNAP)."}) `subject`?: "yes"
   },
-  `responses/200/content/application~1json/schema`: {`ok`?: boolean; `message`?: string; `go`?: string},
+  `responses/200/content/application~1json/schema`: WithOkMessageGo,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   `responses/403/content/application~1json/schema`: {
     `ok`: boolean;
     `errors`: (string)[];
     `error`?: string;
-    `stepUp`?: {`acrValues`?: string; `prompt`?: string; `maxAge`?: numeric}
+    `stepUp`?: WithAcrValuesPromptMaxAge
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @endpoint("/account-api/access-requests",
@@ -8969,72 +5189,19 @@ op `answerSignInRequest`(@js(#{
     `x-access`:"person",
     `x-mirrors`:"GET /portal/access-requests"
   })
-op `getAccessRequests`(`responses/200/content/application~1json/schema`: {
-    `enabled`?: boolean;
-    `rows`?: ({
-      `id`?: string;
-      `status`?: string;
-      `requester`?: NullableString;
-      `client`?: NullableObject26;
-      `application`?: NullableString;
-      @js(#{
-        `x-free-form`:"An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define.",
-        `description`:"An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define."
-      }) `subject`?: unknown;
-      @js(#{
-        `x-free-form`:"An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define.",
-        `description`:"An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define."
-      }) `action`?: unknown;
-      @js(#{
-        `x-free-form`:"An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define.",
-        `description`:"An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define."
-      }) `resource`?: unknown;
-      @js(#{
-        `x-free-form`:"An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define.",
-        `description`:"An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define."
-      }) `context`?: unknown;
-      `emergency`?: boolean;
-      `justification`?: string;
-      `createdAt`?: Shape;
-      `expiresAt`?: Shape;
-      `finishedAt`?: Shape;
-      `decidedBy`?: string;
-      `approval`?: NullableObject27;
-      `approvers`?: {`roles`?: (string)[]; `groups`?: (string)[]; `owners`?: boolean}
-    })[]
-  },
+op `getAccessRequests`(`responses/200/content/application~1json/schema`: WithEnabledRows,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @endpoint("/account-api/access-requests",
@@ -9083,70 +5250,22 @@ op `decideAccessRequest`(`requestBody/content/application~1json/schema`: {
     }) `request`: string;
     @js(#{`description`:"approve or deny."}) `action`: "approve" | "deny"
   },
-  `responses/200/content/application~1json/schema`: {`ok`?: boolean; `message`?: string; `go`?: string},
+  `responses/200/content/application~1json/schema`: WithOkMessageGo,
   `responses/400/content/application~1json/schema`: {
     `ok`: boolean;
     `errors`: (string)[];
     `error`?: string;
-    `view`?: {
-      `enabled`?: boolean;
-      `rows`?: ({
-        `id`?: string;
-        `status`?: string;
-        `requester`?: NullableString;
-        `client`?: NullableObject26;
-        `application`?: NullableString;
-        @js(#{
-          `x-free-form`:"An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define.",
-          `description`:"An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define."
-        }) `subject`?: unknown;
-        @js(#{
-          `x-free-form`:"An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define.",
-          `description`:"An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define."
-        }) `action`?: unknown;
-        @js(#{
-          `x-free-form`:"An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define.",
-          `description`:"An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define."
-        }) `resource`?: unknown;
-        @js(#{
-          `x-free-form`:"An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define.",
-          `description`:"An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define."
-        }) `context`?: unknown;
-        `emergency`?: boolean;
-        `justification`?: string;
-        `createdAt`?: Shape;
-        `expiresAt`?: Shape;
-        `finishedAt`?: Shape;
-        `decidedBy`?: string;
-        `approval`?: NullableObject27;
-        `approvers`?: {`roles`?: (string)[]; `groups`?: (string)[]; `owners`?: boolean}
-      })[]
-    }
+    `view`?: WithEnabledRows
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @endpoint("/account-api/device",
@@ -9201,63 +5320,21 @@ op `decideAccessRequest`(`requestBody/content/application~1json/schema`: {
     `x-mirrors`:"GET /portal/device"
   })
 op `getDeviceRequest`(@js(#{`maxLength`:32}) `parameters/0/schema`: string,
-  `responses/200/content/application~1json/schema`: {
-    `enabled`?: boolean;
-    `typed`?: string;
-    `record`?: NullableObject28
-  },
+  `responses/200/content/application~1json/schema`: WithEnabledTypedRecord,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/404/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `enabled`?: boolean;
-      `typed`?: string;
-      `record`?: NullableObject28
-    }
-  },
-  `responses/429/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `enabled`?: boolean;
-      `typed`?: string;
-      `record`?: NullableObject28
-    }
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/404/content/application~1json/schema`: WithOkErrorsErrorEtc42,
+  `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc42,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @endpoint("/account-api/device",
@@ -9311,51 +5388,18 @@ op `answerDeviceRequest`(`requestBody/content/application~1json/schema`: {
       `description`:"The code the device shows."
     }) `user_code`: string
   },
-  `responses/200/content/application~1json/schema`: {`ok`?: boolean; `message`?: string; `go`?: string},
-  `responses/400/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `enabled`?: boolean;
-      `typed`?: string;
-      `record`?: NullableObject28
-    }
-  },
+  `responses/200/content/application~1json/schema`: WithOkMessageGo,
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc42,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/429/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `enabled`?: boolean;
-      `typed`?: string;
-      `record`?: NullableObject28
-    }
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc42,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -9422,57 +5466,19 @@ op `answerDeviceRequest`(`requestBody/content/application~1json/schema`: {
 op `getClaimSources`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"integer",`minimum`:1,`maximum`:100000}]}}) `parameters/0/schema`: unknown,
   @js(#{`maxLength`:200}) `parameters/1/schema`: string,
   @js(#{`maxLength`:400}) `parameters/2/schema`: string,
-  `responses/200/content/application~1json/schema`: {
-    `providers`?: ({
-      `id`?: string;
-      `name`?: NullableString;
-      `issuer`?: NullableString;
-      `claims`?: (string)[];
-      `delivery`?: NullableString;
-      `link`?: NullableObject29
-    })[];
-    `paging`?: {
-      `page`?: integer;
-      `pages`?: integer;
-      `per`?: integer;
-      `total`?: integer
-    };
-    `linked`?: integer;
-    `notice`?: string;
-    `problem`?: string
-  },
+  `responses/200/content/application~1json/schema`: WithProvidersPagingLinkedEtc5,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @endpoint("/account-api/claim-sources",
@@ -9523,50 +5529,17 @@ op `linkClaimSource`(`requestBody/content/application~1json/schema`: {
     `ok`: boolean;
     `errors`: (string)[];
     `error`?: string;
-    `view`?: {
-      `providers`?: ({
-        `id`?: string;
-        `name`?: NullableString;
-        `issuer`?: NullableString;
-        `claims`?: (string)[];
-        `delivery`?: NullableString;
-        `link`?: NullableObject29
-      })[];
-      `paging`?: {
-        `page`?: integer;
-        `pages`?: integer;
-        `per`?: integer;
-        `total`?: integer
-      };
-      `linked`?: integer;
-      `notice`?: string;
-      `problem`?: string
-    }
+    `view`?: WithProvidersPagingLinkedEtc5
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @endpoint("/account-api/connected-accounts",
@@ -9621,50 +5594,19 @@ op `linkClaimSource`(`requestBody/content/application~1json/schema`: {
   })
 op `getConnectedAccounts`(@js(#{`maxLength`:200}) `parameters/0/schema`: string,
   @js(#{`maxLength`:400}) `parameters/1/schema`: string,
-  `responses/200/content/application~1json/schema`: {
-    `providers`?: ({
-      `id`?: string;
-      `name`?: NullableString;
-      `provider`?: NullableString;
-      `providerLabel`?: NullableString;
-      `connected`?: boolean
-    })[];
-    `connected`?: integer;
-    `notice`?: string;
-    `problem`?: string
-  },
+  `responses/200/content/application~1json/schema`: WithProvidersConnectedNoticeEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc4,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
 @endpoint("/account-api/connected-accounts",
@@ -9719,75 +5661,17 @@ op `connectAccount`(`requestBody/content/application~1json/schema`: {
     `message`?: string;
     `go`?: string;
     `location`?: string;
-    `stepUp`?: {`acrValues`?: string; `prompt`?: string; `maxAge`?: numeric}
+    `stepUp`?: WithAcrValuesPromptMaxAge
   },
-  `responses/400/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `providers`?: ({
-        `id`?: string;
-        `name`?: NullableString;
-        `provider`?: NullableString;
-        `providerLabel`?: NullableString;
-        `connected`?: boolean
-      })[];
-      `connected`?: integer;
-      `notice`?: string;
-      `problem`?: string
-    }
-  },
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc410,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/403/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `providers`?: ({
-        `id`?: string;
-        `name`?: NullableString;
-        `provider`?: NullableString;
-        `providerLabel`?: NullableString;
-        `connected`?: boolean
-      })[];
-      `connected`?: integer;
-      `notice`?: string;
-      `problem`?: string
-    }
-  },
-  `responses/409/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `providers`?: ({
-        `id`?: string;
-        `name`?: NullableString;
-        `provider`?: NullableString;
-        `providerLabel`?: NullableString;
-        `connected`?: boolean
-      })[];
-      `connected`?: integer;
-      `notice`?: string;
-      `problem`?: string
-    }
-  },
+  }) `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc4,
+  `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc410,
+  `responses/409/content/application~1json/schema`: WithOkErrorsErrorEtc410,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -9842,207 +5726,12 @@ op `connectAccount`(`requestBody/content/application~1json/schema`: {
   })
 op `getActivation`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`minLength`:1,`maxLength`:256}]}}) `parameters/0/schema`: unknown,
   `parameters/1/schema`: string,
-  `responses/200/content/application~1json/schema`: {
-    `step`?: string;
-    `user`?: string;
-    `token`?: string;
-    `base`?: string;
-    `rules`?: {`enforced`?: boolean; `rules`?: (string)[]};
-    `webauthnEnabled`?: boolean;
-    `passkeyOffered`?: boolean;
-    `passkeyAlone`?: boolean;
-    `kinds`?: (string)[];
-    `lanes`?: (string)[];
-    `totpOffered`?: boolean;
-    `title`?: string;
-    `refused`?: string;
-    `passkey`?: boolean;
-    `secondStep`?: boolean;
-    `wantsTotp`?: boolean;
-    `pending`?: {
-      `id`?: string;
-      `kind`?: string;
-      `lane`?: string;
-      `challenge`?: string;
-      `rpId`?: string;
-      `user`?: string;
-      `userHandle`?: string;
-      `display`?: string;
-      `exclude`?: (string)[];
-      `options`?: {
-        `rp`?: {`name`?: string; `id`?: string};
-        `algorithms`?: (integer)[];
-        `attestation`?: string;
-        `timeout`?: numeric;
-        `authenticatorSelection`?: {
-          `userVerification`?: string;
-          `residentKey`?: string;
-          `requireResidentKey`?: boolean;
-          `authenticatorAttachment`?: string
-        };
-        `credProps`?: boolean;
-        `minPinLength`?: boolean;
-        `hints`?: (string)[]
-      };
-      `fallback`?: {
-        `asksPostQuantum`?: boolean;
-        `classical`?: boolean;
-        `retrying`?: boolean
-      }
-    };
-    `enrolment`?: {
-      `grouped`?: string;
-      `issuer`?: string;
-      `qr`?: string;
-      `algorithm`?: string;
-      `digits`?: numeric;
-      `period`?: numeric
-    };
-    `warning`?: string;
-    `password`?: boolean;
-    `withTotp`?: boolean;
-    `signIn`?: string
-  },
-  `responses/400/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `step`?: string;
-      `user`?: string;
-      `token`?: string;
-      `base`?: string;
-      `rules`?: {`enforced`?: boolean; `rules`?: (string)[]};
-      `webauthnEnabled`?: boolean;
-      `passkeyOffered`?: boolean;
-      `passkeyAlone`?: boolean;
-      `kinds`?: (string)[];
-      `lanes`?: (string)[];
-      `totpOffered`?: boolean;
-      `title`?: string;
-      `refused`?: string;
-      `passkey`?: boolean;
-      `secondStep`?: boolean;
-      `wantsTotp`?: boolean;
-      `pending`?: {
-        `id`?: string;
-        `kind`?: string;
-        `lane`?: string;
-        `challenge`?: string;
-        `rpId`?: string;
-        `user`?: string;
-        `userHandle`?: string;
-        `display`?: string;
-        `exclude`?: (string)[];
-        `options`?: {
-          `rp`?: {`name`?: string; `id`?: string};
-          `algorithms`?: (integer)[];
-          `attestation`?: string;
-          `timeout`?: numeric;
-          `authenticatorSelection`?: {
-            `userVerification`?: string;
-            `residentKey`?: string;
-            `requireResidentKey`?: boolean;
-            `authenticatorAttachment`?: string
-          };
-          `credProps`?: boolean;
-          `minPinLength`?: boolean;
-          `hints`?: (string)[]
-        };
-        `fallback`?: {
-          `asksPostQuantum`?: boolean;
-          `classical`?: boolean;
-          `retrying`?: boolean
-        }
-      };
-      `enrolment`?: {
-        `grouped`?: string;
-        `issuer`?: string;
-        `qr`?: string;
-        `algorithm`?: string;
-        `digits`?: numeric;
-        `period`?: numeric
-      };
-      `warning`?: string;
-      `password`?: boolean;
-      `withTotp`?: boolean;
-      `signIn`?: string
-    }
-  },
-  `responses/429/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `step`?: string;
-      `user`?: string;
-      `token`?: string;
-      `base`?: string;
-      `rules`?: {`enforced`?: boolean; `rules`?: (string)[]};
-      `webauthnEnabled`?: boolean;
-      `passkeyOffered`?: boolean;
-      `passkeyAlone`?: boolean;
-      `kinds`?: (string)[];
-      `lanes`?: (string)[];
-      `totpOffered`?: boolean;
-      `title`?: string;
-      `refused`?: string;
-      `passkey`?: boolean;
-      `secondStep`?: boolean;
-      `wantsTotp`?: boolean;
-      `pending`?: {
-        `id`?: string;
-        `kind`?: string;
-        `lane`?: string;
-        `challenge`?: string;
-        `rpId`?: string;
-        `user`?: string;
-        `userHandle`?: string;
-        `display`?: string;
-        `exclude`?: (string)[];
-        `options`?: {
-          `rp`?: {`name`?: string; `id`?: string};
-          `algorithms`?: (integer)[];
-          `attestation`?: string;
-          `timeout`?: numeric;
-          `authenticatorSelection`?: {
-            `userVerification`?: string;
-            `residentKey`?: string;
-            `requireResidentKey`?: boolean;
-            `authenticatorAttachment`?: string
-          };
-          `credProps`?: boolean;
-          `minPinLength`?: boolean;
-          `hints`?: (string)[]
-        };
-        `fallback`?: {
-          `asksPostQuantum`?: boolean;
-          `classical`?: boolean;
-          `retrying`?: boolean
-        }
-      };
-      `enrolment`?: {
-        `grouped`?: string;
-        `issuer`?: string;
-        `qr`?: string;
-        `algorithm`?: string;
-        `digits`?: numeric;
-        `period`?: numeric
-      };
-      `warning`?: string;
-      `password`?: boolean;
-      `withTotp`?: boolean;
-      `signIn`?: string
-    }
-  },
+  `responses/200/content/application~1json/schema`: WithStepUserTokenEtc22,
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc415,
+  `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc415,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -10171,208 +5860,13 @@ op `activate`(`requestBody/content/application~1json/schema`: {
     `ok`?: boolean;
     `message`?: string;
     `go`?: string;
-    `view`?: {
-      `step`?: string;
-      `user`?: string;
-      `token`?: string;
-      `base`?: string;
-      `rules`?: {`enforced`?: boolean; `rules`?: (string)[]};
-      `webauthnEnabled`?: boolean;
-      `passkeyOffered`?: boolean;
-      `passkeyAlone`?: boolean;
-      `kinds`?: (string)[];
-      `lanes`?: (string)[];
-      `totpOffered`?: boolean;
-      `title`?: string;
-      `refused`?: string;
-      `passkey`?: boolean;
-      `secondStep`?: boolean;
-      `wantsTotp`?: boolean;
-      `pending`?: {
-        `id`?: string;
-        `kind`?: string;
-        `lane`?: string;
-        `challenge`?: string;
-        `rpId`?: string;
-        `user`?: string;
-        `userHandle`?: string;
-        `display`?: string;
-        `exclude`?: (string)[];
-        `options`?: {
-          `rp`?: {`name`?: string; `id`?: string};
-          `algorithms`?: (integer)[];
-          `attestation`?: string;
-          `timeout`?: numeric;
-          `authenticatorSelection`?: {
-            `userVerification`?: string;
-            `residentKey`?: string;
-            `requireResidentKey`?: boolean;
-            `authenticatorAttachment`?: string
-          };
-          `credProps`?: boolean;
-          `minPinLength`?: boolean;
-          `hints`?: (string)[]
-        };
-        `fallback`?: {
-          `asksPostQuantum`?: boolean;
-          `classical`?: boolean;
-          `retrying`?: boolean
-        }
-      };
-      `enrolment`?: {
-        `grouped`?: string;
-        `issuer`?: string;
-        `qr`?: string;
-        `algorithm`?: string;
-        `digits`?: numeric;
-        `period`?: numeric
-      };
-      `warning`?: string;
-      `password`?: boolean;
-      `withTotp`?: boolean;
-      `signIn`?: string
-    }
+    `view`?: WithStepUserTokenEtc22
   },
-  `responses/400/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `step`?: string;
-      `user`?: string;
-      `token`?: string;
-      `base`?: string;
-      `rules`?: {`enforced`?: boolean; `rules`?: (string)[]};
-      `webauthnEnabled`?: boolean;
-      `passkeyOffered`?: boolean;
-      `passkeyAlone`?: boolean;
-      `kinds`?: (string)[];
-      `lanes`?: (string)[];
-      `totpOffered`?: boolean;
-      `title`?: string;
-      `refused`?: string;
-      `passkey`?: boolean;
-      `secondStep`?: boolean;
-      `wantsTotp`?: boolean;
-      `pending`?: {
-        `id`?: string;
-        `kind`?: string;
-        `lane`?: string;
-        `challenge`?: string;
-        `rpId`?: string;
-        `user`?: string;
-        `userHandle`?: string;
-        `display`?: string;
-        `exclude`?: (string)[];
-        `options`?: {
-          `rp`?: {`name`?: string; `id`?: string};
-          `algorithms`?: (integer)[];
-          `attestation`?: string;
-          `timeout`?: numeric;
-          `authenticatorSelection`?: {
-            `userVerification`?: string;
-            `residentKey`?: string;
-            `requireResidentKey`?: boolean;
-            `authenticatorAttachment`?: string
-          };
-          `credProps`?: boolean;
-          `minPinLength`?: boolean;
-          `hints`?: (string)[]
-        };
-        `fallback`?: {
-          `asksPostQuantum`?: boolean;
-          `classical`?: boolean;
-          `retrying`?: boolean
-        }
-      };
-      `enrolment`?: {
-        `grouped`?: string;
-        `issuer`?: string;
-        `qr`?: string;
-        `algorithm`?: string;
-        `digits`?: numeric;
-        `period`?: numeric
-      };
-      `warning`?: string;
-      `password`?: boolean;
-      `withTotp`?: boolean;
-      `signIn`?: string
-    }
-  },
-  `responses/429/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `step`?: string;
-      `user`?: string;
-      `token`?: string;
-      `base`?: string;
-      `rules`?: {`enforced`?: boolean; `rules`?: (string)[]};
-      `webauthnEnabled`?: boolean;
-      `passkeyOffered`?: boolean;
-      `passkeyAlone`?: boolean;
-      `kinds`?: (string)[];
-      `lanes`?: (string)[];
-      `totpOffered`?: boolean;
-      `title`?: string;
-      `refused`?: string;
-      `passkey`?: boolean;
-      `secondStep`?: boolean;
-      `wantsTotp`?: boolean;
-      `pending`?: {
-        `id`?: string;
-        `kind`?: string;
-        `lane`?: string;
-        `challenge`?: string;
-        `rpId`?: string;
-        `user`?: string;
-        `userHandle`?: string;
-        `display`?: string;
-        `exclude`?: (string)[];
-        `options`?: {
-          `rp`?: {`name`?: string; `id`?: string};
-          `algorithms`?: (integer)[];
-          `attestation`?: string;
-          `timeout`?: numeric;
-          `authenticatorSelection`?: {
-            `userVerification`?: string;
-            `residentKey`?: string;
-            `requireResidentKey`?: boolean;
-            `authenticatorAttachment`?: string
-          };
-          `credProps`?: boolean;
-          `minPinLength`?: boolean;
-          `hints`?: (string)[]
-        };
-        `fallback`?: {
-          `asksPostQuantum`?: boolean;
-          `classical`?: boolean;
-          `retrying`?: boolean
-        }
-      };
-      `enrolment`?: {
-        `grouped`?: string;
-        `issuer`?: string;
-        `qr`?: string;
-        `algorithm`?: string;
-        `digits`?: numeric;
-        `period`?: numeric
-      };
-      `warning`?: string;
-      `password`?: boolean;
-      `withTotp`?: boolean;
-      `signIn`?: string
-    }
-  },
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc415,
+  `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc415,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -10431,69 +5925,13 @@ op `activate`(`requestBody/content/application~1json/schema`: {
   })
 op `getPasswordReset`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`minLength`:1,`maxLength`:256}]}}) `parameters/0/schema`: unknown,
   `parameters/1/schema`: string,
-  `responses/200/content/application~1json/schema`: {
-    `username`?: string;
-    `token`?: string;
-    `base`?: string;
-    `rules`?: {`enforced`?: boolean; `rules`?: (string)[]};
-    `refused`?: string;
-    `tooMany`?: boolean;
-    `done`?: boolean;
-    `signIn`?: string
-  },
-  `responses/400/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `username`?: string;
-      `token`?: string;
-      `base`?: string;
-      `rules`?: {`enforced`?: boolean; `rules`?: (string)[]};
-      `refused`?: string;
-      `tooMany`?: boolean;
-      `done`?: boolean;
-      `signIn`?: string
-    }
-  },
-  `responses/403/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `username`?: string;
-      `token`?: string;
-      `base`?: string;
-      `rules`?: {`enforced`?: boolean; `rules`?: (string)[]};
-      `refused`?: string;
-      `tooMany`?: boolean;
-      `done`?: boolean;
-      `signIn`?: string
-    }
-  },
-  `responses/429/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `username`?: string;
-      `token`?: string;
-      `base`?: string;
-      `rules`?: {`enforced`?: boolean; `rules`?: (string)[]};
-      `refused`?: string;
-      `tooMany`?: boolean;
-      `done`?: boolean;
-      `signIn`?: string
-    }
-  },
+  `responses/200/content/application~1json/schema`: WithUsernameTokenBaseEtc8,
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc46,
+  `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc46,
+  `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc46,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
   
@@ -10555,84 +5993,16 @@ op `spendPasswordReset`(`requestBody/content/application~1json/schema`: {
     `ok`?: boolean;
     `message`?: string;
     `go`?: string;
-    `view`?: {
-      `username`?: string;
-      `token`?: string;
-      `base`?: string;
-      `rules`?: {`enforced`?: boolean; `rules`?: (string)[]};
-      `refused`?: string;
-      `tooMany`?: boolean;
-      `done`?: boolean;
-      `signIn`?: string
-    }
+    `view`?: WithUsernameTokenBaseEtc8
   },
-  `responses/400/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `username`?: string;
-      `token`?: string;
-      `base`?: string;
-      `rules`?: {`enforced`?: boolean; `rules`?: (string)[]};
-      `refused`?: string;
-      `tooMany`?: boolean;
-      `done`?: boolean;
-      `signIn`?: string
-    }
-  },
-  `responses/403/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `username`?: string;
-      `token`?: string;
-      `base`?: string;
-      `rules`?: {`enforced`?: boolean; `rules`?: (string)[]};
-      `refused`?: string;
-      `tooMany`?: boolean;
-      `done`?: boolean;
-      `signIn`?: string
-    }
-  },
-  `responses/429/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `username`?: string;
-      `token`?: string;
-      `base`?: string;
-      `rules`?: {`enforced`?: boolean; `rules`?: (string)[]};
-      `refused`?: string;
-      `tooMany`?: boolean;
-      `done`?: boolean;
-      `signIn`?: string
-    }
-  },
-  `responses/500/content/application~1json/schema`: {
-    `ok`: boolean;
-    `errors`: (string)[];
-    `error`?: string;
-    `view`?: {
-      `username`?: string;
-      `token`?: string;
-      `base`?: string;
-      `rules`?: {`enforced`?: boolean; `rules`?: (string)[]};
-      `refused`?: string;
-      `tooMany`?: boolean;
-      `done`?: boolean;
-      `signIn`?: string
-    }
-  },
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc46,
+  `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc46,
+  `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc46,
+  `responses/500/content/application~1json/schema`: WithOkErrorsErrorEtc46,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 }
+
+@hoisted model WithUrnIetfParamsOauthGrantTypePreAuthorizedCodeAuthorizationCode { `urn:ietf:params:oauth:grant-type:pre-authorized_code`?: WithPreAuthorizedCodeTxCode; `authorization_code`?: WithIssuerState }

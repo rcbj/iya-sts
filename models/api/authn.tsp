@@ -248,22 +248,10 @@ op `getIndex`(`responses/200/content/application~1json/schema`: {
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkNextErrorsEtc5,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @endpoint("/authn-api/openapi.json",
@@ -294,7 +282,7 @@ op `getIndex`(`responses/200/content/application~1json/schema`: {
   })
 op `getOpenApi`(`responses/200/content/application~1json/schema`: {
     `openapi`?: string;
-    `info`?: {`title`?: string; `version`?: string; `description`?: string};
+    `info`?: WithTitleVersionDescription;
     `servers`?: ({`url`?: string})[];
     `tags`?: ({`name`?: string})[];
     @js(#{
@@ -308,22 +296,10 @@ op `getOpenApi`(`responses/200/content/application~1json/schema`: {
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkNextErrorsEtc5,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @js(#{
@@ -415,7 +391,7 @@ op `getScreen`(`parameters/0/schema`: string,
     `ok`?: boolean;
     `csrf`?: string;
     `uiLocales`?: string;
-    `preferredLanguage`?: {`value`?: string; `populated`?: boolean};
+    `preferredLanguage`?: WithValuePopulated;
     `view`?: {
       `id`?: string;
       `base`?: string;
@@ -441,7 +417,7 @@ op `getScreen`(`parameters/0/schema`: string,
       `anonymous`?: boolean;
       `passkey`?: boolean;
       `usernameless`?: boolean;
-      `email`?: {`code`?: boolean; `link`?: boolean};
+      `email`?: WithCodeLink;
       `clientDisplay`?: NullableObject30;
       `reauthentication`?: string;
       `certificate`?: get_authn_api_pending__id__r200_application_json_view_certificate_h4;
@@ -452,27 +428,15 @@ op `getScreen`(`parameters/0/schema`: string,
       `wallet`?: get_authn_api_pending__id__r200_application_json_view_wallet_h8;
       `verifiesCredentials`?: boolean;
       `fingerprint`?: boolean;
-      `details`?: ({`label`?: string; `value`?: string; `note`?: string})[]
+      `details`?: (WithLabelValueNote)[]
     }
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkNextErrorsEtc5,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @endpoint("/authn-api/pending/{id}/partners",
@@ -514,7 +478,7 @@ op `getPartners`(`parameters/0/schema`: string,
     `ok`?: boolean;
     `csrf`?: string;
     `uiLocales`?: string;
-    `preferredLanguage`?: {`value`?: string; `populated`?: boolean};
+    `preferredLanguage`?: WithValuePopulated;
     `view`?: {
       `id`?: string;
       `base`?: string;
@@ -530,28 +494,16 @@ op `getPartners`(`parameters/0/schema`: string,
         `provider`?: string;
         `href`?: string
       })[];
-      `details`?: ({`label`?: string; `value`?: string; `note`?: string})[]
+      `details`?: (WithLabelValueNote)[]
     };
     `go`?: string
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkNextErrorsEtc5,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
   
@@ -630,114 +582,23 @@ op `signInWithPassword`(`parameters/0/schema`: string,
   },
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   `responses/403/content/text~1plain/schema`: string,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @endpoint("/authn-api/pending/{id}/cancel",
@@ -799,114 +660,23 @@ op `cancelSignIn`(`parameters/0/schema`: string,
   `requestBody/content/application~1json/schema`: {},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   `responses/403/content/text~1plain/schema`: string,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
   
@@ -967,120 +737,26 @@ op `cancelSignIn`(`parameters/0/schema`: string,
   })
 op `continueAnonymously`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
-  `requestBody/content/application~1json/schema`: {
-    `remember_browser`?: EmptyTextOr01TrueFalseOnOffYesNo;
-    @js(#{`maxLength`:64,`pattern`:"^[A-Za-z0-9]*$"}) `device_fp`?: string
-  },
+  `requestBody/content/application~1json/schema`: WithRememberBrowserMaxLengthPatternEtc4,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   `responses/403/content/text~1plain/schema`: string,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
   
@@ -1141,120 +817,26 @@ op `continueAnonymously`(`parameters/0/schema`: string,
   })
 op `continueWithCertificate`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
-  `requestBody/content/application~1json/schema`: {
-    `remember_browser`?: EmptyTextOr01TrueFalseOnOffYesNo;
-    @js(#{`maxLength`:64,`pattern`:"^[A-Za-z0-9]*$"}) `device_fp`?: string
-  },
+  `requestBody/content/application~1json/schema`: WithRememberBrowserMaxLengthPatternEtc4,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   `responses/403/content/text~1plain/schema`: string,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
   
@@ -1327,114 +909,23 @@ op `signInByEmail`(`parameters/0/schema`: string,
   },
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   `responses/403/content/text~1plain/schema`: string,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @endpoint("/authn-api/pending/{id}/passkey/options",
@@ -1494,90 +985,14 @@ op `signInByEmail`(`parameters/0/schema`: string,
 op `passkeyOptions`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {},
-  `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "refused";
-    `challenge`?: string;
-    `rpId`?: string;
-    `options`?: {
-      `rpId`?: string;
-      `userVerification`?: string;
-      `timeout`?: numeric;
-      `hints`?: (string)[]
-    }
-  },
-  `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "refused";
-    `challenge`?: string;
-    `rpId`?: string;
-    `options`?: {
-      `rpId`?: string;
-      `userVerification`?: string;
-      `timeout`?: numeric;
-      `hints`?: (string)[]
-    }
-  },
-  `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "refused";
-    `challenge`?: string;
-    `rpId`?: string;
-    `options`?: {
-      `rpId`?: string;
-      `userVerification`?: string;
-      `timeout`?: numeric;
-      `hints`?: (string)[]
-    }
-  },
-  `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "refused";
-    `challenge`?: string;
-    `rpId`?: string;
-    `options`?: {
-      `rpId`?: string;
-      `userVerification`?: string;
-      `timeout`?: numeric;
-      `hints`?: (string)[]
-    }
-  },
-  `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "refused";
-    `challenge`?: string;
-    `rpId`?: string;
-    `options`?: {
-      `rpId`?: string;
-      `userVerification`?: string;
-      `timeout`?: numeric;
-      `hints`?: (string)[]
-    }
-  },
+  `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc8,
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc8,
+  `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc8,
+  `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc8,
+  `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc8,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
   
@@ -1645,114 +1060,23 @@ op `signInWithPasskey`(`parameters/0/schema`: string,
   },
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   `responses/403/content/text~1plain/schema`: string,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @endpoint("/authn-api/password-change/{id}",
@@ -1794,27 +1118,15 @@ op `getPasswordChange`(`parameters/0/schema`: string,
     `ok`?: boolean;
     `csrf`?: string;
     `uiLocales`?: string;
-    `preferredLanguage`?: {`value`?: string; `populated`?: boolean};
+    `preferredLanguage`?: WithValuePopulated;
     `view`?: {`id`?: string; `username`?: string; `notice`?: string}
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkNextErrorsEtc5,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @endpoint("/authn-api/password-change/{id}",
@@ -1879,113 +1191,22 @@ op `changePassword`(`parameters/0/schema`: string,
   },
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @endpoint("/authn-api/password-change/{id}/start-over",
@@ -2047,113 +1268,22 @@ op `startOverFromPasswordChange`(`parameters/0/schema`: string,
   `requestBody/content/application~1json/schema`: {},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @endpoint("/authn-api/mfa/{id}",
@@ -2208,195 +1338,11 @@ op `startOverFromPasswordChange`(`parameters/0/schema`: string,
 op `getStep`(`parameters/0/schema`: string,
   @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`enum`:#["totp","webauthn","backup-code","password","setup","email-code","email-link","email-link-open","post-login"]}]}}) `parameters/1/schema`: unknown,
   @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`minLength`:1,`maxLength`:4096,`pattern`:"^[A-Za-z0-9_-]+$"}]}}) `parameters/2/schema`: unknown,
-  `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `csrf`?: string;
-    `uiLocales`?: string;
-    `preferredLanguage`?: {`value`?: string; `populated`?: boolean};
-    `view`?: {
-      `page`?: string;
-      `id`?: string;
-      `username`?: string;
-      `passwordless`?: boolean;
-      `links`?: {
-        `totp`?: boolean;
-        `webauthn`?: boolean;
-        `wallet`?: boolean;
-        `password`?: boolean;
-        `email`?: string;
-        `backup`?: boolean
-      };
-      `clientDisplay`?: NullableObject30;
-      `totp`?: {`digits`?: numeric; `period`?: numeric};
-      `amr`?: (string)[];
-      `backup`?: {
-        `factor`?: "passkey" | "code" | "link" | "app";
-        `back`?: string;
-        `remaining`?: numeric;
-        `total`?: numeric;
-        `low`?: boolean
-      };
-      `webauthn`?: {
-        `mode`?: "create" | "get";
-        `passwordless`?: boolean;
-        `choices`?: ({`id`?: string; `name`?: string})[];
-        `chosen`?: NullableObject26;
-        `problem`?: string;
-        `postQuantumRefused`?: NullableObject32;
-        `hardwareRefused`?: NullableObject32;
-        `postQuantumHelp`?: NullableObject31;
-        `postQuantumAllowCredentials`?: string;
-        `fallback`?: NullableObject33;
-        `rpId`?: string;
-        `widened`?: boolean;
-        `challenge`?: string;
-        `attestation`?: string;
-        `algorithms`?: (string)[];
-        `postLogin`?: NullableObject34;
-        `lanes`?: (string)[];
-        `lane`?: string;
-        `userVerification`?: string;
-        `residentKey`?: string;
-        `attachment`?: string
-      };
-      `setup`?: {
-        `state`?: "choose" | "totp";
-        `offered`?: {`totp`?: boolean; `webauthn`?: boolean};
-        `optional`?: boolean;
-        `proved`?: boolean;
-        `recovery`?: boolean;
-        `totp`?: NullableObject35
-      };
-      `postLogin`?: {
-        `activity`?: string;
-        `reason`?: string;
-        `required`?: boolean;
-        `canSkip`?: boolean;
-        `method`?: string;
-        `failed`?: string;
-        `separate`?: boolean;
-        `snoozeDays`?: numeric;
-        `deadline`?: string
-      };
-      `state`?: "ask" | "code" | "wait" | "open" | "elsewhere" | "end";
-      `kind`?: "code" | "link";
-      `primary`?: boolean;
-      `address`?: string;
-      `minutes`?: numeric;
-      `seconds`?: numeric;
-      `notice`?: string;
-      `others`?: {
-        `totp`?: boolean;
-        `webauthn`?: boolean;
-        `password`?: boolean;
-        `backup`?: boolean
-      };
-      `title`?: string;
-      `sentence`?: string
-    };
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `csrf`?: string;
-    `uiLocales`?: string;
-    `preferredLanguage`?: {`value`?: string; `populated`?: boolean};
-    `view`?: {
-      `page`?: string;
-      `id`?: string;
-      `username`?: string;
-      `passwordless`?: boolean;
-      `links`?: {
-        `totp`?: boolean;
-        `webauthn`?: boolean;
-        `wallet`?: boolean;
-        `password`?: boolean;
-        `email`?: string;
-        `backup`?: boolean
-      };
-      `clientDisplay`?: NullableObject30;
-      `totp`?: {`digits`?: numeric; `period`?: numeric};
-      `amr`?: (string)[];
-      `backup`?: {
-        `factor`?: "passkey" | "code" | "link" | "app";
-        `back`?: string;
-        `remaining`?: numeric;
-        `total`?: numeric;
-        `low`?: boolean
-      };
-      `webauthn`?: {
-        `mode`?: "create" | "get";
-        `passwordless`?: boolean;
-        `choices`?: ({`id`?: string; `name`?: string})[];
-        `chosen`?: NullableObject26;
-        `problem`?: string;
-        `postQuantumRefused`?: NullableObject32;
-        `hardwareRefused`?: NullableObject32;
-        `postQuantumHelp`?: NullableObject31;
-        `postQuantumAllowCredentials`?: string;
-        `fallback`?: NullableObject33;
-        `rpId`?: string;
-        `widened`?: boolean;
-        `challenge`?: string;
-        `attestation`?: string;
-        `algorithms`?: (string)[];
-        `postLogin`?: NullableObject34;
-        `lanes`?: (string)[];
-        `lane`?: string;
-        `userVerification`?: string;
-        `residentKey`?: string;
-        `attachment`?: string
-      };
-      `setup`?: {
-        `state`?: "choose" | "totp";
-        `offered`?: {`totp`?: boolean; `webauthn`?: boolean};
-        `optional`?: boolean;
-        `proved`?: boolean;
-        `recovery`?: boolean;
-        `totp`?: NullableObject35
-      };
-      `postLogin`?: {
-        `activity`?: string;
-        `reason`?: string;
-        `required`?: boolean;
-        `canSkip`?: boolean;
-        `method`?: string;
-        `failed`?: string;
-        `separate`?: boolean;
-        `snoozeDays`?: numeric;
-        `deadline`?: string
-      };
-      `state`?: "ask" | "code" | "wait" | "open" | "elsewhere" | "end";
-      `kind`?: "code" | "link";
-      `primary`?: boolean;
-      `address`?: string;
-      `minutes`?: numeric;
-      `seconds`?: numeric;
-      `notice`?: string;
-      `others`?: {
-        `totp`?: boolean;
-        `webauthn`?: boolean;
-        `password`?: boolean;
-        `backup`?: boolean
-      };
-      `title`?: string;
-      `sentence`?: string
-    };
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  `responses/200/content/application~1json/schema`: WithOkCsrfUiLocalesEtc82,
+  `responses/400/content/application~1json/schema`: WithOkCsrfUiLocalesEtc82,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @endpoint("/authn-api/mfa/{id}/totp",
@@ -2455,116 +1401,25 @@ op `getStep`(`parameters/0/schema`: string,
   })
 op `checkCode`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
-  `requestBody/content/application~1json/schema`: {@js(#{`maxLength`:32}) `code`?: string},
+  `requestBody/content/application~1json/schema`: WithMaxLengthCode,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @endpoint("/authn-api/mfa/{id}/backup-code",
@@ -2626,113 +1481,22 @@ op `spendRecoveryCode`(`parameters/0/schema`: string,
   `requestBody/content/application~1json/schema`: {@js(#{`maxLength`:64}) `code`?: string},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @endpoint("/authn-api/mfa/{id}/password",
@@ -2794,113 +1558,22 @@ op `checkFactorPassword`(`parameters/0/schema`: string,
   `requestBody/content/application~1json/schema`: {@js(#{`maxLength`:1024}) `password`?: string},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
   
@@ -2982,170 +1655,14 @@ op `passkeyStepOptions`(`parameters/0/schema`: string,
     `lane`?: post_authn_api_mfa__id__webauthn_options_b_application_json_lane_h49;
     `algorithms`?: post_authn_api_mfa__id__webauthn_options_b_application_json_algorithms_h51
   },
-  `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `mode`?: "create" | "get";
-    `challenge`?: string;
-    `rpId`?: string;
-    `user`?: {`name`?: string; `displayName`?: string; `id`?: string};
-    `allow`?: (string)[];
-    `exclude`?: (string)[];
-    `options`?: {
-      `rp`?: {`name`?: string; `id`?: string};
-      `algorithms`?: (NullableNumber)[];
-      `attestation`?: string;
-      `timeout`?: numeric;
-      `authenticatorSelection`?: {
-        `userVerification`?: string;
-        `residentKey`?: string;
-        `requireResidentKey`?: boolean;
-        `authenticatorAttachment`?: string
-      };
-      `credProps`?: boolean;
-      `minPinLength`?: boolean;
-      `hints`?: (string)[];
-      `rpId`?: string;
-      `userVerification`?: string
-    };
-    `fallback`?: NullableObject33;
-    `next`?: "refused"
-  },
-  `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `mode`?: "create" | "get";
-    `challenge`?: string;
-    `rpId`?: string;
-    `user`?: {`name`?: string; `displayName`?: string; `id`?: string};
-    `allow`?: (string)[];
-    `exclude`?: (string)[];
-    `options`?: {
-      `rp`?: {`name`?: string; `id`?: string};
-      `algorithms`?: (NullableNumber)[];
-      `attestation`?: string;
-      `timeout`?: numeric;
-      `authenticatorSelection`?: {
-        `userVerification`?: string;
-        `residentKey`?: string;
-        `requireResidentKey`?: boolean;
-        `authenticatorAttachment`?: string
-      };
-      `credProps`?: boolean;
-      `minPinLength`?: boolean;
-      `hints`?: (string)[];
-      `rpId`?: string;
-      `userVerification`?: string
-    };
-    `fallback`?: NullableObject33;
-    `next`?: "refused"
-  },
-  `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `mode`?: "create" | "get";
-    `challenge`?: string;
-    `rpId`?: string;
-    `user`?: {`name`?: string; `displayName`?: string; `id`?: string};
-    `allow`?: (string)[];
-    `exclude`?: (string)[];
-    `options`?: {
-      `rp`?: {`name`?: string; `id`?: string};
-      `algorithms`?: (NullableNumber)[];
-      `attestation`?: string;
-      `timeout`?: numeric;
-      `authenticatorSelection`?: {
-        `userVerification`?: string;
-        `residentKey`?: string;
-        `requireResidentKey`?: boolean;
-        `authenticatorAttachment`?: string
-      };
-      `credProps`?: boolean;
-      `minPinLength`?: boolean;
-      `hints`?: (string)[];
-      `rpId`?: string;
-      `userVerification`?: string
-    };
-    `fallback`?: NullableObject33;
-    `next`?: "refused"
-  },
-  `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `mode`?: "create" | "get";
-    `challenge`?: string;
-    `rpId`?: string;
-    `user`?: {`name`?: string; `displayName`?: string; `id`?: string};
-    `allow`?: (string)[];
-    `exclude`?: (string)[];
-    `options`?: {
-      `rp`?: {`name`?: string; `id`?: string};
-      `algorithms`?: (NullableNumber)[];
-      `attestation`?: string;
-      `timeout`?: numeric;
-      `authenticatorSelection`?: {
-        `userVerification`?: string;
-        `residentKey`?: string;
-        `requireResidentKey`?: boolean;
-        `authenticatorAttachment`?: string
-      };
-      `credProps`?: boolean;
-      `minPinLength`?: boolean;
-      `hints`?: (string)[];
-      `rpId`?: string;
-      `userVerification`?: string
-    };
-    `fallback`?: NullableObject33;
-    `next`?: "refused"
-  },
-  `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `mode`?: "create" | "get";
-    `challenge`?: string;
-    `rpId`?: string;
-    `user`?: {`name`?: string; `displayName`?: string; `id`?: string};
-    `allow`?: (string)[];
-    `exclude`?: (string)[];
-    `options`?: {
-      `rp`?: {`name`?: string; `id`?: string};
-      `algorithms`?: (NullableNumber)[];
-      `attestation`?: string;
-      `timeout`?: numeric;
-      `authenticatorSelection`?: {
-        `userVerification`?: string;
-        `residentKey`?: string;
-        `requireResidentKey`?: boolean;
-        `authenticatorAttachment`?: string
-      };
-      `credProps`?: boolean;
-      `minPinLength`?: boolean;
-      `hints`?: (string)[];
-      `rpId`?: string;
-      `userVerification`?: string
-    };
-    `fallback`?: NullableObject33;
-    `next`?: "refused"
-  },
+  `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc132,
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc132,
+  `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc132,
+  `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc132,
+  `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc132,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @endpoint("/authn-api/mfa/{id}/webauthn",
@@ -3207,113 +1724,22 @@ op `finishPasskeyStep`(`parameters/0/schema`: string,
   `requestBody/content/application~1json/schema`: {@js(#{`maxLength`:65536}) `credential`?: string},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @endpoint("/authn-api/mfa/{id}/setup/totp",
@@ -3375,113 +1801,22 @@ op `beginAppEnrolment`(`parameters/0/schema`: string,
   `requestBody/content/application~1json/schema`: {},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @endpoint("/authn-api/mfa/{id}/setup/confirm",
@@ -3540,116 +1875,25 @@ op `beginAppEnrolment`(`parameters/0/schema`: string,
   })
 op `confirmAppEnrolment`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
-  `requestBody/content/application~1json/schema`: {@js(#{`maxLength`:32}) `code`?: string},
+  `requestBody/content/application~1json/schema`: WithMaxLengthCode,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @endpoint("/authn-api/mfa/{id}/setup/webauthn",
@@ -3711,113 +1955,22 @@ op `beginKeyEnrolment`(`parameters/0/schema`: string,
   `requestBody/content/application~1json/schema`: {},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @endpoint("/authn-api/mfa/{id}/skip",
@@ -3879,113 +2032,22 @@ op `ignoreOffer`(`parameters/0/schema`: string,
   `requestBody/content/application~1json/schema`: {},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @endpoint("/authn-api/mfa/{id}/post-login/register",
@@ -4047,113 +2109,22 @@ op `registerPostLoginPasskey`(`parameters/0/schema`: string,
   `requestBody/content/application~1json/schema`: {},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @endpoint("/authn-api/mfa/{id}/post-login/skip",
@@ -4215,113 +2186,22 @@ op `skipPostLoginActivity`(`parameters/0/schema`: string,
   `requestBody/content/application~1json/schema`: {},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @endpoint("/authn-api/mfa/{id}/email/send",
@@ -4383,113 +2263,22 @@ op `sendEmailedFactor`(`parameters/0/schema`: string,
   `requestBody/content/application~1json/schema`: {`kind`: "code" | "link"},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @endpoint("/authn-api/mfa/{id}/email/code",
@@ -4548,116 +2337,25 @@ op `sendEmailedFactor`(`parameters/0/schema`: string,
   })
 op `checkEmailedCode`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
-  `requestBody/content/application~1json/schema`: {@js(#{`maxLength`:32}) `code`?: string},
+  `requestBody/content/application~1json/schema`: WithMaxLengthCode,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
   
@@ -4723,113 +2421,22 @@ op `spendEmailedLink`(`parameters/0/schema`: string,
   `requestBody/content/application~1json/schema`: {`t`?: EmptyTextOrStringMin1Max4096Matchinga5aa8a2},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @endpoint("/authn-api/mfa/{id}/start-over",
@@ -4891,113 +2498,22 @@ op `startOver`(`parameters/0/schema`: string,
   `requestBody/content/application~1json/schema`: {},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @endpoint("/authn-api/wallet",
@@ -5103,213 +2619,18 @@ op `getWalletStart`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`ty
   @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`enum`:#["1"]}]}}) `parameters/3/schema`: unknown,
   @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`minLength`:1,`maxLength`:4096}]}}) `parameters/4/schema`: unknown,
   @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`minLength`:1,`maxLength`:4096}]}}) `parameters/5/schema`: unknown,
-  `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `csrf`?: string;
-    `uiLocales`?: string;
-    `preferredLanguage`?: {`value`?: string; `populated`?: boolean};
-    `view`?: {
-      `wallet`?: "start" | "refused";
-      `kind`?: string;
-      `secondFactor`?: boolean;
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    };
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `csrf`?: string;
-    `uiLocales`?: string;
-    `preferredLanguage`?: {`value`?: string; `populated`?: boolean};
-    `view`?: {
-      `wallet`?: "start" | "refused";
-      `kind`?: string;
-      `secondFactor`?: boolean;
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    };
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `csrf`?: string;
-    `uiLocales`?: string;
-    `preferredLanguage`?: {`value`?: string; `populated`?: boolean};
-    `view`?: {
-      `wallet`?: "start" | "refused";
-      `kind`?: string;
-      `secondFactor`?: boolean;
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    };
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `csrf`?: string;
-    `uiLocales`?: string;
-    `preferredLanguage`?: {`value`?: string; `populated`?: boolean};
-    `view`?: {
-      `wallet`?: "start" | "refused";
-      `kind`?: string;
-      `secondFactor`?: boolean;
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    };
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/404/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `csrf`?: string;
-    `uiLocales`?: string;
-    `preferredLanguage`?: {`value`?: string; `populated`?: boolean};
-    `view`?: {
-      `wallet`?: "start" | "refused";
-      `kind`?: string;
-      `secondFactor`?: boolean;
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    };
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/409/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `csrf`?: string;
-    `uiLocales`?: string;
-    `preferredLanguage`?: {`value`?: string; `populated`?: boolean};
-    `view`?: {
-      `wallet`?: "start" | "refused";
-      `kind`?: string;
-      `secondFactor`?: boolean;
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    };
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/410/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `csrf`?: string;
-    `uiLocales`?: string;
-    `preferredLanguage`?: {`value`?: string; `populated`?: boolean};
-    `view`?: {
-      `wallet`?: "start" | "refused";
-      `kind`?: string;
-      `secondFactor`?: boolean;
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    };
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/500/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `csrf`?: string;
-    `uiLocales`?: string;
-    `preferredLanguage`?: {`value`?: string; `populated`?: boolean};
-    `view`?: {
-      `wallet`?: "start" | "refused";
-      `kind`?: string;
-      `secondFactor`?: boolean;
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    };
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/503/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `csrf`?: string;
-    `uiLocales`?: string;
-    `preferredLanguage`?: {`value`?: string; `populated`?: boolean};
-    `view`?: {
-      `wallet`?: "start" | "refused";
-      `kind`?: string;
-      `secondFactor`?: boolean;
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    };
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  `responses/200/content/application~1json/schema`: WithOkCsrfUiLocalesEtc92,
+  `responses/400/content/application~1json/schema`: WithOkCsrfUiLocalesEtc92,
+  `responses/401/content/application~1json/schema`: WithOkCsrfUiLocalesEtc92,
+  `responses/403/content/application~1json/schema`: WithOkCsrfUiLocalesEtc92,
+  `responses/404/content/application~1json/schema`: WithOkCsrfUiLocalesEtc92,
+  `responses/409/content/application~1json/schema`: WithOkCsrfUiLocalesEtc92,
+  `responses/410/content/application~1json/schema`: WithOkCsrfUiLocalesEtc92,
+  `responses/500/content/application~1json/schema`: WithOkCsrfUiLocalesEtc92,
+  `responses/503/content/application~1json/schema`: WithOkCsrfUiLocalesEtc92,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
   
@@ -5422,356 +2743,20 @@ op `startWalletSignIn`(`parameters/0/schema`: string,
     `login_hint`?: EmptyTextOrStringMin1Max4096;
     `did_act`?: EmptyTextOrStringMin1Max4096
   },
-  `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
-  `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
-  `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
-  `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
-  `responses/404/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
-  `responses/409/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
-  `responses/410/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
-  `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
-  `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
-  `responses/500/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
-  `responses/503/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
+  `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc17,
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc17,
+  `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc17,
+  `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc17,
+  `responses/404/content/application~1json/schema`: WithOkErrorsErrorEtc17,
+  `responses/409/content/application~1json/schema`: WithOkErrorsErrorEtc17,
+  `responses/410/content/application~1json/schema`: WithOkErrorsErrorEtc17,
+  `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc17,
+  `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc17,
+  `responses/500/content/application~1json/schema`: WithOkErrorsErrorEtc17,
+  `responses/503/content/application~1json/schema`: WithOkErrorsErrorEtc17,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @endpoint("/authn-api/wallet/{state}",
@@ -5837,321 +2822,18 @@ op `startWalletSignIn`(`parameters/0/schema`: string,
     `x-mirrors`:"GET /authn/wallet/wait"
   })
 op `getWalletWait`(`parameters/0/schema`: string,
-  `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `csrf`?: string;
-    `uiLocales`?: string;
-    `preferredLanguage`?: {`value`?: string; `populated`?: boolean};
-    `view`?: {
-      `wallet`?: "wait" | "refused";
-      `state`?: string;
-      `kind`?: string;
-      `secondFactor`?: boolean;
-      `authn`?: string;
-      `mfa`?: string;
-      `enrol`?: boolean;
-      `dcRequest`?: NullableObject36;
-      `sameDevice`?: string;
-      `webWallet`?: string;
-      `qr`?: string;
-      `expiresIn`?: numeric;
-      `pollSeconds`?: numeric;
-      `protocol`?: string;
-      `verifier`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `reissue`?: string
-    };
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `csrf`?: string;
-    `uiLocales`?: string;
-    `preferredLanguage`?: {`value`?: string; `populated`?: boolean};
-    `view`?: {
-      `wallet`?: "wait" | "refused";
-      `state`?: string;
-      `kind`?: string;
-      `secondFactor`?: boolean;
-      `authn`?: string;
-      `mfa`?: string;
-      `enrol`?: boolean;
-      `dcRequest`?: NullableObject36;
-      `sameDevice`?: string;
-      `webWallet`?: string;
-      `qr`?: string;
-      `expiresIn`?: numeric;
-      `pollSeconds`?: numeric;
-      `protocol`?: string;
-      `verifier`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `reissue`?: string
-    };
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `csrf`?: string;
-    `uiLocales`?: string;
-    `preferredLanguage`?: {`value`?: string; `populated`?: boolean};
-    `view`?: {
-      `wallet`?: "wait" | "refused";
-      `state`?: string;
-      `kind`?: string;
-      `secondFactor`?: boolean;
-      `authn`?: string;
-      `mfa`?: string;
-      `enrol`?: boolean;
-      `dcRequest`?: NullableObject36;
-      `sameDevice`?: string;
-      `webWallet`?: string;
-      `qr`?: string;
-      `expiresIn`?: numeric;
-      `pollSeconds`?: numeric;
-      `protocol`?: string;
-      `verifier`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `reissue`?: string
-    };
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `csrf`?: string;
-    `uiLocales`?: string;
-    `preferredLanguage`?: {`value`?: string; `populated`?: boolean};
-    `view`?: {
-      `wallet`?: "wait" | "refused";
-      `state`?: string;
-      `kind`?: string;
-      `secondFactor`?: boolean;
-      `authn`?: string;
-      `mfa`?: string;
-      `enrol`?: boolean;
-      `dcRequest`?: NullableObject36;
-      `sameDevice`?: string;
-      `webWallet`?: string;
-      `qr`?: string;
-      `expiresIn`?: numeric;
-      `pollSeconds`?: numeric;
-      `protocol`?: string;
-      `verifier`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `reissue`?: string
-    };
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/404/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `csrf`?: string;
-    `uiLocales`?: string;
-    `preferredLanguage`?: {`value`?: string; `populated`?: boolean};
-    `view`?: {
-      `wallet`?: "wait" | "refused";
-      `state`?: string;
-      `kind`?: string;
-      `secondFactor`?: boolean;
-      `authn`?: string;
-      `mfa`?: string;
-      `enrol`?: boolean;
-      `dcRequest`?: NullableObject36;
-      `sameDevice`?: string;
-      `webWallet`?: string;
-      `qr`?: string;
-      `expiresIn`?: numeric;
-      `pollSeconds`?: numeric;
-      `protocol`?: string;
-      `verifier`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `reissue`?: string
-    };
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/409/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `csrf`?: string;
-    `uiLocales`?: string;
-    `preferredLanguage`?: {`value`?: string; `populated`?: boolean};
-    `view`?: {
-      `wallet`?: "wait" | "refused";
-      `state`?: string;
-      `kind`?: string;
-      `secondFactor`?: boolean;
-      `authn`?: string;
-      `mfa`?: string;
-      `enrol`?: boolean;
-      `dcRequest`?: NullableObject36;
-      `sameDevice`?: string;
-      `webWallet`?: string;
-      `qr`?: string;
-      `expiresIn`?: numeric;
-      `pollSeconds`?: numeric;
-      `protocol`?: string;
-      `verifier`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `reissue`?: string
-    };
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/410/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `csrf`?: string;
-    `uiLocales`?: string;
-    `preferredLanguage`?: {`value`?: string; `populated`?: boolean};
-    `view`?: {
-      `wallet`?: "wait" | "refused";
-      `state`?: string;
-      `kind`?: string;
-      `secondFactor`?: boolean;
-      `authn`?: string;
-      `mfa`?: string;
-      `enrol`?: boolean;
-      `dcRequest`?: NullableObject36;
-      `sameDevice`?: string;
-      `webWallet`?: string;
-      `qr`?: string;
-      `expiresIn`?: numeric;
-      `pollSeconds`?: numeric;
-      `protocol`?: string;
-      `verifier`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `reissue`?: string
-    };
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/500/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `csrf`?: string;
-    `uiLocales`?: string;
-    `preferredLanguage`?: {`value`?: string; `populated`?: boolean};
-    `view`?: {
-      `wallet`?: "wait" | "refused";
-      `state`?: string;
-      `kind`?: string;
-      `secondFactor`?: boolean;
-      `authn`?: string;
-      `mfa`?: string;
-      `enrol`?: boolean;
-      `dcRequest`?: NullableObject36;
-      `sameDevice`?: string;
-      `webWallet`?: string;
-      `qr`?: string;
-      `expiresIn`?: numeric;
-      `pollSeconds`?: numeric;
-      `protocol`?: string;
-      `verifier`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `reissue`?: string
-    };
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/503/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `csrf`?: string;
-    `uiLocales`?: string;
-    `preferredLanguage`?: {`value`?: string; `populated`?: boolean};
-    `view`?: {
-      `wallet`?: "wait" | "refused";
-      `state`?: string;
-      `kind`?: string;
-      `secondFactor`?: boolean;
-      `authn`?: string;
-      `mfa`?: string;
-      `enrol`?: boolean;
-      `dcRequest`?: NullableObject36;
-      `sameDevice`?: string;
-      `webWallet`?: string;
-      `qr`?: string;
-      `expiresIn`?: numeric;
-      `pollSeconds`?: numeric;
-      `protocol`?: string;
-      `verifier`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `reissue`?: string
-    };
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  `responses/200/content/application~1json/schema`: WithOkCsrfUiLocalesEtc9,
+  `responses/400/content/application~1json/schema`: WithOkCsrfUiLocalesEtc9,
+  `responses/401/content/application~1json/schema`: WithOkCsrfUiLocalesEtc9,
+  `responses/403/content/application~1json/schema`: WithOkCsrfUiLocalesEtc9,
+  `responses/404/content/application~1json/schema`: WithOkCsrfUiLocalesEtc9,
+  `responses/409/content/application~1json/schema`: WithOkCsrfUiLocalesEtc9,
+  `responses/410/content/application~1json/schema`: WithOkCsrfUiLocalesEtc9,
+  `responses/500/content/application~1json/schema`: WithOkCsrfUiLocalesEtc9,
+  `responses/503/content/application~1json/schema`: WithOkCsrfUiLocalesEtc9,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
   
@@ -6254,356 +2936,20 @@ op `walletStatus`(`parameters/0/schema`: string,
     `enrol`?: EmptyTextOr12;
     `response_code`?: EmptyTextOrStringMin1Max4096
   },
-  `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
-  `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
-  `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
-  `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
-  `responses/404/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
-  `responses/409/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
-  `responses/410/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
-  `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
-  `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
-  `responses/500/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
-  `responses/503/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
+  `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc17,
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc17,
+  `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc17,
+  `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc17,
+  `responses/404/content/application~1json/schema`: WithOkErrorsErrorEtc17,
+  `responses/409/content/application~1json/schema`: WithOkErrorsErrorEtc17,
+  `responses/410/content/application~1json/schema`: WithOkErrorsErrorEtc17,
+  `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc17,
+  `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc17,
+  `responses/500/content/application~1json/schema`: WithOkErrorsErrorEtc17,
+  `responses/503/content/application~1json/schema`: WithOkErrorsErrorEtc17,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
   
@@ -6712,356 +3058,20 @@ op `answerWalletDcApi`(`parameters/0/schema`: string,
     `enrol`?: EmptyTextOr12;
     `response`?: post_authn_api_wallet__state__dc_api_b_application_json_response_h114
   },
-  `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
-  `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
-  `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
-  `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
-  `responses/404/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
-  `responses/409/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
-  `responses/410/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
-  `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
-  `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
-  `responses/500/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
-  `responses/503/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "wait" | "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean};
-    `go`?: string;
-    `state`?: string;
-    `expiresIn`?: numeric;
-    `view`?: {
-      `wallet`?: "refused";
-      `heading`?: string;
-      `retry`?: string;
-      `checks`?: ({`ok`?: boolean; `name`?: string; `detail`?: string})[];
-      `verdict`?: string;
-      `back`?: string;
-      `backKind`?: "portal" | "screen" | "none";
-      `reissue`?: string
-    }
-  },
+  `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc17,
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc17,
+  `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc17,
+  `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc17,
+  `responses/404/content/application~1json/schema`: WithOkErrorsErrorEtc17,
+  `responses/409/content/application~1json/schema`: WithOkErrorsErrorEtc17,
+  `responses/410/content/application~1json/schema`: WithOkErrorsErrorEtc17,
+  `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc17,
+  `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc17,
+  `responses/500/content/application~1json/schema`: WithOkErrorsErrorEtc17,
+  `responses/503/content/application~1json/schema`: WithOkErrorsErrorEtc17,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @endpoint("/authn-api/logout",
@@ -7123,235 +3133,13 @@ op `answerWalletDcApi`(`parameters/0/schema`: string,
 op `getSignOut`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`minLength`:1,`maxLength`:256}]}}) `parameters/0/schema`: unknown,
   @js(#{`minLength`:1,`maxLength`:600}) `parameters/1/schema`: string,
   @js(#{`maxLength`:512}) `parameters/2/schema`: string,
-  `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `csrf`?: string;
-    `uiLocales`?: string;
-    `preferredLanguage`?: {`value`?: string; `populated`?: boolean};
-    `view`?: {
-      `state`?: "inventory" | "accounts" | "refused" | "nobody";
-      `username`?: string;
-      `named`?: boolean;
-      `naming`?: "open" | "off" | "product";
-      `account`?: string;
-      `key`?: string;
-      `sessions`?: numeric;
-      `families`?: ({
-        `id`?: string;
-        `label`?: string;
-        `protocol`?: string;
-        `spec`?: string;
-        `what`?: string;
-        `terminable`?: boolean;
-        `rows`?: ({
-          `id`?: string;
-          `family`?: string;
-          `kind`?: string;
-          `handle`?: StringOrNumeric;
-          `label`?: NullableString;
-          `detail`?: NullableString;
-          `startedAt`?: NullableNumber;
-          `expiresAt`?: NullableNumber;
-          `terminable`?: boolean;
-          `why`?: NullableString;
-          `sessionId`?: NullableString
-        })[];
-        `held`?: numeric;
-        `notListed`?: numeric;
-        `failure`?: string
-      })[];
-      `total`?: numeric;
-      `listed`?: numeric;
-      `notListed`?: numeric;
-      `maxRows`?: numeric;
-      `at`?: numeric;
-      `accounts`?: ({
-        `key`?: string;
-        `username`?: string;
-        `displayName`?: string;
-        `current`?: boolean
-      })[];
-      `preselected`?: string;
-      `verifiesCredentials`?: boolean
-    };
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `csrf`?: string;
-    `uiLocales`?: string;
-    `preferredLanguage`?: {`value`?: string; `populated`?: boolean};
-    `view`?: {
-      `state`?: "inventory" | "accounts" | "refused" | "nobody";
-      `username`?: string;
-      `named`?: boolean;
-      `naming`?: "open" | "off" | "product";
-      `account`?: string;
-      `key`?: string;
-      `sessions`?: numeric;
-      `families`?: ({
-        `id`?: string;
-        `label`?: string;
-        `protocol`?: string;
-        `spec`?: string;
-        `what`?: string;
-        `terminable`?: boolean;
-        `rows`?: ({
-          `id`?: string;
-          `family`?: string;
-          `kind`?: string;
-          `handle`?: StringOrNumeric;
-          `label`?: NullableString;
-          `detail`?: NullableString;
-          `startedAt`?: NullableNumber;
-          `expiresAt`?: NullableNumber;
-          `terminable`?: boolean;
-          `why`?: NullableString;
-          `sessionId`?: NullableString
-        })[];
-        `held`?: numeric;
-        `notListed`?: numeric;
-        `failure`?: string
-      })[];
-      `total`?: numeric;
-      `listed`?: numeric;
-      `notListed`?: numeric;
-      `maxRows`?: numeric;
-      `at`?: numeric;
-      `accounts`?: ({
-        `key`?: string;
-        `username`?: string;
-        `displayName`?: string;
-        `current`?: boolean
-      })[];
-      `preselected`?: string;
-      `verifiesCredentials`?: boolean
-    };
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `csrf`?: string;
-    `uiLocales`?: string;
-    `preferredLanguage`?: {`value`?: string; `populated`?: boolean};
-    `view`?: {
-      `state`?: "inventory" | "accounts" | "refused" | "nobody";
-      `username`?: string;
-      `named`?: boolean;
-      `naming`?: "open" | "off" | "product";
-      `account`?: string;
-      `key`?: string;
-      `sessions`?: numeric;
-      `families`?: ({
-        `id`?: string;
-        `label`?: string;
-        `protocol`?: string;
-        `spec`?: string;
-        `what`?: string;
-        `terminable`?: boolean;
-        `rows`?: ({
-          `id`?: string;
-          `family`?: string;
-          `kind`?: string;
-          `handle`?: StringOrNumeric;
-          `label`?: NullableString;
-          `detail`?: NullableString;
-          `startedAt`?: NullableNumber;
-          `expiresAt`?: NullableNumber;
-          `terminable`?: boolean;
-          `why`?: NullableString;
-          `sessionId`?: NullableString
-        })[];
-        `held`?: numeric;
-        `notListed`?: numeric;
-        `failure`?: string
-      })[];
-      `total`?: numeric;
-      `listed`?: numeric;
-      `notListed`?: numeric;
-      `maxRows`?: numeric;
-      `at`?: numeric;
-      `accounts`?: ({
-        `key`?: string;
-        `username`?: string;
-        `displayName`?: string;
-        `current`?: boolean
-      })[];
-      `preselected`?: string;
-      `verifiesCredentials`?: boolean
-    };
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `csrf`?: string;
-    `uiLocales`?: string;
-    `preferredLanguage`?: {`value`?: string; `populated`?: boolean};
-    `view`?: {
-      `state`?: "inventory" | "accounts" | "refused" | "nobody";
-      `username`?: string;
-      `named`?: boolean;
-      `naming`?: "open" | "off" | "product";
-      `account`?: string;
-      `key`?: string;
-      `sessions`?: numeric;
-      `families`?: ({
-        `id`?: string;
-        `label`?: string;
-        `protocol`?: string;
-        `spec`?: string;
-        `what`?: string;
-        `terminable`?: boolean;
-        `rows`?: ({
-          `id`?: string;
-          `family`?: string;
-          `kind`?: string;
-          `handle`?: StringOrNumeric;
-          `label`?: NullableString;
-          `detail`?: NullableString;
-          `startedAt`?: NullableNumber;
-          `expiresAt`?: NullableNumber;
-          `terminable`?: boolean;
-          `why`?: NullableString;
-          `sessionId`?: NullableString
-        })[];
-        `held`?: numeric;
-        `notListed`?: numeric;
-        `failure`?: string
-      })[];
-      `total`?: numeric;
-      `listed`?: numeric;
-      `notListed`?: numeric;
-      `maxRows`?: numeric;
-      `at`?: numeric;
-      `accounts`?: ({
-        `key`?: string;
-        `username`?: string;
-        `displayName`?: string;
-        `current`?: boolean
-      })[];
-      `preselected`?: string;
-      `verifiesCredentials`?: boolean
-    };
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  `responses/200/content/application~1json/schema`: WithOkCsrfUiLocalesEtc83,
+  `responses/400/content/application~1json/schema`: WithOkCsrfUiLocalesEtc83,
+  `responses/401/content/application~1json/schema`: WithOkCsrfUiLocalesEtc83,
+  `responses/403/content/application~1json/schema`: WithOkCsrfUiLocalesEtc83,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
   
@@ -7428,232 +3216,16 @@ op `signOut`(`parameters/0/schema`: string,
     `username`?: EmptyTextOrStringMin1Max256;
     @js(#{`minLength`:1,`maxLength`:600}) `account`?: string
   },
-  `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "signed-out" | "inventory" | "refused";
-    `username`?: string;
-    `account`?: string;
-    `location`?: string;
-    `ownSessionEnded`?: boolean;
-    `scope`?: "global" | "selected";
-    `form`?: {`method`?: "POST"; `action`?: string; `fields`?: {`result`?: string}};
-    `view`?: {
-      `state`?: "result" | "refused" | "nobody" | "accounts";
-      `scope`?: "global" | "selected";
-      `key`?: string;
-      `message`?: string;
-      `terminated`?: ({`id`?: string; `label`?: string; `message`?: string})[];
-      `skipped`?: ({`id`?: string; `label`?: string; `message`?: string})[];
-      `remaining`?: numeric;
-      `verifiesCredentials`?: boolean;
-      `accounts`?: ({
-        `key`?: string;
-        `username`?: string;
-        `displayName`?: string;
-        `current`?: boolean
-      })[];
-      `preselected`?: string;
-      `naming`?: "open" | "off" | "product"
-    }
-  },
-  `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "signed-out" | "inventory" | "refused";
-    `username`?: string;
-    `account`?: string;
-    `location`?: string;
-    `ownSessionEnded`?: boolean;
-    `scope`?: "global" | "selected";
-    `form`?: {`method`?: "POST"; `action`?: string; `fields`?: {`result`?: string}};
-    `view`?: {
-      `state`?: "result" | "refused" | "nobody" | "accounts";
-      `scope`?: "global" | "selected";
-      `key`?: string;
-      `message`?: string;
-      `terminated`?: ({`id`?: string; `label`?: string; `message`?: string})[];
-      `skipped`?: ({`id`?: string; `label`?: string; `message`?: string})[];
-      `remaining`?: numeric;
-      `verifiesCredentials`?: boolean;
-      `accounts`?: ({
-        `key`?: string;
-        `username`?: string;
-        `displayName`?: string;
-        `current`?: boolean
-      })[];
-      `preselected`?: string;
-      `naming`?: "open" | "off" | "product"
-    }
-  },
-  `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "signed-out" | "inventory" | "refused";
-    `username`?: string;
-    `account`?: string;
-    `location`?: string;
-    `ownSessionEnded`?: boolean;
-    `scope`?: "global" | "selected";
-    `form`?: {`method`?: "POST"; `action`?: string; `fields`?: {`result`?: string}};
-    `view`?: {
-      `state`?: "result" | "refused" | "nobody" | "accounts";
-      `scope`?: "global" | "selected";
-      `key`?: string;
-      `message`?: string;
-      `terminated`?: ({`id`?: string; `label`?: string; `message`?: string})[];
-      `skipped`?: ({`id`?: string; `label`?: string; `message`?: string})[];
-      `remaining`?: numeric;
-      `verifiesCredentials`?: boolean;
-      `accounts`?: ({
-        `key`?: string;
-        `username`?: string;
-        `displayName`?: string;
-        `current`?: boolean
-      })[];
-      `preselected`?: string;
-      `naming`?: "open" | "off" | "product"
-    }
-  },
-  `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "signed-out" | "inventory" | "refused";
-    `username`?: string;
-    `account`?: string;
-    `location`?: string;
-    `ownSessionEnded`?: boolean;
-    `scope`?: "global" | "selected";
-    `form`?: {`method`?: "POST"; `action`?: string; `fields`?: {`result`?: string}};
-    `view`?: {
-      `state`?: "result" | "refused" | "nobody" | "accounts";
-      `scope`?: "global" | "selected";
-      `key`?: string;
-      `message`?: string;
-      `terminated`?: ({`id`?: string; `label`?: string; `message`?: string})[];
-      `skipped`?: ({`id`?: string; `label`?: string; `message`?: string})[];
-      `remaining`?: numeric;
-      `verifiesCredentials`?: boolean;
-      `accounts`?: ({
-        `key`?: string;
-        `username`?: string;
-        `displayName`?: string;
-        `current`?: boolean
-      })[];
-      `preselected`?: string;
-      `naming`?: "open" | "off" | "product"
-    }
-  },
-  `responses/409/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "signed-out" | "inventory" | "refused";
-    `username`?: string;
-    `account`?: string;
-    `location`?: string;
-    `ownSessionEnded`?: boolean;
-    `scope`?: "global" | "selected";
-    `form`?: {`method`?: "POST"; `action`?: string; `fields`?: {`result`?: string}};
-    `view`?: {
-      `state`?: "result" | "refused" | "nobody" | "accounts";
-      `scope`?: "global" | "selected";
-      `key`?: string;
-      `message`?: string;
-      `terminated`?: ({`id`?: string; `label`?: string; `message`?: string})[];
-      `skipped`?: ({`id`?: string; `label`?: string; `message`?: string})[];
-      `remaining`?: numeric;
-      `verifiesCredentials`?: boolean;
-      `accounts`?: ({
-        `key`?: string;
-        `username`?: string;
-        `displayName`?: string;
-        `current`?: boolean
-      })[];
-      `preselected`?: string;
-      `naming`?: "open" | "off" | "product"
-    }
-  },
-  `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "signed-out" | "inventory" | "refused";
-    `username`?: string;
-    `account`?: string;
-    `location`?: string;
-    `ownSessionEnded`?: boolean;
-    `scope`?: "global" | "selected";
-    `form`?: {`method`?: "POST"; `action`?: string; `fields`?: {`result`?: string}};
-    `view`?: {
-      `state`?: "result" | "refused" | "nobody" | "accounts";
-      `scope`?: "global" | "selected";
-      `key`?: string;
-      `message`?: string;
-      `terminated`?: ({`id`?: string; `label`?: string; `message`?: string})[];
-      `skipped`?: ({`id`?: string; `label`?: string; `message`?: string})[];
-      `remaining`?: numeric;
-      `verifiesCredentials`?: boolean;
-      `accounts`?: ({
-        `key`?: string;
-        `username`?: string;
-        `displayName`?: string;
-        `current`?: boolean
-      })[];
-      `preselected`?: string;
-      `naming`?: "open" | "off" | "product"
-    }
-  },
-  `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "signed-out" | "inventory" | "refused";
-    `username`?: string;
-    `account`?: string;
-    `location`?: string;
-    `ownSessionEnded`?: boolean;
-    `scope`?: "global" | "selected";
-    `form`?: {`method`?: "POST"; `action`?: string; `fields`?: {`result`?: string}};
-    `view`?: {
-      `state`?: "result" | "refused" | "nobody" | "accounts";
-      `scope`?: "global" | "selected";
-      `key`?: string;
-      `message`?: string;
-      `terminated`?: ({`id`?: string; `label`?: string; `message`?: string})[];
-      `skipped`?: ({`id`?: string; `label`?: string; `message`?: string})[];
-      `remaining`?: numeric;
-      `verifiesCredentials`?: boolean;
-      `accounts`?: ({
-        `key`?: string;
-        `username`?: string;
-        `displayName`?: string;
-        `current`?: boolean
-      })[];
-      `preselected`?: string;
-      `naming`?: "open" | "off" | "product"
-    }
-  },
+  `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc12,
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc12,
+  `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc12,
+  `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc12,
+  `responses/409/content/application~1json/schema`: WithOkErrorsErrorEtc12,
+  `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc12,
+  `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc12,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @endpoint("/authn-api/logout/accounts",
@@ -7707,55 +3279,11 @@ op `signOut`(`parameters/0/schema`: string,
 op `getSignOutAccounts`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`minLength`:1,`maxLength`:256}]}}) `parameters/0/schema`: unknown,
   @js(#{`minLength`:1,`maxLength`:600}) `parameters/1/schema`: string,
   @js(#{`maxLength`:512}) `parameters/2/schema`: string,
-  `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `csrf`?: string;
-    `uiLocales`?: string;
-    `preferredLanguage`?: {`value`?: string; `populated`?: boolean};
-    `view`?: {
-      `state`?: "accounts";
-      `accounts`?: ({
-        `key`?: string;
-        `username`?: string;
-        `displayName`?: string;
-        `current`?: boolean
-      })[];
-      `preselected`?: string;
-      `naming`?: "open" | "off" | "product"
-    };
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
-  `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `csrf`?: string;
-    `uiLocales`?: string;
-    `preferredLanguage`?: {`value`?: string; `populated`?: boolean};
-    `view`?: {
-      `state`?: "accounts";
-      `accounts`?: ({
-        `key`?: string;
-        `username`?: string;
-        `displayName`?: string;
-        `current`?: boolean
-      })[];
-      `preselected`?: string;
-      `naming`?: "open" | "off" | "product"
-    };
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  `responses/200/content/application~1json/schema`: WithOkCsrfUiLocalesEtc8,
+  `responses/400/content/application~1json/schema`: WithOkCsrfUiLocalesEtc8,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @endpoint("/authn-api/logout/accounts",
@@ -7813,233 +3341,17 @@ op `getSignOutAccounts`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#
     `x-mirrors`:"POST /logout/accounts"
   })
 op `chooseSignOutAccount`(`parameters/0/schema`: string,
-  `requestBody/content/application~1json/schema`: {@js(#{`minLength`:1,`maxLength`:600}) `account`: string},
-  `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "signed-out" | "inventory" | "refused";
-    `username`?: string;
-    `account`?: string;
-    `location`?: string;
-    `ownSessionEnded`?: boolean;
-    `scope`?: "global" | "selected";
-    `form`?: {`method`?: "POST"; `action`?: string; `fields`?: {`result`?: string}};
-    `view`?: {
-      `state`?: "result" | "refused" | "nobody" | "accounts";
-      `scope`?: "global" | "selected";
-      `key`?: string;
-      `message`?: string;
-      `terminated`?: ({`id`?: string; `label`?: string; `message`?: string})[];
-      `skipped`?: ({`id`?: string; `label`?: string; `message`?: string})[];
-      `remaining`?: numeric;
-      `verifiesCredentials`?: boolean;
-      `accounts`?: ({
-        `key`?: string;
-        `username`?: string;
-        `displayName`?: string;
-        `current`?: boolean
-      })[];
-      `preselected`?: string;
-      `naming`?: "open" | "off" | "product"
-    }
-  },
-  `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "signed-out" | "inventory" | "refused";
-    `username`?: string;
-    `account`?: string;
-    `location`?: string;
-    `ownSessionEnded`?: boolean;
-    `scope`?: "global" | "selected";
-    `form`?: {`method`?: "POST"; `action`?: string; `fields`?: {`result`?: string}};
-    `view`?: {
-      `state`?: "result" | "refused" | "nobody" | "accounts";
-      `scope`?: "global" | "selected";
-      `key`?: string;
-      `message`?: string;
-      `terminated`?: ({`id`?: string; `label`?: string; `message`?: string})[];
-      `skipped`?: ({`id`?: string; `label`?: string; `message`?: string})[];
-      `remaining`?: numeric;
-      `verifiesCredentials`?: boolean;
-      `accounts`?: ({
-        `key`?: string;
-        `username`?: string;
-        `displayName`?: string;
-        `current`?: boolean
-      })[];
-      `preselected`?: string;
-      `naming`?: "open" | "off" | "product"
-    }
-  },
-  `responses/401/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "signed-out" | "inventory" | "refused";
-    `username`?: string;
-    `account`?: string;
-    `location`?: string;
-    `ownSessionEnded`?: boolean;
-    `scope`?: "global" | "selected";
-    `form`?: {`method`?: "POST"; `action`?: string; `fields`?: {`result`?: string}};
-    `view`?: {
-      `state`?: "result" | "refused" | "nobody" | "accounts";
-      `scope`?: "global" | "selected";
-      `key`?: string;
-      `message`?: string;
-      `terminated`?: ({`id`?: string; `label`?: string; `message`?: string})[];
-      `skipped`?: ({`id`?: string; `label`?: string; `message`?: string})[];
-      `remaining`?: numeric;
-      `verifiesCredentials`?: boolean;
-      `accounts`?: ({
-        `key`?: string;
-        `username`?: string;
-        `displayName`?: string;
-        `current`?: boolean
-      })[];
-      `preselected`?: string;
-      `naming`?: "open" | "off" | "product"
-    }
-  },
-  `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "signed-out" | "inventory" | "refused";
-    `username`?: string;
-    `account`?: string;
-    `location`?: string;
-    `ownSessionEnded`?: boolean;
-    `scope`?: "global" | "selected";
-    `form`?: {`method`?: "POST"; `action`?: string; `fields`?: {`result`?: string}};
-    `view`?: {
-      `state`?: "result" | "refused" | "nobody" | "accounts";
-      `scope`?: "global" | "selected";
-      `key`?: string;
-      `message`?: string;
-      `terminated`?: ({`id`?: string; `label`?: string; `message`?: string})[];
-      `skipped`?: ({`id`?: string; `label`?: string; `message`?: string})[];
-      `remaining`?: numeric;
-      `verifiesCredentials`?: boolean;
-      `accounts`?: ({
-        `key`?: string;
-        `username`?: string;
-        `displayName`?: string;
-        `current`?: boolean
-      })[];
-      `preselected`?: string;
-      `naming`?: "open" | "off" | "product"
-    }
-  },
-  `responses/409/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "signed-out" | "inventory" | "refused";
-    `username`?: string;
-    `account`?: string;
-    `location`?: string;
-    `ownSessionEnded`?: boolean;
-    `scope`?: "global" | "selected";
-    `form`?: {`method`?: "POST"; `action`?: string; `fields`?: {`result`?: string}};
-    `view`?: {
-      `state`?: "result" | "refused" | "nobody" | "accounts";
-      `scope`?: "global" | "selected";
-      `key`?: string;
-      `message`?: string;
-      `terminated`?: ({`id`?: string; `label`?: string; `message`?: string})[];
-      `skipped`?: ({`id`?: string; `label`?: string; `message`?: string})[];
-      `remaining`?: numeric;
-      `verifiesCredentials`?: boolean;
-      `accounts`?: ({
-        `key`?: string;
-        `username`?: string;
-        `displayName`?: string;
-        `current`?: boolean
-      })[];
-      `preselected`?: string;
-      `naming`?: "open" | "off" | "product"
-    }
-  },
-  `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "signed-out" | "inventory" | "refused";
-    `username`?: string;
-    `account`?: string;
-    `location`?: string;
-    `ownSessionEnded`?: boolean;
-    `scope`?: "global" | "selected";
-    `form`?: {`method`?: "POST"; `action`?: string; `fields`?: {`result`?: string}};
-    `view`?: {
-      `state`?: "result" | "refused" | "nobody" | "accounts";
-      `scope`?: "global" | "selected";
-      `key`?: string;
-      `message`?: string;
-      `terminated`?: ({`id`?: string; `label`?: string; `message`?: string})[];
-      `skipped`?: ({`id`?: string; `label`?: string; `message`?: string})[];
-      `remaining`?: numeric;
-      `verifiesCredentials`?: boolean;
-      `accounts`?: ({
-        `key`?: string;
-        `username`?: string;
-        `displayName`?: string;
-        `current`?: boolean
-      })[];
-      `preselected`?: string;
-      `naming`?: "open" | "off" | "product"
-    }
-  },
-  `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "signed-out" | "inventory" | "refused";
-    `username`?: string;
-    `account`?: string;
-    `location`?: string;
-    `ownSessionEnded`?: boolean;
-    `scope`?: "global" | "selected";
-    `form`?: {`method`?: "POST"; `action`?: string; `fields`?: {`result`?: string}};
-    `view`?: {
-      `state`?: "result" | "refused" | "nobody" | "accounts";
-      `scope`?: "global" | "selected";
-      `key`?: string;
-      `message`?: string;
-      `terminated`?: ({`id`?: string; `label`?: string; `message`?: string})[];
-      `skipped`?: ({`id`?: string; `label`?: string; `message`?: string})[];
-      `remaining`?: numeric;
-      `verifiesCredentials`?: boolean;
-      `accounts`?: ({
-        `key`?: string;
-        `username`?: string;
-        `displayName`?: string;
-        `current`?: boolean
-      })[];
-      `preselected`?: string;
-      `naming`?: "open" | "off" | "product"
-    }
-  },
+  `requestBody/content/application~1json/schema`: WithMinLengthMaxLengthAccount,
+  `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc12,
+  `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc12,
+  `responses/401/content/application~1json/schema`: WithOkErrorsErrorEtc12,
+  `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc12,
+  `responses/409/content/application~1json/schema`: WithOkErrorsErrorEtc12,
+  `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc12,
+  `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc12,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @endpoint("/authn-api/pending/{id}/accounts",
@@ -8085,56 +3397,28 @@ op `getAccountChoice`(`parameters/0/schema`: string,
     `ok`?: boolean;
     `csrf`?: string;
     `uiLocales`?: string;
-    `preferredLanguage`?: {`value`?: string; `populated`?: boolean};
+    `preferredLanguage`?: WithValuePopulated;
     `view`?: {
       `id`?: string;
       `base`?: string;
       `protocol`?: string;
       `application`?: string;
       `reason`?: string;
-      `accounts`?: ({
-        `key`?: string;
-        `sub`?: string;
-        `username`?: string;
-        `displayName`?: string;
-        `state`?: "signed-in" | "signed-out";
-        `signedInAt`?: numeric;
-        `authTime`?: numeric;
-        `signedOutAt`?: numeric;
-        `current`?: boolean
-      })[];
+      `accounts`?: (WithKeySubUsernameEtc9)[];
       `another`?: {`open`?: boolean};
       `max`?: numeric;
-      `details`?: ({`label`?: string; `value`?: string; `note`?: string})[]
+      `details`?: (WithLabelValueNote)[]
     }
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkNextErrorsEtc5,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/503/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/503/content/application~1json/schema`: WithOkNextErrorsEtc5,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @endpoint("/authn-api/pending/{id}/accounts/select",
@@ -8201,156 +3485,31 @@ op `getAccountChoice`(`parameters/0/schema`: string,
   })
 op `selectAccount`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
-  `requestBody/content/application~1json/schema`: {@js(#{`minLength`:1,`maxLength`:600}) `account`: string},
+  `requestBody/content/application~1json/schema`: WithMinLengthMaxLengthAccount,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/409/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/409/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/503/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/503/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @endpoint("/authn-api/pending/{id}/accounts/another",
@@ -8420,153 +3579,28 @@ op `useAnotherAccount`(`parameters/0/schema`: string,
   `requestBody/content/application~1json/schema`: {},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/409/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/409/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/503/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/503/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @endpoint("/authn-api/pending/{id}/accounts/forget",
@@ -8633,156 +3667,31 @@ op `useAnotherAccount`(`parameters/0/schema`: string,
   })
 op `forgetAccount`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
-  `requestBody/content/application~1json/schema`: {@js(#{`minLength`:1,`maxLength`:600}) `account`: string},
+  `requestBody/content/application~1json/schema`: WithMinLengthMaxLengthAccount,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/409/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/409/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/503/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/503/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @endpoint("/authn-api/accounts",
@@ -8814,39 +3723,17 @@ op `forgetAccount`(`parameters/0/schema`: string,
 op `getAccounts`(`responses/200/content/application~1json/schema`: {
     `ok`?: boolean;
     `enabled`?: boolean;
-    `accounts`?: ({
-      `key`?: string;
-      `sub`?: string;
-      `username`?: string;
-      `displayName`?: string;
-      `state`?: "signed-in" | "signed-out";
-      `signedInAt`?: numeric;
-      `authTime`?: numeric;
-      `signedOutAt`?: numeric;
-      `current`?: boolean
-    })[];
+    `accounts`?: (WithKeySubUsernameEtc9)[];
     `max`?: numeric;
     `anotherAccount`?: string;
     `csrf`?: string
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkNextErrorsEtc5,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @js(#{
@@ -8899,12 +3786,12 @@ op `getConsent`(`parameters/0/schema`: string,
     `ok`?: boolean;
     `csrf`?: string;
     `uiLocales`?: string;
-    `preferredLanguage`?: {`value`?: string; `populated`?: boolean};
+    `preferredLanguage`?: WithValuePopulated;
     `view`?: {
       `consent`?: boolean;
       `username`?: string;
       `base`?: string;
-      `client`?: {`id`?: string; `name`?: string};
+      `client`?: WithIdName;
       `clientDisplay`?: NullableObject30;
       `resources`?: (string)[];
       `scopes`?: ({
@@ -8931,27 +3818,15 @@ op `getConsent`(`parameters/0/schema`: string,
       })[];
       `attribute`?: string;
       `protocol`?: string;
-      `details`?: ({`label`?: string; `value`?: string; `note`?: string})[]
+      `details`?: (WithLabelValueNote)[]
     }
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkNextErrorsEtc5,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 
 @endpoint("/authn-api/consent/{id}",
@@ -9013,112 +3888,21 @@ op `answerConsent`(`parameters/0/schema`: string,
   @js(#{`$open`:true}) `requestBody/content/application~1json/schema`: {`action`: "allow" | "deny"},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/200/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/200/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/400/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/403/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/403/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/415/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/415/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
-  }) `responses/429/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string;
-    `next`?: "redirect" | "mfa" | "password-change" | "home-cell" | "stay" | "refused";
-    `location`?: string;
-    `step`?: string;
-    `id`?: string;
-    `form`?: {
-      `method`?: "GET" | "POST";
-      `action`?: string;
-      @js(#{`description`:"A request's own parameters, by name."}) `fields`?: Record<string>
-    };
-    `notice`?: string;
-    `end`?: {`title`?: string};
-    `passkey`?: {`unknownCredential`?: string; `autofill`?: boolean}
-  },
+  }) `responses/429/content/application~1json/schema`: WithOkErrorsErrorEtc13,
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
-  }) `responses/default/content/application~1json/schema`: {
-    `ok`?: boolean;
-    `next`?: "refused";
-    `errors`?: (string)[];
-    `error`?: string;
-    `error_description`?: string
-  }): void;
+  }) `responses/default/content/application~1json/schema`: WithOkNextErrorsEtc5): void;
   
 }
