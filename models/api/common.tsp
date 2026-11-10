@@ -504,7 +504,6 @@ namespace IyaSts.Api.Common;
 
 @js(#{ `description`:"A service deployed as cells (#553): the cells that push to the service provider, by id; empty is every cell. Ignored in a service that is one cell.", `$comb`:"oneOf" }) @hoisted union StringMax8192OrListOfStringMax20483 { StringMax8192, ListOfStringMax2048 }
 
-@js(#{ `description`:"A string, a number, a boolean, null, or a list of those." }) @hoisted union StringOrNumericOrBooleanEtc9 {String, numeric, boolean, (StringOrNumericOrBoolean2)[]}
 
 @js(#{`description`:"One group's settings."}) @hoisted model WithGroupSettings { `group`?: string; `settings`?: (WithDescriptionKeyDescriptionEtc)[] }
 

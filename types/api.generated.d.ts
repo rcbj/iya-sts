@@ -28,7 +28,7 @@ declare namespace IyaApi.Account {
   type changeCertificatesAnswer = { "stepUp"?: { "acrValues"?: string; "prompt"?: string; "maxAge"?: number }; "ok"?: boolean; "message"?: string; "go"?: string; "view"?: { "name"?: string; "resolved"?: boolean; "reasons"?: Array<string>; "familyLabels"?: Record<string, unknown>; "urls"?: { "acmeDirectory"?: string; "scep"?: string; "est"?: string }; "fresh"?: { "kind"?: string; "kid"?: string; "hmacKey"?: string; "challenge"?: string; "profile"?: string; "expiresAt"?: string | number | null; "scepUrl"?: string; "plainScepUrl"?: string }; "enrolled"?: Array<{ "serialHex"?: string; "family"?: string; "profile"?: string; "subject"?: string; "names"?: Array<string>; "thumbprint"?: string; "keyAlg"?: string; "notBefore"?: string; "notAfter"?: string; "issuedAt"?: string; "requestedBy"?: { "kind"?: string; "id"?: string; "admin"?: boolean } | null; "via"?: string; "keySource"?: string; "replaces"?: string | null; "certificatePem"?: string; "chainPem"?: Array<string>; "revoked"?: { "at"?: string; "reason"?: string; "by"?: string }; "expired"?: boolean; "status"?: string }>; "hostNames"?: Array<string>; "acme"?: { "keys"?: Array<{ "kid"?: string; "createdAt"?: string | number | null; "expiresAt"?: string | number | null; "createdBy"?: string | null; "boundAccount"?: string | null; "boundAt"?: string | number | null; "status"?: string }> } | null; "est"?: { "profiles"?: Array<string> } | null; "scep"?: { "challenges"?: Array<{ "id"?: string; "profile"?: string | null; "createdAt"?: string | number | null; "expiresAt"?: string | number | null; "createdBy"?: string | null; "usedAt"?: string | number | null; "status"?: string }>; "profiles"?: Array<string>; "defaultProfile"?: string | null } | null } };
   type getSignInRequestsQuery = { "stepup"?: string; "gnapstepup"?: string };
   type getSignInRequestsAnswer = { "enabled"?: boolean; "requests"?: Array<{ "id"?: string; "clientName"?: string | null; "bindingMessage"?: string; "requestContext"?: Array<{ "name"?: string; "value"?: string }> | null; "scope"?: string | null; "acrValues"?: Array<string>; "expiresAt"?: string | number | null }>; "hasCode"?: boolean; "gnap"?: Array<{ "id"?: string; "display"?: string | null; "client"?: string | null; "declared"?: boolean; "requestedBy"?: string; "acr"?: Array<string>; "subject"?: boolean; "expiresAt"?: string | number | null; "rights"?: Array<{ "field"?: string; "limitsHtml"?: string; "reference"?: string; "type"?: string; "parts"?: string }> }>; "stepUp"?: { "acrValues"?: string; "prompt"?: string; "maxAge"?: number } };
-  type answerSignInRequestBody = { "action": "set-code" | "clear-code" | "approve" | "deny" | "gnap-approve" | "gnap-deny"; "id"?: string; "code"?: string; "right"?: string | Array<string>; "subject"?: "yes" };
+  type answerSignInRequestBody = { "action": "set-code" | "clear-code" | "approve" | "deny" | "gnap-approve" | "gnap-deny"; "id"?: string; "code"?: string; "right"?: string | Array<string>; "subject"?: "" | "yes" };
   type answerSignInRequestAnswer = { "ok"?: boolean; "message"?: string; "go"?: string };
   type getClaimSourcesQuery = { "page"?: "" | number; "done"?: string; "problem"?: string };
   type getClaimSourcesAnswer = { "providers"?: Array<{ "id"?: string; "name"?: string | null; "issuer"?: string | null; "claims"?: Array<string>; "delivery"?: string | null; "link"?: { "linkedAt"?: string | number | null; "stale"?: boolean } | null }>; "paging"?: { "page"?: number; "pages"?: number; "per"?: number; "total"?: number }; "linked"?: number; "notice"?: string; "problem"?: string };
@@ -2913,7 +2913,13 @@ declare namespace IyaApi.Report {
   type Deleted = { "deleted"?: string };
   type Error = { "error"?: string; "error_description"?: string };
   type Field = { "id"?: string; "type"?: "string" | "number" | "boolean" | "timestamp"; "meaning"?: string; "filter"?: boolean; "sort"?: boolean; "group"?: boolean; "operators"?: Array<string>; "indexed"?: Array<string>; "indexedValues"?: Array<string>; "values"?: Array<string> };
-  type Filter = { "op"?: string; "field"?: string; "value"?: string | number | boolean | Array<string | number | boolean>; "param"?: string; "args"?: Array<Filter>; "arg"?: Filter };
+  type Filter = FilterLogical | FilterNot | FilterIsNull | FilterValue | FilterIn | FilterParam;
+  type FilterIn = { "op": "in"; "field": string; "value": Array<string | number | boolean> };
+  type FilterIsNull = { "op": "isNull"; "field": string };
+  type FilterLogical = { "op": "and" | "or"; "args": Array<Filter> };
+  type FilterNot = { "op": "not"; "arg": Filter };
+  type FilterParam = { "op": "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "contains" | "startsWith" | "in"; "field": string; "param": string };
+  type FilterValue = { "op": "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "contains" | "startsWith"; "field": string; "value": string | number | boolean };
   type Group = { "dn"?: string; "name"?: string; "mail"?: string };
   type GroupPage = { "q"?: string; "page"?: number; "pages"?: number; "per"?: number; "total"?: number; "groups"?: Array<Group> };
   type Index = { "service"?: string; "catalog"?: string; "realms"?: string; "version"?: { "version"?: string; "stamped"?: boolean; "buildInfo"?: string } };
@@ -2923,7 +2929,7 @@ declare namespace IyaApi.Report {
   type Me = { "photo"?: string };
   type OpenApiDocument = { "openapi"?: string; "info"?: { "title"?: string; "version"?: string; "description"?: string }; "paths"?: unknown; "components"?: unknown };
   type ParameterBag = Record<string, unknown>;
-  type QueryDocument = { "source": string; "select"?: Array<string>; "where"?: Filter; "orderBy"?: Array<{ "field"?: string; "dir"?: "asc" | "desc" }>; "limit"?: number; "format"?: "json" | "csv" | "pdf"; "mode"?: "auto" | "sync" | "async"; "locale"?: string; "aggregate"?: "count" | null; "groupBy"?: Array<string> };
+  type QueryDocument = { "source": string; "select"?: Array<string>; "where"?: Filter; "orderBy"?: Array<{ "field": string; "dir": "asc" | "desc" }>; "limit"?: number; "format"?: "json" | "csv" | "pdf"; "mode"?: "auto" | "sync" | "async"; "locale"?: string; "aggregate"?: "count" | null; "groupBy"?: Array<string> };
   type QueryResult = { "source"?: string; "fields"?: Array<string>; "rows"?: Array<Record<string, unknown>>; "truncated"?: boolean };
   type Realm = { "id"?: string; "name"?: string; "prefix"?: string };
   type Realms = { "current"?: Realm; "realms"?: Array<Realm> };

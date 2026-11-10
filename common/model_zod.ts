@@ -19,7 +19,7 @@
 // What it understands grew with #1579, when the last hand-written validators
 // in front of modelled operations went: `oneOf` (exactly one option holds),
 // `patternProperties` (a member whose name matches is held to that schema),
-// `uniqueItems`, OpenAPI 3.0's `nullable` (and a `null` among an `enum`'s
+// `uniqueItems`, `maxProperties`, OpenAPI 3.0's `nullable` (and a `null` among an `enum`'s
 // values), and a `$ref` to one of the document's components, recursive ones
 // included. `component()` is a component's own validator, which is how the
 // Reports API holds a query document that arrives inside a definition as well
@@ -202,7 +202,7 @@ class ModelZod {
   static objectOf(schema: Json, context: Context): any {
     log.debug("Entering ModelZod.objectOf().");
     ModelZod.onlyKnown(schema, ['type', 'properties', 'required',
-      'additionalProperties', 'patternProperties']);
+      'additionalProperties', 'patternProperties', 'maxProperties']);
     const required: string[] = schema.required || [];
     const shape: Json = {};
     Object.keys(schema.properties || {}).forEach(function (name) {
@@ -224,6 +224,16 @@ class ModelZod {
     } else {
       // A member the document does not name is dropped, not refused.
       out = z.object(shape);
+    }
+    if (schema.maxProperties !== undefined) {
+      const most = schema.maxProperties;
+      out = out.superRefine(function (value: Json, ctx: any) {
+        if (Object.keys(value).length > most) {
+          ctx.addIssue({ code: 'too_big', origin: 'object', maximum: most,
+                         inclusive: true,
+                         message: 'More than ' + most + ' members' });
+        }
+      });
     }
     log.debug("Leaving ModelZod.objectOf().");
     return out;

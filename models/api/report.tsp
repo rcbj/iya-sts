@@ -236,38 +236,106 @@ namespace IyaSts.Api.Report {
 
   
 
+// THE FILTER'S GRAMMAR (#1579): what `report/query.ts` checked by hand, so the
+// document a caller reads and the check a request meets are one declaration.
+// A node is one of five closed forms told apart by `op`, and each may be null,
+// which is no filter wherever a filter stands. The operators are the grammar's;
+// which of them a field takes, the field itself, its type and how deep a tree
+// may nest are the catalog's and the code's, checked after the shape.
+@js(#{`minLength`:1}) @hoisted scalar FieldId extends string;
+
 @js(#{
     `nullable`:true,
+    `description`:"and or or over between 1 and 16 filters."
+  }) @component model `FilterLogical` {
+    `op`: "and" | "or";
+    @js(#{`minItems`:1,`maxItems`:16}) `args`: (`Filter`)[]
+  }
+
+@js(#{`nullable`:true,`description`:"not over one filter."}) @component model `FilterNot` {
+    `op`: "not";
+    `arg`: `Filter`
+  }
+
+@js(#{
+    `nullable`:true,
+    `description`:"isNull names the field and nothing else."
+  }) @component model `FilterIsNull` {
+    `op`: "isNull";
+    `field`: FieldId
+  }
+
+@js(#{
+    `nullable`:true,
+    `description`:"A comparison with one value: a string, a number, a boolean or null, which the field's type then decides."
+  }) @component model `FilterValue` {
+    `op`: "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "contains" | "startsWith";
+    `field`: FieldId;
+    `value`: StringOrNumericOrBoolean2
+  }
+
+@js(#{
+    `nullable`:true,
+    `description`:"in, with between 1 and 50 values."
+  }) @component model `FilterIn` {
+    `op`: "in";
+    `field`: FieldId;
+    @js(#{`minItems`:1,`maxItems`:50}) `value`: (StringOrNumericOrBoolean2)[]
+  }
+
+@js(#{
+    `nullable`:true,
+    `description`:"A comparison whose value is a saved definition's parameter, named here and given when the definition runs."
+  }) @component model `FilterParam` {
+    `op`: "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "contains" | "startsWith" | "in";
+    `field`: FieldId;
+    @js(#{`minLength`:1}) `param`: string
+  }
+
+@js(#{
     `description`:"A comparison, or and, or, or not. A comparison names field and either value or param, not both. in takes an array. isNull names only the field. The form offers three comparisons and does not offer in; the API does. Null is no filter."
-  }) @component model `Filter` {
-    `op`?: string;
-    `field`?: string;
-    `value`?: StringOrNumericOrBooleanEtc9;
-    `param`?: string;
-    `args`?: (`Filter`)[];
-    `arg`?: `Filter`
+  }) @component union `Filter` {
+    `FilterLogical`,
+    `FilterNot`,
+    `FilterIsNull`,
+    `FilterValue`,
+    `FilterIn`,
+    `FilterParam`
   }
 
 @component model `QueryDocument` {
     @js(#{
+      `minLength`:1,
       `description`:"One source, by its id in the catalog: {{sources}}. An array is invalid_query."
     }) `source`: string;
     @js(#{
       `nullable`:true,
-      `description`:"The fields. A count may name none, as three presets do."
-    }) `select`?: (string)[];
+      `maxItems`:64,
+      `uniqueItems`:true,
+      `description`:"The fields, at most 64, each once. A count may name none, as three presets do."
+    }) `select`?: (FieldId)[];
     `where`?: `Filter`;
-    @js(#{`nullable`:true}) `orderBy`?: ({`field`?: string; `dir`?: "asc" | "desc"})[];
+    @js(#{
+      `nullable`:true,
+      `maxItems`:8,
+      `description`:"At most 8 entries, each a field and a direction, and a field once."
+    }) `orderBy`?: ({`field`: FieldId; `dir`: "asc" | "desc"})[];
     @js(#{`minimum`:1}) `limit`?: integer;
     `format`?: "json" | "csv" | "pdf";
     `mode`?: "auto" | "sync" | "async";
     @js(#{
       `nullable`:true,
       `maxLength`:35,
+      `pattern`:"^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$",
       `description`:"A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi."
     }) `locale`?: string;
     @js(#{`nullable`:true,`enum`:#["count",null]}) `aggregate`?: string;
-    @js(#{`nullable`:true}) `groupBy`?: (string)[]
+    @js(#{
+      `nullable`:true,
+      `maxItems`:8,
+      `uniqueItems`:true,
+      `description`:"The fields a count groups by, at most 8, each once."
+    }) `groupBy`?: (FieldId)[]
   }
 
   
@@ -300,14 +368,35 @@ namespace IyaSts.Api.Report {
 
   
 
+// WHAT A SAVED PARAMETER MAY HOLD (#1579), which `report/jobs.ts` checked by
+// hand: at most 32 names, each a string of at most 200 characters, a number, a
+// boolean, null, or a list of 1 to 32 of those. A name's length (1 to 64) is
+// the one bound this document cannot state, because OpenAPI 3.0.3 has no
+// `propertyNames`; `jobs.ts` still asks it.
+@js(#{`nullable`:true,`maxLength`:200}) @hoisted scalar ParameterText extends string;
+
+@hoisted union ParameterScalar {ParameterText, numeric, boolean}
+
+@js(#{`minItems`:1,`maxItems`:32}) @hoisted model ParameterList is Array<ParameterScalar>;
+
+@js(#{
+    `description`:"A string, a number, a boolean, null, or a list of 1 to 32 of those. A string is at most 200 characters."
+  }) @hoisted union ParameterValue {ParameterText, numeric, boolean, ParameterList}
+
 @js(#{
     `nullable`:true,
-    `description`:"Parameter name to the value the filter uses. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none."
-  }) @component model `ParameterBag` is Record<StringOrNumericOrBooleanEtc9>;
+    `maxProperties`:32,
+    `description`:"Parameter name to the value the filter uses: at most 32 names of 1 to 64 characters. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none."
+  }) @component model `ParameterBag` is Record<ParameterValue>;
   
 
 @component model `DefinitionWrite` {
-    @js(#{`maxLength`:120}) `name`: string;
+    @js(#{
+      `minLength`:1,
+      `maxLength`:120,
+      `pattern`:"\\S",
+      `description`:"What the definition is called: at most 120 characters, not only spaces."
+    }) `name`: string;
     `document`: `QueryDocument`;
     `parameters`?: `ParameterBag`;
     @js(#{`description`:"A UTC cron expression, or empty."}) `schedule`?: string;
@@ -363,7 +452,9 @@ namespace IyaSts.Api.Report {
 
 @component model `Deleted` {@js(#{`description`:"The definition's id."}) `deleted`?: string}
 
-@component model `ShareWrite` {`groups`: (string)[]}
+@js(#{`minLength`:1,`description`:"A group's DN in this realm."}) @hoisted scalar GroupDn extends string;
+
+@component model `ShareWrite` {`groups`: (GroupDn)[]}
 
 @component model `Job` {
     `id`?: string;

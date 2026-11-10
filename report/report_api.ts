@@ -39,6 +39,7 @@ import OpenApi = require('./openapi');
 import responseChecks = require('../common/response_models');
 // What a request may name and hold (#1483): a leaf that registers nothing.
 import RequestHeaders = require('../common/request_headers');
+import ModelZod = require('../common/model_zod');
 import version = require('../common/version');
 
 const log = bunyan.createLogger({ name: 'sts-report-api' });
@@ -344,6 +345,71 @@ function reportIdOk(id: string): boolean {
   const ok = /^[A-Za-z0-9_-]{1,64}$/.test(String(id || ''));
   log.debug("Leaving reportIdOk().");
   return ok;
+}
+
+// WHAT A DEFINITION, A SHARE AND A RUN'S PARAMETERS MAY HOLD (#1579) is the
+// model's `DefinitionWrite`, `ShareWrite` and `ParameterBag`: the body is held
+// to it here, at the door, and `jobs.ts` asks only what one body cannot
+// answer — a schedule's cron grammar, the catalog, a group's existence, a
+// parameter name's length. A document inside a definition is the model's too,
+// and `Query` reports what is wrong with it, so its own issues are left to it.
+let reportWrites: Record<string, any> | null = null;
+
+function reportWriteShape(name: string): any {
+  log.debug("Entering reportWriteShape().");
+  if (!reportWrites) {
+    reportWrites = {};
+    ['DefinitionWrite', 'ShareWrite', 'ParameterBag'].forEach(
+      function (one: string): void {
+        reportWrites[one] = ModelZod.component('report', one,
+                                               { typed: true });
+      });
+  }
+  log.debug("Leaving reportWriteShape().");
+  return reportWrites[name];
+}
+
+// The model's issues with a posted body, outermost first.
+function reportWriteIssues(name: string, posted: any): any[] {
+  log.debug("Entering reportWriteIssues().");
+  const held = reportWriteShape(name).safeParse(posted,
+                                                { reportInput: true });
+  log.debug("Leaving reportWriteIssues().");
+  return held.success ? [] : held.error.issues;
+}
+
+// The sentence for what is wrong with a posted definition, or ''.
+function reportDefinitionProblem(posted: any): string {
+  log.debug("Entering reportDefinitionProblem().");
+  const issues = reportWriteIssues('DefinitionWrite', posted)
+    .filter(function (one: any): boolean {
+      // The query document's own issues are `Query`'s to name.
+      return !(one.path[0] === 'document' && one.path.length > 1);
+    });
+  const at = function (key: string): boolean {
+    return issues.some(function (one: any): boolean {
+      return one.path[0] === key;
+    });
+  };
+  let problem = '';
+  if (issues.some(function (one: any): boolean {
+    return one.path.length === 0;
+  })) {
+    problem = 'A definition is a name, a query document, parameters, a ' +
+      'schedule, scheduleEnabled and notify, and nothing else.';
+  } else if (at('name')) {
+    problem = 'A definition needs a name.';
+  } else if (at('document')) {
+    problem = 'A definition needs a query document.';
+  } else if (at('schedule')) {
+    problem = 'The schedule is not a UTC cron expression.';
+  } else if (at('parameters')) {
+    problem = 'Parameters are names and values.';
+  } else if (issues.length) {
+    problem = 'scheduleEnabled and notify are true or false.';
+  }
+  log.debug("Leaving reportDefinitionProblem().");
+  return problem;
 }
 
 function reportMergedParameters(stored: any, posted: any): any {
@@ -1430,6 +1496,13 @@ function reportCreateDefinition(req: any, res: any, who: any,
     log.debug("Leaving reportCreateDefinition(). Bad body.");
     return;
   }
+  const problem = reportDefinitionProblem(posted);
+  if (problem) {
+    reportSend(res, reportHttpStatus('STS-REPORT-0030'),
+      'STS-REPORT-0030', 'invalid_query', problem);
+    log.debug("Leaving reportCreateDefinition(). Not a definition.");
+    return;
+  }
   if (id) {
     const existing = stores.getDefinition(id);
     if (!existing || !rights.canEdit(who, existing)) {
@@ -1501,11 +1574,22 @@ function reportSharePosted(req: any, res: any, who: any, id: string):
     return;
   }
   const posted = reportPosted(req);
-  if (posted === false || !posted || !Array.isArray(posted.groups)) {
+  const issues = posted ? reportWriteIssues('ShareWrite', posted) : [];
+  if (posted === false || !posted || issues.some(function (one: any):
+      boolean {
+    return one.path.length < 2;
+  })) {
     reportSend(res, reportHttpStatus('STS-REPORT-0031'),
       'STS-REPORT-0031', 'invalid_query',
       'Name the groups to share this definition with.');
     log.debug("Leaving reportSharePosted(). Bad body.");
+    return;
+  }
+  if (issues.length) {
+    reportSend(res, reportHttpStatus('STS-REPORT-0031'),
+      'STS-REPORT-0031', 'invalid_query',
+      'A share names a group this realm does not have.');
+    log.debug("Leaving reportSharePosted(). Not a group.");
     return;
   }
   const shared = jobs.share({
@@ -1540,6 +1624,13 @@ async function reportRunSaved(req: any, res: any, who: any,
       'STS-REPORT-0004', 'invalid_query',
       'The query body is not a JSON object.');
     log.debug("Leaving reportRunSaved(). Bad JSON.");
+    return;
+  }
+  if (reportWriteIssues('ParameterBag', posted).length) {
+    reportSend(res, reportHttpStatus('STS-REPORT-0004'),
+      'STS-REPORT-0004', 'invalid_query',
+      'Parameters are names and values.');
+    log.debug("Leaving reportRunSaved(). Not a parameter bag.");
     return;
   }
   await reportAcceptQuery(req, res, who, true, row, 'run');
