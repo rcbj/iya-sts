@@ -471,6 +471,21 @@ function reportPerson(entry: any): { user: IyaDomain.User;
   return person;
 }
 
+// Whether an entry is a person's, by the one field a person cannot be
+// without (#1579): a walk asks it of every entry, so it reads the field and
+// not the whole concept.
+function reportUsername(entry: any): string {
+  log.debug("Entering reportUsername().");
+  const name = DomainMap.fieldOf('User', 'username',
+    (entry && entry.attributes) || {}) || '';
+  log.debug("Leaving reportUsername().");
+  return name;
+}
+
+// THE CLASSES ARE READ BY NAME ON PURPOSE (#1579): an object's classes are
+// stated by its @entry in the model, not by an attribute any concept reads.
+// A concept says what an entry means; its objectClass is how the directory
+// files it, which is the question this answers.
 function reportClasses(entry: any): string[] {
   log.debug("Entering reportClasses().");
   const raw = entry && entry.objectClass;
@@ -697,7 +712,7 @@ async function reportEachUser(onUser: (entry: any, dn: string) =>
   if (!ldap.directoryIsWindowed()) {
     await reportEachEntry(ldap.usersDn(), async function (entry: any,
         dn: string): Promise<boolean> {
-      if (!reportAttr(entry, 'uid')) {
+      if (!reportUsername(entry)) {
         return true;
       }
       return onUser(entry, dn);
@@ -756,9 +771,10 @@ function reportSecondFactors(entry: any, username: string,
   }
   // The attribute is single-valued, so a person has one app or none.
   n += credential.authenticatorApp ? 1 : 0;
-  // No concept of a person holds this one: the model files it under the
-  // authentication policy (#1390).
-  n += reportAttrList(entry, 'stsMailFactor').length;
+  // The model files the emailed factor's opt-in under the authentication
+  // policy, whose directory object keeps it on the person (#1579).
+  n += DomainMap.fieldOf('AuthenticationPolicy', 'stsMailFactor',
+    (entry && entry.attributes) || {}) ? 1 : 0;
   log.debug("Leaving reportSecondFactors(). " + n + '.');
   return n;
 }
@@ -1076,6 +1092,8 @@ async function reportLookupEntries(lookup: Lookup, ldap: any,
       const hits = await ldap.directoryWindow.findWindowedAsync(realmId,
         'byMail', [realmId, wanted, CANDIDATE_CAP],
         function (entry: any): boolean {
+          // Every address, not the User's first: the index found the
+          // entry by any of them (#1579).
           return reportAttrList(entry, 'mail').some(function (one: string):
               boolean {
             return one.toLowerCase() === wanted;
@@ -1143,7 +1161,7 @@ async function reportCandidates(lookups: Lookup[], ldap: any,
       const dn = String((entry && entry.dn) || '').toLowerCase();
       const origin = String((entry && entry.origin) || '');
       if (!dn || seen.has(dn) || origin.indexOf('projection') === 0 ||
-          !reportAttr(entry, 'uid') || !reportUnder(dn, parent)) {
+          !reportUsername(entry) || !reportUnder(dn, parent)) {
         continue;
       }
       seen.add(dn);
@@ -3309,7 +3327,8 @@ function reportGroupRows(ldap: any): any[] {
     return {
       dn: String(group.dn || ''),
       name: cn || String(group.dn || ''),
-      mail: reportAttr(group, 'mail')
+      mail: String(DomainMap.fieldOf('Group', 'email',
+        group.attributes || {}) || '')
     };
   }).filter(function (row: any): boolean {
     return !!row.dn;

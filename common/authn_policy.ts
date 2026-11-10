@@ -86,6 +86,7 @@ import mode = require('./mode');
 import realms = require('./realms');
 import errorCodes = require('./error_codes');
 import InstanceSlot = require('./instance_slot');
+import Classes = require('./domain_classes');
 // The sentences `describe()` makes are filled from SENTENCES below, so the
 // server can translate them into a console reader's language (#543).
 import serverProse = require('./server_prose');
@@ -976,29 +977,30 @@ class AuthnPolicy {
       log.debug("Leaving AuthnPolicy.named(). No directory.");
       return [];
     }
-    const listOf = function (attributes: any, name: string): string[] {
-      const value = (attributes || {})[name];
+    // A list as this function has always answered it: trimmed, the empty
+    // ones and the repeats gone. The lists are the concept's (#1579).
+    const listOf = function (values: string[] | undefined): string[] {
       const out: string[] = [];
-      [].concat(value === undefined || value === null ? [] : value)
-        .forEach(function (one: any) {
-          const text = String(one).trim();
-          if (text && out.indexOf(text) < 0) {
-            out.push(text);
-          }
-        });
+      (values || []).forEach(function (one: any) {
+        const text = String(one).trim();
+        if (text && out.indexOf(text) < 0) {
+          out.push(text);
+        }
+      });
       return out;
     };
     const out = this.directory.allAuthnPolicies().filter(function (entry) {
       return String(entry.name || '').toLowerCase() !== DEFAULT_PROFILE;
     }).map(function (entry) {
       const at = entry.attributes || {};
+      const held = Classes.AuthenticationPolicy.fromEntry(at);
       return {
         name: String(entry.name || '').toLowerCase(),
         dn: String(entry.dn || ''),
-        description: listOf(at, 'description')[0] || '',
+        description: listOf(held.description)[0] || '',
         precedence: PolicySelection.precedenceOf(at, SELECTION),
-        mechanisms: listOf(at, 'stsAuthnPolicyMechanism'),
-        secondFactors: listOf(at, 'stsAuthnPolicySecondFactor')
+        mechanisms: listOf(held.policyMechanism),
+        secondFactors: listOf(held.policySecondFactor)
       };
     }).sort(function (a, b) {
       return a.name < b.name ? -1 : (a.name > b.name ? 1 : 0);

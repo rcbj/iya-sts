@@ -295,6 +295,7 @@ declare namespace IyaDomain {
    * What the directory keeps about any entry.
    */
   interface DirectoryEntry {
+    entryUuid?: string;
     createTimestamp?: string;
     modifyTimestamp?: string;
     entryDN?: string;
@@ -446,6 +447,8 @@ declare namespace IyaDomain {
     stsPostLoginPolicy?: string;
     stsAttributePolicy?: string;
     federationRelationship?: string[];
+    email?: string;
+    displayName?: string;
   }
 
   /**

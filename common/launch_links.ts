@@ -44,6 +44,7 @@
 import applications = require('./applications');
 import config = require('./config');
 import helpers = require('./helpers');
+import Classes = require('./domain_classes');
 
 type Json = any;
 
@@ -238,10 +239,10 @@ class LaunchLinks {
     helpers.log.debug("Entering LaunchLinks.endpointUrl(). " + protocol);
     const fields = (view && view.fields) || {};
     const identifier = String((view && view.identifier) || '');
-    // A field is a value or a list of them; the first is the identifier.
-    const first = function (name: string): string {
-      const value = fields[name];
-      return String((Array.isArray(value) ? value[0] : value) || '');
+    // The first of each list is the identifier, read through the protocol's
+    // concept (#1579).
+    const first = function (values: string[] | undefined): string {
+      return String((values || [])[0] || '');
     };
     const there = String(target || '');
     // EACH ENDPOINT IS ITS PROTOCOL'S APPLICATION'S (#472), which need not
@@ -249,18 +250,21 @@ class LaunchLinks {
     // application is advertised.
     let url = '';
     if (protocol === 'saml2') {
-      const sp = first('samlEntityId') || identifier;
+      const sp = first(Classes.SamlServiceProvider.fromEntry(fields)
+        .entityIds) || identifier;
       url = helpers.rebaseTo(base, 'saml2') + '/saml2/unsolicited/' +
         encodeURIComponent(sp) +
         (there ? '?target=' + encodeURIComponent(there) : '');
     } else if (protocol === 'saml11') {
-      const rp = first('samlEntityId') || identifier;
+      const rp = first(Classes.SamlServiceProvider.fromEntry(fields)
+        .entityIds) || identifier;
       url = helpers.rebaseTo(base, 'saml11') + '/saml11/sso/' +
         encodeURIComponent(rp) +
         '?providerId=' + encodeURIComponent(rp) +
         (there ? '&TARGET=' + encodeURIComponent(there) : '');
     } else if (protocol === 'wsfed') {
-      const realm = first('wsfedRealm') || identifier;
+      const realm = first(Classes.WsFederationRelyingParty.fromEntry(fields)
+        .realms) || identifier;
       url = helpers.rebaseTo(base, 'ws-federation') + '/wsfed/initiate/' +
         encodeURIComponent(realm) +
         (there ? '?wctx=' + encodeURIComponent(there) : '');

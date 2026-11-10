@@ -162,6 +162,7 @@
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import ModelTables = require('../common/model_tables');
+import DomainMap = require('../common/domain_map');
 import vcClaims = require('../oid4vc/vc_claims');
 
 // The logger the module-scope readers of the model and the two transform
@@ -786,7 +787,9 @@ class ScimMap {
   private scimIdOf(entry: EntryObject | null | undefined): string {
     const { log } = this.deps;
     log.debug("Entering ScimMap.scimIdOf().");
-    const uuid = this.firstOf((entry && entry.attributes) || {}, 'entryUUID');
+    // DirectoryEntry's (#1579).
+    const uuid = DomainMap.fieldOf('DirectoryEntry', 'entryUuid',
+      (entry && entry.attributes) || {});
     log.debug("Leaving ScimMap.scimIdOf().");
     return uuid ? String(uuid) : String((entry && entry.dn) || '');
   }
@@ -821,9 +824,11 @@ class ScimMap {
       meta: {
         resourceType: 'User',
         created: this.isoFromGeneralizedTime(
-          this.firstOf(attributes, 'createTimestamp') || entry.createdAt),
+          DomainMap.fieldOf('DirectoryEntry', 'createTimestamp', attributes) ||
+          entry.createdAt),
         lastModified: this.isoFromGeneralizedTime(
-          this.firstOf(attributes, 'modifyTimestamp') || entry.modifiedAt),
+          DomainMap.fieldOf('DirectoryEntry', 'modifyTimestamp', attributes) ||
+          entry.modifiedAt),
         location: (ctx.location || '') +
           encodeURIComponent(this.scimIdOf(entry))
       }
@@ -1159,9 +1164,11 @@ class ScimMap {
       meta: {
         resourceType: 'Group',
         created: this.isoFromGeneralizedTime(
-          this.firstOf(attributes, 'createTimestamp') || entry.createdAt),
+          DomainMap.fieldOf('DirectoryEntry', 'createTimestamp', attributes) ||
+          entry.createdAt),
         lastModified: this.isoFromGeneralizedTime(
-          this.firstOf(attributes, 'modifyTimestamp') || entry.modifiedAt),
+          DomainMap.fieldOf('DirectoryEntry', 'modifyTimestamp', attributes) ||
+          entry.modifiedAt),
         location: (ctx.location || '') +
           encodeURIComponent(this.scimIdOf(entry))
       }

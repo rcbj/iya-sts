@@ -749,19 +749,8 @@ class Mail {
       return null;
     }
     const attrs = entry.attributes || {};
-    const first = function (name: string): string {
-      const keys = Object.keys(attrs);
-      for (let i = 0; i < keys.length; i++) {
-        if (keys[i].toLowerCase() === name.toLowerCase()) {
-          const values = attrs[keys[i]] || [];
-          return values.length ? String(values[0]) : '';
-        }
-      }
-      return '';
-    };
-    // `mail` is the one read left by name: the Group concept has no address.
-    const address = first('mail').trim();
     const group = Classes.Group.fromEntry(attrs);
+    const address = String(group.email || '').trim();
     log.debug("Leaving Mail.groupRecipient().");
     return {
       username: String(dn),

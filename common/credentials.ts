@@ -198,6 +198,7 @@ import claims = require('../cluster/cluster_claims');
 import counters = require('../cluster/cluster_counters');
 import capabilities = require('../cluster/cluster_capabilities');
 import InstanceSlot = require('./instance_slot');
+import DomainMap = require('./domain_map');
 // THE CACHE REGISTRY (#74, rule 3ap), for the one cache this file keeps — the
 // TOTP verdicts below (#352). A LEAF in JavaScript that requires `config` and
 // `error_codes`, so it can close no cycle from here.
@@ -4452,7 +4453,10 @@ class Credentials {
     for (let i = 0; i < holders.length; i += 1) {
       const holder = holders[i];
       const name = String(holder.id);
-      const raw = (holder.attributes || {})[webauthn] || [];
+      // The holder query named the attribute; its values are read as the
+      // Credential's passkeys (#1579).
+      const raw = DomainMap.fieldOf('Credential', 'passkeys',
+        holder.attributes || {}) || [];
       this.keysFromValues(raw, name).forEach(function (key) {
         if (Credentials.isAndroidRecheckable(key)) {
           rows.push({ username: name,
@@ -4552,8 +4556,10 @@ class Credentials {
     for (let i = 0; i < holders.length; i += 1) {
       const holder = holders[i];
       const attrs = holder.attributes || {};
-      const want = Credentials.androidMarkerOf(attrs[webauthn] || []);
-      const have = (attrs[marker] || []).map(String).sort();
+      const want = Credentials.androidMarkerOf(
+        DomainMap.fieldOf('Credential', 'passkeys', attrs) || []);
+      const have = (DomainMap.fieldOf('Credential',
+        'androidAttestedCredential', attrs) || []).slice().sort();
       if (want.join('\n') !== have.join('\n')) {
         try {
           const name = String(holder.id);

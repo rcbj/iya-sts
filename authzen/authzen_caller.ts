@@ -53,6 +53,7 @@
 // ===========================================================================
 
 import helpers = require('../common/helpers');
+import Classes = require('../common/domain_classes');
 
 const { log } = helpers;
 
@@ -703,8 +704,11 @@ class AuthzenCaller {
       add(caller.clientId);
       const entry = caller.identifier ? applications.get(caller.identifier)
         : null;
+      // The application's scope is its concept's (#1579); a person's, above,
+      // is named because no directory object of the model declares it.
       const values = entry && entry.fields
-        ? entry.fields.appAuthzenApplication : null;
+        ? Classes.Application.fromEntry(entry.fields).authzenApplication
+        : null;
       (Array.isArray(values) ? values : (values ? [values] : []))
         .forEach(add);
     }
@@ -903,6 +907,9 @@ class AuthzenCaller {
       out.push({ der: der, sha256: sha256, source: source });
       log.debug("Leaving add().");
     };
+    // BY NAME ON PURPOSE (#1579): a certificate is stored under
+    // `userCertificate` or `userCertificate;binary`, and a concept reads an
+    // attribute without its options, so it would find only the first.
     const attributes = candidate.attributes || {};
     Object.keys(attributes).forEach(function (name: string) {
       const lower = name.toLowerCase();

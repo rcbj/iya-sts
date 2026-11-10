@@ -88,6 +88,7 @@ import mode = require('../common/mode');
 import fedHttp = require('../federation/federation_http');
 import clusterClaims = require('../cluster/cluster_claims');
 import outbound = require('./outbound_delivery');
+import Classes = require('../common/domain_classes');
 
 type Json = any;
 type Req = import('express').Request;
@@ -687,16 +688,13 @@ class ProviderCommands {
         const cap = this.setting('oauth2.commandMetadataMaxGroups');
         out.groups = directory.allGroupEntries().slice(0, cap)
           .map(function (group: Json) {
-            const a = group.attributes || {};
-            const first = function (name: string): string {
-              const v = a[name];
-              return String((Array.isArray(v) ? v[0] : v) || '');
-            };
-            const one: Json = { id: first('cn') || String(group.dn),
-                                display: first('displayName') || first('cn') ||
+            // What a group is called and says is its concept's (#1579).
+            const held = Classes.Group.fromEntry(group.attributes || {});
+            const one: Json = { id: held.name || String(group.dn),
+                                display: held.displayName || held.name ||
                                          String(group.dn) };
-            if (first('description')) {
-              one.description = first('description');
+            if (held.description) {
+              one.description = held.description;
             }
             return one;
           });

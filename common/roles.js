@@ -832,13 +832,6 @@ function haveDirectory() {
 // ---------------------------------------------------------------------------
 // READING THE REGISTER.
 // ---------------------------------------------------------------------------
-function firstValue(attributes, name) {
-  log.debug("Entering firstValue().");
-  const found = attributes[name] || attributes[name.toLowerCase()];
-  log.debug("Leaving firstValue().");
-  return Array.isArray(found) ? (found[0] || '') : (found || '');
-}
-
 // A role's list as this module has always answered it: each value trimmed and
 // the empty ones gone, which a concept's list does not do for it (#1390).
 function trimmedValues(values) {
@@ -871,8 +864,8 @@ function all() {
   }
   const rows = directory.allRoles().map(function (entry) {
     const at = entry.attributes || {};
-    // What the role says comes from its concept (#1390); the entryUUID below
-    // is the one read no field of the concept holds.
+    // What the role says comes from its concept (#1390), and its entryUUID
+    // from DirectoryEntry's, which any entry carries (#1579).
     const role = DomainClasses.Role.fromEntry(at);
     const consoleRow = consoleRoleFor(entry.name);
     const nativeRow = nativeRoleFor(entry.name);
@@ -892,7 +885,8 @@ function all() {
       // ITS STABLE ID (#93): the entry's entryUUID, which the directory keeps
       // across every rewrite of the entry and a delete and re-create does
       // not, so a caller holding it can tell the role from a namesake.
-      id: firstValue(at, 'entryUUID').toLowerCase(),
+      id: String(DomainClasses.DirectoryEntry.fromEntry(at).entryUuid || '')
+        .toLowerCase(),
       displayName: role.displayName || '',
       // WHO MAY HOLD IT (#93); empty is both kinds.
       memberTypes: trimmedValues(role.roleAllowedMemberType),

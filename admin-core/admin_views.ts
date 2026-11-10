@@ -9947,9 +9947,16 @@ class AdminViews {
                  declared: !keys || keys.indexOf(key(value)) >= 0 };
       });
     };
-    const nonEmpty = function (name) {
-      const values = listOf(name);
-      return values.length ? values : null;
+    // THE DECLARED LISTS ARE THE OAuthClient's (#1579). The observed ones
+    // are read by name on purpose: the answer is keyed by the attribute,
+    // which the console draws each list beside.
+    const oauth = DomainClasses.OAuthClient.fromEntry(fields || {});
+    const declared = function (values: string[] | undefined): string[] {
+      return (values || []).filter(function (one) { return one !== ''; });
+    };
+    const nonEmpty = function (values: string[] | undefined) {
+      const kept = declared(values);
+      return kept.length ? kept : null;
     };
     let certificate = null;
     const observedCertificate = String(
@@ -9975,7 +9982,7 @@ class AdminViews {
     // The declared scopes: `oauthAllowedScope`, and what the client's
     // delegated permission grants declare — still null where nothing is
     // listed in `oauthAllowedScope`, since an empty list restricts nothing.
-    let declaredScopes = nonEmpty('oauthAllowedScope');
+    let declaredScopes = nonEmpty(oauth.allowedScope);
     if (declaredScopes) {
       let delegated: string[] = [];
       try {
@@ -9989,7 +9996,7 @@ class AdminViews {
         delegated = [];
       }
       declaredScopes = declaredScopes
-        .concat(listOf('oauthDelegatedPermission'), delegated);
+        .concat(declared(oauth.delegatedPermission), delegated);
     }
     // THE TOKEN RESPONSE TYPES ENABLED ON THIS APPLICATION (#1296), and
     // whether the realm honours them: `enforced` is RFC 9700 mode, `waived`
@@ -10008,7 +10015,7 @@ class AdminViews {
       bcpState = { enforced: false, waived: false };
     }
     const tokenResponseTypes = {
-      enabled: listOf('oauthAllowedTokenResponseTypes')
+      enabled: declared(oauth.allowedTokenResponseTypes)
         .map(applications.canonicalResponseType),
       enforced: bcpState.enforced,
       waived: bcpState.waived
@@ -10016,11 +10023,11 @@ class AdminViews {
     const signed = String(fields.samlAuthnRequestSigned || '');
     const out = {
       oauthGrantTypeObserved: marked('oauthGrantTypeObserved',
-                                     nonEmpty('oauthGrantType')),
+                                     nonEmpty(oauth.grantTypes)),
       oauthResponseTypeObserved: marked('oauthResponseTypeObserved',
-        nonEmpty('oauthResponseType'), applications.canonicalResponseType),
+        nonEmpty(oauth.responseTypes), applications.canonicalResponseType),
       appRedirectUriObserved: marked('appRedirectUriObserved',
-                                     listOf('oauthRedirectUri')),
+                                     declared(oauth.redirectUris)),
       oauthScope: marked('oauthScope', declaredScopes),
       appAuthorizationServer: marked('appAuthorizationServer', null),
       samlNameIdFormat: marked('samlNameIdFormat', null),
@@ -11355,9 +11362,9 @@ class AdminViews {
     const self = this;
     log.debug("Entering AdminViews.applicationPageData().");
     const fields = row.fields || {};
-    const listOf = function (name) {
-      return [].concat(fields[name] || []).map(String)
-        .filter(function (one) { return one !== ''; });
+    // The lists below are their concepts' (#1579), the empty values gone.
+    const listOf = function (values: string[] | undefined): string[] {
+      return (values || []).filter(function (one) { return one !== ''; });
     };
     // The configuration tab's fields: every field but the credentials and
     // those a tab of their own edits (#392: the CORS origins are the
@@ -11435,12 +11442,14 @@ class AdminViews {
       // endpoint, … } }`, the same URL the user portal links and the door
       // answers.
       launchUrls: LaunchLinks.linksFor(row, base),
-      cors: listOf('appCorsOrigin').map(function (stored) {
+      cors: listOf(DomainClasses.Application.fromEntry(fields).corsOrigin)
+            .map(function (stored) {
         return { stored: stored,
                  canonical: applications.corsOriginsOf(
                    { appCorsOrigin: [stored] })[0] || '' };
       }),
-      accessTypes: listOf('oauthAuthorizationDetailsType').map(
+      accessTypes: listOf(DomainClasses.OAuthClient.fromEntry(fields)
+        .authorizationDetailsType).map(
         function (stored) {
           return Object.assign({ stored: stored },
                                applications.authorizationDetailsTypeOf(stored));
@@ -12521,12 +12530,21 @@ class AdminViews {
     log.debug("Entering AdminViews.applicationCredentialsState(). identifier=" +
               (row && row.identifier));
     const fields = (row && row.fields) || {};
+    // BY NAME FOR THE TABLES (#1579): `one()` reads the attributes the key
+    // pair and certificate subject tables name, and the answer carries
+    // those names back for the page to label each row with. The fixed
+    // settings below are the OAuthClient's and the Application's; the
+    // registration access token is named because the page shows it.
     const one = function (name) {
       log.debug("Entering one().");
       const value = name ? fields[name] : undefined;
       log.debug("Leaving one().");
       return Array.isArray(value) ? value.join('\n') : String(value || '');
     };
+    const oauth = DomainClasses.OAuthClient.fromEntry(fields);
+    const registered = DomainClasses.Application.fromEntry(fields,
+      { secrets: ['registrationAccessToken'] });
+    const authMethods = (oauth.tokenEndpointAuthMethods || []).join('\n');
     const chainAvailable = pki.hasChain();
     const described = chainAvailable ? pki.describe() : null;
     const purposes = pki.PURPOSES.map(function (purpose) {
@@ -12595,11 +12613,12 @@ class AdminViews {
           Number(config.value('oauth2.clientSecretLifetimeDays')) || 0,
         overlapS: Number(config.value('oauth2.clientSecretOverlapS')) || 0,
         // Every declared method (2026-10-01), as one line.
-        authMethod: one('oauthTokenEndpointAuthMethod').split('\n')
+        authMethod: authMethods.split('\n')
           .filter(function (m) { return m !== ''; }).join(', '),
         registered: !!row.registered,
-        registrationAccessTokenHeld: !!one('appRegistrationAccessToken'),
-        registrationAccessToken: one('appRegistrationAccessToken'),
+        registrationAccessTokenHeld: !!registered.registrationAccessToken,
+        registrationAccessToken: String(registered.registrationAccessToken ||
+                                        ''),
         // When the PRIMARY expires (seconds, 0 never).
         expiresAt: applications.secretExpiryOf(row.fields || {})
       },
@@ -12611,7 +12630,7 @@ class AdminViews {
         leafLifetimeDays: pki.leafLifetimeDays()
       },
       sources: applications.KEY_SOURCES.slice(),
-      mtls: this.applicationMtlsState(row, one, chainAvailable),
+      mtls: this.applicationMtlsState(row, one, chainAvailable, oauth),
       signing: this.applicationSigningState(row, chainAvailable),
       // THE CERTIFICATES STORED ON THE ENTRY (#1227), as the person's page
       // carries theirs (#1061): a certificate from an outside authority
@@ -12660,7 +12679,8 @@ class AdminViews {
   // EST or SCEP authenticate it too and are listed on those protocols' pages,
   // not here — this section issues and lists its own.
   // ---------------------------------------------------------------------------
-  private applicationMtlsState(row, one, caAvailable) {
+  private applicationMtlsState(row, one, caAvailable,
+      oauth: IyaDomain.OAuthClient) {
     const { log, applications, tlsClientCertificates, certificateSubject,
       mtls } = this.deps;
     log.debug("Entering AdminViews.applicationMtlsState().");
@@ -12689,7 +12709,7 @@ class AdminViews {
     });
     // Several since 2026-10-01: a certificate method among them is what the
     // page reports.
-    const methods = String(one('oauthTokenEndpointAuthMethod') || '')
+    const methods = (oauth.tokenEndpointAuthMethods || []).join('\n')
       .split('\n').filter(function (m) { return m !== ''; });
     const certificate = methods.filter(function (m) {
       return mtls.CERTIFICATE_METHODS.indexOf(m) >= 0;
@@ -12721,7 +12741,7 @@ class AdminViews {
       // bound to its certificate — a certificate method among its methods,
       // or the section 3.4 flag.
       adminApiBound: !!certificate || boundTokens,
-      selfSignedThumbprint: one('oauthTlsClientCertificateThumbprint'),
+      selfSignedThumbprint: String(oauth.tlsClientCertificateThumbprint || ''),
       bindingAvailable: mtls.available(),
       caAvailable: !!caAvailable,
       keyAlgorithms: tlsClientCertificates.KEY_ALGS.slice(),

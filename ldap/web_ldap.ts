@@ -729,6 +729,9 @@ class LdapPage {
     const nav = kit.pageNavPair('/admin/ldap/policies',
       { q: wantedText, per: ctx.query.per ? String(paging.perPage) : '' },
       paging);
+    // BY NAME ON PURPOSE (#1579): this runs in the browser over the API's
+    // answer, a grid of every attribute of each entry by its LDAP name. A
+    // concept is read on the server; the answer is the entry as stored.
     const first = function (row, name) {
       const value = (row.attributes || {})[name];
       if (!value) {
@@ -869,6 +872,9 @@ class LdapPage {
     const nav = kit.pageNavPair('/admin/ldap/peps',
       { q: wantedText, per: ctx.query.per ? String(paging.perPage) : '' },
       paging);
+    // BY NAME ON PURPOSE (#1579): this runs in the browser over the API's
+    // answer, a grid of every attribute of each entry by its LDAP name. A
+    // concept is read on the server; the answer is the entry as stored.
     const first = function (row, name) {
       const value = (row.attributes || {})[name];
       if (!value) {
