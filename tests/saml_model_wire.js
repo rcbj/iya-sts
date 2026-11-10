@@ -815,6 +815,12 @@ function normalise(record) {
     // handle.
     ['incident', /(Incident ID<\/dt><dd><code>)\d+/g],
     ['handle', /\b(authn|rid|fid)=[A-Za-z0-9_-]{12,}/g],
+    ['handleParam', /("location\.param\.(?:authn|rid|fid)": ")[^"]+/g],
+    // A signer's chain, as many certificates as the realm's authority has
+    // issued by then: a realm made a moment before can still be issuing
+    // its intermediate when the first document is signed (seen under
+    // load). The chain is the PKI's, not SAML's, so it is one placeholder.
+    ['chain', /(<ds:X509Certificate><opaque><\/ds:X509Certificate>)+/g],
     ['hex', /\b[0-9a-f]{24,}\b/g],
     ['random', /(?<![A-Za-z0-9_+/=-])(?=[A-Za-z0-9_+/=-]*[A-Z])(?=[A-Za-z0-9_+/=-]*[0-9])[A-Za-z0-9_+/=-]{24,}/g]
   ];
@@ -830,6 +836,10 @@ function normalise(record) {
         text = text.replace(pair[1], '$1<incident>');
       } else if (pair[0] === 'handle') {
         text = text.replace(pair[1], '$1=<handle>');
+      } else if (pair[0] === 'handleParam') {
+        text = text.replace(pair[1], '$1<handle>');
+      } else if (pair[0] === 'chain') {
+        text = text.replace(pair[1], '<chain>');
       } else if (pair[0] === 'nameid') {
         text = text.replace(pair[1], '$1<nameid>');
       } else if (pair[0] === 'cookie') {
@@ -977,5 +987,6 @@ module.exports = {
   run: run,
   messages: messages,
   capture: capture,
+  normalise: normalise,
   SNAPSHOT: SNAPSHOT
 };

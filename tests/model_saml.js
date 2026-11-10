@@ -240,7 +240,7 @@ function readers(t) {
 function restored(xml) {
   log.debug("Entering restored().");
   log.debug("Leaving restored().");
-  return String(xml).replace(/<(id\d+|time|opaque|port|nameid|value|hex|random|uuid|epoch|cookie|handle|incident|digest)>/g,
+  return String(xml).replace(/<(id\d+|time|opaque|chain|port|nameid|value|hex|random|uuid|epoch|cookie|handle|incident|digest)>/g,
                              'PH');
 }
 
