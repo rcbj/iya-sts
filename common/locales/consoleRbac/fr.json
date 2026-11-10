@@ -57,8 +57,6 @@
   "body.renaming": "<strong>Renommer un groupe de rôle ne déplace personne.</strong> Les membres restent dans le groupe où ils ont été placés, qui cesse d’accorder quoi que ce soit dès que le nom change — et le nouveau nom n’accorde rien tant que personne n’y est placé. <code>/admin-api</code> n’est soumis à aucun de ces quatre paramètres, volontairement : c’est le moyen de revenir quand aucun détenteur de rôle ne peut se connecter, et c’est pourquoi activer le contrôle d’accès ne casse pas une suite de tests qui pilote l’API de gestion.",
   "rbacMemberCell.neverHereTitle": "Cette personne a une entrée dans l’annuaire, mais rien ici ne s’est encore authentifié en son nom ; il n’y a donc aucune page à son sujet dans Users.",
   "rbacMemberCell.neverHere": "jamais ici",
-  "rbacMemberCell.danglingTitle": "Rien ne se trouve à ce DN. Le rôle compte toujours — il se résout dès que quelqu’un s’authentifie sous ce nom ou que l’entrée est créée — mais d’ici là aucun client d’annuaire ne peut voir qui il désigne.",
-  "rbacMemberCell.dangling": "en suspens",
   "rbacClaimedMark.title": "Le propre memberOf de son entrée désigne ce groupe et le groupe ne la liste pas en retour. Rien ici ne gère memberOf — un client l’a écrit — et il accorde tout de même le rôle ; c’est pourquoi il figure sur cette liste. Le bouton Révoquer ne peut pas le retirer : la valeur est sur la personne, et cette console n’écrit que dans les groupes.",
   "rbacClaimedMark.mark": "via son propre memberOf",
   "rbacCaveat.before": "<strong>Ces deux groupes sont les seuls groupes de ce service qui accordent quoi que ce soit, et ce qu’ils accordent, c’est cette console.</strong> Tous les autres groupes ici n’accordent toujours rien du tout — voir ",

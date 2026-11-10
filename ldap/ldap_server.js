@@ -18107,40 +18107,9 @@ function boundDnOf(req) {
   return text.toLowerCase() === 'cn=anonymous' ? '' : text;
 }
 
-// How many entries still list this DN as a member, counted just before it is
-// deleted. It is the single most useful fact on a delete row: this directory
-// does not enforce referential integrity (see the header — that is a decision),
-// so every one of those becomes a DANGLING member the moment the entry goes,
-// and this is the only record of when that happened. /admin/groups shows the
-// resulting state and can never say when it arrived.
-//
-// All three membership attributes are counted, resolved the way
-// MEMBER_ATTRIBUTES says: `memberUid` holds a bare name where `member` and
-// `uniqueMember` hold a DN, and counting the three alike is exactly how every
-// posixGroup member gets missed.
-function membershipsNaming(dn) {
-  log.debug('Entering membershipsNaming().');
-  const key = normalizeDn(dn);
-  const uid = (splitRdns(dn)[0] || '').toLowerCase().indexOf('uid=') === 0
-    ? unescapeDnValue(rdnPairs(splitRdns(dn)[0])[0].value) : '';
-  let count = 0;
-  eachGroupEntry(function (entry) {
-    const names = MEMBER_ATTRIBUTES.some(function (attribute) {
-      return (entry.attributes[attribute.name] || []).some(function (value) {
-        return attribute.holds === 'uid'
-          ? (uid && String(value).toLowerCase() === uid.toLowerCase())
-          : normalizeDn(value) === key;
-      });
-    });
-    if (names) count++;
-  });
-  log.debug('Leaving membershipsNaming().');
-  return count;
-}
-
 // ---------------------------------------------------------------------------
 // A PERSON TAKEN OUT OF EVERY GROUP THAT NAMES THEM (#98, re-homing): the
-// three membership attributes `membershipsNaming()` counts, each value that
+// three membership attributes (MEMBER_ATTRIBUTES), each value that
 // names this DN (or, for `memberUid`, its login name) removed, and each group
 // rewritten through `putEntry()` so the indexes and the store see it. The
 // sending cell of a re-homing calls it, so that no membership of a person who
@@ -20847,18 +20816,13 @@ server.del('', function (req, res, next) {
   // The kind is worked out from the DN and not from `stored`, so that a delete
   // and the add that preceded it produce the same word for the same entry.
   //
-  // `danglingLeft` is what is left listing the DN after the delete took it out
-  // of its groups (#1612): 0 unless a group write failed, which is then
-  // STS-ADMIN-0919 in the log as well. `membershipsRemoved` is how many groups
-  // this delete rewrote.
-  const dangling = membershipsNaming(dn);
+  // `membershipsRemoved` is how many groups this delete rewrote (#1612).
   auditLdap(req, {
     action: audit.directoryActionFor('delete', dn,
                                      { users: usersDn(), groups: groupsDn() }),
     target: dn,
     summary: 'deleted ' + dn,
     detail: { attributeCount: Object.keys(stored.attributes).length,
-              danglingLeft: dangling,
               membershipsRemoved: membershipsRemoved,
               entriesNow: totalEntries() }
   });
@@ -27338,9 +27302,6 @@ function inPersonBatch(fn, options) {
   const close = function () {
     log.debug('Entering inPersonBatch() close.');
     flushPersonBatch(batch);
-    if (batch.deleted > 1) {
-      logBatchDangling(batch);
-    }
     log.debug('Leaving inPersonBatch() close.');
   };
   let result;
@@ -27410,43 +27371,6 @@ function personBatchStep() {
   return new Promise(function (resolve) {
     setImmediate(resolve);
   });
-}
-
-// ONE line for a batch's dangling memberships, counted in ONE walk after the
-// batch rather than one walk per delete (membershipsNaming()): referential
-// integrity is not done here on purpose, and /admin/groups reports the
-// result.
-function logBatchDangling(batch) {
-  log.debug('Entering logBatchDangling(). ' + batch.dns.length + '.');
-  const dns = new Set();
-  const uids = new Set();
-  batch.dns.forEach(function (dn) {
-    dns.add(normalizeDn(dn));
-    const first = splitRdns(dn)[0] || '';
-    if (first.toLowerCase().indexOf('uid=') === 0) {
-      uids.add(unescapeDnValue(rdnPairs(first)[0].value).toLowerCase());
-    }
-  });
-  let values = 0;
-  // The groups hold membership values, and groups are resident (#349).
-  eachGroupEntry(function (entry) {
-    MEMBER_ATTRIBUTES.forEach(function (attribute) {
-      (entry.attributes[attribute.name] || []).forEach(function (value) {
-        if (attribute.holds === 'uid'
-          ? uids.has(String(value).toLowerCase())
-          : dns.has(normalizeDn(value))) {
-          values += 1;
-        }
-      });
-    });
-  });
-  log.info('ldap: ' + batch.deleted + ' people were deleted' +
-           (batch.door ? ' (' + batch.door + ')' : '') +
-           (values ? '; ' + values + ' group member value(s) still name ' +
-                     'them — this directory does no referential integrity ' +
-                     'on purpose, and /admin/groups reports them as dangling'
-                   : '') + '.');
-  log.debug('Leaving logBatchDangling().');
 }
 
 // ---------------------------------------------------------------------------
@@ -28198,7 +28122,7 @@ function deleteGroupEntry(dn) {
  * @param displayName - the group's name
  * @param options - `members`, `note`, and `actor`, `channel`, `origin` and
  * `protocol` for the audit row
- * @returns `{ ok: true, dn, group, members, dangling, entry }`, or a refusal
+ * @returns `{ ok: true, dn, group, members, entry }`, or a refusal
  * marked with its error code
  */
 function createGroup(displayName, options) {
@@ -28341,12 +28265,11 @@ function createGroup(displayName, options) {
               // ON THE ROW BECAUSE NOTHING ELSE RECORDS THE MOMENT. This
               // directory does no referential integrity, so a member that names
               // nothing is a state /admin/groups reports and cannot date.
-              danglingAtCreate: dangling.length,
               entriesNow: totalEntries() }
   });
   log.debug('Leaving createGroup(). ' + written.dn + ' was created.');
   return { ok: true, dn: written.dn, group: wanted,
-           members: members, dangling: dangling,
+           members: members,
            entry: written.entry };
 }
 

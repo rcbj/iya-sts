@@ -387,8 +387,10 @@ class AuthzenAdmin {
   }
 
   // A GROUP'S MEMBERS, LOCATED: each a person's, a service account's or an
-  // application's entry, or left in `unlocated` (a DN left behind by a
-  // deletion, a nested group, a name nothing holds). What
+  // application's entry, or left in `unlocated` — a member that is none of
+  // those, a nested group above all (a member can no longer name nothing
+  // since 2026-11-10: a delete takes it out, and a write may not add one).
+  // What
   // `edgeCandidates()` reads for `roles.authzenPepGroup` and
   // `grantRemotePeps()` for `roles.remotePepGroup` (#1210).
   private locateMembers(group: string, max: number): any {

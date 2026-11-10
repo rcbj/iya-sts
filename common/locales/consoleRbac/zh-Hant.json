@@ -57,8 +57,6 @@
   "body.renaming": "<strong>重新命名角色群組不會移動任何人。</strong>成員仍留在原本的群組中，而該群組在名稱變更的那一刻就不再授予任何權限——新名稱在有人加入之前也不授予任何權限。<code>/admin-api</code> 刻意不受這四項設定中任何一項的控制：當沒有角色持有者能登入時，它是重新進入的途徑，這也是開啟存取控制不會破壞驅動管理 API 之測試套件的原因。",
   "rbacMemberCell.neverHereTitle": "此人在目錄中有項目，但此處還沒有人以其身分完成過驗證，因此 Users 中沒有關於此人的頁面。",
   "rbacMemberCell.neverHere": "從未來過",
-  "rbacMemberCell.danglingTitle": "此 DN 處沒有任何內容。角色仍然有效——一旦有人以此名稱完成驗證或該項目被建立，它就會解析——但在此之前，任何目錄用戶端都無法看到它指向誰。",
-  "rbacMemberCell.dangling": "懸空",
   "rbacClaimedMark.title": "其自身項目的 memberOf 指向此群組，而該群組並未反向列出此人。此處沒有任何機制維護 memberOf——是某個用戶端寫入的——但它同樣授予該角色，因此出現在此清單中。「撤銷」按鈕無法移除它：該值位於人員項目上，而此主控台只寫入群組。",
   "rbacClaimedMark.mark": "透過其自身的 memberOf",
   "rbacCaveat.before": "<strong>這兩個群組是本服務中唯一會授予權限的群組，而它們授予的就是此主控台。</strong>此處的其他所有群組仍然不授予任何權限——請參閱",

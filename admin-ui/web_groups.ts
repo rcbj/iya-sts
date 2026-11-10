@@ -122,15 +122,11 @@ class GroupsPage {
         '</a></td><td ' +
         'class="who"><code>' + kit.esc(group.dn) + '</code></td>' +
         '<td>' + GroupsPage.groupRuleCell(t, group.rule) + '</td>' +
+        // NO RESOLVE OR DANGLING COLUMN (2026-11-10): a group lists only
+        // entries that exist, so every member resolves. `/admin-api` still
+        // answers `presentCount` and `danglingCount`, which a client may
+        // check.
         '<td class="num">' + group.memberCount + '</td>' +
-        '<td class="num">' + (group.presentCount
-          ? '<span class="state-valid">' + group.presentCount + '</span>'
-          : '<span class="state-none">0</span>') + '</td>' +
-        '<td class="num">' + (group.danglingCount
-          ? '<span class="state-revoked" title="' +
-            kit.esc(t.text('consoleGroups.body.danglingTitle')) + '">' +
-            group.danglingCount + '</span>'
-          : '<span class="state-none">0</span>') + '</td>' +
         '<td class="num">' + (group.claimedCount
           ? '<span class="state-expired" title="' +
             kit.esc(t.text('consoleGroups.body.claimedTitle')) + '">' +
@@ -148,7 +144,6 @@ class GroupsPage {
       kit.tile(json.groupCount, t.text('consoleGroups.body.tileGroups')) +
       kit.tile(json.membershipValues,
                t.text('consoleGroups.body.tileValues')) +
-      kit.tile(json.dangling, t.text('consoleGroups.body.tileDangling')) +
       kit.tile(json.entryCount, t.text('consoleGroups.body.tileEntries')) +
       // THE LIST IS A TAB (2026-10-12), headed by the page's own name; the
       // warning, the tiles and the notes under the table are Metadata.
@@ -174,15 +169,12 @@ class GroupsPage {
       '</th><th>DN</th><th>' + t.html('consoleGroups.body.thRule') +
       '</th><th ' +
       'class="num">' + t.html('consoleGroups.body.thMembers') +
-      '</th><th class="num">' + t.html('consoleGroups.body.thResolve') +
-      '</th><th ' +
-      'class="num">' + t.html('consoleGroups.body.thDangling') +
       '</th><th class="num">' + t.html('consoleGroups.body.thClaimed') +
       '</th><th ' +
       'class="num">' + t.html('consoleGroups.body.thAttributes') +
       '</th><th>' + t.html('consoleGroups.body.thOrigin') + '</th><th>' +
       t.html('consoleGroups.body.thModified') + '</th></tr>' +
-      (rows || '<tr><td colspan="10">' +
+      (rows || '<tr><td colspan="8">' +
                t.html('consoleGroups.body.noMatch',
                       { filtered: wantedText ? 'yes' : 'no' }) +
                '</td></tr>') + '</table>' +
@@ -410,17 +402,11 @@ class GroupsPage {
                                           json.membersPaging, t);
       const claimedNav = kit.pageNavPair('/admin/groups', params,
                                           json.claimedPaging, t);
+      // NO STATE COLUMN (2026-11-10): every member is an entry that exists.
       const memberRows = group.members.map(function (member) {
-        const state = member.present
-          ? '<span class="state-valid">' +
-            t.html('consoleGroups.detail.inDirectory') + '</span>'
-          : '<span class="state-revoked" title="' +
-            kit.esc(t.text('consoleGroups.detail.danglingTitle')) + '">' +
-            t.html('consoleGroups.detail.dangling') + '</span>';
         return '<tr><td class="who">' + GroupsPage.memberLink(member, known) +
           '</td>' +
           '<td><code>' + kit.esc(member.attribute) + '</code></td>' +
-          '<td>' + state + '</td>' +
           '<td>' +
           kit.esc(member.kind === 'group'
             ? t.text('consoleGroups.detail.aGroup')
@@ -493,10 +479,6 @@ class GroupsPage {
         '<h2>' + t.html('consoleGroups.body.thMembers') + '</h2>' +
         '<div class="tiles">' +
         kit.tile(group.memberCount, t.text('consoleGroups.body.tileValues')) +
-        kit.tile(group.presentCount,
-                 t.text('consoleGroups.detail.tileResolve')) +
-        kit.tile(group.danglingCount,
-                 t.text('consoleGroups.body.tileDangling')) +
         kit.tile(json.claimedPaging.total,
                  t.text('consoleGroups.detail.tileClaim')) +
         '</div>' +
@@ -504,7 +486,6 @@ class GroupsPage {
           ? membersNav.head +
             '<table><tr><th>' + t.html('consoleGroups.detail.thMember') +
             '</th><th>' + t.html('consoleGroups.detail.thFrom') +
-            '</th><th>' + t.html('consoleGroups.detail.thState') +
             '</th><th>' + t.html('consoleGroups.detail.thWhat') +
             '</th><th>cn</th><th>mail</th><th>' +
             t.html('consoleGroups.detail.thUsersPage') + '</th><th>' +

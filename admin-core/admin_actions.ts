@@ -5550,12 +5550,6 @@ class AdminActions {
               'this ' +
               'one has no schema, so it is here because you asked for it') +
               '.' +
-          (result.dangling.length
-            ? ' ' + result.dangling.length + ' of those member value(s) name ' +
-              'nothing this directory holds and are written anyway: nothing ' +
-              'here does referential integrity, and the Dangling column ' +
-              'above is where they show up.'
-            : '') +
           ' IT GRANTS NOTHING. No endpoint in this service checks a group, ' +
           'and the only two that decide anything are the console roles on ' +
           '/admin/rbac. What it does change is what a directory client sees ' +

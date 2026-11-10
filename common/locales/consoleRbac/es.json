@@ -57,8 +57,6 @@
   "body.renaming": "<strong>Cambiar el nombre de un grupo de rol no mueve a nadie.</strong> Los miembros se quedan en el grupo en el que se pusieron, que deja de otorgar nada en cuanto cambia el nombre, y el nombre nuevo no otorga nada hasta que alguien se ponga en él. <code>/admin-api</code> no está sujeto a ninguno de estos cuatro, a propósito: es la forma de volver a entrar cuando nadie con un rol puede iniciar sesión, y es la razón por la que activar el control de acceso no rompe un conjunto de pruebas que usa la API de gestión.",
   "rbacMemberCell.neverHereTitle": "Esta persona tiene una entrada en el directorio, pero nada aquí se ha autenticado aún como ella, así que no hay ninguna página sobre ella en Users.",
   "rbacMemberCell.neverHere": "nunca aquí",
-  "rbacMemberCell.danglingTitle": "No hay nada en este DN. El rol sigue contando —se resuelve en cuanto alguien se autentica con este nombre o se crea la entrada—, pero hasta entonces ningún cliente del directorio puede ver a quién nombra.",
-  "rbacMemberCell.dangling": "colgando",
   "rbacClaimedMark.title": "El propio memberOf de su entrada nombra este grupo y el grupo no la incluye. Nada aquí mantiene memberOf —lo escribió un cliente— y aun así otorga el rol, por eso está en esta lista. El botón Revocar no puede quitarlo: el valor está en la persona, y esta consola solo escribe en grupos.",
   "rbacClaimedMark.mark": "mediante su propio memberOf",
   "rbacCaveat.before": "<strong>Estos dos grupos son los únicos de este servicio que otorgan algo, y lo que otorgan es esta consola.</strong> Ningún otro grupo de aquí otorga nada en absoluto —consulte ",
