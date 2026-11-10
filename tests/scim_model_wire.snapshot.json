@@ -1,0 +1,6369 @@
+{
+ "definitions": [
+  {
+   "id": "urn:ietf:params:scim:schemas:core:2.0:User",
+   "name": "User",
+   "description": "User Account",
+   "attributes": [
+    {
+     "drawn": {
+      "name": "schemas",
+      "type": "reference",
+      "referenceTypes": [
+       "uri"
+      ],
+      "multiValued": true,
+      "description": "",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "always",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": true,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "id",
+      "type": "string",
+      "multiValued": false,
+      "description": "",
+      "required": true,
+      "caseExact": true,
+      "mutability": "readOnly",
+      "returned": "always",
+      "uniqueness": "global"
+     },
+     "direction": "out",
+     "shadow": true,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "externalId",
+      "type": "string",
+      "multiValued": false,
+      "description": "",
+      "required": false,
+      "caseExact": true,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": true,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "meta",
+      "type": "complex",
+      "multiValued": false,
+      "description": "",
+      "required": true,
+      "mutability": "readOnly",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": true,
+     "subAttributes": [
+      {
+       "drawn": {
+        "name": "resourceType",
+        "type": "string",
+        "multiValued": false,
+        "description": "",
+        "required": true,
+        "caseExact": true,
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "both",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "created",
+        "type": "dateTime",
+        "multiValued": false,
+        "description": "",
+        "required": false,
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "out",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "lastModified",
+        "type": "dateTime",
+        "multiValued": false,
+        "description": "",
+        "required": false,
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "out",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "location",
+        "type": "string",
+        "multiValued": false,
+        "description": "",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "out",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "version",
+        "type": "string",
+        "multiValued": false,
+        "description": "",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "out",
+       "shadow": false,
+       "subAttributes": []
+      }
+     ]
+    },
+    {
+     "drawn": {
+      "name": "userName",
+      "type": "string",
+      "multiValued": false,
+      "description": "Unique identifier for the User, typically used by the user to directly authenticate to the service provider. Each User MUST include a non-empty userName value. This identifier MUST be unique across the service provider's entire set of Users. REQUIRED.",
+      "required": true,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "server"
+     },
+     "direction": "both",
+     "shadow": false,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "name",
+      "type": "complex",
+      "multiValued": false,
+      "description": "The components of the user's real name. Providers MAY return just the full name as a single string in the formatted sub-attribute, or they MAY return just the individual component attributes using the other sub-attributes, or they MAY return both. If both variants are returned, they SHOULD be describing the same name, with the formatted name indicating how the component attributes should be combined.",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": false,
+     "subAttributes": [
+      {
+       "drawn": {
+        "name": "formatted",
+        "type": "string",
+        "multiValued": false,
+        "description": "The full name, including all middle names, titles, and suffixes as appropriate, formatted for display (e.g. 'Ms. Barbara J Jensen, III').",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "both",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "familyName",
+        "type": "string",
+        "multiValued": false,
+        "description": "The family name of the User, or last name in most Western languages (e.g. 'Jensen' given the full name 'Ms. Barbara J Jensen, III').",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "both",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "givenName",
+        "type": "string",
+        "multiValued": false,
+        "description": "The given name of the User, or first name in most Western languages (e.g. 'Barbara' given the full name 'Ms. Barbara J Jensen, III').",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "both",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "honorificPrefix",
+        "type": "string",
+        "multiValued": false,
+        "description": "The honorific prefix(es) of the User, or title in most Western languages (e.g. 'Ms.' given the full name 'Ms. Barbara J Jensen, III').",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "both",
+       "shadow": false,
+       "subAttributes": []
+      }
+     ]
+    },
+    {
+     "drawn": {
+      "name": "displayName",
+      "type": "string",
+      "multiValued": false,
+      "description": "The name of the User, suitable for display to end-users. The name SHOULD be the full name of the User being described, if known.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": false,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "profileUrl",
+      "type": "reference",
+      "referenceTypes": [
+       "external"
+      ],
+      "multiValued": false,
+      "description": "A fully qualified URL pointing to a page representing the User's online profile.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": false,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "title",
+      "type": "string",
+      "multiValued": false,
+      "description": "The user's title, such as 'Vice President'.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": false,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "userType",
+      "type": "string",
+      "multiValued": false,
+      "description": "Used to identify the relationship between the organization and the user. Typical values used might be 'Contractor', 'Employee', 'Intern', 'Temp', 'External', and 'Unknown', but any value may be used.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": false,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "preferredLanguage",
+      "type": "string",
+      "multiValued": false,
+      "description": "Indicates the User's preferred written or spoken language. Generally used for selecting a localized user interface; e.g. 'en_US' specifies the language English and country US.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": false,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "active",
+      "type": "boolean",
+      "multiValued": false,
+      "description": "A Boolean value indicating the User's administrative status.",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default"
+     },
+     "direction": "both",
+     "shadow": false,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "password",
+      "type": "string",
+      "multiValued": false,
+      "description": "The User's cleartext password. This attribute is intended to be used as a means to specify an initial password when creating a new User or to reset an existing User's password.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "writeOnly",
+      "returned": "never",
+      "uniqueness": "none"
+     },
+     "direction": "in",
+     "shadow": false,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "emails",
+      "type": "complex",
+      "multiValued": true,
+      "description": "Email addresses for the user. The value SHOULD be canonicalized by the service provider, e.g. 'bjensen@example.com' instead of 'bjensen@EXAMPLE.COM'. Canonical type values of 'work', 'home', and 'other'.",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": false,
+     "subAttributes": [
+      {
+       "drawn": {
+        "name": "value",
+        "type": "string",
+        "multiValued": false,
+        "description": "Email addresses for the user. The value SHOULD be canonicalized by the service provider, e.g. 'bjensen@example.com' instead of 'bjensen@EXAMPLE.COM'. Canonical type values of 'work', 'home', and 'other'.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "both",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "type",
+        "type": "string",
+        "multiValued": false,
+        "description": "A label indicating the attribute's function, e.g. 'work' or 'home'.",
+        "required": false,
+        "caseExact": false,
+        "canonicalValues": [
+         "work"
+        ],
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "both",
+       "shadow": false,
+       "subAttributes": []
+      }
+     ]
+    },
+    {
+     "drawn": {
+      "name": "phoneNumbers",
+      "type": "complex",
+      "multiValued": true,
+      "description": "Phone numbers for the User. The value SHOULD be canonicalized by the service provider according to the format specified in RFC 3966, e.g. 'tel:+1-201-555-0123'. Canonical type values of 'work', 'home', 'mobile', 'fax', 'pager', and 'other'.",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default"
+     },
+     "direction": "both",
+     "shadow": false,
+     "subAttributes": [
+      {
+       "drawn": {
+        "name": "value",
+        "type": "string",
+        "multiValued": false,
+        "description": "Phone number of the User.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "both",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "type",
+        "type": "string",
+        "multiValued": false,
+        "description": "A label indicating the attribute's function, e.g. 'work', 'home', 'mobile'.",
+        "required": false,
+        "caseExact": false,
+        "canonicalValues": [
+         "work",
+         "mobile"
+        ],
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "both",
+       "shadow": false,
+       "subAttributes": []
+      }
+     ]
+    },
+    {
+     "drawn": {
+      "name": "addresses",
+      "type": "complex",
+      "multiValued": true,
+      "description": "A physical mailing address for this User. Canonical type values of 'work', 'home', and 'other'. This attribute is a complex type with the following sub-attributes.",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": false,
+     "subAttributes": [
+      {
+       "drawn": {
+        "name": "formatted",
+        "type": "string",
+        "multiValued": false,
+        "description": "The full mailing address, formatted for display or use with a mailing label. This attribute MAY contain newlines.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "both",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "streetAddress",
+        "type": "string",
+        "multiValued": false,
+        "description": "The full street address component, which may include house number, street name, P.O. box, and multi-line extended street address information. This attribute MAY contain newlines.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "both",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "locality",
+        "type": "string",
+        "multiValued": false,
+        "description": "The city or locality component.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "both",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "region",
+        "type": "string",
+        "multiValued": false,
+        "description": "The state or region component.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "both",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "postalCode",
+        "type": "string",
+        "multiValued": false,
+        "description": "The zip code or postal code component.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "both",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "country",
+        "type": "string",
+        "multiValued": false,
+        "description": "The country name component.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "both",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "type",
+        "type": "string",
+        "multiValued": false,
+        "description": "A label indicating the attribute's function, e.g. 'work' or 'home'.",
+        "required": false,
+        "caseExact": false,
+        "canonicalValues": [
+         "work"
+        ],
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "both",
+       "shadow": false,
+       "subAttributes": []
+      }
+     ]
+    },
+    {
+     "drawn": {
+      "name": "groups",
+      "type": "complex",
+      "multiValued": true,
+      "description": "A list of groups to which the user belongs, either through direct membership, through nested groups, or dynamically calculated.",
+      "required": false,
+      "mutability": "readOnly",
+      "returned": "default"
+     },
+     "direction": "out",
+     "shadow": false,
+     "subAttributes": [
+      {
+       "drawn": {
+        "name": "value",
+        "type": "string",
+        "multiValued": false,
+        "description": "The identifier of the User's group.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "out",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "$ref",
+        "type": "reference",
+        "referenceTypes": [
+         "User",
+         "Group"
+        ],
+        "multiValued": false,
+        "description": "The URI of the corresponding 'Group' resource to which the user belongs.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "out",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "display",
+        "type": "string",
+        "multiValued": false,
+        "description": "A human-readable name, primarily used for display purposes. READ-ONLY.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "out",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "type",
+        "type": "string",
+        "multiValued": false,
+        "description": "A label indicating the attribute's function, e.g. 'direct' or 'indirect'.",
+        "required": false,
+        "caseExact": false,
+        "canonicalValues": [
+         "direct",
+         "indirect"
+        ],
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "out",
+       "shadow": false,
+       "subAttributes": []
+      }
+     ]
+    },
+    {
+     "extension": "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User",
+     "required": false
+    },
+    {
+     "extension": "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User",
+     "required": false
+    },
+    {
+     "extension": "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:CustomAttributes",
+     "required": false
+    }
+   ]
+  },
+  {
+   "id": "urn:ietf:params:scim:schemas:core:2.0:Group",
+   "name": "Group",
+   "description": "Group",
+   "attributes": [
+    {
+     "drawn": {
+      "name": "schemas",
+      "type": "reference",
+      "referenceTypes": [
+       "uri"
+      ],
+      "multiValued": true,
+      "description": "",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "always",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": true,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "id",
+      "type": "string",
+      "multiValued": false,
+      "description": "",
+      "required": true,
+      "caseExact": true,
+      "mutability": "readOnly",
+      "returned": "always",
+      "uniqueness": "global"
+     },
+     "direction": "out",
+     "shadow": true,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "externalId",
+      "type": "string",
+      "multiValued": false,
+      "description": "",
+      "required": false,
+      "caseExact": true,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": true,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "meta",
+      "type": "complex",
+      "multiValued": false,
+      "description": "",
+      "required": true,
+      "mutability": "readOnly",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": true,
+     "subAttributes": [
+      {
+       "drawn": {
+        "name": "resourceType",
+        "type": "string",
+        "multiValued": false,
+        "description": "",
+        "required": true,
+        "caseExact": true,
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "both",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "created",
+        "type": "dateTime",
+        "multiValued": false,
+        "description": "",
+        "required": false,
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "out",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "lastModified",
+        "type": "dateTime",
+        "multiValued": false,
+        "description": "",
+        "required": false,
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "out",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "location",
+        "type": "string",
+        "multiValued": false,
+        "description": "",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "out",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "version",
+        "type": "string",
+        "multiValued": false,
+        "description": "",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "out",
+       "shadow": false,
+       "subAttributes": []
+      }
+     ]
+    },
+    {
+     "drawn": {
+      "name": "displayName",
+      "type": "string",
+      "multiValued": false,
+      "description": "A human-readable name for the Group. REQUIRED.",
+      "required": true,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": false,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "members",
+      "type": "complex",
+      "multiValued": true,
+      "description": "A list of members of the Group.",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default"
+     },
+     "direction": "both",
+     "shadow": false,
+     "subAttributes": [
+      {
+       "drawn": {
+        "name": "value",
+        "type": "string",
+        "multiValued": false,
+        "description": "Identifier of the member of this Group.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "immutable",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "both",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "$ref",
+        "type": "reference",
+        "referenceTypes": [
+         "User",
+         "Group"
+        ],
+        "multiValued": false,
+        "description": "The URI corresponding to a SCIM resource that is a member of this Group.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "immutable",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "both",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "type",
+        "type": "string",
+        "multiValued": false,
+        "description": "A label indicating the type of resource, e.g., 'User' or 'Group'.",
+        "required": false,
+        "caseExact": false,
+        "canonicalValues": [
+         "User",
+         "Group"
+        ],
+        "mutability": "immutable",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "both",
+       "shadow": false,
+       "subAttributes": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User",
+   "name": "EnterpriseUser",
+   "description": "Enterprise User",
+   "attributes": [
+    {
+     "drawn": {
+      "name": "schemas",
+      "type": "reference",
+      "referenceTypes": [
+       "uri"
+      ],
+      "multiValued": true,
+      "description": "",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": true,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "id",
+      "type": "string",
+      "multiValued": false,
+      "description": "",
+      "required": true,
+      "caseExact": true,
+      "mutability": "readOnly",
+      "returned": "always",
+      "uniqueness": "global"
+     },
+     "direction": "out",
+     "shadow": true,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "externalId",
+      "type": "string",
+      "multiValued": false,
+      "description": "",
+      "required": false,
+      "caseExact": true,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": true,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "meta",
+      "type": "complex",
+      "multiValued": false,
+      "description": "",
+      "required": true,
+      "mutability": "readOnly",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": true,
+     "subAttributes": [
+      {
+       "drawn": {
+        "name": "resourceType",
+        "type": "string",
+        "multiValued": false,
+        "description": "",
+        "required": true,
+        "caseExact": true,
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "both",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "created",
+        "type": "dateTime",
+        "multiValued": false,
+        "description": "",
+        "required": false,
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "out",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "lastModified",
+        "type": "dateTime",
+        "multiValued": false,
+        "description": "",
+        "required": false,
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "out",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "location",
+        "type": "string",
+        "multiValued": false,
+        "description": "",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "out",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "version",
+        "type": "string",
+        "multiValued": false,
+        "description": "",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "out",
+       "shadow": false,
+       "subAttributes": []
+      }
+     ]
+    },
+    {
+     "drawn": {
+      "name": "employeeNumber",
+      "type": "string",
+      "multiValued": false,
+      "description": "Numeric or alphanumeric identifier assigned to a person, typically based on order of hire or association with an organization.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": false,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "organization",
+      "type": "string",
+      "multiValued": false,
+      "description": "Identifies the name of an organization.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": false,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "division",
+      "type": "string",
+      "multiValued": false,
+      "description": "Identifies the name of a division.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": false,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "department",
+      "type": "string",
+      "multiValued": false,
+      "description": "Identifies the name of a department.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": false,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "manager",
+      "type": "complex",
+      "multiValued": false,
+      "description": "The User's manager.  A complex type that optionally allows service providers to represent organizational hierarchy by referencing the 'id' attribute of another User.",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default"
+     },
+     "direction": "both",
+     "shadow": false,
+     "subAttributes": [
+      {
+       "drawn": {
+        "name": "value",
+        "type": "string",
+        "multiValued": false,
+        "description": "The id of the SCIM resource representing the User's manager.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "both",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "$ref",
+        "type": "reference",
+        "referenceTypes": [
+         "User"
+        ],
+        "multiValued": false,
+        "description": "The URI of the SCIM resource representing the User's manager.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "both",
+       "shadow": false,
+       "subAttributes": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User",
+   "name": "IyaStsUser",
+   "description": "This service's own User extension: which federation partners' subjects are linked to the person, and the Identity Assurance claims no standard schema carries (#128).",
+   "attributes": [
+    {
+     "drawn": {
+      "name": "schemas",
+      "type": "reference",
+      "referenceTypes": [
+       "uri"
+      ],
+      "multiValued": true,
+      "description": "",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": true,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "id",
+      "type": "string",
+      "multiValued": false,
+      "description": "",
+      "required": true,
+      "caseExact": true,
+      "mutability": "readOnly",
+      "returned": "always",
+      "uniqueness": "global"
+     },
+     "direction": "out",
+     "shadow": true,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "externalId",
+      "type": "string",
+      "multiValued": false,
+      "description": "",
+      "required": false,
+      "caseExact": true,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": true,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "meta",
+      "type": "complex",
+      "multiValued": false,
+      "description": "",
+      "required": true,
+      "mutability": "readOnly",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": true,
+     "subAttributes": [
+      {
+       "drawn": {
+        "name": "resourceType",
+        "type": "string",
+        "multiValued": false,
+        "description": "",
+        "required": true,
+        "caseExact": true,
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "both",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "created",
+        "type": "dateTime",
+        "multiValued": false,
+        "description": "",
+        "required": false,
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "out",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "lastModified",
+        "type": "dateTime",
+        "multiValued": false,
+        "description": "",
+        "required": false,
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "out",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "location",
+        "type": "string",
+        "multiValued": false,
+        "description": "",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "out",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "version",
+        "type": "string",
+        "multiValued": false,
+        "description": "",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "out",
+       "shadow": false,
+       "subAttributes": []
+      }
+     ]
+    },
+    {
+     "drawn": {
+      "name": "salutation",
+      "type": "string",
+      "multiValued": false,
+      "description": "A formal salutation, e.g. \"Ms\" (the Claims Registration's salutation).",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": false,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "birthFamilyName",
+      "type": "string",
+      "multiValued": false,
+      "description": "The family name at birth.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": false,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "birthGivenName",
+      "type": "string",
+      "multiValued": false,
+      "description": "The given name at birth.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": false,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "birthMiddleName",
+      "type": "string",
+      "multiValued": false,
+      "description": "The middle name at birth.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": false,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "alsoKnownAs",
+      "type": "string",
+      "multiValued": false,
+      "description": "Another name the person is known by, e.g. a stage name.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": false,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "placeOfBirthCountry",
+      "type": "string",
+      "multiValued": false,
+      "description": "The country of birth, ISO 3166-1 alpha-2.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": false,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "placeOfBirthRegion",
+      "type": "string",
+      "multiValued": false,
+      "description": "The region of birth.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": false,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "placeOfBirthLocality",
+      "type": "string",
+      "multiValued": false,
+      "description": "The locality of birth.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": false,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "homeCell",
+      "type": "string",
+      "multiValued": false,
+      "description": "On a create in a service deployed as several regions: the region the person is homed in, whose data stays there. The realm's default when not sent. Never returned, and not changed by a later write.",
+      "required": false,
+      "caseExact": true,
+      "mutability": "writeOnly",
+      "returned": "never",
+      "uniqueness": "none"
+     },
+     "direction": "in",
+     "shadow": false,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "federationLinks",
+      "type": "complex",
+      "multiValued": true,
+      "description": "Each a federation partner's identifier for the person, through one service-provider-side relationship. Not sent: unchanged. Sent: replaced; a link removed ends the sessions that partner signed the person in to.",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": false,
+     "subAttributes": [
+      {
+       "drawn": {
+        "name": "relationship",
+        "type": "string",
+        "multiValued": false,
+        "description": "The service-provider-side relationship.",
+        "required": true,
+        "caseExact": true,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "both",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "issuer",
+        "type": "string",
+        "multiValued": false,
+        "description": "The partner's entity ID or iss; the relationship's fedPeer when omitted.",
+        "required": false,
+        "caseExact": true,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "both",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "subject",
+        "type": "string",
+        "multiValued": false,
+        "description": "The partner's stable identifier for the person (an OpenID Connect sub, a SAML persistent NameID).",
+        "required": true,
+        "caseExact": true,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "both",
+       "shadow": false,
+       "subAttributes": []
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:CustomAttributes",
+   "name": "CustomAttributes",
+   "description": "This realm's custom attributes, as its administrators define them on Directory → Policies → Attribute policy. Each realm has its own; not sent on a PUT, they are left as they are.",
+   "attributes": [
+    {
+     "drawn": {
+      "name": "schemas",
+      "type": "reference",
+      "referenceTypes": [
+       "uri"
+      ],
+      "multiValued": true,
+      "description": "",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": true,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "id",
+      "type": "string",
+      "multiValued": false,
+      "description": "",
+      "required": true,
+      "caseExact": true,
+      "mutability": "readOnly",
+      "returned": "always",
+      "uniqueness": "global"
+     },
+     "direction": "out",
+     "shadow": true,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "externalId",
+      "type": "string",
+      "multiValued": false,
+      "description": "",
+      "required": false,
+      "caseExact": true,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": true,
+     "subAttributes": []
+    },
+    {
+     "drawn": {
+      "name": "meta",
+      "type": "complex",
+      "multiValued": false,
+      "description": "",
+      "required": true,
+      "mutability": "readOnly",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     "direction": "both",
+     "shadow": true,
+     "subAttributes": [
+      {
+       "drawn": {
+        "name": "resourceType",
+        "type": "string",
+        "multiValued": false,
+        "description": "",
+        "required": true,
+        "caseExact": true,
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "both",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "created",
+        "type": "dateTime",
+        "multiValued": false,
+        "description": "",
+        "required": false,
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "out",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "lastModified",
+        "type": "dateTime",
+        "multiValued": false,
+        "description": "",
+        "required": false,
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "out",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "location",
+        "type": "string",
+        "multiValued": false,
+        "description": "",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "out",
+       "shadow": false,
+       "subAttributes": []
+      },
+      {
+       "drawn": {
+        "name": "version",
+        "type": "string",
+        "multiValued": false,
+        "description": "",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       "direction": "out",
+       "shadow": false,
+       "subAttributes": []
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "mapping": {
+  "described": {
+   "user": [
+    {
+     "scim": "userName",
+     "ldap": "uid",
+     "kind": "single",
+     "type": null,
+     "parent": null,
+     "extension": false,
+     "readOnly": false,
+     "required": true,
+     "schema": "RFC 4519 2.39",
+     "note": "The SCIM uniqueness constraint. It is the RDN of an auto-created entry, so for anybody this service authenticated it is also their sign-in name — but it is NOT the SCIM id, which is the entry's entryUUID."
+    },
+    {
+     "scim": "externalId",
+     "ldap": "scimExternalId",
+     "kind": "single",
+     "type": null,
+     "parent": null,
+     "extension": false,
+     "readOnly": false,
+     "required": false,
+     "schema": "this service's own (no standard type)",
+     "note": "The provisioning client's own identifier for this person. Stored verbatim and read by nothing here."
+    },
+    {
+     "scim": "name.formatted",
+     "ldap": "cn",
+     "kind": "single",
+     "type": null,
+     "parent": null,
+     "extension": false,
+     "readOnly": false,
+     "required": false,
+     "schema": "RFC 4519 2.3",
+     "note": ""
+    },
+    {
+     "scim": "name.familyName",
+     "ldap": "sn",
+     "kind": "single",
+     "type": null,
+     "parent": null,
+     "extension": false,
+     "readOnly": false,
+     "required": false,
+     "schema": "RFC 4519 2.32",
+     "note": ""
+    },
+    {
+     "scim": "name.givenName",
+     "ldap": "givenName",
+     "kind": "single",
+     "type": null,
+     "parent": null,
+     "extension": false,
+     "readOnly": false,
+     "required": false,
+     "schema": "RFC 4519 2.6",
+     "note": ""
+    },
+    {
+     "scim": "displayName",
+     "ldap": "displayName",
+     "kind": "single",
+     "type": null,
+     "parent": null,
+     "extension": false,
+     "readOnly": false,
+     "required": false,
+     "schema": "RFC 2798 2.3",
+     "note": ""
+    },
+    {
+     "scim": "title",
+     "ldap": "title",
+     "kind": "single",
+     "type": null,
+     "parent": null,
+     "extension": false,
+     "readOnly": false,
+     "required": false,
+     "schema": "RFC 4519 2.38",
+     "note": ""
+    },
+    {
+     "scim": "name.honorificPrefix",
+     "ldap": "schacPersonalTitle",
+     "kind": "single",
+     "type": null,
+     "parent": null,
+     "extension": false,
+     "readOnly": false,
+     "required": false,
+     "schema": "SCHAC 1.5.0",
+     "note": ""
+    },
+    {
+     "scim": "userType",
+     "ldap": "employeeType",
+     "kind": "single",
+     "type": null,
+     "parent": null,
+     "extension": false,
+     "readOnly": false,
+     "required": false,
+     "schema": "RFC 2798 2.5",
+     "note": ""
+    },
+    {
+     "scim": "preferredLanguage",
+     "ldap": "preferredLanguage",
+     "kind": "single",
+     "type": null,
+     "parent": null,
+     "extension": false,
+     "readOnly": false,
+     "required": false,
+     "schema": "RFC 2798 2.10",
+     "note": ""
+    },
+    {
+     "scim": "profileUrl",
+     "ldap": "labeledURI",
+     "kind": "single",
+     "type": null,
+     "parent": null,
+     "extension": false,
+     "readOnly": false,
+     "required": false,
+     "schema": "RFC 2079 2",
+     "note": ""
+    },
+    {
+     "scim": "active",
+     "ldap": "pwdAccountLockedTime",
+     "kind": "lock",
+     "type": null,
+     "parent": null,
+     "extension": false,
+     "readOnly": false,
+     "required": false,
+     "schema": "draft-behera-ldap-password-policy 5.3.3 (inverted)",
+     "note": "DISABLES THE ACCOUNT. false writes the administrative lock 000001010000Z and ends everything the person holds; every door then refuses them. true removes it. Not sent: unchanged."
+    },
+    {
+     "scim": "emails",
+     "ldap": "mail",
+     "kind": "multi",
+     "type": "work",
+     "parent": null,
+     "extension": false,
+     "readOnly": false,
+     "required": false,
+     "schema": "RFC 4524 2.16",
+     "note": ""
+    },
+    {
+     "scim": "phoneNumbers",
+     "ldap": "telephoneNumber",
+     "kind": "multi",
+     "type": "work",
+     "parent": null,
+     "extension": false,
+     "readOnly": false,
+     "required": false,
+     "schema": "RFC 4519 2.35",
+     "note": ""
+    },
+    {
+     "scim": "phoneNumbers",
+     "ldap": "mobile",
+     "kind": "multi",
+     "type": "mobile",
+     "parent": null,
+     "extension": false,
+     "readOnly": false,
+     "required": false,
+     "schema": "RFC 4524 2.18",
+     "note": ""
+    },
+    {
+     "scim": "addresses.streetAddress",
+     "ldap": "street",
+     "kind": "complex",
+     "type": null,
+     "parent": "addresses",
+     "extension": false,
+     "readOnly": false,
+     "required": false,
+     "schema": "RFC 4519 2.34",
+     "note": ""
+    },
+    {
+     "scim": "addresses.locality",
+     "ldap": "l",
+     "kind": "complex",
+     "type": null,
+     "parent": "addresses",
+     "extension": false,
+     "readOnly": false,
+     "required": false,
+     "schema": "RFC 4519 2.16",
+     "note": ""
+    },
+    {
+     "scim": "addresses.region",
+     "ldap": "st",
+     "kind": "complex",
+     "type": null,
+     "parent": "addresses",
+     "extension": false,
+     "readOnly": false,
+     "required": false,
+     "schema": "RFC 4519 2.33",
+     "note": ""
+    },
+    {
+     "scim": "addresses.postalCode",
+     "ldap": "postalCode",
+     "kind": "complex",
+     "type": null,
+     "parent": "addresses",
+     "extension": false,
+     "readOnly": false,
+     "required": false,
+     "schema": "RFC 4519 2.24",
+     "note": ""
+    },
+    {
+     "scim": "addresses.country",
+     "ldap": "c",
+     "kind": "complex",
+     "type": null,
+     "parent": "addresses",
+     "extension": false,
+     "readOnly": false,
+     "required": false,
+     "schema": "RFC 4519 2.2",
+     "note": ""
+    },
+    {
+     "scim": "addresses.formatted",
+     "ldap": "postalAddress",
+     "kind": "complex",
+     "type": null,
+     "parent": "addresses",
+     "extension": false,
+     "readOnly": false,
+     "required": false,
+     "schema": "RFC 4519 2.23",
+     "note": ""
+    },
+    {
+     "scim": "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:employeeNumber",
+     "ldap": "employeeNumber",
+     "kind": "single",
+     "type": null,
+     "parent": null,
+     "extension": true,
+     "readOnly": false,
+     "required": false,
+     "schema": "RFC 2798 2.6",
+     "note": ""
+    },
+    {
+     "scim": "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:department",
+     "ldap": "departmentNumber",
+     "kind": "single",
+     "type": null,
+     "parent": null,
+     "extension": true,
+     "readOnly": false,
+     "required": false,
+     "schema": "RFC 2798 2.4",
+     "note": ""
+    },
+    {
+     "scim": "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:organization",
+     "ldap": "o",
+     "kind": "single",
+     "type": null,
+     "parent": null,
+     "extension": true,
+     "readOnly": false,
+     "required": false,
+     "schema": "RFC 4519 2.19",
+     "note": ""
+    },
+    {
+     "scim": "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:division",
+     "ldap": "ou",
+     "kind": "single",
+     "type": null,
+     "parent": null,
+     "extension": true,
+     "readOnly": false,
+     "required": false,
+     "schema": "RFC 4519 2.20",
+     "note": ""
+    },
+    {
+     "scim": "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:manager.value",
+     "ldap": "manager",
+     "kind": "single",
+     "type": null,
+     "parent": null,
+     "extension": true,
+     "readOnly": false,
+     "required": false,
+     "schema": "RFC 2798 2.9",
+     "note": "A DN in the directory and an id in SCIM, translated both ways by the SCIM handlers since the id became the entryUUID (2026-09-14). A value naming no entry is kept as it was sent."
+    },
+    {
+     "scim": "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:salutation",
+     "ldap": "salutation",
+     "kind": "single",
+     "type": null,
+     "parent": null,
+     "extension": true,
+     "readOnly": false,
+     "required": false,
+     "schema": "this service's own (#128; no standard type)",
+     "note": ""
+    },
+    {
+     "scim": "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:birthFamilyName",
+     "ldap": "birthFamilyName",
+     "kind": "single",
+     "type": null,
+     "parent": null,
+     "extension": true,
+     "readOnly": false,
+     "required": false,
+     "schema": "this service's own (#128; no standard type)",
+     "note": ""
+    },
+    {
+     "scim": "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:birthGivenName",
+     "ldap": "birthGivenName",
+     "kind": "single",
+     "type": null,
+     "parent": null,
+     "extension": true,
+     "readOnly": false,
+     "required": false,
+     "schema": "this service's own (#128; no standard type)",
+     "note": ""
+    },
+    {
+     "scim": "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:birthMiddleName",
+     "ldap": "birthMiddleName",
+     "kind": "single",
+     "type": null,
+     "parent": null,
+     "extension": true,
+     "readOnly": false,
+     "required": false,
+     "schema": "this service's own (#128; no standard type)",
+     "note": ""
+    },
+    {
+     "scim": "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:alsoKnownAs",
+     "ldap": "alsoKnownAs",
+     "kind": "single",
+     "type": null,
+     "parent": null,
+     "extension": true,
+     "readOnly": false,
+     "required": false,
+     "schema": "this service's own (#128; no standard type)",
+     "note": ""
+    },
+    {
+     "scim": "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:placeOfBirthCountry",
+     "ldap": "placeOfBirthCountry",
+     "kind": "single",
+     "type": null,
+     "parent": null,
+     "extension": true,
+     "readOnly": false,
+     "required": false,
+     "schema": "this service's own (#128; no standard type)",
+     "note": ""
+    },
+    {
+     "scim": "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:placeOfBirthRegion",
+     "ldap": "placeOfBirthRegion",
+     "kind": "single",
+     "type": null,
+     "parent": null,
+     "extension": true,
+     "readOnly": false,
+     "required": false,
+     "schema": "this service's own (#128; no standard type)",
+     "note": ""
+    },
+    {
+     "scim": "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:placeOfBirthLocality",
+     "ldap": "placeOfBirthLocality",
+     "kind": "single",
+     "type": null,
+     "parent": null,
+     "extension": true,
+     "readOnly": false,
+     "required": false,
+     "schema": "this service's own (#128; no standard type)",
+     "note": ""
+    },
+    {
+     "scim": "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:federationLinks",
+     "ldap": "federationLink",
+     "kind": "links",
+     "type": null,
+     "parent": null,
+     "extension": true,
+     "readOnly": false,
+     "required": false,
+     "schema": "this service's own (#109; no standard type)",
+     "note": "Which federation partners' subjects sign this person in, each { relationship, issuer, subject } — issuer optional on the way in, the relationship's fedPeer. NOT SENT: unchanged, so a provisioning client that knows nothing of this extension cannot unlink anybody by leaving it out. Sent, even empty: replaced, and every link removed ends the sessions that partner signed the person in to. A link another person carries is refused 409."
+    },
+    {
+     "scim": "groups",
+     "ldap": "(member, uniqueMember, memberUid on the group)",
+     "kind": "derived",
+     "type": null,
+     "parent": null,
+     "extension": false,
+     "readOnly": true,
+     "required": false,
+     "schema": "RFC 4519 2.17, 2.40; RFC 2307 2.3",
+     "note": "READ-ONLY, as RFC 7643 section 4.1.2 requires. Membership is a fact about the GROUP's entry, so it is changed through a Group resource and never through a User one. Resolved by ldap_server.js's groupsOfUser(), which is the same function the groups claim reads — so a token and a SCIM resource cannot disagree about who is in what."
+    },
+    {
+     "scim": "meta.created",
+     "ldap": "createTimestamp",
+     "kind": "derived",
+     "type": null,
+     "parent": null,
+     "extension": false,
+     "readOnly": true,
+     "required": false,
+     "schema": "RFC 4512 3.4",
+     "note": ""
+    },
+    {
+     "scim": "meta.lastModified",
+     "ldap": "modifyTimestamp",
+     "kind": "derived",
+     "type": null,
+     "parent": null,
+     "extension": false,
+     "readOnly": true,
+     "required": false,
+     "schema": "RFC 4512 3.4",
+     "note": ""
+    }
+   ],
+   "group": [
+    {
+     "scim": "displayName",
+     "ldap": "cn",
+     "kind": "single",
+     "type": null,
+     "parent": null,
+     "extension": false,
+     "readOnly": false,
+     "required": true,
+     "schema": "RFC 4519 2.3",
+     "note": ""
+    },
+    {
+     "scim": "externalId",
+     "ldap": "scimExternalId",
+     "kind": "single",
+     "type": null,
+     "parent": null,
+     "extension": false,
+     "readOnly": false,
+     "required": false,
+     "schema": "this service's own (no standard type)",
+     "note": ""
+    },
+    {
+     "scim": "members",
+     "ldap": "member",
+     "kind": "members",
+     "type": null,
+     "parent": null,
+     "extension": false,
+     "readOnly": false,
+     "required": false,
+     "schema": "RFC 4519 2.17",
+     "note": "READ resolves member, uniqueMember and memberUid alike; WRITE puts a new value in `member`, since a SCIM member id is a DN. A dangling member — a DN nothing is stored at — is returned as a member, because the group saying so is the fact, and this directory does no referential integrity on purpose."
+    },
+    {
+     "scim": "meta.created",
+     "ldap": "createTimestamp",
+     "kind": "derived",
+     "type": null,
+     "parent": null,
+     "extension": false,
+     "readOnly": true,
+     "required": false,
+     "schema": "RFC 4512 3.4",
+     "note": ""
+    },
+    {
+     "scim": "meta.lastModified",
+     "ldap": "modifyTimestamp",
+     "kind": "derived",
+     "type": null,
+     "parent": null,
+     "extension": false,
+     "readOnly": true,
+     "required": false,
+     "schema": "RFC 4512 3.4",
+     "note": ""
+    }
+   ]
+  },
+  "own": [
+   "scimExternalId"
+  ],
+  "urns": [
+   "urn:ietf:params:scim:schemas:core:2.0:User",
+   "urn:ietf:params:scim:schemas:core:2.0:Group",
+   "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User",
+   "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User"
+  ],
+  "prose": {
+   "scimmap.user.userName.note": "The SCIM uniqueness constraint. It is the RDN of an auto-created entry, so for anybody this service authenticated it is also their sign-in name — but it is NOT the SCIM id, which is the entry's entryUUID.",
+   "scimmap.user.externalId.note": "The provisioning client's own identifier for this person. Stored verbatim and read by nothing here.",
+   "scimmap.user.active.note": "DISABLES THE ACCOUNT. false writes the administrative lock 000001010000Z and ends everything the person holds; every door then refuses them. true removes it. Not sent: unchanged.",
+   "scimmap.user.urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:manager.value.note": "A DN in the directory and an id in SCIM, translated both ways by the SCIM handlers since the id became the entryUUID (2026-09-14). A value naming no entry is kept as it was sent.",
+   "scimmap.user.urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:federationLinks.note": "Which federation partners' subjects sign this person in, each { relationship, issuer, subject } — issuer optional on the way in, the relationship's fedPeer. NOT SENT: unchanged, so a provisioning client that knows nothing of this extension cannot unlink anybody by leaving it out. Sent, even empty: replaced, and every link removed ends the sessions that partner signed the person in to. A link another person carries is refused 409.",
+   "scimmap.user.groups.note": "READ-ONLY, as RFC 7643 section 4.1.2 requires. Membership is a fact about the GROUP's entry, so it is changed through a Group resource and never through a User one. Resolved by ldap_server.js's groupsOfUser(), which is the same function the groups claim reads — so a token and a SCIM resource cannot disagree about who is in what.",
+   "scimmap.group.members.note": "READ resolves member, uniqueMember and memberUid alike; WRITE puts a new value in `member`, since a SCIM member id is a DN. A dangling member — a DN nothing is stored at — is returned as a member, because the group saying so is the fact, and this directory does no referential integrity on purpose.",
+   "scimmap.schema.plain": "this service's own (no standard type)",
+   "scimmap.schema.claims": "this service's own (#128; no standard type)",
+   "scimmap.schema.federation": "this service's own (#109; no standard type)"
+  }
+ },
+ "conversions": {
+  "toScimUser": {
+   "schemas": [
+    "urn:ietf:params:scim:schemas:core:2.0:User"
+   ],
+   "id": "00000000-0000-4000-8000-000000000001",
+   "name": {
+    "formatted": "Fixed Person",
+    "familyName": "Person",
+    "givenName": "Fixed",
+    "honorificPrefix": "Dr"
+   },
+   "emails": [
+    {
+     "value": "f@example.com",
+     "type": "work"
+    },
+    {
+     "value": "g@example.com",
+     "type": "work"
+    }
+   ],
+   "phoneNumbers": [
+    {
+     "value": "+1 555 0100",
+     "type": "work"
+    },
+    {
+     "value": "+1 555 0101",
+     "type": "mobile"
+    }
+   ],
+   "addresses": [
+    {
+     "streetAddress": "1 Main St",
+     "locality": "Town",
+     "region": "ST",
+     "postalCode": "12345",
+     "country": "US",
+     "formatted": "1 Main St\nTown\nUS",
+     "type": "work"
+    }
+   ],
+   "groups": [
+    {
+     "value": "g-1",
+     "display": "g1",
+     "type": "direct",
+     "$ref": "https://h/scim/v2/Groups/g-1"
+    },
+    {
+     "value": "cn=g2,ou=groups",
+     "display": "g2",
+     "type": "direct"
+    }
+   ],
+   "meta": {
+    "resourceType": "User",
+    "created": "<time>",
+    "lastModified": "<time>",
+    "location": "https://h/scim/v2/Users/00000000-0000-4000-8000-000000000001"
+   },
+   "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:manager": {
+    "value": "uid=boss,ou=users,dc=example,dc=com"
+   },
+   "userName": "fixed",
+   "externalId": "ext-fixed",
+   "displayName": "Fixie",
+   "title": "Engineer",
+   "userType": "Contractor",
+   "preferredLanguage": "en-GB",
+   "profileUrl": "https://example.com/f",
+   "active": false,
+   "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:employeeNumber": "42",
+   "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:department": "R&D",
+   "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:organization": "Org",
+   "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:division": "Div",
+   "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:salutation": "Ms",
+   "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:birthFamilyName": "Born",
+   "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:birthGivenName": "Fixa",
+   "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:birthMiddleName": "M",
+   "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:alsoKnownAs": "Fix",
+   "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:placeOfBirthCountry": "US",
+   "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:placeOfBirthRegion": "CA",
+   "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:placeOfBirthLocality": "SF"
+  },
+  "pruned": {
+   "schemas": [
+    "urn:ietf:params:scim:schemas:core:2.0:User"
+   ],
+   "id": "00000000-0000-4000-8000-000000000001",
+   "name": {
+    "formatted": "Fixed Person",
+    "familyName": "Person",
+    "givenName": "Fixed",
+    "honorificPrefix": "Dr"
+   },
+   "emails": [
+    {
+     "value": "f@example.com",
+     "type": "work"
+    },
+    {
+     "value": "g@example.com",
+     "type": "work"
+    }
+   ],
+   "phoneNumbers": [
+    {
+     "value": "+1 555 0100",
+     "type": "work"
+    },
+    {
+     "value": "+1 555 0101",
+     "type": "mobile"
+    }
+   ],
+   "addresses": [
+    {
+     "streetAddress": "1 Main St",
+     "locality": "Town",
+     "region": "ST",
+     "postalCode": "12345",
+     "country": "US",
+     "formatted": "1 Main St\nTown\nUS",
+     "type": "work"
+    }
+   ],
+   "groups": [
+    {
+     "value": "g-1",
+     "display": "g1",
+     "type": "direct",
+     "$ref": "https://h/scim/v2/Groups/g-1"
+    },
+    {
+     "value": "cn=g2,ou=groups",
+     "display": "g2",
+     "type": "direct"
+    }
+   ],
+   "meta": {
+    "resourceType": "User",
+    "created": "<time>",
+    "lastModified": "<time>",
+    "location": "https://h/scim/v2/Users/00000000-0000-4000-8000-000000000001"
+   },
+   "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:manager": {
+    "value": "uid=boss,ou=users,dc=example,dc=com"
+   },
+   "userName": "fixed",
+   "externalId": "ext-fixed",
+   "displayName": "Fixie",
+   "title": "Engineer",
+   "userType": "Contractor",
+   "preferredLanguage": "en-GB",
+   "profileUrl": "https://example.com/f",
+   "active": false,
+   "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:employeeNumber": "42",
+   "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:department": "R&D",
+   "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:organization": "Org",
+   "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User:division": "Div",
+   "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:salutation": "Ms",
+   "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:birthFamilyName": "Born",
+   "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:birthGivenName": "Fixa",
+   "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:birthMiddleName": "M",
+   "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:alsoKnownAs": "Fix",
+   "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:placeOfBirthCountry": "US",
+   "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:placeOfBirthRegion": "CA",
+   "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User:placeOfBirthLocality": "SF"
+  },
+  "noUid": {
+   "schemas": [
+    "urn:ietf:params:scim:schemas:core:2.0:User"
+   ],
+   "id": "cn=cert,ou=users",
+   "meta": {
+    "resourceType": "User",
+    "location": "cn%3Dcert%2Cou%3Dusers"
+   },
+   "active": true,
+   "userName": "cert"
+  },
+  "fromScimUser": {
+   "attributes": {
+    "entryUUID": [
+     "00000000-0000-4000-8000-000000000001"
+    ],
+    "federationLink": [
+     "rel|iss|sub"
+    ],
+    "objectClass": [
+     "inetOrgPerson"
+    ],
+    "schacDateOfBirth": [
+     "19700101"
+    ],
+    "uid": [
+     " fixed "
+    ],
+    "scimExternalId": [
+     "ext-2"
+    ],
+    "cn": [
+     "A B"
+    ],
+    "sn": [
+     "B"
+    ],
+    "givenName": [
+     "A"
+    ],
+    "displayName": [
+     "New"
+    ],
+    "schacPersonalTitle": [
+     "Sir"
+    ],
+    "employeeType": [
+     "Employee"
+    ],
+    "preferredLanguage": [
+     "fr"
+    ],
+    "labeledURI": [
+     "https://example.com/n"
+    ],
+    "mail": [
+     "x@example.com"
+    ],
+    "telephoneNumber": [
+     "1",
+     "2"
+    ],
+    "mobile": [
+     "3"
+    ],
+    "street": [
+     "s"
+    ],
+    "l": [
+     "l"
+    ],
+    "st": [
+     "r"
+    ],
+    "postalCode": [
+     "p"
+    ],
+    "c": [
+     "c"
+    ],
+    "postalAddress": [
+     "a$b"
+    ],
+    "employeeNumber": [
+     "7"
+    ],
+    "departmentNumber": [
+     "D"
+    ],
+    "o": [
+     "O"
+    ],
+    "ou": [
+     "V"
+    ],
+    "manager": [
+     "uid=m,ou=users"
+    ],
+    "salutation": [
+     "Mx"
+    ],
+    "birthFamilyName": [
+     "F"
+    ],
+    "birthGivenName": [
+     "G"
+    ],
+    "birthMiddleName": [
+     "H"
+    ],
+    "alsoKnownAs": [
+     "K"
+    ],
+    "placeOfBirthCountry": [
+     "FR"
+    ],
+    "placeOfBirthRegion": [
+     "R"
+    ],
+    "placeOfBirthLocality": [
+     "L"
+    ]
+   },
+   "errors": []
+  },
+  "fromScimUserCreate": {
+   "attributes": {
+    "pwdAccountLockedTime": [
+     "000001010000Z"
+    ]
+   },
+   "errors": [
+    "userName is required (RFC 7643 section 4.1.1) and was not sent."
+   ]
+  },
+  "fromScimUserUnlock": {
+   "attributes": {
+    "uid": [
+     "u"
+    ]
+   },
+   "errors": []
+  },
+  "toScimGroup": {
+   "schemas": [
+    "urn:ietf:params:scim:schemas:core:2.0:Group"
+   ],
+   "id": "00000000-0000-4000-8000-000000000002",
+   "displayName": "g",
+   "members": [
+    {
+     "value": "m-1",
+     "type": "User",
+     "$ref": "https://h/scim/v2/Users/m-1"
+    },
+    {
+     "value": "uid=gone,ou=users",
+     "type": "User"
+    },
+    {
+     "value": "g-2",
+     "type": "Group",
+     "$ref": "https://h/scim/v2/Groups/g-2"
+    }
+   ],
+   "meta": {
+    "resourceType": "Group",
+    "created": "<time>",
+    "location": "https://h/scim/v2/Groups/00000000-0000-4000-8000-000000000002"
+   },
+   "externalId": "gx"
+  },
+  "fromScimGroup": {
+   "attributes": {
+    "entryUUID": [
+     "00000000-0000-4000-8000-000000000002"
+    ],
+    "objectClass": [
+     "groupOfNames"
+    ],
+    "cn": [
+     "g2"
+    ],
+    "scimExternalId": [
+     "gy"
+    ],
+    "member": [
+     "uid=a,ou=users"
+    ]
+   },
+   "errors": []
+  },
+  "fromScimGroupEmpty": {
+   "attributes": {
+    "objectClass": [
+     "top",
+     "groupOfNames"
+    ]
+   },
+   "errors": [
+    "displayName is required (RFC 7643 section 4.2) and was not sent."
+   ]
+  }
+ },
+ "wire": [
+  {
+   "step": "spc",
+   "method": "GET",
+   "path": "/ServiceProviderConfig",
+   "status": 200,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig"
+    ],
+    "meta": {
+     "resourceType": "ServiceProviderConfig",
+     "location": "http://<port>/scim/v2/ServiceProviderConfig"
+    },
+    "patch": {
+     "supported": true
+    },
+    "bulk": {
+     "supported": true,
+     "maxOperations": 100,
+     "maxPayloadSize": 1048576
+    },
+    "filter": {
+     "supported": true,
+     "maxResults": 200
+    },
+    "changePassword": {
+     "supported": false
+    },
+    "sort": {
+     "supported": true
+    },
+    "etag": {
+     "supported": false
+    },
+    "authenticationSchemes": [
+     {
+      "type": "oauthbearertoken",
+      "name": "OAuth 2.0 Bearer Token",
+      "description": "An access token issued by this service's own authorization server, presented as \"Authorization: Bearer <token>\". Any grant will do — authorization code, client credentials, password, refresh, device, token exchange — but the SCIM scopes are issued only to a client whose oauthAllowedScope declares them, in every mode. The token must carry the read scope to read and the write scope to write, its client must still declare that scope, it must be one THIS service signed, must not have been revoked, and must not have been narrowed by RFC 8707 to a different resource.",
+      "specUri": "https://www.rfc-editor.org/rfc/rfc6750",
+      "documentationUri": "http://<port>/scim",
+      "primary": true
+     },
+     {
+      "type": "oauth2",
+      "name": "OAuth 2.0 DPoP (proof-of-possession) token",
+      "description": "The proof-of-possession token RFC 7644 section 2 names, in the shape this service already issues: an access token bound to a key (cnf.jkt), presented as \"Authorization: DPoP <token>\" with a fresh DPoP proof over the method and URL. An RFC 8705 certificate-bound token is the other proof-of-possession form and is honoured on the same path. Handled by the same check as the Bearer row — they are one credential with two ways of being held — and listed separately because a client reading this document is entitled to know the bound form is understood.",
+      "specUri": "https://www.rfc-editor.org/rfc/rfc9449",
+      "documentationUri": "http://<port>/scim"
+     },
+     {
+      "type": "httpbasic",
+      "name": "HTTP Basic",
+      "description": "In product mode the password is verified against the person's hashed userPassword, and a person who holds or must hold a second factor is refused their own password and uses an app password. In development mode any username and any password pass, exactly as every LDAP bind there succeeds — with the single exception of the password \"invalid\", which is refused so that a 401 stays reachable — so what this authenticates there is a NAME, and that name is what the audit log records. RFC 7644 section 2 DISCOURAGES this scheme, in those words, because it rests on a relatively static symmetric secret; it is implemented anyway because it is what a provisioning client most often meets and its 401 handling is worth being able to run.",
+      "specUri": "https://www.rfc-editor.org/rfc/rfc7617",
+      "documentationUri": "http://<port>/scim"
+     },
+     {
+      "type": "httpdigest",
+      "name": "HTTP Digest",
+      "description": "In product mode this scheme is NOT offered, and is refused: a password is stored as a salted scrypt hash, which cannot answer an RFC 7616 exchange. In development mode it is the one scheme where the password really is checked, and it cannot not be: the response is a hash over the password, so a server that accepted anything would not be performing the exchange at all. So it does what Kerberos does for the same reason — ANY username authenticates and every one of them shares one password (scim.digestPassword). SHA-256 and SHA-512-256 are offered, in that order, with the -sess variants, and MD5 last only where scim.digestMd5 turns it on; qop is auth. A wrong password is a 401, a stale nonce is a 401 with stale=true, and a replayed nonce count is a 401 — three negatives that are otherwise hard to provoke.",
+      "specUri": "https://www.rfc-editor.org/rfc/rfc7616",
+      "documentationUri": "http://<port>/scim"
+     },
+     {
+      "type": "hoba",
+      "name": "HOBA (HTTP Origin-Bound Authentication)",
+      "description": "The signature-based scheme RFC 7644 section 2 names, and the only one of the six with no password anywhere in it. A client registers a public key at /.well-known/hoba/register — in development mode anybody may, for any name; in product mode only the signed-in owner of an existing account may, and a registration never creates an account — and then signs the server's challenge together with the origin, the realm and its own key id and nonce. THE SIGNATURE IS REALLY VERIFIED, in both modes: a signature check that passes anything is not the scheme. RSA with SHA-256 (algorithm 0) only.",
+      "specUri": "https://www.rfc-editor.org/rfc/rfc7486",
+      "documentationUri": "http://<port>/scim"
+     },
+     {
+      "type": "httpcookie",
+      "name": "Session cookie",
+      "description": "The browser sign-on session this service already has — the one /authn/login establishes and WS-Federation shares — offered here because section 2 names it: \"clients may assert HTTP cookies over TLS that contain an authentication state understood by the SCIM service provider\". It is what makes a SCIM call from a page on this service work with no second credential. There is no challenge for it: a server cannot ask for a cookie in WWW-Authenticate, so it is used when it is there and never demanded.",
+      "specUri": "https://www.rfc-editor.org/rfc/rfc7644#section-2",
+      "documentationUri": "http://<port>/scim"
+     },
+     {
+      "type": "tlsclientauth",
+      "name": "TLS client certificate",
+      "description": "Mutual TLS, the first scheme RFC 7644 section 2 names. Available only where this request arrived over TLS with a certificate that VERIFIED against an anchor in the client truststore (/admin/tls/trust) — so on the main port only when it is bound as HTTPS (global.https, which oauth2.rfc9700 turns on). A certificate from an outside certificate authority (an anchor somebody added) is the person or application whose entry stores it, byte for byte, in userCertificate, and nothing else: stored on no entry or on several, it is not this credential. A person's certificate this realm issued is filed under its subject in RFC 4514 form. It is not recorded again here: tls_server.js records a certificate once per CONNECTION on purpose, and counting it per request would undo that from the other end. A certificate this realm issued to an APPLICATION is that application, and may do only what its oauthAllowedScope declares: the read scope to read and the write scope to write, asked on every request, so one that declares neither is refused. A person's certificate, issued here or stored on their entry, may do both.",
+      "specUri": "https://www.rfc-editor.org/rfc/rfc8446",
+      "documentationUri": "http://<port>/scim"
+     }
+    ],
+    "documentationUri": "http://<port>/scim"
+   }
+  },
+  {
+   "step": "resource types",
+   "method": "GET",
+   "path": "/ResourceTypes",
+   "status": 200,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:ListResponse"
+    ],
+    "Resources": [
+     {
+      "schemas": [
+       "urn:ietf:params:scim:schemas:core:2.0:ResourceType"
+      ],
+      "id": "User",
+      "meta": {
+       "resourceType": "ResourceType"
+      },
+      "name": "User",
+      "description": "User Account",
+      "endpoint": "/Users",
+      "schema": "urn:ietf:params:scim:schemas:core:2.0:User",
+      "schemaExtensions": [
+       {
+        "schema": "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User",
+        "required": false
+       },
+       {
+        "schema": "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User",
+        "required": false
+       }
+      ]
+     },
+     {
+      "schemas": [
+       "urn:ietf:params:scim:schemas:core:2.0:ResourceType"
+      ],
+      "id": "Group",
+      "meta": {
+       "resourceType": "ResourceType"
+      },
+      "name": "Group",
+      "description": "Group",
+      "endpoint": "/Groups",
+      "schema": "urn:ietf:params:scim:schemas:core:2.0:Group"
+     }
+    ],
+    "startIndex": 1,
+    "itemsPerPage": 2,
+    "totalResults": 2
+   }
+  },
+  {
+   "step": "resource type User",
+   "method": "GET",
+   "path": "/ResourceTypes/User",
+   "status": 200,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:schemas:core:2.0:ResourceType"
+    ],
+    "id": "User",
+    "meta": {
+     "resourceType": "ResourceType"
+    },
+    "name": "User",
+    "description": "User Account",
+    "endpoint": "/Users",
+    "schema": "urn:ietf:params:scim:schemas:core:2.0:User",
+    "schemaExtensions": [
+     {
+      "schema": "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User",
+      "required": false
+     },
+     {
+      "schema": "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User",
+      "required": false
+     }
+    ]
+   }
+  },
+  {
+   "step": "resource type Group",
+   "method": "GET",
+   "path": "/ResourceTypes/Group",
+   "status": 200,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:schemas:core:2.0:ResourceType"
+    ],
+    "id": "Group",
+    "meta": {
+     "resourceType": "ResourceType"
+    },
+    "name": "Group",
+    "description": "Group",
+    "endpoint": "/Groups",
+    "schema": "urn:ietf:params:scim:schemas:core:2.0:Group"
+   }
+  },
+  {
+   "step": "resource type unknown",
+   "method": "GET",
+   "path": "/ResourceTypes/Nope",
+   "status": 404,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:Error"
+    ],
+    "status": "404",
+    "detail": "ResourceType Nope not found"
+   }
+  },
+  {
+   "step": "schemas",
+   "method": "GET",
+   "path": "/Schemas",
+   "status": 200,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:ListResponse"
+    ],
+    "Resources": [
+     {
+      "schemas": [
+       "urn:ietf:params:scim:schemas:core:2.0:Schema"
+      ],
+      "id": "urn:ietf:params:scim:schemas:core:2.0:User",
+      "name": "User",
+      "description": "User Account",
+      "attributes": [
+       {
+        "name": "userName",
+        "type": "string",
+        "multiValued": false,
+        "description": "Unique identifier for the User, typically used by the user to directly authenticate to the service provider. Each User MUST include a non-empty userName value. This identifier MUST be unique across the service provider's entire set of Users. REQUIRED.",
+        "required": true,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "server"
+       },
+       {
+        "name": "name",
+        "type": "complex",
+        "multiValued": false,
+        "description": "The components of the user's real name. Providers MAY return just the full name as a single string in the formatted sub-attribute, or they MAY return just the individual component attributes using the other sub-attributes, or they MAY return both. If both variants are returned, they SHOULD be describing the same name, with the formatted name indicating how the component attributes should be combined.",
+        "required": false,
+        "subAttributes": [
+         {
+          "name": "formatted",
+          "type": "string",
+          "multiValued": false,
+          "description": "The full name, including all middle names, titles, and suffixes as appropriate, formatted for display (e.g. 'Ms. Barbara J Jensen, III').",
+          "required": false,
+          "caseExact": false,
+          "mutability": "readWrite",
+          "returned": "default",
+          "uniqueness": "none"
+         },
+         {
+          "name": "familyName",
+          "type": "string",
+          "multiValued": false,
+          "description": "The family name of the User, or last name in most Western languages (e.g. 'Jensen' given the full name 'Ms. Barbara J Jensen, III').",
+          "required": false,
+          "caseExact": false,
+          "mutability": "readWrite",
+          "returned": "default",
+          "uniqueness": "none"
+         },
+         {
+          "name": "givenName",
+          "type": "string",
+          "multiValued": false,
+          "description": "The given name of the User, or first name in most Western languages (e.g. 'Barbara' given the full name 'Ms. Barbara J Jensen, III').",
+          "required": false,
+          "caseExact": false,
+          "mutability": "readWrite",
+          "returned": "default",
+          "uniqueness": "none"
+         },
+         {
+          "name": "honorificPrefix",
+          "type": "string",
+          "multiValued": false,
+          "description": "The honorific prefix(es) of the User, or title in most Western languages (e.g. 'Ms.' given the full name 'Ms. Barbara J Jensen, III').",
+          "required": false,
+          "caseExact": false,
+          "mutability": "readWrite",
+          "returned": "default",
+          "uniqueness": "none"
+         }
+        ],
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "displayName",
+        "type": "string",
+        "multiValued": false,
+        "description": "The name of the User, suitable for display to end-users. The name SHOULD be the full name of the User being described, if known.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "profileUrl",
+        "type": "reference",
+        "referenceTypes": [
+         "external"
+        ],
+        "multiValued": false,
+        "description": "A fully qualified URL pointing to a page representing the User's online profile.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "title",
+        "type": "string",
+        "multiValued": false,
+        "description": "The user's title, such as 'Vice President'.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "userType",
+        "type": "string",
+        "multiValued": false,
+        "description": "Used to identify the relationship between the organization and the user. Typical values used might be 'Contractor', 'Employee', 'Intern', 'Temp', 'External', and 'Unknown', but any value may be used.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "preferredLanguage",
+        "type": "string",
+        "multiValued": false,
+        "description": "Indicates the User's preferred written or spoken language. Generally used for selecting a localized user interface; e.g. 'en_US' specifies the language English and country US.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "active",
+        "type": "boolean",
+        "multiValued": false,
+        "description": "A Boolean value indicating the User's administrative status.",
+        "required": false,
+        "mutability": "readWrite",
+        "returned": "default"
+       },
+       {
+        "name": "password",
+        "type": "string",
+        "multiValued": false,
+        "description": "The User's cleartext password. This attribute is intended to be used as a means to specify an initial password when creating a new User or to reset an existing User's password.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "writeOnly",
+        "returned": "never",
+        "uniqueness": "none"
+       },
+       {
+        "name": "emails",
+        "type": "complex",
+        "multiValued": true,
+        "description": "Email addresses for the user. The value SHOULD be canonicalized by the service provider, e.g. 'bjensen@example.com' instead of 'bjensen@EXAMPLE.COM'. Canonical type values of 'work', 'home', and 'other'.",
+        "required": false,
+        "subAttributes": [
+         {
+          "name": "value",
+          "type": "string",
+          "multiValued": false,
+          "description": "Email addresses for the user. The value SHOULD be canonicalized by the service provider, e.g. 'bjensen@example.com' instead of 'bjensen@EXAMPLE.COM'. Canonical type values of 'work', 'home', and 'other'.",
+          "required": false,
+          "caseExact": false,
+          "mutability": "readWrite",
+          "returned": "default",
+          "uniqueness": "none"
+         },
+         {
+          "name": "type",
+          "type": "string",
+          "multiValued": false,
+          "description": "A label indicating the attribute's function, e.g. 'work' or 'home'.",
+          "required": false,
+          "caseExact": false,
+          "canonicalValues": [
+           "work"
+          ],
+          "mutability": "readWrite",
+          "returned": "default",
+          "uniqueness": "none"
+         }
+        ],
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "phoneNumbers",
+        "type": "complex",
+        "multiValued": true,
+        "description": "Phone numbers for the User. The value SHOULD be canonicalized by the service provider according to the format specified in RFC 3966, e.g. 'tel:+1-201-555-0123'. Canonical type values of 'work', 'home', 'mobile', 'fax', 'pager', and 'other'.",
+        "required": false,
+        "subAttributes": [
+         {
+          "name": "value",
+          "type": "string",
+          "multiValued": false,
+          "description": "Phone number of the User.",
+          "required": false,
+          "caseExact": false,
+          "mutability": "readWrite",
+          "returned": "default",
+          "uniqueness": "none"
+         },
+         {
+          "name": "type",
+          "type": "string",
+          "multiValued": false,
+          "description": "A label indicating the attribute's function, e.g. 'work', 'home', 'mobile'.",
+          "required": false,
+          "caseExact": false,
+          "canonicalValues": [
+           "work",
+           "mobile"
+          ],
+          "mutability": "readWrite",
+          "returned": "default",
+          "uniqueness": "none"
+         }
+        ],
+        "mutability": "readWrite",
+        "returned": "default"
+       },
+       {
+        "name": "addresses",
+        "type": "complex",
+        "multiValued": true,
+        "description": "A physical mailing address for this User. Canonical type values of 'work', 'home', and 'other'. This attribute is a complex type with the following sub-attributes.",
+        "required": false,
+        "subAttributes": [
+         {
+          "name": "formatted",
+          "type": "string",
+          "multiValued": false,
+          "description": "The full mailing address, formatted for display or use with a mailing label. This attribute MAY contain newlines.",
+          "required": false,
+          "caseExact": false,
+          "mutability": "readWrite",
+          "returned": "default",
+          "uniqueness": "none"
+         },
+         {
+          "name": "streetAddress",
+          "type": "string",
+          "multiValued": false,
+          "description": "The full street address component, which may include house number, street name, P.O. box, and multi-line extended street address information. This attribute MAY contain newlines.",
+          "required": false,
+          "caseExact": false,
+          "mutability": "readWrite",
+          "returned": "default",
+          "uniqueness": "none"
+         },
+         {
+          "name": "locality",
+          "type": "string",
+          "multiValued": false,
+          "description": "The city or locality component.",
+          "required": false,
+          "caseExact": false,
+          "mutability": "readWrite",
+          "returned": "default",
+          "uniqueness": "none"
+         },
+         {
+          "name": "region",
+          "type": "string",
+          "multiValued": false,
+          "description": "The state or region component.",
+          "required": false,
+          "caseExact": false,
+          "mutability": "readWrite",
+          "returned": "default",
+          "uniqueness": "none"
+         },
+         {
+          "name": "postalCode",
+          "type": "string",
+          "multiValued": false,
+          "description": "The zip code or postal code component.",
+          "required": false,
+          "caseExact": false,
+          "mutability": "readWrite",
+          "returned": "default",
+          "uniqueness": "none"
+         },
+         {
+          "name": "country",
+          "type": "string",
+          "multiValued": false,
+          "description": "The country name component.",
+          "required": false,
+          "caseExact": false,
+          "mutability": "readWrite",
+          "returned": "default",
+          "uniqueness": "none"
+         },
+         {
+          "name": "type",
+          "type": "string",
+          "multiValued": false,
+          "description": "A label indicating the attribute's function, e.g. 'work' or 'home'.",
+          "required": false,
+          "caseExact": false,
+          "canonicalValues": [
+           "work"
+          ],
+          "mutability": "readWrite",
+          "returned": "default",
+          "uniqueness": "none"
+         }
+        ],
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "groups",
+        "type": "complex",
+        "multiValued": true,
+        "description": "A list of groups to which the user belongs, either through direct membership, through nested groups, or dynamically calculated.",
+        "required": false,
+        "subAttributes": [
+         {
+          "name": "value",
+          "type": "string",
+          "multiValued": false,
+          "description": "The identifier of the User's group.",
+          "required": false,
+          "caseExact": false,
+          "mutability": "readOnly",
+          "returned": "default",
+          "uniqueness": "none"
+         },
+         {
+          "name": "$ref",
+          "type": "reference",
+          "referenceTypes": [
+           "User",
+           "Group"
+          ],
+          "multiValued": false,
+          "description": "The URI of the corresponding 'Group' resource to which the user belongs.",
+          "required": false,
+          "caseExact": false,
+          "mutability": "readOnly",
+          "returned": "default",
+          "uniqueness": "none"
+         },
+         {
+          "name": "display",
+          "type": "string",
+          "multiValued": false,
+          "description": "A human-readable name, primarily used for display purposes. READ-ONLY.",
+          "required": false,
+          "caseExact": false,
+          "mutability": "readOnly",
+          "returned": "default",
+          "uniqueness": "none"
+         },
+         {
+          "name": "type",
+          "type": "string",
+          "multiValued": false,
+          "description": "A label indicating the attribute's function, e.g. 'direct' or 'indirect'.",
+          "required": false,
+          "caseExact": false,
+          "canonicalValues": [
+           "direct",
+           "indirect"
+          ],
+          "mutability": "readOnly",
+          "returned": "default",
+          "uniqueness": "none"
+         }
+        ],
+        "mutability": "readOnly",
+        "returned": "default"
+       }
+      ],
+      "meta": {
+       "resourceType": "Schema",
+       "location": "/urn:ietf:params:scim:schemas:core:2.0:User"
+      }
+     },
+     {
+      "schemas": [
+       "urn:ietf:params:scim:schemas:core:2.0:Schema"
+      ],
+      "id": "urn:ietf:params:scim:schemas:core:2.0:Group",
+      "name": "Group",
+      "description": "Group",
+      "attributes": [
+       {
+        "name": "displayName",
+        "type": "string",
+        "multiValued": false,
+        "description": "A human-readable name for the Group. REQUIRED.",
+        "required": true,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "members",
+        "type": "complex",
+        "multiValued": true,
+        "description": "A list of members of the Group.",
+        "required": false,
+        "subAttributes": [
+         {
+          "name": "value",
+          "type": "string",
+          "multiValued": false,
+          "description": "Identifier of the member of this Group.",
+          "required": false,
+          "caseExact": false,
+          "mutability": "immutable",
+          "returned": "default",
+          "uniqueness": "none"
+         },
+         {
+          "name": "$ref",
+          "type": "reference",
+          "referenceTypes": [
+           "User",
+           "Group"
+          ],
+          "multiValued": false,
+          "description": "The URI corresponding to a SCIM resource that is a member of this Group.",
+          "required": false,
+          "caseExact": false,
+          "mutability": "immutable",
+          "returned": "default",
+          "uniqueness": "none"
+         },
+         {
+          "name": "type",
+          "type": "string",
+          "multiValued": false,
+          "description": "A label indicating the type of resource, e.g., 'User' or 'Group'.",
+          "required": false,
+          "caseExact": false,
+          "canonicalValues": [
+           "User",
+           "Group"
+          ],
+          "mutability": "immutable",
+          "returned": "default",
+          "uniqueness": "none"
+         }
+        ],
+        "mutability": "readWrite",
+        "returned": "default"
+       }
+      ],
+      "meta": {
+       "resourceType": "Schema",
+       "location": "/urn:ietf:params:scim:schemas:core:2.0:Group"
+      }
+     },
+     {
+      "schemas": [
+       "urn:ietf:params:scim:schemas:core:2.0:Schema"
+      ],
+      "id": "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User",
+      "name": "EnterpriseUser",
+      "description": "Enterprise User",
+      "attributes": [
+       {
+        "name": "employeeNumber",
+        "type": "string",
+        "multiValued": false,
+        "description": "Numeric or alphanumeric identifier assigned to a person, typically based on order of hire or association with an organization.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "organization",
+        "type": "string",
+        "multiValued": false,
+        "description": "Identifies the name of an organization.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "division",
+        "type": "string",
+        "multiValued": false,
+        "description": "Identifies the name of a division.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "department",
+        "type": "string",
+        "multiValued": false,
+        "description": "Identifies the name of a department.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "manager",
+        "type": "complex",
+        "multiValued": false,
+        "description": "The User's manager.  A complex type that optionally allows service providers to represent organizational hierarchy by referencing the 'id' attribute of another User.",
+        "required": false,
+        "subAttributes": [
+         {
+          "name": "value",
+          "type": "string",
+          "multiValued": false,
+          "description": "The id of the SCIM resource representing the User's manager.",
+          "required": false,
+          "caseExact": false,
+          "mutability": "readWrite",
+          "returned": "default",
+          "uniqueness": "none"
+         },
+         {
+          "name": "$ref",
+          "type": "reference",
+          "referenceTypes": [
+           "User"
+          ],
+          "multiValued": false,
+          "description": "The URI of the SCIM resource representing the User's manager.",
+          "required": false,
+          "caseExact": false,
+          "mutability": "readWrite",
+          "returned": "default",
+          "uniqueness": "none"
+         }
+        ],
+        "mutability": "readWrite",
+        "returned": "default"
+       }
+      ],
+      "meta": {
+       "resourceType": "Schema",
+       "location": "/urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"
+      }
+     },
+     {
+      "schemas": [
+       "urn:ietf:params:scim:schemas:core:2.0:Schema"
+      ],
+      "id": "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User",
+      "name": "IyaStsUser",
+      "description": "This service's own User extension: which federation partners' subjects are linked to the person, and the Identity Assurance claims no standard schema carries (#128).",
+      "attributes": [
+       {
+        "name": "salutation",
+        "type": "string",
+        "multiValued": false,
+        "description": "A formal salutation, e.g. \"Ms\" (the Claims Registration's salutation).",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "birthFamilyName",
+        "type": "string",
+        "multiValued": false,
+        "description": "The family name at birth.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "birthGivenName",
+        "type": "string",
+        "multiValued": false,
+        "description": "The given name at birth.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "birthMiddleName",
+        "type": "string",
+        "multiValued": false,
+        "description": "The middle name at birth.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "alsoKnownAs",
+        "type": "string",
+        "multiValued": false,
+        "description": "Another name the person is known by, e.g. a stage name.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "placeOfBirthCountry",
+        "type": "string",
+        "multiValued": false,
+        "description": "The country of birth, ISO 3166-1 alpha-2.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "placeOfBirthRegion",
+        "type": "string",
+        "multiValued": false,
+        "description": "The region of birth.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "placeOfBirthLocality",
+        "type": "string",
+        "multiValued": false,
+        "description": "The locality of birth.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "homeCell",
+        "type": "string",
+        "multiValued": false,
+        "description": "On a create in a service deployed as several regions: the region the person is homed in, whose data stays there. The realm's default when not sent. Never returned, and not changed by a later write.",
+        "required": false,
+        "caseExact": true,
+        "mutability": "writeOnly",
+        "returned": "never",
+        "uniqueness": "none"
+       },
+       {
+        "name": "federationLinks",
+        "type": "complex",
+        "multiValued": true,
+        "description": "Each a federation partner's identifier for the person, through one service-provider-side relationship. Not sent: unchanged. Sent: replaced; a link removed ends the sessions that partner signed the person in to.",
+        "required": false,
+        "subAttributes": [
+         {
+          "name": "relationship",
+          "type": "string",
+          "multiValued": false,
+          "description": "The service-provider-side relationship.",
+          "required": true,
+          "caseExact": true,
+          "mutability": "readWrite",
+          "returned": "default",
+          "uniqueness": "none"
+         },
+         {
+          "name": "issuer",
+          "type": "string",
+          "multiValued": false,
+          "description": "The partner's entity ID or iss; the relationship's fedPeer when omitted.",
+          "required": false,
+          "caseExact": true,
+          "mutability": "readWrite",
+          "returned": "default",
+          "uniqueness": "none"
+         },
+         {
+          "name": "subject",
+          "type": "string",
+          "multiValued": false,
+          "description": "The partner's stable identifier for the person (an OpenID Connect sub, a SAML persistent NameID).",
+          "required": true,
+          "caseExact": true,
+          "mutability": "readWrite",
+          "returned": "default",
+          "uniqueness": "none"
+         }
+        ],
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       }
+      ],
+      "meta": {
+       "resourceType": "Schema",
+       "location": "/urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User"
+      }
+     }
+    ],
+    "startIndex": 1,
+    "itemsPerPage": 4,
+    "totalResults": 4
+   }
+  },
+  {
+   "step": "schema urn:ietf:params:scim:schemas:core:2.0:User",
+   "method": "GET",
+   "path": "/Schemas/urn:ietf:params:scim:schemas:core:2.0:User",
+   "status": 200,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:schemas:core:2.0:Schema"
+    ],
+    "id": "urn:ietf:params:scim:schemas:core:2.0:User",
+    "name": "User",
+    "description": "User Account",
+    "attributes": [
+     {
+      "name": "userName",
+      "type": "string",
+      "multiValued": false,
+      "description": "Unique identifier for the User, typically used by the user to directly authenticate to the service provider. Each User MUST include a non-empty userName value. This identifier MUST be unique across the service provider's entire set of Users. REQUIRED.",
+      "required": true,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "server"
+     },
+     {
+      "name": "name",
+      "type": "complex",
+      "multiValued": false,
+      "description": "The components of the user's real name. Providers MAY return just the full name as a single string in the formatted sub-attribute, or they MAY return just the individual component attributes using the other sub-attributes, or they MAY return both. If both variants are returned, they SHOULD be describing the same name, with the formatted name indicating how the component attributes should be combined.",
+      "required": false,
+      "subAttributes": [
+       {
+        "name": "formatted",
+        "type": "string",
+        "multiValued": false,
+        "description": "The full name, including all middle names, titles, and suffixes as appropriate, formatted for display (e.g. 'Ms. Barbara J Jensen, III').",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "familyName",
+        "type": "string",
+        "multiValued": false,
+        "description": "The family name of the User, or last name in most Western languages (e.g. 'Jensen' given the full name 'Ms. Barbara J Jensen, III').",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "givenName",
+        "type": "string",
+        "multiValued": false,
+        "description": "The given name of the User, or first name in most Western languages (e.g. 'Barbara' given the full name 'Ms. Barbara J Jensen, III').",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "honorificPrefix",
+        "type": "string",
+        "multiValued": false,
+        "description": "The honorific prefix(es) of the User, or title in most Western languages (e.g. 'Ms.' given the full name 'Ms. Barbara J Jensen, III').",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       }
+      ],
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     {
+      "name": "displayName",
+      "type": "string",
+      "multiValued": false,
+      "description": "The name of the User, suitable for display to end-users. The name SHOULD be the full name of the User being described, if known.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     {
+      "name": "profileUrl",
+      "type": "reference",
+      "referenceTypes": [
+       "external"
+      ],
+      "multiValued": false,
+      "description": "A fully qualified URL pointing to a page representing the User's online profile.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     {
+      "name": "title",
+      "type": "string",
+      "multiValued": false,
+      "description": "The user's title, such as 'Vice President'.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     {
+      "name": "userType",
+      "type": "string",
+      "multiValued": false,
+      "description": "Used to identify the relationship between the organization and the user. Typical values used might be 'Contractor', 'Employee', 'Intern', 'Temp', 'External', and 'Unknown', but any value may be used.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     {
+      "name": "preferredLanguage",
+      "type": "string",
+      "multiValued": false,
+      "description": "Indicates the User's preferred written or spoken language. Generally used for selecting a localized user interface; e.g. 'en_US' specifies the language English and country US.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     {
+      "name": "active",
+      "type": "boolean",
+      "multiValued": false,
+      "description": "A Boolean value indicating the User's administrative status.",
+      "required": false,
+      "mutability": "readWrite",
+      "returned": "default"
+     },
+     {
+      "name": "password",
+      "type": "string",
+      "multiValued": false,
+      "description": "The User's cleartext password. This attribute is intended to be used as a means to specify an initial password when creating a new User or to reset an existing User's password.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "writeOnly",
+      "returned": "never",
+      "uniqueness": "none"
+     },
+     {
+      "name": "emails",
+      "type": "complex",
+      "multiValued": true,
+      "description": "Email addresses for the user. The value SHOULD be canonicalized by the service provider, e.g. 'bjensen@example.com' instead of 'bjensen@EXAMPLE.COM'. Canonical type values of 'work', 'home', and 'other'.",
+      "required": false,
+      "subAttributes": [
+       {
+        "name": "value",
+        "type": "string",
+        "multiValued": false,
+        "description": "Email addresses for the user. The value SHOULD be canonicalized by the service provider, e.g. 'bjensen@example.com' instead of 'bjensen@EXAMPLE.COM'. Canonical type values of 'work', 'home', and 'other'.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "type",
+        "type": "string",
+        "multiValued": false,
+        "description": "A label indicating the attribute's function, e.g. 'work' or 'home'.",
+        "required": false,
+        "caseExact": false,
+        "canonicalValues": [
+         "work"
+        ],
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       }
+      ],
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     {
+      "name": "phoneNumbers",
+      "type": "complex",
+      "multiValued": true,
+      "description": "Phone numbers for the User. The value SHOULD be canonicalized by the service provider according to the format specified in RFC 3966, e.g. 'tel:+1-201-555-0123'. Canonical type values of 'work', 'home', 'mobile', 'fax', 'pager', and 'other'.",
+      "required": false,
+      "subAttributes": [
+       {
+        "name": "value",
+        "type": "string",
+        "multiValued": false,
+        "description": "Phone number of the User.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "type",
+        "type": "string",
+        "multiValued": false,
+        "description": "A label indicating the attribute's function, e.g. 'work', 'home', 'mobile'.",
+        "required": false,
+        "caseExact": false,
+        "canonicalValues": [
+         "work",
+         "mobile"
+        ],
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       }
+      ],
+      "mutability": "readWrite",
+      "returned": "default"
+     },
+     {
+      "name": "addresses",
+      "type": "complex",
+      "multiValued": true,
+      "description": "A physical mailing address for this User. Canonical type values of 'work', 'home', and 'other'. This attribute is a complex type with the following sub-attributes.",
+      "required": false,
+      "subAttributes": [
+       {
+        "name": "formatted",
+        "type": "string",
+        "multiValued": false,
+        "description": "The full mailing address, formatted for display or use with a mailing label. This attribute MAY contain newlines.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "streetAddress",
+        "type": "string",
+        "multiValued": false,
+        "description": "The full street address component, which may include house number, street name, P.O. box, and multi-line extended street address information. This attribute MAY contain newlines.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "locality",
+        "type": "string",
+        "multiValued": false,
+        "description": "The city or locality component.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "region",
+        "type": "string",
+        "multiValued": false,
+        "description": "The state or region component.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "postalCode",
+        "type": "string",
+        "multiValued": false,
+        "description": "The zip code or postal code component.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "country",
+        "type": "string",
+        "multiValued": false,
+        "description": "The country name component.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "type",
+        "type": "string",
+        "multiValued": false,
+        "description": "A label indicating the attribute's function, e.g. 'work' or 'home'.",
+        "required": false,
+        "caseExact": false,
+        "canonicalValues": [
+         "work"
+        ],
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       }
+      ],
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     {
+      "name": "groups",
+      "type": "complex",
+      "multiValued": true,
+      "description": "A list of groups to which the user belongs, either through direct membership, through nested groups, or dynamically calculated.",
+      "required": false,
+      "subAttributes": [
+       {
+        "name": "value",
+        "type": "string",
+        "multiValued": false,
+        "description": "The identifier of the User's group.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "$ref",
+        "type": "reference",
+        "referenceTypes": [
+         "User",
+         "Group"
+        ],
+        "multiValued": false,
+        "description": "The URI of the corresponding 'Group' resource to which the user belongs.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "display",
+        "type": "string",
+        "multiValued": false,
+        "description": "A human-readable name, primarily used for display purposes. READ-ONLY.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "type",
+        "type": "string",
+        "multiValued": false,
+        "description": "A label indicating the attribute's function, e.g. 'direct' or 'indirect'.",
+        "required": false,
+        "caseExact": false,
+        "canonicalValues": [
+         "direct",
+         "indirect"
+        ],
+        "mutability": "readOnly",
+        "returned": "default",
+        "uniqueness": "none"
+       }
+      ],
+      "mutability": "readOnly",
+      "returned": "default"
+     }
+    ],
+    "meta": {
+     "resourceType": "Schema",
+     "location": "/urn:ietf:params:scim:schemas:core:2.0:User"
+    }
+   }
+  },
+  {
+   "step": "schema urn:ietf:params:scim:schemas:core:2.0:Group",
+   "method": "GET",
+   "path": "/Schemas/urn:ietf:params:scim:schemas:core:2.0:Group",
+   "status": 200,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:schemas:core:2.0:Schema"
+    ],
+    "id": "urn:ietf:params:scim:schemas:core:2.0:Group",
+    "name": "Group",
+    "description": "Group",
+    "attributes": [
+     {
+      "name": "displayName",
+      "type": "string",
+      "multiValued": false,
+      "description": "A human-readable name for the Group. REQUIRED.",
+      "required": true,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     {
+      "name": "members",
+      "type": "complex",
+      "multiValued": true,
+      "description": "A list of members of the Group.",
+      "required": false,
+      "subAttributes": [
+       {
+        "name": "value",
+        "type": "string",
+        "multiValued": false,
+        "description": "Identifier of the member of this Group.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "immutable",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "$ref",
+        "type": "reference",
+        "referenceTypes": [
+         "User",
+         "Group"
+        ],
+        "multiValued": false,
+        "description": "The URI corresponding to a SCIM resource that is a member of this Group.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "immutable",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "type",
+        "type": "string",
+        "multiValued": false,
+        "description": "A label indicating the type of resource, e.g., 'User' or 'Group'.",
+        "required": false,
+        "caseExact": false,
+        "canonicalValues": [
+         "User",
+         "Group"
+        ],
+        "mutability": "immutable",
+        "returned": "default",
+        "uniqueness": "none"
+       }
+      ],
+      "mutability": "readWrite",
+      "returned": "default"
+     }
+    ],
+    "meta": {
+     "resourceType": "Schema",
+     "location": "/urn:ietf:params:scim:schemas:core:2.0:Group"
+    }
+   }
+  },
+  {
+   "step": "schema urn:ietf:params:scim:schemas:extension:enterprise:2.0:User",
+   "method": "GET",
+   "path": "/Schemas/urn:ietf:params:scim:schemas:extension:enterprise:2.0:User",
+   "status": 200,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:schemas:core:2.0:Schema"
+    ],
+    "id": "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User",
+    "name": "EnterpriseUser",
+    "description": "Enterprise User",
+    "attributes": [
+     {
+      "name": "employeeNumber",
+      "type": "string",
+      "multiValued": false,
+      "description": "Numeric or alphanumeric identifier assigned to a person, typically based on order of hire or association with an organization.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     {
+      "name": "organization",
+      "type": "string",
+      "multiValued": false,
+      "description": "Identifies the name of an organization.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     {
+      "name": "division",
+      "type": "string",
+      "multiValued": false,
+      "description": "Identifies the name of a division.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     {
+      "name": "department",
+      "type": "string",
+      "multiValued": false,
+      "description": "Identifies the name of a department.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     {
+      "name": "manager",
+      "type": "complex",
+      "multiValued": false,
+      "description": "The User's manager.  A complex type that optionally allows service providers to represent organizational hierarchy by referencing the 'id' attribute of another User.",
+      "required": false,
+      "subAttributes": [
+       {
+        "name": "value",
+        "type": "string",
+        "multiValued": false,
+        "description": "The id of the SCIM resource representing the User's manager.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "$ref",
+        "type": "reference",
+        "referenceTypes": [
+         "User"
+        ],
+        "multiValued": false,
+        "description": "The URI of the SCIM resource representing the User's manager.",
+        "required": false,
+        "caseExact": false,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       }
+      ],
+      "mutability": "readWrite",
+      "returned": "default"
+     }
+    ],
+    "meta": {
+     "resourceType": "Schema",
+     "location": "/urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"
+    }
+   }
+  },
+  {
+   "step": "schema urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User",
+   "method": "GET",
+   "path": "/Schemas/urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User",
+   "status": 200,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:schemas:core:2.0:Schema"
+    ],
+    "id": "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User",
+    "name": "IyaStsUser",
+    "description": "This service's own User extension: which federation partners' subjects are linked to the person, and the Identity Assurance claims no standard schema carries (#128).",
+    "attributes": [
+     {
+      "name": "salutation",
+      "type": "string",
+      "multiValued": false,
+      "description": "A formal salutation, e.g. \"Ms\" (the Claims Registration's salutation).",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     {
+      "name": "birthFamilyName",
+      "type": "string",
+      "multiValued": false,
+      "description": "The family name at birth.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     {
+      "name": "birthGivenName",
+      "type": "string",
+      "multiValued": false,
+      "description": "The given name at birth.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     {
+      "name": "birthMiddleName",
+      "type": "string",
+      "multiValued": false,
+      "description": "The middle name at birth.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     {
+      "name": "alsoKnownAs",
+      "type": "string",
+      "multiValued": false,
+      "description": "Another name the person is known by, e.g. a stage name.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     {
+      "name": "placeOfBirthCountry",
+      "type": "string",
+      "multiValued": false,
+      "description": "The country of birth, ISO 3166-1 alpha-2.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     {
+      "name": "placeOfBirthRegion",
+      "type": "string",
+      "multiValued": false,
+      "description": "The region of birth.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     {
+      "name": "placeOfBirthLocality",
+      "type": "string",
+      "multiValued": false,
+      "description": "The locality of birth.",
+      "required": false,
+      "caseExact": false,
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     },
+     {
+      "name": "homeCell",
+      "type": "string",
+      "multiValued": false,
+      "description": "On a create in a service deployed as several regions: the region the person is homed in, whose data stays there. The realm's default when not sent. Never returned, and not changed by a later write.",
+      "required": false,
+      "caseExact": true,
+      "mutability": "writeOnly",
+      "returned": "never",
+      "uniqueness": "none"
+     },
+     {
+      "name": "federationLinks",
+      "type": "complex",
+      "multiValued": true,
+      "description": "Each a federation partner's identifier for the person, through one service-provider-side relationship. Not sent: unchanged. Sent: replaced; a link removed ends the sessions that partner signed the person in to.",
+      "required": false,
+      "subAttributes": [
+       {
+        "name": "relationship",
+        "type": "string",
+        "multiValued": false,
+        "description": "The service-provider-side relationship.",
+        "required": true,
+        "caseExact": true,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "issuer",
+        "type": "string",
+        "multiValued": false,
+        "description": "The partner's entity ID or iss; the relationship's fedPeer when omitted.",
+        "required": false,
+        "caseExact": true,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       },
+       {
+        "name": "subject",
+        "type": "string",
+        "multiValued": false,
+        "description": "The partner's stable identifier for the person (an OpenID Connect sub, a SAML persistent NameID).",
+        "required": true,
+        "caseExact": true,
+        "mutability": "readWrite",
+        "returned": "default",
+        "uniqueness": "none"
+       }
+      ],
+      "mutability": "readWrite",
+      "returned": "default",
+      "uniqueness": "none"
+     }
+    ],
+    "meta": {
+     "resourceType": "Schema",
+     "location": "/urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User"
+    }
+   }
+  },
+  {
+   "step": "schema urn:ietf:params:scim:schemas:extension:iya-sts:2.0:CustomAttributes",
+   "method": "GET",
+   "path": "/Schemas/urn:ietf:params:scim:schemas:extension:iya-sts:2.0:CustomAttributes",
+   "status": 200,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:schemas:core:2.0:Schema"
+    ],
+    "id": "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:CustomAttributes",
+    "name": "CustomAttributes",
+    "description": "This realm's custom attributes, as its administrators define them on Directory → Policies → Attribute policy. Each realm has its own; not sent on a PUT, they are left as they are.",
+    "attributes": [],
+    "meta": {
+     "resourceType": "Schema",
+     "location": "/urn:ietf:params:scim:schemas:extension:iya-sts:2.0:CustomAttributes"
+    }
+   }
+  },
+  {
+   "step": "schema urn:ietf:params:scim:schemas:core:2.0:Nope",
+   "method": "GET",
+   "path": "/Schemas/urn:ietf:params:scim:schemas:core:2.0:Nope",
+   "status": 404,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:Error"
+    ],
+    "status": "404",
+    "detail": "Schema urn:ietf:params:scim:schemas:core:2.0:Nope not found"
+   }
+  },
+  {
+   "step": "create the manager",
+   "method": "POST",
+   "path": "/Users",
+   "status": 201,
+   "type": "application/scim+json",
+   "location": "http://<port>/scim/v2/Users/<uuid#1>",
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:schemas:core:2.0:User"
+    ],
+    "id": "<uuid#1>",
+    "meta": {
+     "resourceType": "User",
+     "created": "<time>",
+     "lastModified": "<time>",
+     "location": "http://<port>/scim/v2/Users/<uuid#1>"
+    },
+    "userName": "wire-boss",
+    "displayName": "Boss",
+    "preferredLanguage": "en",
+    "active": true
+   }
+  },
+  {
+   "step": "create the full user",
+   "method": "POST",
+   "path": "/Users",
+   "status": 201,
+   "type": "application/scim+json",
+   "location": "http://<port>/scim/v2/Users/<uuid#2>",
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:schemas:core:2.0:User",
+     "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User",
+     "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User"
+    ],
+    "id": "<uuid#2>",
+    "externalId": "ext-1",
+    "meta": {
+     "resourceType": "User",
+     "created": "<time>",
+     "lastModified": "<time>",
+     "location": "http://<port>/scim/v2/Users/<uuid#2>"
+    },
+    "userName": "wire-alice",
+    "name": {
+     "formatted": "Alice A",
+     "familyName": "A",
+     "givenName": "Alice",
+     "honorificPrefix": "Dr"
+    },
+    "displayName": "Alice",
+    "profileUrl": "https://example.com/alice",
+    "title": "Eng",
+    "userType": "Employee",
+    "preferredLanguage": "en",
+    "active": true,
+    "emails": [
+     {
+      "value": "a@example.com",
+      "type": "work"
+     },
+     {
+      "value": "b@example.com",
+      "type": "work"
+     }
+    ],
+    "phoneNumbers": [
+     {
+      "value": "+1 555",
+      "type": "work"
+     },
+     {
+      "value": "+1 777",
+      "type": "work"
+     },
+     {
+      "value": "+1 666",
+      "type": "mobile"
+     }
+    ],
+    "addresses": [
+     {
+      "formatted": "1 Main\nTown",
+      "streetAddress": "1 Main",
+      "locality": "Town",
+      "region": "ST",
+      "postalCode": "12345",
+      "country": "US",
+      "type": "work"
+     }
+    ],
+    "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User": {
+     "employeeNumber": "42",
+     "organization": "Org",
+     "division": "Div",
+     "department": "R&D",
+     "manager": {
+      "value": "<uuid#1>",
+      "$ref": "http://<port>/scim/v2/Users/<uuid#1>"
+     }
+    },
+    "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User": {
+     "salutation": "Ms",
+     "birthFamilyName": "B",
+     "birthGivenName": "Al",
+     "birthMiddleName": "M",
+     "alsoKnownAs": "Ali",
+     "placeOfBirthCountry": "US",
+     "placeOfBirthRegion": "CA",
+     "placeOfBirthLocality": "SF"
+    }
+   }
+  },
+  {
+   "step": "read the user",
+   "method": "GET",
+   "path": "/Users/<uuid#2>",
+   "status": 200,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:schemas:core:2.0:User",
+     "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User",
+     "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User"
+    ],
+    "id": "<uuid#2>",
+    "externalId": "ext-1",
+    "meta": {
+     "resourceType": "User",
+     "created": "<time>",
+     "lastModified": "<time>",
+     "location": "http://<port>/scim/v2/Users/<uuid#2>"
+    },
+    "userName": "wire-alice",
+    "name": {
+     "formatted": "Alice A",
+     "familyName": "A",
+     "givenName": "Alice",
+     "honorificPrefix": "Dr"
+    },
+    "displayName": "Alice",
+    "profileUrl": "https://example.com/alice",
+    "title": "Eng",
+    "userType": "Employee",
+    "preferredLanguage": "en",
+    "active": true,
+    "emails": [
+     {
+      "value": "a@example.com",
+      "type": "work"
+     },
+     {
+      "value": "b@example.com",
+      "type": "work"
+     }
+    ],
+    "phoneNumbers": [
+     {
+      "value": "+1 555",
+      "type": "work"
+     },
+     {
+      "value": "+1 777",
+      "type": "work"
+     },
+     {
+      "value": "+1 666",
+      "type": "mobile"
+     }
+    ],
+    "addresses": [
+     {
+      "formatted": "1 Main\nTown",
+      "streetAddress": "1 Main",
+      "locality": "Town",
+      "region": "ST",
+      "postalCode": "12345",
+      "country": "US",
+      "type": "work"
+     }
+    ],
+    "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User": {
+     "employeeNumber": "42",
+     "organization": "Org",
+     "division": "Div",
+     "department": "R&D",
+     "manager": {
+      "value": "<uuid#1>",
+      "$ref": "http://<port>/scim/v2/Users/<uuid#1>"
+     }
+    },
+    "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User": {
+     "salutation": "Ms",
+     "birthFamilyName": "B",
+     "birthGivenName": "Al",
+     "birthMiddleName": "M",
+     "alsoKnownAs": "Ali",
+     "placeOfBirthCountry": "US",
+     "placeOfBirthRegion": "CA",
+     "placeOfBirthLocality": "SF"
+    }
+   }
+  },
+  {
+   "step": "read with attributes",
+   "method": "GET",
+   "path": "/Users/<uuid#2>?attributes=userName,emails",
+   "status": 200,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:schemas:core:2.0:User",
+     "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User",
+     "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User"
+    ],
+    "id": "<uuid#2>",
+    "userName": "wire-alice",
+    "emails": [
+     {
+      "value": "a@example.com",
+      "type": "work"
+     },
+     {
+      "value": "b@example.com",
+      "type": "work"
+     }
+    ]
+   }
+  },
+  {
+   "step": "read with excludedAttributes",
+   "method": "GET",
+   "path": "/Users/<uuid#2>?excludedAttributes=name,urn:ietf:params:scim:schemas:extension:enterprise:2.0:User",
+   "status": 200,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:schemas:core:2.0:User",
+     "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User",
+     "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User"
+    ],
+    "id": "<uuid#2>",
+    "externalId": "ext-1",
+    "meta": {
+     "resourceType": "User",
+     "created": "<time>",
+     "lastModified": "<time>",
+     "location": "http://<port>/scim/v2/Users/<uuid#2>"
+    },
+    "userName": "wire-alice",
+    "displayName": "Alice",
+    "profileUrl": "https://example.com/alice",
+    "title": "Eng",
+    "userType": "Employee",
+    "preferredLanguage": "en",
+    "active": true,
+    "emails": [
+     {
+      "value": "a@example.com",
+      "type": "work"
+     },
+     {
+      "value": "b@example.com",
+      "type": "work"
+     }
+    ],
+    "phoneNumbers": [
+     {
+      "value": "+1 555",
+      "type": "work"
+     },
+     {
+      "value": "+1 777",
+      "type": "work"
+     },
+     {
+      "value": "+1 666",
+      "type": "mobile"
+     }
+    ],
+    "addresses": [
+     {
+      "formatted": "1 Main\nTown",
+      "streetAddress": "1 Main",
+      "locality": "Town",
+      "region": "ST",
+      "postalCode": "12345",
+      "country": "US",
+      "type": "work"
+     }
+    ],
+    "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User": {
+     "salutation": "Ms",
+     "birthFamilyName": "B",
+     "birthGivenName": "Al",
+     "birthMiddleName": "M",
+     "alsoKnownAs": "Ali",
+     "placeOfBirthCountry": "US",
+     "placeOfBirthRegion": "CA",
+     "placeOfBirthLocality": "SF"
+    }
+   }
+  },
+  {
+   "step": "filter userName sw",
+   "method": "GET",
+   "path": "/Users?filter=userName%20sw%20%22wire-%22",
+   "status": 200,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:ListResponse"
+    ],
+    "Resources": [
+     {
+      "schemas": [
+       "urn:ietf:params:scim:schemas:core:2.0:User",
+       "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User",
+       "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User"
+      ],
+      "id": "<uuid#2>",
+      "externalId": "ext-1",
+      "meta": {
+       "resourceType": "User",
+       "created": "<time>",
+       "lastModified": "<time>",
+       "location": "http://<port>/scim/v2/Users/<uuid#2>"
+      },
+      "userName": "wire-alice",
+      "name": {
+       "formatted": "Alice A",
+       "familyName": "A",
+       "givenName": "Alice",
+       "honorificPrefix": "Dr"
+      },
+      "displayName": "Alice",
+      "profileUrl": "https://example.com/alice",
+      "title": "Eng",
+      "userType": "Employee",
+      "preferredLanguage": "en",
+      "active": true,
+      "emails": [
+       {
+        "value": "a@example.com",
+        "type": "work"
+       },
+       {
+        "value": "b@example.com",
+        "type": "work"
+       }
+      ],
+      "phoneNumbers": [
+       {
+        "value": "+1 555",
+        "type": "work"
+       },
+       {
+        "value": "+1 777",
+        "type": "work"
+       },
+       {
+        "value": "+1 666",
+        "type": "mobile"
+       }
+      ],
+      "addresses": [
+       {
+        "formatted": "1 Main\nTown",
+        "streetAddress": "1 Main",
+        "locality": "Town",
+        "region": "ST",
+        "postalCode": "12345",
+        "country": "US",
+        "type": "work"
+       }
+      ],
+      "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User": {
+       "employeeNumber": "42",
+       "organization": "Org",
+       "division": "Div",
+       "department": "R&D",
+       "manager": {
+        "value": "<uuid#1>",
+        "$ref": "http://<port>/scim/v2/Users/<uuid#1>"
+       }
+      },
+      "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User": {
+       "salutation": "Ms",
+       "birthFamilyName": "B",
+       "birthGivenName": "Al",
+       "birthMiddleName": "M",
+       "alsoKnownAs": "Ali",
+       "placeOfBirthCountry": "US",
+       "placeOfBirthRegion": "CA",
+       "placeOfBirthLocality": "SF"
+      }
+     },
+     {
+      "schemas": [
+       "urn:ietf:params:scim:schemas:core:2.0:User"
+      ],
+      "id": "<uuid#1>",
+      "meta": {
+       "resourceType": "User",
+       "created": "<time>",
+       "lastModified": "<time>",
+       "location": "http://<port>/scim/v2/Users/<uuid#1>"
+      },
+      "userName": "wire-boss",
+      "displayName": "Boss",
+      "preferredLanguage": "en",
+      "active": true
+     },
+     {
+      "schemas": [
+       "urn:ietf:params:scim:schemas:core:2.0:User"
+      ],
+      "id": "<uuid#3>",
+      "meta": {
+       "resourceType": "User",
+       "created": "<time>",
+       "lastModified": "<time>",
+       "location": "http://<port>/scim/v2/Users/<uuid#3>"
+      },
+      "userName": "wire-client",
+      "name": {
+       "familyName": "Halvorsen",
+       "givenName": "Kwame"
+      },
+      "preferredLanguage": "en",
+      "active": true,
+      "emails": [
+       {
+        "value": "kwame.halvorsen.6205@example.org",
+        "type": "work"
+       }
+      ],
+      "addresses": [
+       {
+        "streetAddress": "062 Fictitious Way",
+        "locality": "Kingsford",
+        "region": "ON",
+        "postalCode": "T0X 8T4",
+        "country": "CA",
+        "type": "work"
+       }
+      ]
+     }
+    ],
+    "startIndex": 1,
+    "itemsPerPage": 3,
+    "totalResults": 3
+   }
+  },
+  {
+   "step": "filter emails.value co",
+   "method": "GET",
+   "path": "/Users?filter=emails.value%20co%20%22example.com%22",
+   "status": 200,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:ListResponse"
+    ],
+    "Resources": [
+     {
+      "schemas": [
+       "urn:ietf:params:scim:schemas:core:2.0:User"
+      ],
+      "id": "<uuid#4>",
+      "meta": {
+       "resourceType": "User",
+       "created": "<time>",
+       "lastModified": "<time>",
+       "location": "http://<port>/scim/v2/Users/<uuid#4>"
+      },
+      "userName": "xacml-user-1",
+      "name": {
+       "formatted": "xacml-user-1",
+       "familyName": "xacml-user-1",
+       "givenName": "Freya"
+      },
+      "displayName": "XACML surface caller #1",
+      "preferredLanguage": "en",
+      "active": true,
+      "emails": [
+       {
+        "value": "freya.chen.9303@example.com",
+        "type": "work"
+       }
+      ],
+      "addresses": [
+       {
+        "streetAddress": "194 Nowhere Terrace",
+        "locality": "Fairview",
+        "region": "OR",
+        "postalCode": "04188",
+        "country": "US",
+        "type": "work"
+       }
+      ],
+      "groups": [
+       {
+        "value": "<uuid#5>",
+        "$ref": "http://<port>/scim/v2/Groups/<uuid#5>",
+        "display": "xacml-users",
+        "type": "direct"
+       }
+      ]
+     },
+     {
+      "schemas": [
+       "urn:ietf:params:scim:schemas:core:2.0:User"
+      ],
+      "id": "<uuid#6>",
+      "meta": {
+       "resourceType": "User",
+       "created": "<time>",
+       "lastModified": "<time>",
+       "location": "http://<port>/scim/v2/Users/<uuid#6>"
+      },
+      "userName": "alice",
+      "name": {
+       "formatted": "Alice Anderson",
+       "familyName": "Anderson",
+       "givenName": "Alice"
+      },
+      "displayName": "Alice Anderson",
+      "title": "Principal Engineer",
+      "userType": "staff",
+      "preferredLanguage": "en",
+      "active": true,
+      "emails": [
+       {
+        "value": "alice@example.com",
+        "type": "work"
+       }
+      ],
+      "addresses": [
+       {
+        "streetAddress": "891 Mock Lane",
+        "locality": "Westerveld",
+        "region": "Utrecht",
+        "postalCode": "4395 LG",
+        "country": "NL",
+        "type": "work"
+       }
+      ],
+      "groups": [
+       {
+        "value": "<uuid#7>",
+        "$ref": "http://<port>/scim/v2/Groups/<uuid#7>",
+        "display": "developers",
+        "type": "direct"
+       }
+      ]
+     },
+     {
+      "schemas": [
+       "urn:ietf:params:scim:schemas:core:2.0:User"
+      ],
+      "id": "<uuid#8>",
+      "meta": {
+       "resourceType": "User",
+       "created": "<time>",
+       "lastModified": "<time>",
+       "location": "http://<port>/scim/v2/Users/<uuid#8>"
+      },
+      "userName": "bob",
+      "name": {
+       "formatted": "Bob Brown",
+       "familyName": "Brown",
+       "givenName": "Bob"
+      },
+      "displayName": "Bob Brown",
+      "title": "Support Analyst",
+      "userType": "staff",
+      "preferredLanguage": "en",
+      "active": true,
+      "emails": [
+       {
+        "value": "bob@example.com",
+        "type": "work"
+       }
+      ],
+      "addresses": [
+       {
+        "streetAddress": "936 Mock Lane",
+        "locality": "Eastgate",
+        "region": "Greater Manchester",
+        "postalCode": "ZW1 5ZU",
+        "country": "GB",
+        "type": "work"
+       }
+      ],
+      "groups": [
+       {
+        "value": "<uuid#7>",
+        "$ref": "http://<port>/scim/v2/Groups/<uuid#7>",
+        "display": "developers",
+        "type": "direct"
+       }
+      ]
+     },
+     {
+      "schemas": [
+       "urn:ietf:params:scim:schemas:core:2.0:User"
+      ],
+      "id": "<uuid#9>",
+      "meta": {
+       "resourceType": "User",
+       "created": "<time>",
+       "lastModified": "<time>",
+       "location": "http://<port>/scim/v2/Users/<uuid#9>"
+      },
+      "userName": "carol",
+      "name": {
+       "formatted": "Carol Carter",
+       "familyName": "Carter",
+       "givenName": "Carol"
+      },
+      "displayName": "Carol Carter",
+      "title": "Directory Administrator",
+      "userType": "admin",
+      "preferredLanguage": "en",
+      "active": true,
+      "emails": [
+       {
+        "value": "carol@example.com",
+        "type": "work"
+       }
+      ],
+      "addresses": [
+       {
+        "streetAddress": "469 Sample Road",
+        "locality": "Nordhavn",
+        "region": "Hovedstaden",
+        "postalCode": "4089",
+        "country": "DK",
+        "type": "work"
+       }
+      ],
+      "groups": [
+       {
+        "value": "<uuid#10>",
+        "$ref": "http://<port>/scim/v2/Groups/<uuid#10>",
+        "display": "directory-admins",
+        "type": "direct"
+       }
+      ]
+     },
+     {
+      "schemas": [
+       "urn:ietf:params:scim:schemas:core:2.0:User"
+      ],
+      "id": "<uuid#11>",
+      "meta": {
+       "resourceType": "User",
+       "created": "<time>",
+       "lastModified": "<time>",
+       "location": "http://<port>/scim/v2/Users/<uuid#11>"
+      },
+      "userName": "sensitive",
+      "name": {
+       "formatted": "Sensitive Account",
+       "familyName": "Account",
+       "givenName": "Priya"
+      },
+      "displayName": "Sensitive Account",
+      "preferredLanguage": "en",
+      "active": true,
+      "emails": [
+       {
+        "value": "sensitive@example.com",
+        "type": "work"
+       }
+      ],
+      "addresses": [
+       {
+        "streetAddress": "764 Placeholder Street",
+        "locality": "Nordhavn",
+        "region": "Hovedstaden",
+        "postalCode": "6553",
+        "country": "DK",
+        "type": "work"
+       }
+      ]
+     },
+     {
+      "schemas": [
+       "urn:ietf:params:scim:schemas:core:2.0:User",
+       "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User",
+       "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User"
+      ],
+      "id": "<uuid#2>",
+      "externalId": "ext-1",
+      "meta": {
+       "resourceType": "User",
+       "created": "<time>",
+       "lastModified": "<time>",
+       "location": "http://<port>/scim/v2/Users/<uuid#2>"
+      },
+      "userName": "wire-alice",
+      "name": {
+       "formatted": "Alice A",
+       "familyName": "A",
+       "givenName": "Alice",
+       "honorificPrefix": "Dr"
+      },
+      "displayName": "Alice",
+      "profileUrl": "https://example.com/alice",
+      "title": "Eng",
+      "userType": "Employee",
+      "preferredLanguage": "en",
+      "active": true,
+      "emails": [
+       {
+        "value": "a@example.com",
+        "type": "work"
+       },
+       {
+        "value": "b@example.com",
+        "type": "work"
+       }
+      ],
+      "phoneNumbers": [
+       {
+        "value": "+1 555",
+        "type": "work"
+       },
+       {
+        "value": "+1 777",
+        "type": "work"
+       },
+       {
+        "value": "+1 666",
+        "type": "mobile"
+       }
+      ],
+      "addresses": [
+       {
+        "formatted": "1 Main\nTown",
+        "streetAddress": "1 Main",
+        "locality": "Town",
+        "region": "ST",
+        "postalCode": "12345",
+        "country": "US",
+        "type": "work"
+       }
+      ],
+      "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User": {
+       "employeeNumber": "42",
+       "organization": "Org",
+       "division": "Div",
+       "department": "R&D",
+       "manager": {
+        "value": "<uuid#1>",
+        "$ref": "http://<port>/scim/v2/Users/<uuid#1>"
+       }
+      },
+      "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User": {
+       "salutation": "Ms",
+       "birthFamilyName": "B",
+       "birthGivenName": "Al",
+       "birthMiddleName": "M",
+       "alsoKnownAs": "Ali",
+       "placeOfBirthCountry": "US",
+       "placeOfBirthRegion": "CA",
+       "placeOfBirthLocality": "SF"
+      }
+     }
+    ],
+    "startIndex": 1,
+    "itemsPerPage": 6,
+    "totalResults": 6
+   }
+  },
+  {
+   "step": "filter enterprise",
+   "method": "GET",
+   "path": "/Users?filter=urn%3Aietf%3Aparams%3Ascim%3Aschemas%3Aextension%3Aenterprise%3A2.0%3AUser%3Adepartment%20eq%20%22r%26d%22",
+   "status": 200,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:ListResponse"
+    ],
+    "Resources": [
+     {
+      "schemas": [
+       "urn:ietf:params:scim:schemas:core:2.0:User",
+       "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User",
+       "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User"
+      ],
+      "id": "<uuid#2>",
+      "externalId": "ext-1",
+      "meta": {
+       "resourceType": "User",
+       "created": "<time>",
+       "lastModified": "<time>",
+       "location": "http://<port>/scim/v2/Users/<uuid#2>"
+      },
+      "userName": "wire-alice",
+      "name": {
+       "formatted": "Alice A",
+       "familyName": "A",
+       "givenName": "Alice",
+       "honorificPrefix": "Dr"
+      },
+      "displayName": "Alice",
+      "profileUrl": "https://example.com/alice",
+      "title": "Eng",
+      "userType": "Employee",
+      "preferredLanguage": "en",
+      "active": true,
+      "emails": [
+       {
+        "value": "a@example.com",
+        "type": "work"
+       },
+       {
+        "value": "b@example.com",
+        "type": "work"
+       }
+      ],
+      "phoneNumbers": [
+       {
+        "value": "+1 555",
+        "type": "work"
+       },
+       {
+        "value": "+1 777",
+        "type": "work"
+       },
+       {
+        "value": "+1 666",
+        "type": "mobile"
+       }
+      ],
+      "addresses": [
+       {
+        "formatted": "1 Main\nTown",
+        "streetAddress": "1 Main",
+        "locality": "Town",
+        "region": "ST",
+        "postalCode": "12345",
+        "country": "US",
+        "type": "work"
+       }
+      ],
+      "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User": {
+       "employeeNumber": "42",
+       "organization": "Org",
+       "division": "Div",
+       "department": "R&D",
+       "manager": {
+        "value": "<uuid#1>",
+        "$ref": "http://<port>/scim/v2/Users/<uuid#1>"
+       }
+      },
+      "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User": {
+       "salutation": "Ms",
+       "birthFamilyName": "B",
+       "birthGivenName": "Al",
+       "birthMiddleName": "M",
+       "alsoKnownAs": "Ali",
+       "placeOfBirthCountry": "US",
+       "placeOfBirthRegion": "CA",
+       "placeOfBirthLocality": "SF"
+      }
+     }
+    ],
+    "startIndex": 1,
+    "itemsPerPage": 1,
+    "totalResults": 1
+   }
+  },
+  {
+   "step": "filter manager",
+   "method": "GET",
+   "path": "/Users?filter=urn%3Aietf%3Aparams%3Ascim%3Aschemas%3Aextension%3Aenterprise%3A2.0%3AUser%3Amanager.value%20eq%20%22<uuid#1>%22",
+   "status": 200,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:ListResponse"
+    ],
+    "Resources": [
+     {
+      "schemas": [
+       "urn:ietf:params:scim:schemas:core:2.0:User",
+       "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User",
+       "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User"
+      ],
+      "id": "<uuid#2>",
+      "externalId": "ext-1",
+      "meta": {
+       "resourceType": "User",
+       "created": "<time>",
+       "lastModified": "<time>",
+       "location": "http://<port>/scim/v2/Users/<uuid#2>"
+      },
+      "userName": "wire-alice",
+      "name": {
+       "formatted": "Alice A",
+       "familyName": "A",
+       "givenName": "Alice",
+       "honorificPrefix": "Dr"
+      },
+      "displayName": "Alice",
+      "profileUrl": "https://example.com/alice",
+      "title": "Eng",
+      "userType": "Employee",
+      "preferredLanguage": "en",
+      "active": true,
+      "emails": [
+       {
+        "value": "a@example.com",
+        "type": "work"
+       },
+       {
+        "value": "b@example.com",
+        "type": "work"
+       }
+      ],
+      "phoneNumbers": [
+       {
+        "value": "+1 555",
+        "type": "work"
+       },
+       {
+        "value": "+1 777",
+        "type": "work"
+       },
+       {
+        "value": "+1 666",
+        "type": "mobile"
+       }
+      ],
+      "addresses": [
+       {
+        "formatted": "1 Main\nTown",
+        "streetAddress": "1 Main",
+        "locality": "Town",
+        "region": "ST",
+        "postalCode": "12345",
+        "country": "US",
+        "type": "work"
+       }
+      ],
+      "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User": {
+       "employeeNumber": "42",
+       "organization": "Org",
+       "division": "Div",
+       "department": "R&D",
+       "manager": {
+        "value": "<uuid#1>",
+        "$ref": "http://<port>/scim/v2/Users/<uuid#1>"
+       }
+      },
+      "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User": {
+       "salutation": "Ms",
+       "birthFamilyName": "B",
+       "birthGivenName": "Al",
+       "birthMiddleName": "M",
+       "alsoKnownAs": "Ali",
+       "placeOfBirthCountry": "US",
+       "placeOfBirthRegion": "CA",
+       "placeOfBirthLocality": "SF"
+      }
+     }
+    ],
+    "startIndex": 1,
+    "itemsPerPage": 1,
+    "totalResults": 1
+   }
+  },
+  {
+   "step": "search",
+   "method": "POST",
+   "path": "/Users/.search",
+   "status": 200,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:ListResponse"
+    ],
+    "Resources": [
+     {
+      "schemas": [
+       "urn:ietf:params:scim:schemas:core:2.0:User",
+       "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User",
+       "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User"
+      ],
+      "id": "<uuid#2>",
+      "userName": "wire-alice",
+      "displayName": "Alice"
+     }
+    ],
+    "startIndex": 1,
+    "itemsPerPage": 1,
+    "totalResults": 1
+   }
+  },
+  {
+   "step": "patch the user",
+   "method": "PATCH",
+   "path": "/Users/<uuid#2>",
+   "status": 200,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:schemas:core:2.0:User",
+     "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User",
+     "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User"
+    ],
+    "id": "<uuid#2>",
+    "externalId": "ext-1",
+    "meta": {
+     "resourceType": "User",
+     "created": "<time>",
+     "lastModified": "<time>",
+     "location": "http://<port>/scim/v2/Users/<uuid#2>"
+    },
+    "userName": "wire-alice",
+    "name": {
+     "formatted": "Alice A",
+     "familyName": "A",
+     "givenName": "Alicia",
+     "honorificPrefix": "Dr"
+    },
+    "displayName": "Alice P",
+    "profileUrl": "https://example.com/alice",
+    "userType": "Employee",
+    "preferredLanguage": "en",
+    "active": false,
+    "emails": [
+     {
+      "value": "a@example.com",
+      "type": "work"
+     },
+     {
+      "value": "b@example.com",
+      "type": "work"
+     },
+     {
+      "value": "c@example.com",
+      "type": "work"
+     }
+    ],
+    "phoneNumbers": [
+     {
+      "value": "+1 555",
+      "type": "work"
+     },
+     {
+      "value": "+1 777",
+      "type": "work"
+     },
+     {
+      "value": "+1 666",
+      "type": "mobile"
+     }
+    ],
+    "addresses": [
+     {
+      "formatted": "1 Main\nTown",
+      "streetAddress": "1 Main",
+      "locality": "Town",
+      "region": "ST",
+      "postalCode": "12345",
+      "country": "US",
+      "type": "work"
+     }
+    ],
+    "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User": {
+     "employeeNumber": "42",
+     "organization": "Org",
+     "division": "Div",
+     "department": "Ops",
+     "manager": {
+      "value": "<uuid#1>",
+      "$ref": "http://<port>/scim/v2/Users/<uuid#1>"
+     }
+    },
+    "urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User": {
+     "salutation": "Ms",
+     "birthFamilyName": "B",
+     "birthGivenName": "Al",
+     "birthMiddleName": "M",
+     "placeOfBirthCountry": "US",
+     "placeOfBirthRegion": "CA",
+     "placeOfBirthLocality": "SF"
+    }
+   }
+  },
+  {
+   "step": "patch a whole extension away",
+   "method": "PATCH",
+   "path": "/Users/<uuid#2>",
+   "status": 200,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:schemas:core:2.0:User",
+     "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"
+    ],
+    "id": "<uuid#2>",
+    "externalId": "ext-1",
+    "meta": {
+     "resourceType": "User",
+     "created": "<time>",
+     "lastModified": "<time>",
+     "location": "http://<port>/scim/v2/Users/<uuid#2>"
+    },
+    "userName": "wire-alice",
+    "name": {
+     "formatted": "Alice A",
+     "familyName": "A",
+     "givenName": "Alicia",
+     "honorificPrefix": "Dr"
+    },
+    "displayName": "Alice P",
+    "profileUrl": "https://example.com/alice",
+    "userType": "Employee",
+    "preferredLanguage": "en",
+    "active": false,
+    "emails": [
+     {
+      "value": "a@example.com",
+      "type": "work"
+     },
+     {
+      "value": "b@example.com",
+      "type": "work"
+     },
+     {
+      "value": "c@example.com",
+      "type": "work"
+     }
+    ],
+    "phoneNumbers": [
+     {
+      "value": "+1 555",
+      "type": "work"
+     },
+     {
+      "value": "+1 777",
+      "type": "work"
+     },
+     {
+      "value": "+1 666",
+      "type": "mobile"
+     }
+    ],
+    "addresses": [
+     {
+      "formatted": "1 Main\nTown",
+      "streetAddress": "1 Main",
+      "locality": "Town",
+      "region": "ST",
+      "postalCode": "12345",
+      "country": "US",
+      "type": "work"
+     }
+    ],
+    "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User": {
+     "employeeNumber": "42",
+     "organization": "Org",
+     "division": "Div",
+     "department": "Ops",
+     "manager": {
+      "value": "<uuid#1>",
+      "$ref": "http://<port>/scim/v2/Users/<uuid#1>"
+     }
+    }
+   }
+  },
+  {
+   "step": "put the user",
+   "method": "PUT",
+   "path": "/Users/<uuid#2>",
+   "status": 200,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:schemas:core:2.0:User"
+    ],
+    "id": "<uuid#2>",
+    "meta": {
+     "resourceType": "User",
+     "created": "<time>",
+     "lastModified": "<time>",
+     "location": "http://<port>/scim/v2/Users/<uuid#2>"
+    },
+    "userName": "wire-alice",
+    "displayName": "Alice2",
+    "active": true,
+    "phoneNumbers": [
+     {
+      "value": "+1 888",
+      "type": "work"
+     }
+    ]
+   }
+  },
+  {
+   "step": "create the group",
+   "method": "POST",
+   "path": "/Groups",
+   "status": 201,
+   "type": "application/scim+json",
+   "location": "http://<port>/scim/v2/Groups/<uuid#12>",
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:schemas:core:2.0:Group"
+    ],
+    "id": "<uuid#12>",
+    "externalId": "g-ext",
+    "meta": {
+     "resourceType": "Group",
+     "created": "<time>",
+     "lastModified": "<time>",
+     "location": "http://<port>/scim/v2/Groups/<uuid#12>"
+    },
+    "displayName": "wire-group",
+    "members": [
+     {
+      "value": "<uuid#2>",
+      "$ref": "http://<port>/scim/v2/Users/<uuid#2>",
+      "type": "User"
+     },
+     {
+      "value": "<uuid#1>",
+      "$ref": "http://<port>/scim/v2/Users/<uuid#1>",
+      "type": "User"
+     }
+    ]
+   }
+  },
+  {
+   "step": "read the group",
+   "method": "GET",
+   "path": "/Groups/<uuid#12>",
+   "status": 200,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:schemas:core:2.0:Group"
+    ],
+    "id": "<uuid#12>",
+    "externalId": "g-ext",
+    "meta": {
+     "resourceType": "Group",
+     "created": "<time>",
+     "lastModified": "<time>",
+     "location": "http://<port>/scim/v2/Groups/<uuid#12>"
+    },
+    "displayName": "wire-group",
+    "members": [
+     {
+      "value": "<uuid#2>",
+      "$ref": "http://<port>/scim/v2/Users/<uuid#2>",
+      "type": "User"
+     },
+     {
+      "value": "<uuid#1>",
+      "$ref": "http://<port>/scim/v2/Users/<uuid#1>",
+      "type": "User"
+     }
+    ]
+   }
+  },
+  {
+   "step": "the user names the group",
+   "method": "GET",
+   "path": "/Users/<uuid#2>?attributes=groups",
+   "status": 200,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:schemas:core:2.0:User",
+     "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"
+    ],
+    "id": "<uuid#2>",
+    "groups": [
+     {
+      "value": "<uuid#12>",
+      "$ref": "http://<port>/scim/v2/Groups/<uuid#12>",
+      "display": "wire-group",
+      "type": "direct"
+     }
+    ]
+   }
+  },
+  {
+   "step": "patch a member out",
+   "method": "PATCH",
+   "path": "/Groups/<uuid#12>",
+   "status": 200,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:schemas:core:2.0:Group"
+    ],
+    "id": "<uuid#12>",
+    "externalId": "g-ext",
+    "meta": {
+     "resourceType": "Group",
+     "created": "<time>",
+     "lastModified": "<time>",
+     "location": "http://<port>/scim/v2/Groups/<uuid#12>"
+    },
+    "displayName": "wire-group",
+    "members": [
+     {
+      "value": "<uuid#2>",
+      "$ref": "http://<port>/scim/v2/Users/<uuid#2>",
+      "type": "User"
+     }
+    ]
+   }
+  },
+  {
+   "step": "patch a member in",
+   "method": "PATCH",
+   "path": "/Groups/<uuid#12>",
+   "status": 200,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:schemas:core:2.0:Group"
+    ],
+    "id": "<uuid#12>",
+    "externalId": "g-ext",
+    "meta": {
+     "resourceType": "Group",
+     "created": "<time>",
+     "lastModified": "<time>",
+     "location": "http://<port>/scim/v2/Groups/<uuid#12>"
+    },
+    "displayName": "wire-group",
+    "members": [
+     {
+      "value": "<uuid#2>",
+      "$ref": "http://<port>/scim/v2/Users/<uuid#2>",
+      "type": "User"
+     },
+     {
+      "value": "<uuid#1>",
+      "$ref": "http://<port>/scim/v2/Users/<uuid#1>",
+      "type": "User"
+     }
+    ]
+   }
+  },
+  {
+   "step": "put the group",
+   "method": "PUT",
+   "path": "/Groups/<uuid#12>",
+   "status": 200,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:schemas:core:2.0:Group"
+    ],
+    "id": "<uuid#12>",
+    "meta": {
+     "resourceType": "Group",
+     "created": "<time>",
+     "lastModified": "<time>",
+     "location": "http://<port>/scim/v2/Groups/<uuid#12>"
+    },
+    "displayName": "wire-group"
+   }
+  },
+  {
+   "step": "filter groups",
+   "method": "GET",
+   "path": "/Groups?filter=displayName%20eq%20%22wire-group%22",
+   "status": 200,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:ListResponse"
+    ],
+    "Resources": [
+     {
+      "schemas": [
+       "urn:ietf:params:scim:schemas:core:2.0:Group"
+      ],
+      "id": "<uuid#12>",
+      "meta": {
+       "resourceType": "Group",
+       "created": "<time>",
+       "lastModified": "<time>",
+       "location": "http://<port>/scim/v2/Groups/<uuid#12>"
+      },
+      "displayName": "wire-group"
+     }
+    ],
+    "startIndex": 1,
+    "itemsPerPage": 1,
+    "totalResults": 1
+   }
+  },
+  {
+   "step": "no schemas",
+   "method": "POST",
+   "path": "/Users",
+   "status": 201,
+   "type": "application/scim+json",
+   "location": "http://<port>/scim/v2/Users/<uuid#13>",
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:schemas:core:2.0:User"
+    ],
+    "id": "<uuid#13>",
+    "meta": {
+     "resourceType": "User",
+     "created": "<time>",
+     "lastModified": "<time>",
+     "location": "http://<port>/scim/v2/Users/<uuid#13>"
+    },
+    "userName": "wire-x",
+    "preferredLanguage": "en",
+    "active": true
+   }
+  },
+  {
+   "step": "no userName",
+   "method": "POST",
+   "path": "/Users",
+   "status": 400,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:Error"
+    ],
+    "status": "400",
+    "scimType": "invalidValue",
+    "detail": "Required attribute 'userName' is missing"
+   }
+  },
+  {
+   "step": "the refused userName",
+   "method": "POST",
+   "path": "/Users",
+   "status": 400,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:Error"
+    ],
+    "status": "400",
+    "scimType": "invalidValue",
+    "detail": "The userName \"invalid\" is refused on purpose, so that a negative test has something to fail on — the same reserved value the password grant, WS-Trust, the WS-Federation sign-in screen and every LDAP bind here refuse. Nothing else about this request was wrong."
+   }
+  },
+  {
+   "step": "a duplicate userName",
+   "method": "POST",
+   "path": "/Users",
+   "status": 409,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:Error"
+    ],
+    "status": "409",
+    "scimType": "uniqueness",
+    "detail": "There is already a user called \"wire-alice\" here, at uid=wire-alice,ou=users,dc=example,dc=com. One entry per person is the rule this directory keeps at every door — whatever protocol authenticated them, and whichever attribute their entry happens to be named by."
+   }
+  },
+  {
+   "step": "a home email",
+   "method": "POST",
+   "path": "/Users",
+   "status": 400,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:Error"
+    ],
+    "status": "400",
+    "scimType": "invalidValue",
+    "detail": "Attribute 'type' contains non-canonical value from complex attribute 'emails'"
+   }
+  },
+  {
+   "step": "a fax number",
+   "method": "POST",
+   "path": "/Users",
+   "status": 400,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:Error"
+    ],
+    "status": "400",
+    "scimType": "invalidValue",
+    "detail": "Attribute 'type' contains non-canonical value from complex attribute 'phoneNumbers'"
+   }
+  },
+  {
+   "step": "emails not a list",
+   "method": "POST",
+   "path": "/Users",
+   "status": 400,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:Error"
+    ],
+    "status": "400",
+    "scimType": "invalidValue",
+    "detail": "Attribute 'emails' expected to be a collection"
+   }
+  },
+  {
+   "step": "active not a boolean",
+   "method": "POST",
+   "path": "/Users",
+   "status": 400,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:Error"
+    ],
+    "status": "400",
+    "scimType": "invalidValue",
+    "detail": "Attribute 'active' expected value type 'boolean' but found type 'string'"
+   }
+  },
+  {
+   "step": "name not complex",
+   "method": "POST",
+   "path": "/Users",
+   "status": 400,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:Error"
+    ],
+    "status": "400",
+    "scimType": "invalidValue",
+    "detail": "Complex attribute 'name' expected complex value but found type 'string'"
+   }
+  },
+  {
+   "step": "userName not a string",
+   "method": "POST",
+   "path": "/Users",
+   "status": 400,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:Error"
+    ],
+    "status": "400",
+    "scimType": "invalidValue",
+    "detail": "Attribute 'userName' expected value type 'string' but found type 'complex'"
+   }
+  },
+  {
+   "step": "profileUrl not a reference",
+   "method": "POST",
+   "path": "/Users",
+   "status": 400,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:Error"
+    ],
+    "status": "400",
+    "scimType": "invalidValue",
+    "detail": "Attribute 'profileUrl' expected value type 'reference' but found type 'number'"
+   }
+  },
+  {
+   "step": "a groups write",
+   "method": "POST",
+   "path": "/Users",
+   "status": 201,
+   "type": "application/scim+json",
+   "location": "http://<port>/scim/v2/Users/<uuid#14>",
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:schemas:core:2.0:User"
+    ],
+    "id": "<uuid#14>",
+    "meta": {
+     "resourceType": "User",
+     "created": "<time>",
+     "lastModified": "<time>",
+     "location": "http://<port>/scim/v2/Users/<uuid#14>"
+    },
+    "userName": "wire-groups",
+    "preferredLanguage": "en",
+    "active": true
+   }
+  },
+  {
+   "step": "an undeclared extension",
+   "method": "POST",
+   "path": "/Users",
+   "status": 409,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:Error"
+    ],
+    "status": "409",
+    "scimType": "uniqueness",
+    "detail": "There is already a user called \"wire-x\" here, at uid=wire-x,ou=users,dc=example,dc=com. One entry per person is the rule this directory keeps at every door — whatever protocol authenticated them, and whichever attribute their entry happens to be named by."
+   }
+  },
+  {
+   "step": "an unknown link",
+   "method": "POST",
+   "path": "/Users",
+   "status": 400,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:Error"
+    ],
+    "status": "400",
+    "scimType": "invalidValue",
+    "detail": "There is no service-provider-side relationship called \"nope\" in this realm; a link is to a partner this service consumes from."
+   }
+  },
+  {
+   "step": "a link without a subject",
+   "method": "POST",
+   "path": "/Users",
+   "status": 400,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:Error"
+    ],
+    "status": "400",
+    "scimType": "invalidValue",
+    "detail": "Required attribute 'subject' is missing from complex attribute 'federationLinks' in schema extension 'urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User'"
+   }
+  },
+  {
+   "step": "a home cell",
+   "method": "POST",
+   "path": "/Users",
+   "status": 201,
+   "type": "application/scim+json",
+   "location": "http://<port>/scim/v2/Users/<uuid#15>",
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:schemas:core:2.0:User"
+    ],
+    "id": "<uuid#15>",
+    "meta": {
+     "resourceType": "User",
+     "created": "<time>",
+     "lastModified": "<time>",
+     "location": "http://<port>/scim/v2/Users/<uuid#15>"
+    },
+    "userName": "wire-cell",
+    "preferredLanguage": "en",
+    "active": true
+   }
+  },
+  {
+   "step": "read nobody",
+   "method": "GET",
+   "path": "/Users/00000000-0000-4000-8000-00000000dead",
+   "status": 404,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:Error"
+    ],
+    "status": "404",
+    "detail": "There is no entry at 00000000-0000-4000-8000-00000000dead under ou=users,dc=example,dc=com."
+   }
+  },
+  {
+   "step": "put nobody",
+   "method": "PUT",
+   "path": "/Users/00000000-0000-4000-8000-00000000dead",
+   "status": 404,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:Error"
+    ],
+    "status": "404",
+    "detail": "There is no entry at 00000000-0000-4000-8000-00000000dead under ou=users,dc=example,dc=com."
+   }
+  },
+  {
+   "step": "a bad op",
+   "method": "PATCH",
+   "path": "/Users/<uuid#2>",
+   "status": 400,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:Error"
+    ],
+    "status": "400",
+    "scimType": "invalidSyntax",
+    "detail": "Invalid operation 'frob' for operation 1 in PatchOp request body"
+   }
+  },
+  {
+   "step": "a patch with no schemas",
+   "method": "PATCH",
+   "path": "/Users/<uuid#2>",
+   "status": 400,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:Error"
+    ],
+    "status": "400",
+    "scimType": "invalidSyntax",
+    "detail": "PatchOp request body messages must exclusively specify schema as 'urn:ietf:params:scim:api:messages:2.0:PatchOp'"
+   }
+  },
+  {
+   "step": "a patch of an unknown path",
+   "method": "PATCH",
+   "path": "/Users/<uuid#2>",
+   "status": 400,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:Error"
+    ],
+    "status": "400",
+    "scimType": "invalidPath",
+    "detail": "Invalid path 'nickName' for 'replace' op of operation 1 in PatchOp request body"
+   }
+  },
+  {
+   "step": "a patch of id",
+   "method": "PATCH",
+   "path": "/Users/<uuid#2>",
+   "status": 400,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:Error"
+    ],
+    "status": "400",
+    "scimType": "mutability",
+    "detail": "Attribute 'id' already defined and is not mutable for 'replace' op of operation 1 in PatchOp request body"
+   }
+  },
+  {
+   "step": "a bad filter",
+   "method": "GET",
+   "path": "/Users?filter=userName%20zz%20%22x%22",
+   "status": 400,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:Error"
+    ],
+    "status": "400",
+    "scimType": "invalidFilter",
+    "detail": "Unexpected token 'zz \"x\"' in filter"
+   }
+  },
+  {
+   "step": "a filter on an unknown attribute",
+   "method": "GET",
+   "path": "/Users?filter=nickName%20eq%20%22x%22",
+   "status": 200,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:ListResponse"
+    ],
+    "Resources": [],
+    "startIndex": 1,
+    "itemsPerPage": 0,
+    "totalResults": 0
+   }
+  },
+  {
+   "step": "a group with no displayName",
+   "method": "POST",
+   "path": "/Groups",
+   "status": 400,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:Error"
+    ],
+    "status": "400",
+    "scimType": "invalidValue",
+    "detail": "Required attribute 'displayName' is missing"
+   }
+  },
+  {
+   "step": "a member of a bad type",
+   "method": "POST",
+   "path": "/Groups",
+   "status": 400,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:Error"
+    ],
+    "status": "400",
+    "scimType": "invalidValue",
+    "detail": "Attribute 'type' contains non-canonical value from complex attribute 'members'"
+   }
+  },
+  {
+   "step": "a proto member",
+   "method": "POST",
+   "path": "/Users",
+   "status": 400,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:Error"
+    ],
+    "status": "400",
+    "scimType": "invalidSyntax",
+    "detail": "the SCIM document carries a member named \"__proto__\". It is a property of every object in javascript, and a document that sets it is not describing anything this service offers."
+   }
+  },
+  {
+   "step": "a malformed body",
+   "method": "POST",
+   "path": "/Users",
+   "status": 400,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:Error"
+    ],
+    "status": "400",
+    "scimType": "invalidSyntax",
+    "detail": "The request body is not JSON: Unexpected end of JSON input"
+   }
+  },
+  {
+   "step": "delete the group",
+   "method": "DELETE",
+   "path": "/Groups/<uuid#12>",
+   "status": 204,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": null
+  },
+  {
+   "step": "delete the user",
+   "method": "DELETE",
+   "path": "/Users/<uuid#2>",
+   "status": 204,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": null
+  },
+  {
+   "step": "delete the manager",
+   "method": "DELETE",
+   "path": "/Users/<uuid#1>",
+   "status": 204,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": null
+  },
+  {
+   "step": "read the deleted user",
+   "method": "GET",
+   "path": "/Users/<uuid#2>",
+   "status": 404,
+   "type": "application/scim+json",
+   "location": null,
+   "etag": null,
+   "body": {
+    "schemas": [
+     "urn:ietf:params:scim:api:messages:2.0:Error"
+    ],
+    "status": "404",
+    "detail": "There is no entry at <uuid#2> under ou=users,dc=example,dc=com."
+   }
+  }
+ ],
+ "problems": []
+}
