@@ -3327,6 +3327,23 @@ class WsTrust {
                          String(claims && claims.iss) + '", not by this ' +
                          'security token service ("' + issuer + '").' };
       }
+      // A TOKEN OF ANOTHER KIND, signed by this service, is no credential
+      // here (#1559, ASVS 5.0.0 9.2.2).
+      let typ = '';
+      try {
+        typ = String(JSON.parse(Buffer.from(token.split('.')[0] || '',
+          'base64url').toString('utf8')).typ || '');
+      } catch (e) {
+        log.debug("Caught in WsTrust.readOwnJwt(): " +
+                  ((e && e.message) || e));
+      }
+      if (claims.events !== undefined || /logout\+jwt/i.test(typ) ||
+          claims.typ === 'Refresh') {
+        log.debug("Leaving WsTrust.readOwnJwt(). Another kind of token.");
+        return { ok: false, errorCode: 'STS-WSTRUST-0026',
+                 reason: 'The ' + what + ' is a kind of token this service ' +
+                         'does not accept as a credential.' };
+      }
     } else {
       try {
         claims = JSON.parse(Buffer.from(token.split('.')[1] || '',

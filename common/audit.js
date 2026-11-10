@@ -2318,7 +2318,8 @@ function failure(code, event) {
 // checksum agree. `verifyIntegrity()` is what reads it. A row with no checksum
 // was written with no key-encryption key in the process.
 const MAC_FIELDS = ['seq', 'origin', 'at', 'category', 'action', 'actor',
-                    'actorForm', 'target', 'outcome', 'summary'];
+                    'actorForm', 'target', 'outcome', 'summary', 'address',
+                    'errorCode'];
 
 function rowMac(row) {
   log.debug("Entering rowMac().");

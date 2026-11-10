@@ -1346,7 +1346,10 @@ class PasswordPolicy {
     const rules = profile || this.read(DEFAULT_PROFILE);
     const spec = rules.hashAlgorithm === 'scrypt'
       ? { algorithm: 'scrypt', logN: rules.scryptLogN,
-          r: rules.scryptBlockSize, p: rules.scryptParallelism }
+          r: rules.scryptBlockSize,
+          // OWASP's table at this cost (#1544, ASVS 5.0.0 11.4.2).
+          p: Math.max(Number(rules.scryptParallelism),
+                      require('./mode').minScryptParallelism()) }
       : { algorithm: 'argon2id', memory: rules.argon2Memory,
           passes: rules.argon2Iterations,
           parallelism: rules.argon2Parallelism };

@@ -650,7 +650,7 @@ class PortalWallet {
                                               input.query.page || 1));
         } },
       { method: 'POST', path: ctx.BASE + '/credentials/offers',
-        operationId: 'createCredentialOffer', access: 'person', body: OFFER_FORM,
+        operationId: 'createCredentialOffer', access: 'person', recentAuth: true, body: OFFER_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.offer(ctx, req, res, caller, input.body);

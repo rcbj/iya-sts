@@ -22,5 +22,6 @@
   "client.policy": "Política de privacidad",
   "client.tos": "Condiciones del servicio",
   "resources": "Se usará en:",
-  "duration": "Esto dura hasta que lo retire desde su cuenta."
+  "duration": "Esto dura hasta que lo retire desde su cuenta.",
+  "lifetime": "Cada vez puede conservar el acceso hasta {hours} horas."
 }

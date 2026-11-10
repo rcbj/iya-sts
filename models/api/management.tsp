@@ -36277,6 +36277,7 @@ op `issuePasswordResetLink`(@js(#{`examples`:#[#{`user`:"alice"},#{`user`:"alice
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `disableUserPasskeys`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"How the person's identity was verified, in at least 8 characters. Product mode requires it, and it is recorded in the audit log."}) `evidence`?: string;
     @js(#{`description`:"The person, as /admin-api/users names them."}) `user`: string;
     @js(#{`description`:"Accepted for `user`."}) `username`?: string
   },
@@ -36310,6 +36311,7 @@ op `disableUserPasskeys`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/co
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `disableUserSecondFactors`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"How the person's identity was verified, in at least 8 characters. Product mode requires it, and it is recorded in the audit log."}) `evidence`?: string;
     @js(#{`description`:"The person, as /admin-api/users names them."}) `user`: string;
     @js(#{`description`:"Accepted for `user`."}) `username`?: string
   },

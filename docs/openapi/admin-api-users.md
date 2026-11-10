@@ -3102,6 +3102,7 @@ Scope: `admin:write`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
+| `evidence` | string |  | How the person's identity was verified, in at least 8 characters. Product mode requires it, and it is recorded in the audit log. |
 | `user` | string | yes | The person, as /admin-api/users names them. |
 | `username` | string |  | Accepted for `user`. |
 
@@ -3192,6 +3193,7 @@ Scope: `admin:write`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
+| `evidence` | string |  | How the person's identity was verified, in at least 8 characters. Product mode requires it, and it is recorded in the audit log. |
 | `user` | string | yes | The person, as /admin-api/users names them. |
 | `username` | string |  | Accepted for `user`. |
 

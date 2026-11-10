@@ -22,5 +22,6 @@
   "client.policy": "Patakaran sa privacy",
   "client.tos": "Mga tuntunin ng serbisyo",
   "resources": "Gagamitin ito sa:",
-  "duration": "Tatagal ito hanggang bawiin mo sa iyong account."
+  "duration": "Tatagal ito hanggang bawiin mo sa iyong account.",
+  "lifetime": "Sa bawat pagkakataon, maaari nitong panatilihin ang access nang hanggang {hours} oras."
 }

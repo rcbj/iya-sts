@@ -1247,6 +1247,9 @@ const CODES = [
   { code: 'STS-CORE-0172',
     summary: 'A request was refused because its address made too many in a minute.',
     spec: 'HTTP 429' },
+  { code: 'STS-CORE-0173',
+    summary: 'A SAML or WS-Federation request gave a parameter more than once.',
+    spec: 'HTTP 400' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +

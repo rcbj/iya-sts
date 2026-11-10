@@ -13075,7 +13075,8 @@ class OAuth2Server {
         errorCodes.mark(res, 'STS-OAUTH-0605');
         self.logoutRefusal(req, res, { status: 500, title: 'failedTitle',
           message: 'failed', after: 'mayNotHaveFinished',
-          q: req.query, detail: String((e && e.message) || e) });
+          q: req.query, detail: require('../common/mode').hidesFailureDetail()
+            ? '' : String((e && e.message) || e) });
       }
     });
     log.debug("Leaving the logout endpoint. Handed on.");

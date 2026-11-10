@@ -203,6 +203,19 @@ async function run(t) {
   t.equal(ignored(asked, 0), false, 'nor one that gives no time');
   t.equal(ignored(0, asked - 3600), false,
           'and an old time is fine when nothing fresh was asked');
+  const repeats = require(ROOT + '/common/protocol_repeats');
+  t.equal(repeats.repeatedIn({ a: ['1', '2'] }, null), 'a',
+          'a parameter repeated in the query is found');
+  t.equal(repeats.repeatedIn({ a: '1' }, { a: '2' }), 'a',
+          'and one given in both places');
+  t.equal(repeats.repeatedIn({ a: '1' }, { b: '2' }), '', 'and others pass');
+  const passwordPolicy = require(ROOT + '/common/password_policy');
+  const scryptP = function () {
+    return passwordPolicy.hashSpec({ hashAlgorithm: 'scrypt', scryptLogN: 15,
+      scryptBlockSize: 8, scryptParallelism: 1 }).p;
+  };
+  t.equal(scryptP(), 1, 'development hashes at the profile\'s p');
+  t.equal(inProduct(scryptP), 3, 'product hashes at p=3 at the least');
   const budget = require(ROOT + '/common/request_budget');
   const at = Date.now();
   t.equal(budget.allowed('198.51.100.7', 2, at), true, 'a first request passes');

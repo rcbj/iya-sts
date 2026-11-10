@@ -816,8 +816,9 @@ class FederationSp {
   private partnerIgnoredFreshSignIn(res): boolean {
     const { log } = this.deps;
     log.debug("Entering FederationSp.partnerIgnoredFreshSignIn().");
-    const asked = Number(res.locals.fedReauthAskedAt || 0);
-    const at = Number(res.locals.fedPartnerAuthAt || 0);
+    const locals = (res && res.locals) || {};
+    const asked = Number(locals.fedReauthAskedAt || 0);
+    const at = Number(locals.fedPartnerAuthAt || 0);
     log.debug("Leaving FederationSp.partnerIgnoredFreshSignIn().");
     return asked > 0 && at > 0 && at < asked - FRESH_SIGN_IN_SKEW_S;
   }
@@ -4276,7 +4277,8 @@ class FederationSp {
                                        result.acr || '', via, said);
     // WHEN THE PARTNER AUTHENTICATED THE PERSON, not when they arrived here
     // (#1554), so an application's max_age is judged on the real age.
-    authn.backdateAuthentication(session, res.locals.fedPartnerAuthAt);
+    authn.backdateAuthentication(session,
+      res.locals && res.locals.fedPartnerAuthAt);
     this.copyPartnerPhoto(req, record, username, session, decision, detail);
     // -------------------------------------------------------------------------
     // THE ISSUANCE POLICY CAN REFUSE THE SESSION (2026-09-06), and a null is

@@ -10729,7 +10729,7 @@ op `createCredentialOffer`(`requestBody/content/application~1json/schema`: {
     }) `signingAlg`?: string;
     `page`?: post_account_api_credentials_offers_b_application_json_page_h460
   },
-  `responses/200/content/application~1json/schema`: {
+  `responses/200/content/application~1json/schema`: {`stepUp`?: {`acrValues`?: string; `prompt`?: string; `maxAge`?: numeric}; 
     `ok`?: boolean;
     `message`?: string;
     `go`?: string;
