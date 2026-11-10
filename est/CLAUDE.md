@@ -25,6 +25,26 @@ when registered).
 | `est_admin.ts` | `GET/POST /admin/est` (Protocols) and `GET /admin/est/monitor` (Monitoring), drawn in the console shell through `admin.respond()`. |
 | `est_api.ts` | `module.exports = { ROUTES }` — `GET /admin-api/est`, `GET /admin-api/est/monitor`, `POST /admin-api/est/:action` — spread into `mgmt-api/admin_api.ts`'s table. Requires `./est_console` LAZILY inside each handler (rule 1). |
 
+## WHAT EACH OPERATION TAKES AND ANSWERS IS THE MODEL'S (#1579, 2026-11-10)
+
+EST's bodies are ASN.1, and the DER work stays in `est_codec.ts`.
+**`models/enrollment/est.tsp` states the facts the code reads**: each
+operation's methods (`OPERATIONS`, and so the routes and the 405's `Allow`),
+the media type it reads and writes and whether it is authenticated; the
+media types (`MEDIA`); the refusal statuses, and which of them count against
+a caller (`COUNTED_STATUSES`); the subjectAltName name types a CSR
+attributes answer asks for, by profile; the empty query every operation
+takes; and the one JSON exchange, the nonce request (the draft's CDDL, built
+into the validator `nonceRequestOf()` uses, with its "must be a
+dotted-decimal OID" message) and its answer, held as it is sent: a member
+the model does not allow is recorded under `STS-EST-0037` and the answer
+sent unchanged. The labels are `common/enrollment_profiles.js`'s
+`EST_LABELS`, not repeated. What stays in code: the strict base64 decoding,
+the PKCS#10 and CMS work, authentication, the label and realm reading, the
+signature algorithms a CSR attributes answer lists (the codec's), and every
+decision the core makes. `tests/enrollment_model_wire.js` holds each
+operation's answers and refusals to the record taken before the switch.
+
 ## The decisions
 
 * **A LABEL IS A PROFILE, NOT A CA.** RFC 7030 section 3.2.2 lets a server give
@@ -249,7 +269,7 @@ holds the counts equal to the list's.
 ## Error codes
 
 `STS-EST-0001`–`0022` for the protocol surface, `0030`–`0033` for the console
-and `/admin-api`, `0034`–`0036` for `/nonce` (#257); refusals decided by the core keep their `STS-ENROLL-*` code.
+and `/admin-api`, `0034`–`0036` for `/nonce` (#257), `0037` for a nonce answer that is not its model's (#1579, recorded only); refusals decided by the core keep their `STS-ENROLL-*` code.
 `tests/error_codes.js` carries `estError(req, res` as a failure pattern.
 
 ## Tests

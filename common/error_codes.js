@@ -5443,6 +5443,19 @@ const CODES = [
       'claimed because the cluster store could not be asked, so the request ' +
       'was refused.',
     spec: 'HTTP 500, ACME serverInternal problem' },
+  { code: 'STS-ACME-0100',
+    summary: 'An ACME answer or problem document carried a member its model ' +
+      'in models/enrollment/acme.tsp does not name, one of a type or a ' +
+      'value the model does not allow, or lacked a required one (#1579). ' +
+      'The answer is sent as it was built: the model describes the wire ' +
+      'and does not reshape it, so this is a model gap to close.',
+    spec: 'none (recorded only; the answer is unchanged)' },
+  { code: 'STS-ACME-0101',
+    summary: 'An ACME problem document carried an error type ' +
+      'models/enrollment/acme.tsp does not declare (#1579). The problem is ' +
+      'sent as it was built; the type is to be declared, with the document ' +
+      'that defines it.',
+    spec: 'none (recorded only; the problem is unchanged)' },
   // ===== EST ===============================================================
   { code: 'STS-EST-0001',
     summary: 'An EST request reached a realm whose est.enabled is off.',
@@ -5541,6 +5554,13 @@ const CODES = [
       'defines no reqInfo/respInfo for, so it is unable to answer it ' +
       '(draft-ietf-lamps-attestation-freshness section 5.1) (#257).',
     spec: 'HTTP 503 (section 5.1)' },
+  { code: 'STS-EST-0037',
+    summary: 'An EST /nonce answer carried a member its model in ' +
+      'models/enrollment/est.tsp does not name, or one of a type the model ' +
+      'does not allow (#1579). The answer is sent as it was built: the ' +
+      'model describes the wire and does not reshape it, so this is a ' +
+      'model gap to close.',
+    spec: 'none (recorded only; the answer is unchanged)' },
   // ===== SCEP ==============================================================
   { code: 'STS-SCEP-0001',
     summary: 'A SCEP request reached a realm where scep.enabled is off.',

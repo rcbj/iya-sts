@@ -35,7 +35,7 @@ records the principal as the entry itself (`admin: false`, `hasEntry: true`).
 
 | Module | What it is |
 |---|---|
-| `acme_jws.ts` | The envelope, read strictly: the media type, the flattened JWS, strict base64url, the protected header, account keys and their RFC 7638 thumbprint, the signature (through `common/crypto.js`), the Replay-Nonce, the External Account Binding, the payload schemas, contacts, RFC 9773 certificate identifiers. A LIBRARY — no route, no state |
+| `acme_jws.ts` | The envelope, read strictly: the media type, the flattened JWS, strict base64url, the protected header, account keys and their RFC 7638 thumbprint, the signature (through `common/crypto.js`), the Replay-Nonce, the External Account Binding, the payload schemas (the model's since #1579), contacts, RFC 9773 certificate identifiers. A LIBRARY — no route, no state |
 | `acme_store.ts` | Seven `realms.map({ persist })` stores: accounts, the key → account index, orders, authorizations, the certificate index, the renewal index, spent nonces |
 | `acme.ts` | The fourteen routes under `/enroll/acme`, and `require('./acme_admin')` so the family is one require in `common/protocol_stack.ts` (23e), followed by two `register()` calls — `acme`, then `acme_admin` (#50's R1: neither registers anything when required) |
 | `acme_console.ts` | The view and action model both admin doors render (no route, no `res`, no markup), `gnap/gnap_console.ts`'s arrangement |
@@ -68,6 +68,60 @@ requires, rather than Express's `Cannot GET`.
 `Cache-Control: no-store`** — refusals and the directory included. Section 7.2
 asks it of `newNonce`; the rest follows from the nonce being a single-use
 credential.
+
+## THE REQUEST SHAPES ARE THE MODEL'S (#1579, 2026-11-10)
+
+**`models/enrollment/acme.tsp` is the source of every JWS-protected
+document**: the flattened JWS JSON object, the protected header, the External
+Account Binding's header and each resource's payload (newAccount, an account
+update, newOrder and its identifiers, finalize, revokeCert, an
+authorization's deactivation, keyChange's inner payload, a challenge
+response) and the orders list's query. Each is a `@body` model whose
+properties are its members: the TypeSpec type says required, array, boolean,
+integer, literal or nested object (a `@shape`, strict or loose), and
+`@field` the bounds and the citation. `common/enrollment_model.ts`'s
+`body('acme', id)` builds each zod object from `models/generated/enrollment.json`
+as THE SAME EXPRESSION the hand-written schema was — `min`, `max`, `regex`
+in that order — because `zodSentence()` quotes zod's first issue in the
+problem's `detail`, and `tests/enrollment_model_wire.js` holds every refusal
+to what the hand-written schemas said. The thirteen schemas in
+`acme_jws.ts` and `ORDERS_QUERY` in `acme.ts` are gone. A new member is
+added to the model, never to a zod object here.
+
+**The registers `acme/` branches on are the model's too**, and the code keeps
+only what each row does: the error types (RFC 8555 section 6.7's whole table,
+RFC 9773's `alreadyReplaced`, draft-ietf-acme-profiles' `invalidProfile`,
+each with its citation; a row marked `counted: false` — `badNonce` and
+`rateLimited` — does not count against the throttle), the identifier types,
+the challenge type, the account and EAB algorithms in the order
+`badSignatureAlgorithm` lists them, the subscriber's revocation reasons, and
+the resources' paths and methods (the 405's `Allow`). The routes themselves
+stay `app.get()`/`app.post()` calls in `acme.ts`: a handler is code.
+
+**Every resource this service answers and the problem document are
+`@answer` models**, closed: the directory and its `meta`, an account, an
+order, an authorization, a challenge, the orders list, RFC 9773's renewal
+information, the problem and its subproblems, each member with its type (an
+enumerated status's values too). **THE HOLDING RECORDS AND NEVER REFUSES**,
+OAuth's arrangement and for its reason: `held()` holds each answer as it is
+built and `sendProblem()` holds every problem document and its type
+(`holdProblem()`), recording a gap under `STS-ACME-0100` (a member) or
+`STS-ACME-0101` (an undeclared type), and the answer is sent as built.
+`tests/model_enrollment.js` holds every answer the wire record holds, and
+every type a funnel here names.
+
+**WHAT STAYS IN CODE, AND WHY.** Everything that needs a store, a key, the
+realm or a second value: the strict base64url and the JSON walk before a
+document reaches its validator, `crit` and the other refused header members
+(named, not shaped), exactly one of `jwk` and `kid` (which one a resource
+takes is the resource's), the account key's shape against `alg` and its
+thumbprint, the signature, the Replay-Nonce's MAC and its spending, a
+contact's scheme and address, an identifier's value against its type,
+ownership, the profile, `notBefore`/`notAfter`, `replaces`, the CSR, and the
+console's actions (`acme_console.ts`), whose bodies `/admin-api`'s own model
+validates. `MIN_RSA_BITS` is a policy number, not a shape, and stays.
+`PROFILE_DESCRIPTIONS` is display text; the profiles' names are
+`common/enrollment_profiles.js`'s, which the model does not copy.
 
 ## The decisions inside the family, and the reason for each
 
@@ -308,6 +362,7 @@ error type and marks the core's code.
 | 0080–0082 | renewal information, the orders list |
 | 0090–0097 | the console, the management API, an unexpected throw |
 | 0098–0099 | several nodes: a finalize already claimed, a claim store that could not be asked |
+| 0100–0101 | the model (#1579): an answer or problem that is not its model's, an undeclared error type — recorded, never sent |
 
 `tests/error_codes.js` carries `acmeProblem(ctx` and `refusal('<type>', <status>`
 as failure patterns.
@@ -317,6 +372,8 @@ as failure patterns.
 | File | What it holds |
 |---|---|
 | `tests/cluster_single_use_credentials.js` | a nonce another node claimed refused here, and one EAB key bound by one of two concurrent accounts, against a stub store with postgres's semantics |
+| `tests/enrollment_model_wire.js` | the wire held byte for byte (#1579): every resource's success, every envelope and payload refusal with its `detail`, switched off and in product mode, against the record taken before the shapes moved into the model; `ENROLLMENT_WIRE_PRINT=1` prints a new record when the wire is MEANT to change. EST's and SCEP's too |
+| `tests/model_enrollment.js` | the model's build-time refusals, no hand schema or register copy left in the family's files, and every recorded answer, error type, capability and CertRep value held to the model |
 | `tests/acme_jws.js` | the envelope's refusals one by one, RFC 7638's and RFC 9773's published values, the nonce's proof (another realm, a flipped bit, a version, an expiry at a chosen instant), the EAB's five shapes and a wrong MAC key, identifier values, and the seven stores per realm and purged with it |
 | `tests/acme_protocol.js` | a CHILD PROCESS running the whole stack on a plain-HTTP port, driven by the independent client: every refusal by type, realm isolation at the door, finalize and the chain verified by OpenSSL, revocation (by account, by key, alreadyRevoked), key change and its 409, deactivation, renewal information, the monitor, `acme.enabled`, **product mode refusing plain HTTP** (which the HTTPS job cannot reach), and the console pages through their own handlers — the EAB key answered once on a 200 no-store page and absent from every view |
 | `tests/protocol/sts_acme_enrollment.js` | over HTTPS against the running service: all nine profiles chained to the realm Intermediate and the Root with their EKUs, the UPN equal to the person's mail, an application for itself, OCSP `good` then `revoked`, the serial on `/pki/crl/{realm}/acme.crl` after revokeCert and after the console action, every refusal the brief lists, the expired nonce and the expired EAB key, the throttle, and a product-mode realm over TLS |

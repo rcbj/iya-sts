@@ -27,6 +27,8 @@ import { checkOAuth, readOAuth } from '../lib/oauth_lib.mjs';
 import { checkGnap, readGnap } from '../lib/gnap_lib.mjs';
 import { checkAuthzen, readAuthzen } from '../lib/authzen_lib.mjs';
 import { checkSsf, readSsf } from '../lib/ssf_lib.mjs';
+import { checkEnrollment, readEnrollment }
+  from '../lib/enrollment_lib.mjs';
 import { checkFacts, factsOf, fieldsOf, linksIn, readDirectory, readPersistence,
   readSpellings, renderScript, schemaOf } from '../lib/model_lib.mjs';
 
@@ -131,6 +133,15 @@ async function generate() {
                     ssfProblems.join('; '));
   }
   fs.writeFileSync(path.join(out, 'ssf.json'), JSON.stringify(ssf));
+  const enrollment = readEnrollment(program);
+  const enrollmentProblems = checkEnrollment(enrollment);
+  if (enrollmentProblems.length > 0) {
+    log.debug("Leaving generate(). The enrollment model is wrong.");
+    throw new Error('The enrollment model is wrong: ' +
+      enrollmentProblems.join('; '));
+  }
+  fs.writeFileSync(path.join(out, 'enrollment.json'),
+    JSON.stringify(enrollment));
   const persistence = readPersistence(program);
   fs.writeFileSync(path.join(out, 'persistence.postgres.json'),
     JSON.stringify({ objects: persistence.objects,

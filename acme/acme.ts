@@ -88,6 +88,9 @@ import InstanceSlot = require('../common/instance_slot');
 import cells = require('../common/cells');
 import cellPlacement = require('../common/cell_placement');
 import cellChannel = require('../common/cell_channel');
+// THE REGISTERS, THE RESOURCES AND THE ANSWERS ARE THE MODEL'S (#1579):
+// `models/enrollment/acme.tsp`. A leaf.
+import EnrollmentModel = require('../common/enrollment_model');
 
 /**
  * The enrollment family's name: `acme`.
@@ -98,23 +101,35 @@ const FAMILY = 'acme';
  */
 const PREFIX = '/enroll/acme';
 
-// The one challenge type an authorization here carries. Its name says what it
-// is: the identifier was bound to the entry by the directory, not proven by a
-// fetch. See the header.
+// The one challenge type an authorization here carries, the model's
+// `challenge-types` register (#1579). Its name says what it is: the
+// identifier was bound to the entry by the directory, not proven by a fetch.
+// See the header.
 /**
  * The one challenge type an authorization here carries, already valid: the
  * identifier was bound to the entry by the directory, not proven by a fetch.
  */
-const CHALLENGE_TYPE = 'sts-entry-binding-01';
+const CHALLENGE_TYPE = EnrollmentModel.names('acme', 'challenge-types')[0];
 
-// The identifier types a newOrder may name: RFC 8555's `dns`, RFC 8738's `ip`,
-// RFC 8823's `email`, and draft-ietf-acme-device-attest's
-// `permanent-identifier`, which here names the entry itself.
+// The identifier types a newOrder may name, the model's `identifier-types`
+// register (#1579): RFC 8555's `dns`, RFC 8738's `ip`, RFC 8823's `email`,
+// and draft-ietf-acme-device-attest's `permanent-identifier`, which here
+// names the entry itself.
 /**
  * The identifier types a newOrder may name: `dns`, `ip`, `email` and
  * `permanent-identifier`.
  */
-const IDENTIFIER_TYPES = ['dns', 'ip', 'email', 'permanent-identifier'];
+const IDENTIFIER_TYPES = EnrollmentModel.names('acme', 'identifier-types');
+
+// The error types a refusal of does not count against the caller's throttle:
+// the model's `problems` rows marked `counted: false` (#1579) — a stale nonce,
+// the ordinary course of a conforming client, and the throttle itself.
+const UNCOUNTED_PROBLEMS = EnrollmentModel.rows('acme', 'problems')
+  .filter(function (row) {
+    return row.counted === false;
+  }).map(function (row) {
+    return row.name;
+  });
 
 // What each issued profile is, for the directory's `meta.profiles`
 // (draft-ietf-acme-profiles section 3) and the console's profile table.
@@ -146,9 +161,8 @@ const ORDERS_PER_PAGE = 100;
 // `:id` is a 404 before a store is looked at.
 const ID_PATTERN = /^[A-Za-z0-9_-]{8,64}$/;
 
-const ORDERS_QUERY = validation.z.looseObject({
-  page: validation.types.opt(validation.types.integer(1, 100000))
-});
+// The orders list's query, the model's `orders-query` (#1579).
+const ORDERS_QUERY = EnrollmentModel.body('acme', 'orders-query');
 
 // What `Acme` needs from the rest of the service: the modules this file
 // used to reach for itself, passed in so that the composition root can build
@@ -301,6 +315,53 @@ class Acme {
   }
 
   /**
+   * Holds an answer to its model and hands it back unchanged: what the
+   * model does not allow is recorded under STS-ACME-0100, and the answer is
+   * sent as it was built, because the model describes the wire and does not
+   * reshape it (#1579).
+   *
+   * @param id - the answer's id in `models/enrollment/acme.tsp`
+   * @param value - the answer
+   * @returns the answer
+   */
+  held(id, value) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Acme.held(). id=" + id);
+    const problems = EnrollmentModel.undeclared(FAMILY, id, value);
+    if (problems.length > 0) {
+      log.error(errorCodes.tag('STS-ACME-0100') + 'the ACME ' + id +
+                ' answer is not its model\'s: ' + problems.join('; '));
+    }
+    log.debug("Leaving Acme.held().");
+    return value;
+  }
+
+  /**
+   * Holds a problem document to its model and its type to the model's
+   * error types, recording what does not fit under STS-ACME-0100 or
+   * STS-ACME-0101; the document is sent as built (#1579).
+   *
+   * @param type - the error type, without its prefix
+   * @param body - the problem document
+   */
+  holdProblem(type, body) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering Acme.holdProblem(). type=" + type);
+    const prefix = this.deps.jws.ERROR_PREFIX;
+    const types = [type].concat((body.subproblems || []).map(function (one) {
+      return String(one.type).replace(prefix, '');
+    }));
+    types.forEach(function (one) {
+      if (EnrollmentModel.unknownTerm(FAMILY, 'problems', one)) {
+        log.error(errorCodes.tag('STS-ACME-0101') + 'the ACME error type "' +
+                  one + '" is not one models/enrollment/acme.tsp declares.');
+      }
+    });
+    this.held('problem', body);
+    log.debug("Leaving Acme.holdProblem().");
+  }
+
+  /**
    * Records one request on the enrollment monitor.
    *
    * @param ctx - the request context
@@ -352,8 +413,7 @@ class Acme {
         return Object.assign({}, one, { type: jws.ERROR_PREFIX + one.type });
       });
     }
-    const counts = type !== 'badNonce' && type !== 'rateLimited' &&
-                   status !== 405;
+    const counts = UNCOUNTED_PROBLEMS.indexOf(type) < 0 && status !== 405;
     if (counts && core.sharesThrottle()) {
       // WHERE THE THROTTLE IS SHARED THE COUNT DECIDES THE ANSWER (2026-09-14):
       // a refusal whose count took the caller past the limit is answered
@@ -402,6 +462,10 @@ class Acme {
     // error-code: none — the code is the caller's, forwarded; this is the
     // helper
     this.record(ctx, { outcome: 'refused', status: status, errorCode: code });
+    // THE MODEL DESCRIBES THE WIRE AND DOES NOT RESHAPE IT (#1579): a type or
+    // a member the model does not allow is recorded and sent as built.
+    this.holdProblem(String(body.type).replace(this.deps.jws.ERROR_PREFIX, ''),
+                     body);
     this.commonHeaders(ctx);
     errorCodes.mark(ctx.res, code);
     ctx.res.status(status).type('application/problem+json')
@@ -862,13 +926,13 @@ class Acme {
     const { log } = this.deps;
     log.debug("Entering Acme.accountJson().");
     log.debug("Leaving Acme.accountJson().");
-    return {
+    return this.held('account', {
       status: account.status,
       contact: account.contact || [],
       termsOfServiceAgreed: !!account.termsOfServiceAgreed,
       orders: ctx.urls.orders(account.id),
       createdAt: account.createdAt
-    };
+    });
   }
 
   /**
@@ -961,7 +1025,7 @@ class Acme {
       out.certificate = ctx.urls.cert(order.certificateId);
     }
     log.debug("Leaving Acme.orderJson(). status=" + status);
-    return out;
+    return this.held('order', out);
   }
 
   /**
@@ -1005,7 +1069,7 @@ class Acme {
       out.wildcard = true;
     }
     log.debug("Leaving Acme.authzJson().");
-    return out;
+    return this.held('authorization', out);
   }
 
   // ---------------------------------------------------------------------------
@@ -1026,7 +1090,7 @@ class Acme {
       profiles[id] = PROFILE_DESCRIPTIONS[id] || id;
     });
     log.debug("Leaving Acme.directoryJson().");
-    return {
+    return this.held('directory', {
       newNonce: ctx.urls.newNonce,
       newAccount: ctx.urls.newAccount,
       newOrder: ctx.urls.newOrder,
@@ -1038,7 +1102,7 @@ class Acme {
         website: helpers.baseUrlOf(ctx.req, 'admin-console') + '/admin/acme',
         profiles: profiles
       }
-    };
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -1181,7 +1245,7 @@ class Acme {
     }
     if (csr.commonName) {
       const cn = String(csr.commonName);
-      const match = ['dns', 'ip', 'email', 'permanent-identifier']
+      const match = IDENTIFIER_TYPES
         .map(function (type) { return keyOf(type, cn); })
         .filter(function (key) { return want[key]; })[0];
       if (match) {
@@ -1781,9 +1845,10 @@ class Acme {
       }
       self.record(ctx, { outcome: 'answered', status: 200 });
       log.debug("Leaving the ACME orders list. " + shown.length + " shown.");
-      return self.sendJson(ctx, 200, { orders: shown.map(function (id) {
-        return ctx.urls.order(id);
-      }) });
+      return self.sendJson(ctx, 200, self.held('orders', {
+        orders: shown.map(function (id) {
+          return ctx.urls.order(id);
+        }) }));
     }));
 
     app.post(PREFIX + '/new-order',
@@ -2219,7 +2284,8 @@ class Acme {
       ctx.res.append('Link', '<' + ctx.urls.authz(authz.id) + '>;rel="up"');
       self.record(ctx, { outcome: 'answered', status: 200 });
       log.debug("Leaving the ACME challenge.");
-      return self.sendJson(ctx, 200, self.challengeJson(ctx, authz));
+      return self.sendJson(ctx, 200, self.held('challenge',
+                                               self.challengeJson(ctx, authz)));
     }));
 
     app.post(PREFIX + '/cert/:id', this.guarded('cert', async function (ctx) {
@@ -2493,7 +2559,8 @@ class Acme {
       self.record(ctx, { outcome: 'answered', status: 200,
                          serialHex: cert.serialHex });
       log.debug("Leaving the ACME renewal-info.");
-      return self.sendJson(ctx, 200, { suggestedWindow: window });
+      return self.sendJson(ctx, 200, self.held('renewal-info',
+                                               { suggestedWindow: window }));
     }));
 
     app.use(PREFIX, this.methodNotAllowed.bind(this));
@@ -2518,7 +2585,8 @@ const slot = new InstanceSlot<Acme>(
 
 // ---------------------------------------------------------------------------
 // A METHOD A RESOURCE DOES NOT ANSWER (section 6.3): 405 with `Allow`, as a
-// problem document, rather than Express's `Cannot GET`.
+// problem document, rather than Express's `Cannot GET`. Each resource's path
+// and methods are the model's `@operations` (#1579).
 //
 // **ONE MIDDLEWARE AFTER THE ROUTES AND NOT A ROUTE PER METHOD**, and the
 // reason is `/admin/sts-metadata`: it reads the router, lists every method a
@@ -2527,15 +2595,11 @@ const slot = new InstanceSlot<Acme>(
 // would be a listed method answering 405. A middleware registers no route, so
 // the index lists what each resource answers and nothing else.
 // ---------------------------------------------------------------------------
-const ALLOWED_METHODS = [
-  { re: /^\/directory$/, allow: 'GET, HEAD' },
-  { re: /^\/new-nonce$/, allow: 'GET, HEAD' },
-  { re: /^\/renewal-info\/[^/]+$/, allow: 'GET, HEAD' },
-  { re: /^\/(new-account|new-order|revoke-cert|key-change)$/, allow: 'POST' },
-  { re: /^\/(account|order|authz|challenge|cert)\/[^/]+$/, allow: 'POST' },
-  { re: /^\/account\/[^/]+\/orders$/, allow: 'POST' },
-  { re: /^\/order\/[^/]+\/finalize$/, allow: 'POST' }
-];
+const ALLOWED_METHODS = EnrollmentModel.operations('acme')
+  .map(function (op) {
+    return { re: new RegExp('^' + op.path.replace(/:id/g, '[^/]+') + '$'),
+             allow: op.methods.join(', ') };
+  });
 
 // ROUTES ARE REGISTERED BY THE COMPOSITION ROOT (#50, R1): requiring this
 // module no longer registers anything. `common/protocol_stack.ts` calls the
