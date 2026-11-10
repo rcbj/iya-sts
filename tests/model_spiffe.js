@@ -299,11 +299,16 @@ function strays(model, name, value, where, out) {
     const field = declared.fields.find(function (f) {
       return f.name === key;
     });
-    if (!field) {
+    // A decoded message names the field its oneof holds under the oneof's
+    // own name (`oneofs: true`); that member is the decoder's, not a field.
+    const oneof = declared.fields.some(function (f) {
+      return f.oneof === key;
+    });
+    if (!field && !oneof) {
       out.push(where + '.' + key);
       return;
     }
-    if (field.type.kind !== 'message') {
+    if (!field || field.type.kind !== 'message') {
       return;
     }
     const one = value[key];
