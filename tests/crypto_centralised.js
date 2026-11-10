@@ -103,7 +103,12 @@ const STANDALONE = {
   // requires config.js, so the sidecar would load the service to sign one
   // certificate request. It verifies the server's JWT-SVIDs and makes its
   // own CSR key; nothing in the service requires it.
-  'spiffe/workload_agent.ts': 'the Workload API sidecar, a separate process'
+  'spiffe/workload_agent.ts': 'the Workload API sidecar, a separate process',
+  // OpenBao's seal key (ASVS 5.0.0 13.3.1, #1553): 32 random bytes made once
+  // at a stack's first start, in the secret store's own container, which
+  // holds no service to load crypto.js from. Its compose command runs it;
+  // nothing in the service requires it.
+  'openbao/generate-seal.js': 'the secret store container\'s first-start tool'
 };
 
 // Node's module, by either spelling, required or imported for a value.

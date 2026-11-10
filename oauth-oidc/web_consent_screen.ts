@@ -185,7 +185,9 @@ class WebConsentScreen {
             return '<code>' + esc(one) + '</code>';
           }).join('<br>') + '</p>'
         : '') +
-      '<p class="app">' + t.html('consent.duration') + '</p>' +
+      '<p class="app">' + t.html('consent.duration') +
+      (v.lifetimeHours ? ' ' + t.html('consent.lifetime',
+        { hours: String(v.lifetimeHours) }) : '') + '</p>' +
       WebConsentScreen.already(Array.isArray(v.already) ? v.already : [], t) +
       '<form method="post" action="' + WebConsentScreen.PATH + '">' +
       WebConsentScreen.limits(Array.isArray(v.limits) ? v.limits : []) +

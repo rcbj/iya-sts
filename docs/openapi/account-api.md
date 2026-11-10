@@ -2979,6 +2979,10 @@ Scope: `account:manage`.
 | `offer.signingAlg` | string |  |  |
 | `offer.txCode` | string, or null |  |  |
 | `ok` | boolean |  |  |
+| `stepUp` | object |  |  |
+| `stepUp.acrValues` | string |  |  |
+| `stepUp.maxAge` | number |  |  |
+| `stepUp.prompt` | string |  |  |
 | `view` | object |  |  |
 | `view.batchSize` | number |  |  |
 | `view.configurations` | list |  |  |

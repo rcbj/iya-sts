@@ -256,8 +256,9 @@ mode: a sign-out revokes them (OpenID Connect Back-Channel Logout section 2.7,
 
 ### One session per sign-in, several per person
 
-A person may hold up to `authn.maxSessions` at once, and past that their oldest
-one ends. Two browsers is two sessions.
+A person may hold up to `authn.maxSessionsPerSubject` sessions at once (32 by
+default), and past that their oldest one ends. `authn.maxSessions` is the realm's
+limit, where a new session is refused. Two browsers is two sessions.
 They are folded onto one person by an **identity key** — the normalisation that
 makes `alice`, `alice@REALM` and a token's `urn:uuid:<entryUUID>` subject one
 identity (the older `urn:sts:user:alice` form is still read) — which

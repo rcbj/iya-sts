@@ -22,5 +22,6 @@
   "client.policy": "隐私政策",
   "client.tos": "服务条款",
   "resources": "将用于：",
-  "duration": "此授权在您从账户中撤销之前一直有效。"
+  "duration": "此授权在您从账户中撤销之前一直有效。",
+  "lifetime": "每次最多可保留访问权限 {hours} 小时。"
 }

@@ -17,6 +17,7 @@
 import config = require('./config');
 import errorCodes = require('./error_codes');
 import clientAddress = require('./client_address');
+import helpers = require('./helpers');
 
 const WINDOW_MS = 60000;
 const MAX_ADDRESSES = 200000;
@@ -25,6 +26,18 @@ const EXEMPT = /^\/healthcheck(?:$|\?)/;
 class RequestBudget {
   private static windowStart = 0;
   private static counts = new Map<string, number>();
+  private static told = new Set<string>();
+
+  // Once per address per minute (ASVS 5.0.0 16.3.3): enough to see who was
+  // refused, and a flood cannot write a line per request.
+  private static noteRefused(address: string): void {
+    if (RequestBudget.told.has(address) || RequestBudget.told.size > 1000) {
+      return;
+    }
+    RequestBudget.told.add(address);
+    helpers.log.warn(errorCodes.tag('STS-CORE-0172') + 'request ceiling: ' +
+                     address + ' is over its requests per minute.');
+  }
 
   // Hot path: every request. No Entering/Leaving pair, which would drown the
   // log.
@@ -32,6 +45,7 @@ class RequestBudget {
     if (now - RequestBudget.windowStart >= WINDOW_MS) {
       RequestBudget.windowStart = now;
       RequestBudget.counts = new Map();
+      RequestBudget.told = new Set();
     }
     const counts = RequestBudget.counts;
     const seen = counts.get(address);
@@ -56,6 +70,7 @@ class RequestBudget {
         next();
         return;
       }
+      RequestBudget.noteRefused(String(clientAddress.clientAddressOf(req)));
       errorCodes.mark(res, 'STS-CORE-0172');
       res.status(429).type('text/plain').set('Retry-After', '60')
         .send('Too many requests from this address.\n');

@@ -307,3 +307,13 @@ non-superuser may and **checks** the other three, failing the run if the
 application role holds any of them. `deploy/aws/schema-init/` is how that file
 reaches RDS: an init container that runs it with psql before each node starts.
 
+## The passwords are generated at first start
+
+`db-secrets.sh` is sourced first in the container's command in
+`docker-compose.yml`. It makes the owner's and `sts_app`'s passwords once on the
+`sts-db-secrets` volume, and `openbao/seed-start.sh` reads the second for the
+secret store, because that file defaults to product mode and product mode refuses
+a well-known database password. `docker-compose-run-tests.yml` keeps its fixed
+values and opts out with `STS_PERSISTENCE_ALLOW_DEFAULT_DATABASE_PASSWORD`, which
+is why no test stack could show the refusal. `tests/compose_db_passwords.js` holds
+both halves.

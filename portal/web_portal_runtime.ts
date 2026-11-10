@@ -1353,6 +1353,10 @@ class PortalRuntime extends SpaClient {
     } catch (e) {
       // Storage refused (a private window): there is nothing held in it.
     }
+    // EXCEPT WHOSE TAB IT WAS (#561): a name and no credential. Without it
+    // the next visit sends no login_hint and, with one other account still
+    // signed in, the tab silently becomes that account's.
+    this.keepAccount(kept);
     this.env.location.assign(this.url('/logout') +
       (kept && kept.username
         ? '?login_hint=' + encodeURIComponent(kept.username) : ''));

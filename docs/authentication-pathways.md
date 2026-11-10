@@ -31,6 +31,7 @@ product mode, how strong each is, and the rules that hold for all of them.
 | **Sign-in screen**, password then a second factor | Password, and a TOTP code, passkey, recovery code or wallet | `pwd` and the factor, such as `otp` or `hwk` | `mfa` | Required |
 | **Passkey alone** (passwordless) | One passkey | `hwk` | `1` | Refused under the requirement above, because one key is one factor. Asks for a password instead |
 | **Continue with your certificate** on the screen | A verified TLS client certificate | `swk` | `1` | Asked afterwards where one is required |
+| **OpenID Connect Native SSO** | An ID Token and a device secret, for an application that opted in | As the original sign-in | As the original sign-in | Not asked again: it shares that sign-in |
 | **Passkey with no username** | A discoverable passkey with user verification | `hwk`, `user` | `mfa` | Already two factors |
 | **SIOPv2 self-issued ID** | A wallet's self-issued ID Token, where enabled | `swk` | `1` | Asked afterwards where one is required |
 | **`GET /tls/sign-in`** | A verified TLS client certificate | `swk` | `1` | **Required in product.** This door has no screen, so it starts no session for somebody who needs a second factor. They use the screen's certificate button instead |

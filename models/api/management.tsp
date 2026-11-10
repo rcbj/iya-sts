@@ -16758,7 +16758,11 @@ op `issuePasswordResetLink`(@js(#{`examples`:#[#{`user`:"alice"},#{`user`:"alice
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
-op `disableUserPasskeys`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/content/application~1json/schema`: WithDescriptionUserDescriptionEtc4,
+op `disableUserPasskeys`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"How the person's identity was verified, in at least 8 characters. Product mode requires it, and it is recorded in the audit log."}) `evidence`?: string;
+    @js(#{`description`:"The person, as /admin-api/users names them."}) `user`: string;
+    @js(#{`description`:"Accepted for `user`."}) `username`?: string
+  },
   `responses/200/content/application~1json/schema`: `WithOkMessageErrors27`,
   `responses/400/content/application~1json/schema`: `WithOkMessageErrors27`,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
@@ -16788,7 +16792,11 @@ op `disableUserPasskeys`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/co
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
-op `disableUserSecondFactors`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/content/application~1json/schema`: WithDescriptionUserDescriptionEtc4,
+op `disableUserSecondFactors`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"How the person's identity was verified, in at least 8 characters. Product mode requires it, and it is recorded in the audit log."}) `evidence`?: string;
+    @js(#{`description`:"The person, as /admin-api/users names them."}) `user`: string;
+    @js(#{`description`:"Accepted for `user`."}) `username`?: string
+  },
   `responses/200/content/application~1json/schema`: `WithOkMessageErrors28`,
   `responses/400/content/application~1json/schema`: `WithOkMessageErrors28`,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;

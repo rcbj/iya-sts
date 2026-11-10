@@ -3018,11 +3018,13 @@ class AdminActions {
       return this.refused('STS-ADMIN-0518', { ok: false, errors: ['Name the ' +
           'person in `user`.'] });
     }
+    const self = this;
     const audited = function (name, summary, detail, outcome?) {
       log.debug("Entering audited().");
       auditLog.record({ category: 'admin', action: name, actor: ctx.actor,
         target: who, outcome: outcome || 'success', summary: summary,
-        detail: Object.assign({ username: who, via: ctx.via }, detail || {}) });
+        detail: Object.assign({ username: who, via: ctx.via,
+          evidence: self.evidenceOf(body) || undefined }, detail || {}) });
       log.debug("Leaving audited().");
     };
 
@@ -3212,6 +3214,13 @@ class AdminActions {
                         signedOut.message };
     }
 
+    if (action === 'disable-primary-keys' || action === 'disable-mfa') {
+      const unproved = this.evidenceRefusal(body);
+      if (unproved) {
+        log.debug("Leaving AdminActions.credentialAdminAction(). No evidence.");
+        return unproved;
+      }
+    }
     if (action === 'disable-primary-keys') {
       const result = credentials.removePrimaryKeys(who);
       // A refusal leaves the keys where they are, so no session ends.

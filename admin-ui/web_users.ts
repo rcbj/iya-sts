@@ -4389,6 +4389,8 @@ class UsersPage {
         '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
         '<input type="hidden" name="from" value="user">' +
         '<input type="hidden" name="back" value="' + kit.esc(back) + '">' +
+        (action === 'disable-mfa' || action === 'disable-primary-keys'
+          ? UsersPage.evidenceField(t) : '') +
         (extra || '') +
         '<div class="formrow"><button' + (danger ? ' class="danger"' : '') +
         ' title="' + kit.esc(title) + '">' + label + '</button></div></form>';

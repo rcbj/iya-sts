@@ -31,9 +31,11 @@
 //      `ssf.pushSkipTlsVerification` on. The realm is then switched to product
 //      with the skip still stored: the view reports it not in force, and the
 //      next push is NOT delivered and is dead-lettered. A listener certified
-//      by a CA this job makes at run time, named in `ssf.pushCaFile`, IS
-//      delivered to in product — or, with no directory shared with the
-//      service to put that CA's certificate in, is SKIPPED and says so. Plain http: a stream to an http endpoint is refused at
+//      by a CA this job makes at run time, named in `ssf.pushCaFile`, is
+//      refused in product by its internal address (#1492) and delivered to
+//      in development with the skip off — or, with no directory shared with
+//      the service to put that CA's certificate in, is SKIPPED and says so.
+//      Plain http: a stream to an http endpoint is refused at
 //      creation in product whatever `ssf.pushAllowHttp` says.
 //   3. FEDERATION'S POLICY, through the RFC 9728 import, which borrows it: a
 //      self-signed https document loads in development with
@@ -366,20 +368,35 @@ async function test() {
     assert.strictEqual(selfSigned.seen.length, before,
                        "the self-signed listener was reached in product");
   });
+  let lastDeadLetters = "";
   const dead = await until("the refused push to be dead-lettered",
                            async function () {
     const d = await call("GET", realmBase(DEV) +
                          "/admin-api/ssf/dead-letters?dlstream=" +
                          encodeURIComponent(untrustedStream));
-    return d.status === 200 && /STS-SSF-0044|certificate/i.test(d.text);
+    lastDeadLetters = d.status + " " + (String(d.text).match(
+      /"(reason|errorCode)":\s*"[^"]*"/g) || []).join(" ");
+    return d.status === 200 &&
+      /STS-SSF-0044|STS-SSF-0158|certificate/i.test(d.text);
   });
-  check("and it is dead-lettered with a certificate failure", function () {
-    assert.ok(dead, "no dead letter naming the certificate");
+  // IN PRODUCT THE LISTENER'S ADDRESS IS REFUSED BEFORE ANY HANDSHAKE (#1492,
+  // ASVS 5.0.0 1.3.6): it is on this stack's own network, which product
+  // never dials, so the letter names that (STS-SSF-0158) where a public
+  // address would have failed its certificate (STS-SSF-0044). Either way the
+  // skip delivered nothing.
+  check("and it is dead-lettered, refused by the address or the certificate",
+        function () {
+    assert.ok(dead, "no dead letter naming the address or the certificate: " +
+              lastDeadLetters);
   });
 
+  // THE CA FILE IS ASKED IN DEVELOPMENT, below, with the skip off: in
+  // product this job's listener is on the stack's own network, which product
+  // never dials (#1492), so a push there is refused before any handshake.
+  let trustedStream = "";
   if (!caFile) {
-    skipped += 2;
-    log.info("[skip] the CA-file delivery in product: " + testCa.skipReason());
+    skipped += 3;
+    log.info("[skip] the CA-file delivery: " + testCa.skipReason());
   } else {
     await setting(DEV, "ssf.pushCaFile", caFile);
     r = await create(token, certified.url + "/events");
@@ -387,15 +404,21 @@ async function test() {
           "created", function () {
       assert.ok(r.status === 200 || r.status === 201, r.text.slice(0, 300));
     });
-    const trustedStream = r.json.stream_id;
+    trustedStream = r.json.stream_id;
+    const beforeTrusted = certified.seen.length;
     await verify(token, trustedStream);
-    const reached = await until("the push to the certified listener",
+    const refused = await until("the push to an internal address refused",
                                 async function () {
-                                  return certified.seen.length > 0;
-                                });
-    check("product: with ssf.pushCaFile naming that CA, the push is " +
-          "delivered with verification on", function () {
-      assert.ok(reached, "nothing arrived at " + certified.url);
+      const d = await call("GET", realmBase(DEV) +
+                           "/admin-api/ssf/dead-letters?dlstream=" +
+                           encodeURIComponent(trustedStream));
+      return d.status === 200 && /STS-SSF-0158/.test(d.text);
+    });
+    check("product: that push is refused by its address before any " +
+          "handshake, and nothing arrives", function () {
+      assert.ok(refused, "no dead letter naming the address");
+      assert.strictEqual(certified.seen.length, beforeTrusted,
+                         "the internal listener was reached in product");
     });
   }
 
@@ -411,6 +434,18 @@ async function test() {
   check("development: the same stream is created with it on", function () {
     assert.ok(r.status === 200 || r.status === 201, r.text.slice(0, 300));
   });
+  if (trustedStream) {
+    await setting(DEV, "ssf.pushSkipTlsVerification", false);
+    await verify(token, trustedStream);
+    const reached = await until("the push to the certified listener",
+                                async function () {
+                                  return certified.seen.length > 0;
+                                });
+    check("development, the skip off: with ssf.pushCaFile naming that CA, " +
+          "the push is delivered with verification on", function () {
+      assert.ok(reached, "nothing arrived at " + certified.url);
+    });
+  }
 
   // =========================================================================
   // 3. FEDERATION'S POLICY, THROUGH THE RFC 9728 IMPORT.

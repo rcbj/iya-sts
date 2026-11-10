@@ -45,6 +45,7 @@
 // OWNED HERE (local: true).
 // ---------------------------------------------------------------------------
 
+const navigation = require("./navigation.js");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
@@ -177,7 +178,7 @@ function browser() {
   const jar = {};
   const self = {
     jar: jar,
-    async go(method, url) {
+    async go(method, url, asNavigation) {
       log.debug("Entering go(). " + method + " " + url);
       const headers = {};
       const cookie = Object.keys(jar).map(function (k) {
@@ -187,8 +188,11 @@ function browser() {
         headers.cookie = cookie;
       }
       const absolute = /^https?:\/\//i.test(url) ? url : base + url;
-      const r = await fetch(absolute, { method: method, redirect: "manual",
-                                        headers: headers });
+      // A link the person follows is a navigation, which `fetch` cannot say.
+      const r = asNavigation && method === "GET"
+        ? await navigation.navigate(absolute, headers)
+        : await fetch(absolute, { method: method, redirect: "manual",
+                                  headers: headers });
       const set = r.headers.getSetCookie ? r.headers.getSetCookie() : [];
       set.forEach(function (one) {
         const pair = String(one).split(";")[0];
@@ -259,7 +263,7 @@ async function rpLogout(realm, session) {
   log.debug("Entering rpLogout(). " + realm);
   const r = await session.browser.go("GET", "/realm/" + realm +
     "/oauth2/logout?" + form({ id_token_hint: session.idToken,
-                               client_id: APP }));
+                               client_id: APP }), true);
   log.debug("Leaving rpLogout(). " + r.status);
   return r;
 }

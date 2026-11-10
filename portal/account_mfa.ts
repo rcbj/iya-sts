@@ -352,7 +352,7 @@ class AccountMfa {
                                 'the emailed second factor')
         : { sessionsEnded: 0, sentence: '' };
       const said = action === 'email-factor-on'
-        ? t.text('portal.done.emailOn') : t.text('portal.done.emailOff');
+        ? t.text('portal.done.emailOn') + ' ' + t.text('portal.done.endOthers') : t.text('portal.done.emailOff') + ' ' + t.text('portal.done.endOthers');
       log.debug("Leaving AccountMfa.act(). Email factor changed.");
       // Back to the card it was on, as the redirect's `#email-factor` did.
       return ctx.json(res, 200, { ok: true,
@@ -434,8 +434,8 @@ class AccountMfa {
       log.debug("Leaving AccountMfa.act(). Enrolled.");
       return ctx.json(res, 200, { ok: true,
         message: confirmed.recoveryAdvised
-          ? t.text('portal.done.totpSetUpNoCodes')
-          : t.text('portal.done.totpSetUp') });
+          ? t.text('portal.done.totpSetUpNoCodes') + ' ' + t.text('portal.done.endOthers')
+          : t.text('portal.done.totpSetUp') + ' ' + t.text('portal.done.endOthers') });
     }
 
     // THE RECOVERY CODES: GENERATE, CONFIRM, DISCARD (2026-09-11) — see the
@@ -512,7 +512,7 @@ class AccountMfa {
       }
       log.debug("Leaving AccountMfa.act(). Confirmed and stored.");
       return ctx.json(res, 200, { ok: true,
-        message: t.text('portal.done.codesSaved', { n: stored.total }) });
+        message: t.text('portal.done.codesSaved', { n: stored.total }) + ' ' + t.text('portal.done.endOthers') });
     }
 
     if (action === 'discard-codes') {
@@ -527,7 +527,7 @@ class AccountMfa {
       });
       log.debug("Leaving AccountMfa.act(). Discarded.");
       return ctx.json(res, 200, { ok: true,
-        message: t.text('portal.done.codesDiscarded') });
+        message: t.text('portal.done.codesDiscarded') + ' ' + t.text('portal.done.endOthers') });
     }
 
     // An `action` the schema allowed and this door does not know is not

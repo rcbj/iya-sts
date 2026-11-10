@@ -4589,7 +4589,7 @@ op `createCredentialOffer`(`requestBody/content/application~1json/schema`: {
     }) `signingAlg`?: string;
     `page`?: EmptyTextOrIntegerFrom1To1000004
   },
-  `responses/200/content/application~1json/schema`: {
+  `responses/200/content/application~1json/schema`: {`stepUp`?: {`acrValues`?: string; `prompt`?: string; `maxAge`?: numeric}; 
     `ok`?: boolean;
     `message`?: string;
     `go`?: string;

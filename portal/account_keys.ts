@@ -596,8 +596,8 @@ class AccountKeys {
       log.debug("Leaving AccountKeys.enrol(). Enrolled.");
       return ctx.json(res, 200, { ok: true,
         message: done.held > 1
-          ? t.text('portal.done.passkeyMany', { n: Number(done.held) })
-          : t.text('portal.done.passkeyOne'),
+          ? t.text('portal.done.passkeyMany', { n: Number(done.held) }) + ' ' + t.text('portal.done.endOthers')
+          : t.text('portal.done.passkeyOne') + ' ' + t.text('portal.done.endOthers'),
         go: ctx.PORTAL + '/keys' });
     }
 
