@@ -5,7 +5,8 @@ title: Input validation
 # Input validation
 
 Every request this service accepts is checked for its shape before anything acts
-on it. Shape is checked the same way in development and product mode. Whether a
+on it. Shape is checked the same way in development and product mode, with one
+exception: a repeated parameter on a protocol endpoint, below. Whether a
 client, a person or a password is known or correct is a separate question, and
 [What is not checked](what-is-not-checked.md) covers it.
 
@@ -14,7 +15,7 @@ client, a person or a password is known or correct is a separate question, and
 | Rule | What happens |
 |---|---|
 | **Control characters** | None are allowed in a query parameter, path parameter or header. In a body field, tab, newline and carriage return are allowed, and nothing else below U+0020. |
-| **A repeated parameter** | Refused, unless that parameter is defined as repeatable (RFC 8707's `resource` and RFC 8693's `audience`, for example). This service never picks one value and discards the rest. In product mode, SAML 2.0, SAML 1.1 and WS-Federation also refuse a parameter given in both the query string and the body. |
+| **A repeated parameter** | Refused, unless that parameter is defined as repeatable (RFC 8707's `resource` and RFC 8693's `audience`, for example). In product mode this service never picks one value and discards the rest. In development mode the OAuth authorization and token endpoints take the last value instead, unless the realm is in OAuth 2.1 mode ([OAuth 2.0 and OpenID Connect](oauth-oidc.md)). In product mode, SAML 2.0, SAML 1.1 and WS-Federation also refuse a parameter given in both the query string and the body. |
 | **Parameter names that pollute objects** | `__proto__` and similar names are refused everywhere. |
 | **Unknown parameters** | Ignored on protocol endpoints, because RFC 6749 and OpenID Connect require it. On the [management](management-api.md#query-parameters-and-headers), [account](account-api.md#what-a-request-may-name), [sign-in](authn-api.md#what-a-request-may-name) and [report](reporting.md#what-a-request-may-name) APIs, a query parameter the operation does not list, a value that does not fit its declared type, and a custom header nothing declares are each refused with a 400, and so is an unknown member of a JSON body the operation's schema closes. |
 | **Body size** | 5 MB at most, and less wherever a field states a limit. |
