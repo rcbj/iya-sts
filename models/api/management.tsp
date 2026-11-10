@@ -39322,6 +39322,7 @@ op `createAcmeEab`(@js(#{`examples`:#[#{`kind`:"person",`identifier`:"alice"}]})
     @js(#{
       `minLength`:1,
       `maxLength`:256,
+      `pattern`:"^[^\\x00-\\x1f\\x7f]+$",
       `description`:"The username of a person, or the identifier of an application, in this realm."
     }) `identifier`: string;
     @js(#{
@@ -39479,6 +39480,7 @@ op `addAcmeHostName`(@js(#{
     @js(#{
       `minLength`:1,
       `maxLength`:256,
+      `pattern`:"^[^\\x00-\\x1f\\x7f]+$",
       `description`:"The username of a person, or the identifier of an application, in this realm."
     }) `identifier`: string;
     @js(#{
@@ -39527,6 +39529,7 @@ op `removeAcmeHostName`(@js(#{
     @js(#{
       `minLength`:1,
       `maxLength`:256,
+      `pattern`:"^[^\\x00-\\x1f\\x7f]+$",
       `description`:"The username of a person, or the identifier of an application, in this realm."
     }) `identifier`: string;
     @js(#{
@@ -39721,6 +39724,13 @@ op `getEstMonitor`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: in
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
 
+// The nine profiles an enrollment protocol issues, written from
+// `common/enrollment_profiles.js` at build time (#1579), as the Account API's
+// challenge profiles are: a profile is added in that file only.
+@js(#{
+    `$enumFrom`:#{`module`:"common/enrollment_profiles.js",`export`:"PROFILE_IDS"}
+  }) @hoisted scalar EnrollmentProfileId extends string;
+
 @endpoint("/admin-api/est/issue-server-key",
   "post",
   #{
@@ -39765,7 +39775,7 @@ op `issueEstServerKey`(@js(#{
     }) `identifier`: string;
     @js(#{
       `description`:"One of the nine profiles; `est.defaultProfile` when omitted."
-    }) `profile`?: string;
+    }) `profile`?: EnrollmentProfileId;
     @js(#{
       `description`:"A key algorithm id from GET /admin-api/est `keyAlgorithms`; ec-p256 when omitted."
     }) `keyAlg`?: "rsa-2048" | "rsa-3072" | "rsa-4096" | "ec-p256" | "ec-p384" | "ec-p521" | "ed25519" | "ml-dsa-44" | "ml-dsa-65" | "ml-dsa-87" | "slh-dsa-sha2-128s" | "slh-dsa-sha2-128f" | "slh-dsa-sha2-192s" | "slh-dsa-sha2-192f" | "slh-dsa-sha2-256s" | "slh-dsa-sha2-256f" | "slh-dsa-shake-128s" | "slh-dsa-shake-128f" | "slh-dsa-shake-192s" | "slh-dsa-shake-192f" | "slh-dsa-shake-256s" | "slh-dsa-shake-256f" | "mldsa44-rsa2048-pss-sha256" | "mldsa44-rsa2048-pkcs15-sha256" | "mldsa44-ed25519-sha512" | "mldsa44-ecdsa-p256-sha256" | "mldsa65-rsa3072-pss-sha512" | "mldsa65-rsa3072-pkcs15-sha512" | "mldsa65-rsa4096-pss-sha512" | "mldsa65-rsa4096-pkcs15-sha512" | "mldsa65-ecdsa-p256-sha512" | "mldsa65-ecdsa-p384-sha512" | "mldsa65-ed25519-sha512" | "mldsa87-ecdsa-p384-sha512" | "mldsa87-ed448-shake256" | "mldsa87-rsa3072-pss-sha512" | "mldsa87-rsa4096-pss-sha512" | "mldsa87-ecdsa-p521-sha512" | "ml-kem-512" | "ml-kem-768" | "ml-kem-1024"
@@ -39803,6 +39813,7 @@ op `revokeEstCertificate`(@js(#{`examples`:#[#{`serial`:"00",`reason`:"keyCompro
     @js(#{
       `minLength`:1,
       `maxLength`:80,
+      `pattern`:"^[0-9A-Fa-f:]+$",
       `description`:"The serial, from GET /admin-api/est."
     }) `serial`: string;
     @js(#{
@@ -40044,6 +40055,7 @@ op `removeEstHostName`(@js(#{
         `name`:"per",
         `in`:"query",
         `required`:false,
+        `allowEmptyValue`:true,
         `schema`:null,
         `description`:"Rows per page, for both lists."
       },
@@ -40051,6 +40063,7 @@ op `removeEstHostName`(@js(#{
         `name`:"certificatesPage",
         `in`:"query",
         `required`:false,
+        `allowEmptyValue`:true,
         `schema`:null,
         `description`:"The page of the enrolled certificates."
       },
@@ -40058,6 +40071,7 @@ op `removeEstHostName`(@js(#{
         `name`:"credentialsPage",
         `in`:"query",
         `required`:false,
+        `allowEmptyValue`:true,
         `schema`:null,
         `description`:"The page of the challenge passwords."
       }
@@ -40065,8 +40079,8 @@ op `removeEstHostName`(@js(#{
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getScep`(@js(#{`minimum`:1,`maximum`:1000,`examples`:#[10]}) `parameters/0/schema`: integer,
-  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
-  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:1000000,`examples`:#[1]}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:1000000,`examples`:#[1]}) `parameters/2/schema`: integer,
   `responses/200/content/application~1json/schema`: get_admin_api_scep_r200_application_json_h3111,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
@@ -40093,6 +40107,7 @@ op `getScep`(@js(#{`minimum`:1,`maximum`:1000,`examples`:#[10]}) `parameters/0/s
         `name`:"per",
         `in`:"query",
         `required`:false,
+        `allowEmptyValue`:true,
         `schema`:null,
         `description`:"Rows per page of the recent requests."
       },
@@ -40100,6 +40115,7 @@ op `getScep`(@js(#{`minimum`:1,`maximum`:1000,`examples`:#[10]}) `parameters/0/s
         `name`:"page",
         `in`:"query",
         `required`:false,
+        `allowEmptyValue`:true,
         `schema`:null,
         `description`:"The page of the recent requests."
       }
@@ -40107,7 +40123,7 @@ op `getScep`(@js(#{`minimum`:1,`maximum`:1000,`examples`:#[10]}) `parameters/0/s
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getScepMonitor`(@js(#{`minimum`:1,`maximum`:1000,`examples`:#[10]}) `parameters/0/schema`: integer,
-  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:1000000,`examples`:#[1]}) `parameters/1/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `page`?: string;
     `title`?: string;
@@ -40170,10 +40186,11 @@ op `createScepChallenge`(@js(#{
   }) `requestBody/content/application~1json/schema`: {
     @js(#{`description`:"Whether the entry is a person or an application."}) `kind`: "person" | "application";
     @js(#{
+      `minLength`:1,
       `maxLength`:256,
       `description`:"The username or the application identifier, in this realm."
     }) `identifier`: string;
-    @js(#{`maxLength`:64,`description`:"One of the nine enrollment profiles."}) `profile`?: string;
+    @js(#{`minLength`:1,`maxLength`:64,`pattern`:"^[a-z][a-z0-9-]{0,63}$",`description`:"One of the nine enrollment profiles."}) `profile`?: string;
     @js(#{
       `minimum`:60,
       `maximum`:2592000,
@@ -40211,7 +40228,9 @@ op `createScepChallenge`(@js(#{
   })
 op `deleteScepChallenge`(@js(#{`examples`:#[#{`id`:"scep-p-bm9ib2R5-0000000000000000"}]}) `requestBody/content/application~1json/schema`: {
     @js(#{
+      `minLength`:1,
       `maxLength`:600,
+      `pattern`:"^scep-[pa]-[A-Za-z0-9_-]{1,400}-[0-9a-f]{16}(?:[A-Za-z0-9_-]{12})?$",
       `description`:"The challenge id, from GET /admin-api/scep."
     }) `id`: string
   },
@@ -40275,7 +40294,7 @@ op `reissueScepRa`(@js(#{`examples`:#[#{}]}) `requestBody/content/application~1j
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `revokeScepCertificate`(@js(#{`examples`:#[#{`serial`:"0badc0de",`reason`:"keyCompromise"}]}) `requestBody/content/application~1json/schema`: {
-    @js(#{`maxLength`:128,`description`:"The serial, hexadecimal."}) `serial`: string;
+    @js(#{`minLength`:1,`maxLength`:128,`pattern`:"^[0-9A-Fa-f:]+$",`description`:"The serial, hexadecimal."}) `serial`: string;
     @js(#{`description`:"The RFC 5280 reason."}) `reason`?: "unspecified" | "keyCompromise" | "affiliationChanged" | "superseded" | "cessationOfOperation" | "privilegeWithdrawn"
   },
   `responses/200/content/application~1json/schema`: `WithOkMessageErrors167`,
@@ -41257,6 +41276,7 @@ op `revokeOidfedKey`(@js(#{
         `name`:"offset",
         `in`:"query",
         `required`:false,
+        `allowEmptyValue`:true,
         `schema`:null,
         `description`:"Skip this many pushed requests (newest first). Wins over `page` when both are sent."
       },
@@ -41264,6 +41284,7 @@ op `revokeOidfedKey`(@js(#{
         `name`:"limit",
         `in`:"query",
         `required`:false,
+        `allowEmptyValue`:true,
         `schema`:null,
         `description`:"At most this many pushed requests; 50 by default."
       },
@@ -41271,6 +41292,7 @@ op `revokeOidfedKey`(@js(#{
         `name`:"state",
         `in`:"query",
         `required`:false,
+        `allowEmptyValue`:true,
         `schema`:null,
         `description`:"`live` (not yet spent), `spent` (an authorization response was issued on it; kept until it would have expired), or `all`, the default."
       },
@@ -41278,6 +41300,7 @@ op `revokeOidfedKey`(@js(#{
         `name`:"client_id",
         `in`:"query",
         `required`:false,
+        `allowEmptyValue`:true,
         `schema`:null,
         `description`:"Only the pushed requests bound to this client."
       },
@@ -41285,6 +41308,7 @@ op `revokeOidfedKey`(@js(#{
         `name`:"page",
         `in`:"query",
         `required`:false,
+        `allowEmptyValue`:true,
         `schema`:null,
         `description`:"The console's spelling: which page of pushed requests, `per` to a page."
       },
@@ -41292,6 +41316,7 @@ op `revokeOidfedKey`(@js(#{
         `name`:"per",
         `in`:"query",
         `required`:false,
+        `allowEmptyValue`:true,
         `schema`:null,
         `description`:"Rows per page, for `page` and `clientsPage`."
       },
@@ -41299,6 +41324,7 @@ op `revokeOidfedKey`(@js(#{
         `name`:"clientsPage",
         `in`:"query",
         `required`:false,
+        `allowEmptyValue`:true,
         `schema`:null,
         `description`:"Which page of the RFC 9126 section's per-client counter rows."
       },
@@ -41306,20 +41332,21 @@ op `revokeOidfedKey`(@js(#{
         `name`:"stepUpClientsPage",
         `in`:"query",
         `required`:false,
+        `allowEmptyValue`:true,
         `schema`:null,
         `description`:"Which page of the RFC 9470 section's per-client counter rows."
       }
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getOauth2Monitor`(@js(#{`minimum`:0,`examples`:#[0]}) `parameters/0/schema`: integer,
+op `getOauth2Monitor`(@js(#{`minimum`:0,`maximum`:100000000,`examples`:#[0]}) `parameters/0/schema`: integer,
   @js(#{`minimum`:1,`maximum`:500,`examples`:#[50]}) `parameters/1/schema`: integer,
   @js(#{`examples`:#["all"]}) `parameters/2/schema`: "live" | "spent" | "all",
-  @js(#{`maxLength`:256,`examples`:#["no-such-client"]}) `parameters/3/schema`: string,
-  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/4/schema`: integer,
+  @js(#{`minLength`:1,`maxLength`:256,`pattern`:"^[\\x21-\\x7E]+$",`examples`:#["no-such-client"]}) `parameters/3/schema`: string,
+  @js(#{`minimum`:1,`maximum`:1000000,`examples`:#[1]}) `parameters/4/schema`: integer,
   @js(#{`minimum`:1,`maximum`:500,`examples`:#[10]}) `parameters/5/schema`: integer,
-  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/6/schema`: integer,
-  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/7/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:1000000,`examples`:#[1]}) `parameters/6/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:1000000,`examples`:#[1]}) `parameters/7/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `page`?: string;
     `title`?: string;

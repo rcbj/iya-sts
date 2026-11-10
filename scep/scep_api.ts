@@ -219,7 +219,7 @@ class ScepApi {
         handler: function (req, res) {
           log.debug("Entering the management API SCEP monitor endpoint.");
           const model = loadScepConsole();
-          const query = model.queryOf(req);
+          const query = model.queryOf(req, 'monitor');
           if (!query.ok) {
             errorCodes.mark(res, 'STS-SCEP-0060');
             self.send(res, 400, { ok: false, errors: [query.detail] });

@@ -117,9 +117,12 @@ document reaches its validator, `crit` and the other refused header members
 takes is the resource's), the account key's shape against `alg` and its
 thumbprint, the signature, the Replay-Nonce's MAC and its spending, a
 contact's scheme and address, an identifier's value against its type,
-ownership, the profile, `notBefore`/`notAfter`, `replaces`, the CSR, and the
-console's actions (`acme_console.ts`), whose bodies `/admin-api`'s own model
-validates. `MIN_RSA_BITS` is a policy number, not a shape, and stays.
+ownership, the profile, `notBefore`/`notAfter`, `replaces` and the CSR. The
+console's actions (`acme_console.ts`) check each body against its own
+operation in the Management API OpenAPI document (`ModelZod.body()`), the one
+`/admin-api` holds the request to first; `est_console.ts` and
+`scep_console.ts` do the same, and SCEP's two views read their operations'
+queries. `MIN_RSA_BITS` is a policy number, not a shape, and stays.
 `PROFILE_DESCRIPTIONS` is display text; the profiles' names are
 `common/enrollment_profiles.js`'s, which the model does not copy.
 

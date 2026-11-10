@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5421** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5418** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -1217,7 +1217,7 @@ Raised from: acme/.
 | `STS-ACME-0094` | An ACME console or management API EAB or host name action was refused by the core with no code of its own. | Console error notice; HTTP 400 {ok: false, errors} from /admin-api |
 | `STS-ACME-0095` | An ACME endpoint, console action or management API action threw unexpectedly. | HTTP 500, ACME serverInternal problem; console error notice |
 | `STS-ACME-0096` | An ACME console or management API revoke-certificate named a certificate that is already revoked. | Console error notice; HTTP 400 {ok: false, errors} from /admin-api |
-| `STS-ACME-0097` | The query string of an ACME console page failed validation. | HTTP 400 text/plain |
+| `STS-ACME-0097` *(retired)* | The query string of an ACME console page failed validation. | HTTP 400 text/plain |
 | `STS-ACME-0098` | An ACME finalize was refused because the order is already being finalized by another request, on this node or another. | HTTP 403, ACME orderNotReady problem |
 | `STS-ACME-0099` | An ACME Replay-Nonce or an order's finalize could not be claimed because the cluster store could not be asked, so the request was refused. | HTTP 500, ACME serverInternal problem |
 | `STS-ACME-0100` | An ACME answer or problem document carried a member its model in models/enrollment/acme.tsp does not name, one of a type or a value the model does not allow, or lacked a required one (#1579). The answer is sent as it was built: the model describes the wire and does not reshape it, so this is a model gap to close. | none (recorded only; the answer is unchanged) |
@@ -1253,7 +1253,7 @@ Raised from: est/.
 | `STS-EST-0020` | An EST handler failed unexpectedly; the client is told nothing about why. | HTTP 500 with a generic sentence |
 | `STS-EST-0021` | A /simplereenroll named a certificate that has expired or been revoked. | HTTP 400 |
 | `STS-EST-0022` | An EST label named a trust realm where the realm was already named — by the /realm/<id> prefix or by an earlier label segment (#251). A request names its realm once. | HTTP 404 with a plain-text sentence |
-| `STS-EST-0030` | A query string on /admin/est or /admin/est/monitor failed validation. | HTTP 400 on the console |
+| `STS-EST-0030` *(retired)* | A query string on /admin/est or /admin/est/monitor failed validation. | HTTP 400 on the console |
 | `STS-EST-0031` | An EST console or /admin-api action body failed validation. | HTTP 400 on the console or /admin-api |
 | `STS-EST-0032` | An EST console or /admin-api action named an action that does not exist. | HTTP 400 on the console or /admin-api |
 | `STS-EST-0033` | An EST /admin-api action was refused and carried no more specific code. | HTTP 400 on /admin-api |
@@ -4670,7 +4670,7 @@ Raised from: gnap/.
 | `STS-GNAP-0660` | A GNAP console or management API revoke-grant names a grant that is not in this realm. | Console error notice; HTTP 400 {ok: false, errors} from /admin-api |
 | `STS-GNAP-0661` | A GNAP console or management API delete-resource-set names a resource set not registered in this realm. | Console error notice; HTTP 400 {ok: false, errors} from /admin-api |
 | `STS-GNAP-0662` | A GNAP console or management API action is not one of revoke-grant and delete-resource-set. | Console error notice; HTTP 400 {ok: false, errors} from /admin-api |
-| `STS-GNAP-0663` | The query string of a GNAP console page failed validation. | HTTP 400 text/plain |
+| `STS-GNAP-0663` *(retired)* | The query string of a GNAP console page failed validation. | HTTP 400 text/plain |
 | `STS-GNAP-0664` *(retired)* | A GNAP console action form post failed validation. | Console error notice |
 | `STS-GNAP-0665` | A GNAP management API action was refused and the refusal carried no more specific code. | HTTP 400 {ok: false, errors} |
 | `STS-GNAP-0700` | The approver of a GNAP grant could not be recorded for the Shared Signals subject scope; the approval went ahead. | — |
