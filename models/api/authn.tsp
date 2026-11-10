@@ -187,8 +187,10 @@
 // --- the consent screen ---------------------------------------------------
 
 import "../lib/api_lib.tsp";
+import "./common.tsp";
 
 using IyaSts.ApiLib;
+using IyaSts.Api.Common;
 
 @apiDocument(#{
   `x-iya-every-operation`:#[#{`name`:"X-Requested-With",`in`:"header",`required`:false,`description`:"Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it.",`schema`:#{`type`:"string"}}],
@@ -204,10 +206,6 @@ using IyaSts.ApiLib;
 })
 namespace IyaSts.Api.Authn {
   
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_authn_api_r200_application_json_operations_i_mirrors_h1 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_authn_api_r200_application_json_operations_i_action_h2 {}
 
 @endpoint("/authn-api",
   "get",
@@ -243,8 +241,8 @@ op `getIndex`(`responses/200/content/application~1json/schema`: {
       `path`?: string;
       `operationId`?: string;
       `access`?: string;
-      `mirrors`?: get_authn_api_r200_application_json_operations_i_mirrors_h1;
-      `action`?: get_authn_api_r200_application_json_operations_i_action_h2;
+      `mirrors`?: NullableString;
+      `action`?: NullableString;
       `summary`?: string
     })[]
   },
@@ -330,27 +328,9 @@ op `getOpenApi`(`responses/200/content/application~1json/schema`: {
 
 @js(#{
     `additionalProperties`:false,
-    `properties`:#{
-      `name`:#{`type`:"string"},
-      `logo`:#{`type`:"string"},
-      `logoOrigin`:#{`type`:"string"},
-      `policy`:#{`type`:"string"},
-      `tos`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_authn_api_pending__id__r200_application_json_view_clientDisplay_h3 {}
-
-@js(#{
-    `additionalProperties`:false,
     `properties`:#{`name`:#{`type`:"string"},`mfaNote`:#{`type`:"boolean"}},
     `$types`:#["object","null"]
   }) @hoisted model get_authn_api_pending__id__r200_application_json_view_certificate_h4 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`register`:#{`type`:"string"}},
-    `$types`:#["object","null"]
-  }) @hoisted model get_authn_api_pending__id__r200_application_json_view_postQuantumRequired_h5 {}
 
 @js(#{
     `additionalProperties`:false,
@@ -462,10 +442,10 @@ op `getScreen`(`parameters/0/schema`: string,
       `passkey`?: boolean;
       `usernameless`?: boolean;
       `email`?: {`code`?: boolean; `link`?: boolean};
-      `clientDisplay`?: get_authn_api_pending__id__r200_application_json_view_clientDisplay_h3;
+      `clientDisplay`?: NullableObject30;
       `reauthentication`?: string;
       `certificate`?: get_authn_api_pending__id__r200_application_json_view_certificate_h4;
-      `postQuantumRequired`?: get_authn_api_pending__id__r200_application_json_view_postQuantumRequired_h5;
+      `postQuantumRequired`?: NullableObject31;
       `forgot`?: string;
       `partners`?: get_authn_api_pending__id__r200_application_json_view_partners_h6;
       `kerberos`?: get_authn_api_pending__id__r200_application_json_view_kerberos_h7;
@@ -574,40 +554,15 @@ op `getPartners`(`parameters/0/schema`: string,
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_authn_api_pending__id__password_b_application_json_username_v0_h9 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:256}) @hoisted scalar post_authn_api_pending__id__password_b_application_json_username_v1_h10 extends string;
   
 
-@hoisted union post_authn_api_pending__id__password_b_application_json_username_h11 {
-    post_authn_api_pending__id__password_b_application_json_username_v0_h9,
-    post_authn_api_pending__id__password_b_application_json_username_v1_h10
-  }
-
-@js(#{`const`:""}) @hoisted scalar post_authn_api_pending__id__password_b_application_json_use_webauthn_v0_h12 extends string;
   
 
-@hoisted union post_authn_api_pending__id__password_b_application_json_use_webauthn_h13 {
-    post_authn_api_pending__id__password_b_application_json_use_webauthn_v0_h12,
-    "0" | "1" | "true" | "false" | "on" | "off" | "yes" | "no"
-  }
-
-@js(#{`const`:""}) @hoisted scalar post_authn_api_pending__id__password_b_application_json_webauthn_only_v0_h14 extends string;
   
 
-@hoisted union post_authn_api_pending__id__password_b_application_json_webauthn_only_h15 {
-    post_authn_api_pending__id__password_b_application_json_webauthn_only_v0_h14,
-    "0" | "1" | "true" | "false" | "on" | "off" | "yes" | "no"
-  }
-
-@js(#{`const`:""}) @hoisted scalar post_authn_api_pending__id__password_b_application_json_remember_browser_v0_h16 extends string;
   
-
-@hoisted union post_authn_api_pending__id__password_b_application_json_remember_browser_h17 {
-    post_authn_api_pending__id__password_b_application_json_remember_browser_v0_h16,
-    "0" | "1" | "true" | "false" | "on" | "off" | "yes" | "no"
-  }
 
 @endpoint("/authn-api/pending/{id}/password",
   "post",
@@ -666,11 +621,11 @@ op `getPartners`(`parameters/0/schema`: string,
 op `signInWithPassword`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {
-    `username`?: post_authn_api_pending__id__password_b_application_json_username_h11;
+    `username`?: EmptyTextOrStringMin1Max256;
     @js(#{`maxLength`:1024}) `password`?: string;
-    `use_webauthn`?: post_authn_api_pending__id__password_b_application_json_use_webauthn_h13;
-    `webauthn_only`?: post_authn_api_pending__id__password_b_application_json_webauthn_only_h15;
-    `remember_browser`?: post_authn_api_pending__id__password_b_application_json_remember_browser_h17;
+    `use_webauthn`?: EmptyTextOr01TrueFalseOnOffYesNo;
+    `webauthn_only`?: EmptyTextOr01TrueFalseOnOffYesNo;
+    `remember_browser`?: EmptyTextOr01TrueFalseOnOffYesNo;
     @js(#{`maxLength`:64,`pattern`:"^[A-Za-z0-9]*$"}) `device_fp`?: string
   },
   @js(#{
@@ -954,13 +909,7 @@ op `cancelSignIn`(`parameters/0/schema`: string,
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_authn_api_pending__id__anonymous_b_application_json_remember_browser_v0_h18 extends string;
   
-
-@hoisted union post_authn_api_pending__id__anonymous_b_application_json_remember_browser_h19 {
-    post_authn_api_pending__id__anonymous_b_application_json_remember_browser_v0_h18,
-    "0" | "1" | "true" | "false" | "on" | "off" | "yes" | "no"
-  }
 
 @endpoint("/authn-api/pending/{id}/anonymous",
   "post",
@@ -1019,7 +968,7 @@ op `cancelSignIn`(`parameters/0/schema`: string,
 op `continueAnonymously`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {
-    `remember_browser`?: post_authn_api_pending__id__anonymous_b_application_json_remember_browser_h19;
+    `remember_browser`?: EmptyTextOr01TrueFalseOnOffYesNo;
     @js(#{`maxLength`:64,`pattern`:"^[A-Za-z0-9]*$"}) `device_fp`?: string
   },
   @js(#{
@@ -1134,13 +1083,7 @@ op `continueAnonymously`(`parameters/0/schema`: string,
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_authn_api_pending__id__certificate_b_application_json_remember_browser_v0_h20 extends string;
   
-
-@hoisted union post_authn_api_pending__id__certificate_b_application_json_remember_browser_h21 {
-    post_authn_api_pending__id__certificate_b_application_json_remember_browser_v0_h20,
-    "0" | "1" | "true" | "false" | "on" | "off" | "yes" | "no"
-  }
 
 @endpoint("/authn-api/pending/{id}/certificate",
   "post",
@@ -1199,7 +1142,7 @@ op `continueAnonymously`(`parameters/0/schema`: string,
 op `continueWithCertificate`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {
-    `remember_browser`?: post_authn_api_pending__id__certificate_b_application_json_remember_browser_h21;
+    `remember_browser`?: EmptyTextOr01TrueFalseOnOffYesNo;
     @js(#{`maxLength`:64,`pattern`:"^[A-Za-z0-9]*$"}) `device_fp`?: string
   },
   @js(#{
@@ -1314,24 +1257,11 @@ op `continueWithCertificate`(`parameters/0/schema`: string,
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_authn_api_pending__id__email_b_application_json_username_v0_h22 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:256}) @hoisted scalar post_authn_api_pending__id__email_b_application_json_username_v1_h23 extends string;
   
 
-@hoisted union post_authn_api_pending__id__email_b_application_json_username_h24 {
-    post_authn_api_pending__id__email_b_application_json_username_v0_h22,
-    post_authn_api_pending__id__email_b_application_json_username_v1_h23
-  }
-
-@js(#{`const`:""}) @hoisted scalar post_authn_api_pending__id__email_b_application_json_remember_browser_v0_h25 extends string;
   
-
-@hoisted union post_authn_api_pending__id__email_b_application_json_remember_browser_h26 {
-    post_authn_api_pending__id__email_b_application_json_remember_browser_v0_h25,
-    "0" | "1" | "true" | "false" | "on" | "off" | "yes" | "no"
-  }
 
 @endpoint("/authn-api/pending/{id}/email",
   "post",
@@ -1390,9 +1320,9 @@ op `continueWithCertificate`(`parameters/0/schema`: string,
 op `signInByEmail`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {
-    `username`?: post_authn_api_pending__id__email_b_application_json_username_h24;
+    `username`?: EmptyTextOrStringMin1Max256;
     `kind`: "code" | "link";
-    `remember_browser`?: post_authn_api_pending__id__email_b_application_json_remember_browser_h26;
+    `remember_browser`?: EmptyTextOr01TrueFalseOnOffYesNo;
     @js(#{`maxLength`:64,`pattern`:"^[A-Za-z0-9]*$"}) `device_fp`?: string
   },
   @js(#{
@@ -1650,13 +1580,7 @@ op `passkeyOptions`(`parameters/0/schema`: string,
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_authn_api_pending__id__passkey_b_application_json_remember_browser_v0_h27 extends string;
   
-
-@hoisted union post_authn_api_pending__id__passkey_b_application_json_remember_browser_h28 {
-    post_authn_api_pending__id__passkey_b_application_json_remember_browser_v0_h27,
-    "0" | "1" | "true" | "false" | "on" | "off" | "yes" | "no"
-  }
 
 @endpoint("/authn-api/pending/{id}/passkey",
   "post",
@@ -1716,7 +1640,7 @@ op `signInWithPasskey`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {
     @js(#{`maxLength`:65536}) `credential`?: string;
-    `remember_browser`?: post_authn_api_pending__id__passkey_b_application_json_remember_browser_h28;
+    `remember_browser`?: EmptyTextOr01TrueFalseOnOffYesNo;
     @js(#{`maxLength`:64,`pattern`:"^[A-Za-z0-9]*$"}) `device_fp`?: string
   },
   @js(#{
@@ -2232,158 +2156,6 @@ op `startOverFromPasswordChange`(`parameters/0/schema`: string,
   }): void;
   
 
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `name`:#{`type`:"string"},
-      `logo`:#{`type`:"string"},
-      `logoOrigin`:#{`type`:"string"},
-      `policy`:#{`type`:"string"},
-      `tos`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_authn_api_mfa__id__r200_application_json_view_clientDisplay_h29 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`id`:#{`type`:"string"},`name`:#{`type`:"string"}},
-    `$types`:#["object","null"]
-  }) @hoisted model get_authn_api_mfa__id__r200_application_json_view_webauthn_chosen_h30 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`why`:#{`type`:"string"}},
-    `$types`:#["object","null"]
-  }) @hoisted model get_authn_api_mfa__id__r200_application_json_view_webauthn_postQuantumRefused_h31 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`why`:#{`type`:"string"}},
-    `$types`:#["object","null"]
-  }) @hoisted model get_authn_api_mfa__id__r200_application_json_view_webauthn_hardwareRefused_h32 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`register`:#{`type`:"string"}},
-    `$types`:#["object","null"]
-  }) @hoisted model get_authn_api_mfa__id__r200_application_json_view_webauthn_postQuantumHelp_h33 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `asksPostQuantum`:#{`type`:"boolean"},
-      `classical`:#{`type`:"boolean"},
-      `retrying`:#{`type`:"boolean"},
-      `upgrade`:#{`type`:"boolean"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_authn_api_mfa__id__r200_application_json_view_webauthn_fallback_h34 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `required`:#{`type`:"boolean"},
-      `upgrade`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `phase`:#{`type`:"string",`enum`:#["proof","registration"]},
-          `name`:#{`type`:"string"},
-          `previousAlgorithm`:#{`type`:"string"}
-        }
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_authn_api_mfa__id__r200_application_json_view_webauthn_postLogin_h35 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `uri`:#{`type`:"string"},
-      `secret`:#{`type`:"string"},
-      `algorithm`:#{`type`:"string"},
-      `digits`:#{`type`:"number"},
-      `period`:#{`type`:"number"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_authn_api_mfa__id__r200_application_json_view_setup_totp_h36 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `name`:#{`type`:"string"},
-      `logo`:#{`type`:"string"},
-      `logoOrigin`:#{`type`:"string"},
-      `policy`:#{`type`:"string"},
-      `tos`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_authn_api_mfa__id__r400_application_json_view_clientDisplay_h37 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`id`:#{`type`:"string"},`name`:#{`type`:"string"}},
-    `$types`:#["object","null"]
-  }) @hoisted model get_authn_api_mfa__id__r400_application_json_view_webauthn_chosen_h38 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`why`:#{`type`:"string"}},
-    `$types`:#["object","null"]
-  }) @hoisted model get_authn_api_mfa__id__r400_application_json_view_webauthn_postQuantumRefused_h39 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`why`:#{`type`:"string"}},
-    `$types`:#["object","null"]
-  }) @hoisted model get_authn_api_mfa__id__r400_application_json_view_webauthn_hardwareRefused_h40 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`register`:#{`type`:"string"}},
-    `$types`:#["object","null"]
-  }) @hoisted model get_authn_api_mfa__id__r400_application_json_view_webauthn_postQuantumHelp_h41 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `asksPostQuantum`:#{`type`:"boolean"},
-      `classical`:#{`type`:"boolean"},
-      `retrying`:#{`type`:"boolean"},
-      `upgrade`:#{`type`:"boolean"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_authn_api_mfa__id__r400_application_json_view_webauthn_fallback_h42 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `required`:#{`type`:"boolean"},
-      `upgrade`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `phase`:#{`type`:"string",`enum`:#["proof","registration"]},
-          `name`:#{`type`:"string"},
-          `previousAlgorithm`:#{`type`:"string"}
-        }
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_authn_api_mfa__id__r400_application_json_view_webauthn_postLogin_h43 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `uri`:#{`type`:"string"},
-      `secret`:#{`type`:"string"},
-      `algorithm`:#{`type`:"string"},
-      `digits`:#{`type`:"number"},
-      `period`:#{`type`:"number"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_authn_api_mfa__id__r400_application_json_view_setup_totp_h44 {}
-
 @endpoint("/authn-api/mfa/{id}",
   "get",
   #{
@@ -2454,7 +2226,7 @@ op `getStep`(`parameters/0/schema`: string,
         `email`?: string;
         `backup`?: boolean
       };
-      `clientDisplay`?: get_authn_api_mfa__id__r200_application_json_view_clientDisplay_h29;
+      `clientDisplay`?: NullableObject30;
       `totp`?: {`digits`?: numeric; `period`?: numeric};
       `amr`?: (string)[];
       `backup`?: {
@@ -2468,19 +2240,19 @@ op `getStep`(`parameters/0/schema`: string,
         `mode`?: "create" | "get";
         `passwordless`?: boolean;
         `choices`?: ({`id`?: string; `name`?: string})[];
-        `chosen`?: get_authn_api_mfa__id__r200_application_json_view_webauthn_chosen_h30;
+        `chosen`?: NullableObject26;
         `problem`?: string;
-        `postQuantumRefused`?: get_authn_api_mfa__id__r200_application_json_view_webauthn_postQuantumRefused_h31;
-        `hardwareRefused`?: get_authn_api_mfa__id__r200_application_json_view_webauthn_hardwareRefused_h32;
-        `postQuantumHelp`?: get_authn_api_mfa__id__r200_application_json_view_webauthn_postQuantumHelp_h33;
+        `postQuantumRefused`?: NullableObject32;
+        `hardwareRefused`?: NullableObject32;
+        `postQuantumHelp`?: NullableObject31;
         `postQuantumAllowCredentials`?: string;
-        `fallback`?: get_authn_api_mfa__id__r200_application_json_view_webauthn_fallback_h34;
+        `fallback`?: NullableObject33;
         `rpId`?: string;
         `widened`?: boolean;
         `challenge`?: string;
         `attestation`?: string;
         `algorithms`?: (string)[];
-        `postLogin`?: get_authn_api_mfa__id__r200_application_json_view_webauthn_postLogin_h35;
+        `postLogin`?: NullableObject34;
         `lanes`?: (string)[];
         `lane`?: string;
         `userVerification`?: string;
@@ -2493,7 +2265,7 @@ op `getStep`(`parameters/0/schema`: string,
         `optional`?: boolean;
         `proved`?: boolean;
         `recovery`?: boolean;
-        `totp`?: get_authn_api_mfa__id__r200_application_json_view_setup_totp_h36
+        `totp`?: NullableObject35
       };
       `postLogin`?: {
         `activity`?: string;
@@ -2544,7 +2316,7 @@ op `getStep`(`parameters/0/schema`: string,
         `email`?: string;
         `backup`?: boolean
       };
-      `clientDisplay`?: get_authn_api_mfa__id__r400_application_json_view_clientDisplay_h37;
+      `clientDisplay`?: NullableObject30;
       `totp`?: {`digits`?: numeric; `period`?: numeric};
       `amr`?: (string)[];
       `backup`?: {
@@ -2558,19 +2330,19 @@ op `getStep`(`parameters/0/schema`: string,
         `mode`?: "create" | "get";
         `passwordless`?: boolean;
         `choices`?: ({`id`?: string; `name`?: string})[];
-        `chosen`?: get_authn_api_mfa__id__r400_application_json_view_webauthn_chosen_h38;
+        `chosen`?: NullableObject26;
         `problem`?: string;
-        `postQuantumRefused`?: get_authn_api_mfa__id__r400_application_json_view_webauthn_postQuantumRefused_h39;
-        `hardwareRefused`?: get_authn_api_mfa__id__r400_application_json_view_webauthn_hardwareRefused_h40;
-        `postQuantumHelp`?: get_authn_api_mfa__id__r400_application_json_view_webauthn_postQuantumHelp_h41;
+        `postQuantumRefused`?: NullableObject32;
+        `hardwareRefused`?: NullableObject32;
+        `postQuantumHelp`?: NullableObject31;
         `postQuantumAllowCredentials`?: string;
-        `fallback`?: get_authn_api_mfa__id__r400_application_json_view_webauthn_fallback_h42;
+        `fallback`?: NullableObject33;
         `rpId`?: string;
         `widened`?: boolean;
         `challenge`?: string;
         `attestation`?: string;
         `algorithms`?: (string)[];
-        `postLogin`?: get_authn_api_mfa__id__r400_application_json_view_webauthn_postLogin_h43;
+        `postLogin`?: NullableObject34;
         `lanes`?: (string)[];
         `lane`?: string;
         `userVerification`?: string;
@@ -2583,7 +2355,7 @@ op `getStep`(`parameters/0/schema`: string,
         `optional`?: boolean;
         `proved`?: boolean;
         `recovery`?: boolean;
-        `totp`?: get_authn_api_mfa__id__r400_application_json_view_setup_totp_h44
+        `totp`?: NullableObject35
       };
       `postLogin`?: {
         `activity`?: string;
@@ -3131,97 +2903,23 @@ op `checkFactorPassword`(`parameters/0/schema`: string,
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_authn_api_mfa__id__webauthn_options_b_application_json_key_v0_h45 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:4096,`pattern`:"^[A-Za-z0-9_-]+$"}) @hoisted scalar post_authn_api_mfa__id__webauthn_options_b_application_json_key_v1_h46 extends string;
   
 
-@hoisted union post_authn_api_mfa__id__webauthn_options_b_application_json_key_h47 {
-    post_authn_api_mfa__id__webauthn_options_b_application_json_key_v0_h45,
-    post_authn_api_mfa__id__webauthn_options_b_application_json_key_v1_h46
-  }
-
-@js(#{`const`:""}) @hoisted scalar post_authn_api_mfa__id__webauthn_options_b_application_json_lane_v0_h48 extends string;
   
 
 @hoisted union post_authn_api_mfa__id__webauthn_options_b_application_json_lane_h49 {
-    post_authn_api_mfa__id__webauthn_options_b_application_json_lane_v0_h48,
+    EmptyText,
     "classical" | "pqc"
   }
 
-@js(#{`const`:""}) @hoisted scalar post_authn_api_mfa__id__webauthn_options_b_application_json_algorithms_v0_h50 extends string;
   
 
 @hoisted union post_authn_api_mfa__id__webauthn_options_b_application_json_algorithms_h51 {
-    post_authn_api_mfa__id__webauthn_options_b_application_json_algorithms_v0_h50,
+    EmptyText,
     "classical"
   }
-
-@js(#{`$types`:#["number","null"]}) @hoisted model post_authn_api_mfa__id__webauthn_options_r200_application_json_options_algorithms_i_h52 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `asksPostQuantum`:#{`type`:"boolean"},
-      `classical`:#{`type`:"boolean"},
-      `retrying`:#{`type`:"boolean"},
-      `upgrade`:#{`type`:"boolean"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_authn_api_mfa__id__webauthn_options_r200_application_json_fallback_h53 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model post_authn_api_mfa__id__webauthn_options_r400_application_json_options_algorithms_i_h54 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `asksPostQuantum`:#{`type`:"boolean"},
-      `classical`:#{`type`:"boolean"},
-      `retrying`:#{`type`:"boolean"},
-      `upgrade`:#{`type`:"boolean"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_authn_api_mfa__id__webauthn_options_r400_application_json_fallback_h55 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model post_authn_api_mfa__id__webauthn_options_r403_application_json_options_algorithms_i_h56 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `asksPostQuantum`:#{`type`:"boolean"},
-      `classical`:#{`type`:"boolean"},
-      `retrying`:#{`type`:"boolean"},
-      `upgrade`:#{`type`:"boolean"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_authn_api_mfa__id__webauthn_options_r403_application_json_fallback_h57 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model post_authn_api_mfa__id__webauthn_options_r415_application_json_options_algorithms_i_h58 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `asksPostQuantum`:#{`type`:"boolean"},
-      `classical`:#{`type`:"boolean"},
-      `retrying`:#{`type`:"boolean"},
-      `upgrade`:#{`type`:"boolean"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_authn_api_mfa__id__webauthn_options_r415_application_json_fallback_h59 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model post_authn_api_mfa__id__webauthn_options_r429_application_json_options_algorithms_i_h60 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `asksPostQuantum`:#{`type`:"boolean"},
-      `classical`:#{`type`:"boolean"},
-      `retrying`:#{`type`:"boolean"},
-      `upgrade`:#{`type`:"boolean"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_authn_api_mfa__id__webauthn_options_r429_application_json_fallback_h61 {}
 
 @endpoint("/authn-api/mfa/{id}/webauthn/options",
   "post",
@@ -3280,7 +2978,7 @@ op `checkFactorPassword`(`parameters/0/schema`: string,
 op `passkeyStepOptions`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {
-    `key`?: post_authn_api_mfa__id__webauthn_options_b_application_json_key_h47;
+    `key`?: EmptyTextOrStringMin1Max4096Matchinga5aa8a2;
     `lane`?: post_authn_api_mfa__id__webauthn_options_b_application_json_lane_h49;
     `algorithms`?: post_authn_api_mfa__id__webauthn_options_b_application_json_algorithms_h51
   },
@@ -3297,7 +2995,7 @@ op `passkeyStepOptions`(`parameters/0/schema`: string,
     `exclude`?: (string)[];
     `options`?: {
       `rp`?: {`name`?: string; `id`?: string};
-      `algorithms`?: (post_authn_api_mfa__id__webauthn_options_r200_application_json_options_algorithms_i_h52)[];
+      `algorithms`?: (NullableNumber)[];
       `attestation`?: string;
       `timeout`?: numeric;
       `authenticatorSelection`?: {
@@ -3312,7 +3010,7 @@ op `passkeyStepOptions`(`parameters/0/schema`: string,
       `rpId`?: string;
       `userVerification`?: string
     };
-    `fallback`?: post_authn_api_mfa__id__webauthn_options_r200_application_json_fallback_h53;
+    `fallback`?: NullableObject33;
     `next`?: "refused"
   },
   `responses/400/content/application~1json/schema`: {
@@ -3328,7 +3026,7 @@ op `passkeyStepOptions`(`parameters/0/schema`: string,
     `exclude`?: (string)[];
     `options`?: {
       `rp`?: {`name`?: string; `id`?: string};
-      `algorithms`?: (post_authn_api_mfa__id__webauthn_options_r400_application_json_options_algorithms_i_h54)[];
+      `algorithms`?: (NullableNumber)[];
       `attestation`?: string;
       `timeout`?: numeric;
       `authenticatorSelection`?: {
@@ -3343,7 +3041,7 @@ op `passkeyStepOptions`(`parameters/0/schema`: string,
       `rpId`?: string;
       `userVerification`?: string
     };
-    `fallback`?: post_authn_api_mfa__id__webauthn_options_r400_application_json_fallback_h55;
+    `fallback`?: NullableObject33;
     `next`?: "refused"
   },
   `responses/403/content/application~1json/schema`: {
@@ -3359,7 +3057,7 @@ op `passkeyStepOptions`(`parameters/0/schema`: string,
     `exclude`?: (string)[];
     `options`?: {
       `rp`?: {`name`?: string; `id`?: string};
-      `algorithms`?: (post_authn_api_mfa__id__webauthn_options_r403_application_json_options_algorithms_i_h56)[];
+      `algorithms`?: (NullableNumber)[];
       `attestation`?: string;
       `timeout`?: numeric;
       `authenticatorSelection`?: {
@@ -3374,7 +3072,7 @@ op `passkeyStepOptions`(`parameters/0/schema`: string,
       `rpId`?: string;
       `userVerification`?: string
     };
-    `fallback`?: post_authn_api_mfa__id__webauthn_options_r403_application_json_fallback_h57;
+    `fallback`?: NullableObject33;
     `next`?: "refused"
   },
   `responses/415/content/application~1json/schema`: {
@@ -3390,7 +3088,7 @@ op `passkeyStepOptions`(`parameters/0/schema`: string,
     `exclude`?: (string)[];
     `options`?: {
       `rp`?: {`name`?: string; `id`?: string};
-      `algorithms`?: (post_authn_api_mfa__id__webauthn_options_r415_application_json_options_algorithms_i_h58)[];
+      `algorithms`?: (NullableNumber)[];
       `attestation`?: string;
       `timeout`?: numeric;
       `authenticatorSelection`?: {
@@ -3405,7 +3103,7 @@ op `passkeyStepOptions`(`parameters/0/schema`: string,
       `rpId`?: string;
       `userVerification`?: string
     };
-    `fallback`?: post_authn_api_mfa__id__webauthn_options_r415_application_json_fallback_h59;
+    `fallback`?: NullableObject33;
     `next`?: "refused"
   },
   `responses/429/content/application~1json/schema`: {
@@ -3421,7 +3119,7 @@ op `passkeyStepOptions`(`parameters/0/schema`: string,
     `exclude`?: (string)[];
     `options`?: {
       `rp`?: {`name`?: string; `id`?: string};
-      `algorithms`?: (post_authn_api_mfa__id__webauthn_options_r429_application_json_options_algorithms_i_h60)[];
+      `algorithms`?: (NullableNumber)[];
       `attestation`?: string;
       `timeout`?: numeric;
       `authenticatorSelection`?: {
@@ -3436,7 +3134,7 @@ op `passkeyStepOptions`(`parameters/0/schema`: string,
       `rpId`?: string;
       `userVerification`?: string
     };
-    `fallback`?: post_authn_api_mfa__id__webauthn_options_r429_application_json_fallback_h61;
+    `fallback`?: NullableObject33;
     `next`?: "refused"
   },
   @js(#{
@@ -4962,16 +4660,9 @@ op `checkEmailedCode`(`parameters/0/schema`: string,
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_authn_api_mfa__id__email_link_open_b_application_json_t_v0_h62 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:4096,`pattern`:"^[A-Za-z0-9_-]+$"}) @hoisted scalar post_authn_api_mfa__id__email_link_open_b_application_json_t_v1_h63 extends string;
   
-
-@hoisted union post_authn_api_mfa__id__email_link_open_b_application_json_t_h64 {
-    post_authn_api_mfa__id__email_link_open_b_application_json_t_v0_h62,
-    post_authn_api_mfa__id__email_link_open_b_application_json_t_v1_h63
-  }
 
 @endpoint("/authn-api/mfa/{id}/email-link/open",
   "post",
@@ -5029,7 +4720,7 @@ op `checkEmailedCode`(`parameters/0/schema`: string,
   })
 op `spendEmailedLink`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
-  `requestBody/content/application~1json/schema`: {`t`?: post_authn_api_mfa__id__email_link_open_b_application_json_t_h64},
+  `requestBody/content/application~1json/schema`: {`t`?: EmptyTextOrStringMin1Max4096Matchinga5aa8a2},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
   }) `responses/200/content/application~1json/schema`: {
@@ -5621,70 +5312,35 @@ op `getWalletStart`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`ty
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_authn_api_wallet_b_application_json_authn_v0_h65 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:4096}) @hoisted scalar post_authn_api_wallet_b_application_json_authn_v1_h66 extends string;
   
 
-@hoisted union post_authn_api_wallet_b_application_json_authn_h67 {
-    post_authn_api_wallet_b_application_json_authn_v0_h65,
-    post_authn_api_wallet_b_application_json_authn_v1_h66
-  }
-
-@js(#{`const`:""}) @hoisted scalar post_authn_api_wallet_b_application_json_mfa_v0_h68 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:4096}) @hoisted scalar post_authn_api_wallet_b_application_json_mfa_v1_h69 extends string;
   
 
-@hoisted union post_authn_api_wallet_b_application_json_mfa_h70 {
-    post_authn_api_wallet_b_application_json_mfa_v0_h68,
-    post_authn_api_wallet_b_application_json_mfa_v1_h69
-  }
-
-@js(#{`const`:""}) @hoisted scalar post_authn_api_wallet_b_application_json_enrol_v0_h71 extends string;
   
 
-@hoisted union post_authn_api_wallet_b_application_json_enrol_h72 {post_authn_api_wallet_b_application_json_enrol_v0_h71, "1"}
-
-@js(#{`const`:""}) @hoisted scalar post_authn_api_wallet_b_application_json_siop_v0_h73 extends string;
   
 
-@hoisted union post_authn_api_wallet_b_application_json_siop_h74 {post_authn_api_wallet_b_application_json_siop_v0_h73, "1"}
-
-@js(#{`const`:""}) @hoisted scalar post_authn_api_wallet_b_application_json_wallet_v0_h75 extends string;
   
 
 @js(#{`minLength`:1,`maxLength`:2048,`format`:"uri"}) @hoisted scalar post_authn_api_wallet_b_application_json_wallet_v1_h76 extends string;
   
 
 @hoisted union post_authn_api_wallet_b_application_json_wallet_h77 {
-    post_authn_api_wallet_b_application_json_wallet_v0_h75,
+    EmptyText,
     post_authn_api_wallet_b_application_json_wallet_v1_h76
   }
 
-@js(#{`const`:""}) @hoisted scalar post_authn_api_wallet_b_application_json_login_hint_v0_h78 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:4096}) @hoisted scalar post_authn_api_wallet_b_application_json_login_hint_v1_h79 extends string;
   
 
-@hoisted union post_authn_api_wallet_b_application_json_login_hint_h80 {
-    post_authn_api_wallet_b_application_json_login_hint_v0_h78,
-    post_authn_api_wallet_b_application_json_login_hint_v1_h79
-  }
-
-@js(#{`const`:""}) @hoisted scalar post_authn_api_wallet_b_application_json_did_act_v0_h81 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:4096}) @hoisted scalar post_authn_api_wallet_b_application_json_did_act_v1_h82 extends string;
   
-
-@hoisted union post_authn_api_wallet_b_application_json_did_act_h83 {
-    post_authn_api_wallet_b_application_json_did_act_v0_h81,
-    post_authn_api_wallet_b_application_json_did_act_v1_h82
-  }
 
 @endpoint("/authn-api/wallet",
   "post",
@@ -5758,13 +5414,13 @@ op `getWalletStart`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`ty
   })
 op `startWalletSignIn`(`parameters/0/schema`: string,
   `requestBody/content/application~1json/schema`: {
-    `authn`?: post_authn_api_wallet_b_application_json_authn_h67;
-    `mfa`?: post_authn_api_wallet_b_application_json_mfa_h70;
-    `enrol`?: post_authn_api_wallet_b_application_json_enrol_h72;
-    `siop`?: post_authn_api_wallet_b_application_json_siop_h74;
+    `authn`?: EmptyTextOrStringMin1Max4096;
+    `mfa`?: EmptyTextOrStringMin1Max4096;
+    `enrol`?: EmptyTextOr1;
+    `siop`?: EmptyTextOr1;
     `wallet`?: post_authn_api_wallet_b_application_json_wallet_h77;
-    `login_hint`?: post_authn_api_wallet_b_application_json_login_hint_h80;
-    `did_act`?: post_authn_api_wallet_b_application_json_did_act_h83
+    `login_hint`?: EmptyTextOrStringMin1Max4096;
+    `did_act`?: EmptyTextOrStringMin1Max4096
   },
   `responses/200/content/application~1json/schema`: {
     `ok`?: boolean;
@@ -6118,123 +5774,6 @@ op `startWalletSignIn`(`parameters/0/schema`: string,
   }): void;
   
 
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `protocol`:#{`type`:"string"},
-      `data`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{`request`:#{`type`:"string"}}
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_authn_api_wallet__state__r200_application_json_view_dcRequest_h84 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `protocol`:#{`type`:"string"},
-      `data`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{`request`:#{`type`:"string"}}
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_authn_api_wallet__state__r400_application_json_view_dcRequest_h85 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `protocol`:#{`type`:"string"},
-      `data`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{`request`:#{`type`:"string"}}
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_authn_api_wallet__state__r401_application_json_view_dcRequest_h86 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `protocol`:#{`type`:"string"},
-      `data`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{`request`:#{`type`:"string"}}
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_authn_api_wallet__state__r403_application_json_view_dcRequest_h87 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `protocol`:#{`type`:"string"},
-      `data`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{`request`:#{`type`:"string"}}
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_authn_api_wallet__state__r404_application_json_view_dcRequest_h88 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `protocol`:#{`type`:"string"},
-      `data`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{`request`:#{`type`:"string"}}
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_authn_api_wallet__state__r409_application_json_view_dcRequest_h89 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `protocol`:#{`type`:"string"},
-      `data`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{`request`:#{`type`:"string"}}
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_authn_api_wallet__state__r410_application_json_view_dcRequest_h90 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `protocol`:#{`type`:"string"},
-      `data`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{`request`:#{`type`:"string"}}
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_authn_api_wallet__state__r500_application_json_view_dcRequest_h91 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `protocol`:#{`type`:"string"},
-      `data`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{`request`:#{`type`:"string"}}
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_authn_api_wallet__state__r503_application_json_view_dcRequest_h92 {}
-
 @endpoint("/authn-api/wallet/{state}",
   "get",
   #{
@@ -6311,7 +5850,7 @@ op `getWalletWait`(`parameters/0/schema`: string,
       `authn`?: string;
       `mfa`?: string;
       `enrol`?: boolean;
-      `dcRequest`?: get_authn_api_wallet__state__r200_application_json_view_dcRequest_h84;
+      `dcRequest`?: NullableObject36;
       `sameDevice`?: string;
       `webWallet`?: string;
       `qr`?: string;
@@ -6345,7 +5884,7 @@ op `getWalletWait`(`parameters/0/schema`: string,
       `authn`?: string;
       `mfa`?: string;
       `enrol`?: boolean;
-      `dcRequest`?: get_authn_api_wallet__state__r400_application_json_view_dcRequest_h85;
+      `dcRequest`?: NullableObject36;
       `sameDevice`?: string;
       `webWallet`?: string;
       `qr`?: string;
@@ -6379,7 +5918,7 @@ op `getWalletWait`(`parameters/0/schema`: string,
       `authn`?: string;
       `mfa`?: string;
       `enrol`?: boolean;
-      `dcRequest`?: get_authn_api_wallet__state__r401_application_json_view_dcRequest_h86;
+      `dcRequest`?: NullableObject36;
       `sameDevice`?: string;
       `webWallet`?: string;
       `qr`?: string;
@@ -6413,7 +5952,7 @@ op `getWalletWait`(`parameters/0/schema`: string,
       `authn`?: string;
       `mfa`?: string;
       `enrol`?: boolean;
-      `dcRequest`?: get_authn_api_wallet__state__r403_application_json_view_dcRequest_h87;
+      `dcRequest`?: NullableObject36;
       `sameDevice`?: string;
       `webWallet`?: string;
       `qr`?: string;
@@ -6447,7 +5986,7 @@ op `getWalletWait`(`parameters/0/schema`: string,
       `authn`?: string;
       `mfa`?: string;
       `enrol`?: boolean;
-      `dcRequest`?: get_authn_api_wallet__state__r404_application_json_view_dcRequest_h88;
+      `dcRequest`?: NullableObject36;
       `sameDevice`?: string;
       `webWallet`?: string;
       `qr`?: string;
@@ -6481,7 +6020,7 @@ op `getWalletWait`(`parameters/0/schema`: string,
       `authn`?: string;
       `mfa`?: string;
       `enrol`?: boolean;
-      `dcRequest`?: get_authn_api_wallet__state__r409_application_json_view_dcRequest_h89;
+      `dcRequest`?: NullableObject36;
       `sameDevice`?: string;
       `webWallet`?: string;
       `qr`?: string;
@@ -6515,7 +6054,7 @@ op `getWalletWait`(`parameters/0/schema`: string,
       `authn`?: string;
       `mfa`?: string;
       `enrol`?: boolean;
-      `dcRequest`?: get_authn_api_wallet__state__r410_application_json_view_dcRequest_h90;
+      `dcRequest`?: NullableObject36;
       `sameDevice`?: string;
       `webWallet`?: string;
       `qr`?: string;
@@ -6549,7 +6088,7 @@ op `getWalletWait`(`parameters/0/schema`: string,
       `authn`?: string;
       `mfa`?: string;
       `enrol`?: boolean;
-      `dcRequest`?: get_authn_api_wallet__state__r500_application_json_view_dcRequest_h91;
+      `dcRequest`?: NullableObject36;
       `sameDevice`?: string;
       `webWallet`?: string;
       `qr`?: string;
@@ -6583,7 +6122,7 @@ op `getWalletWait`(`parameters/0/schema`: string,
       `authn`?: string;
       `mfa`?: string;
       `enrol`?: boolean;
-      `dcRequest`?: get_authn_api_wallet__state__r503_application_json_view_dcRequest_h92;
+      `dcRequest`?: NullableObject36;
       `sameDevice`?: string;
       `webWallet`?: string;
       `qr`?: string;
@@ -6615,46 +6154,19 @@ op `getWalletWait`(`parameters/0/schema`: string,
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_authn_api_wallet__state__status_b_application_json_authn_v0_h93 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:4096}) @hoisted scalar post_authn_api_wallet__state__status_b_application_json_authn_v1_h94 extends string;
   
 
-@hoisted union post_authn_api_wallet__state__status_b_application_json_authn_h95 {
-    post_authn_api_wallet__state__status_b_application_json_authn_v0_h93,
-    post_authn_api_wallet__state__status_b_application_json_authn_v1_h94
-  }
-
-@js(#{`const`:""}) @hoisted scalar post_authn_api_wallet__state__status_b_application_json_mfa_v0_h96 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:4096}) @hoisted scalar post_authn_api_wallet__state__status_b_application_json_mfa_v1_h97 extends string;
   
 
-@hoisted union post_authn_api_wallet__state__status_b_application_json_mfa_h98 {
-    post_authn_api_wallet__state__status_b_application_json_mfa_v0_h96,
-    post_authn_api_wallet__state__status_b_application_json_mfa_v1_h97
-  }
-
-@js(#{`const`:""}) @hoisted scalar post_authn_api_wallet__state__status_b_application_json_enrol_v0_h99 extends string;
   
 
-@hoisted union post_authn_api_wallet__state__status_b_application_json_enrol_h100 {
-    post_authn_api_wallet__state__status_b_application_json_enrol_v0_h99,
-    "1"
-  }
-
-@js(#{`const`:""}) @hoisted scalar post_authn_api_wallet__state__status_b_application_json_response_code_v0_h101 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:4096}) @hoisted scalar post_authn_api_wallet__state__status_b_application_json_response_code_v1_h102 extends string;
   
-
-@hoisted union post_authn_api_wallet__state__status_b_application_json_response_code_h103 {
-    post_authn_api_wallet__state__status_b_application_json_response_code_v0_h101,
-    post_authn_api_wallet__state__status_b_application_json_response_code_v1_h102
-  }
 
 @endpoint("/authn-api/wallet/{state}/status",
   "post",
@@ -6737,10 +6249,10 @@ op `getWalletWait`(`parameters/0/schema`: string,
 op `walletStatus`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {
-    `authn`?: post_authn_api_wallet__state__status_b_application_json_authn_h95;
-    `mfa`?: post_authn_api_wallet__state__status_b_application_json_mfa_h98;
-    `enrol`?: post_authn_api_wallet__state__status_b_application_json_enrol_h100;
-    `response_code`?: post_authn_api_wallet__state__status_b_application_json_response_code_h103
+    `authn`?: EmptyTextOrStringMin1Max4096;
+    `mfa`?: EmptyTextOrStringMin1Max4096;
+    `enrol`?: EmptyTextOr12;
+    `response_code`?: EmptyTextOrStringMin1Max4096
   },
   `responses/200/content/application~1json/schema`: {
     `ok`?: boolean;
@@ -7094,35 +6606,15 @@ op `walletStatus`(`parameters/0/schema`: string,
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_authn_api_wallet__state__dc_api_b_application_json_authn_v0_h104 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:4096}) @hoisted scalar post_authn_api_wallet__state__dc_api_b_application_json_authn_v1_h105 extends string;
   
 
-@hoisted union post_authn_api_wallet__state__dc_api_b_application_json_authn_h106 {
-    post_authn_api_wallet__state__dc_api_b_application_json_authn_v0_h104,
-    post_authn_api_wallet__state__dc_api_b_application_json_authn_v1_h105
-  }
-
-@js(#{`const`:""}) @hoisted scalar post_authn_api_wallet__state__dc_api_b_application_json_mfa_v0_h107 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:4096}) @hoisted scalar post_authn_api_wallet__state__dc_api_b_application_json_mfa_v1_h108 extends string;
   
 
-@hoisted union post_authn_api_wallet__state__dc_api_b_application_json_mfa_h109 {
-    post_authn_api_wallet__state__dc_api_b_application_json_mfa_v0_h107,
-    post_authn_api_wallet__state__dc_api_b_application_json_mfa_v1_h108
-  }
-
-@js(#{`const`:""}) @hoisted scalar post_authn_api_wallet__state__dc_api_b_application_json_enrol_v0_h110 extends string;
   
-
-@hoisted union post_authn_api_wallet__state__dc_api_b_application_json_enrol_h111 {
-    post_authn_api_wallet__state__dc_api_b_application_json_enrol_v0_h110,
-    "1"
-  }
 
 @js(#{`maxLength`:1048576}) @hoisted scalar post_authn_api_wallet__state__dc_api_b_application_json_response_v0_h112 extends string;
   
@@ -7215,9 +6707,9 @@ op `walletStatus`(`parameters/0/schema`: string,
 op `answerWalletDcApi`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {
-    `authn`?: post_authn_api_wallet__state__dc_api_b_application_json_authn_h106;
-    `mfa`?: post_authn_api_wallet__state__dc_api_b_application_json_mfa_h109;
-    `enrol`?: post_authn_api_wallet__state__dc_api_b_application_json_enrol_h111;
+    `authn`?: EmptyTextOrStringMin1Max4096;
+    `mfa`?: EmptyTextOrStringMin1Max4096;
+    `enrol`?: EmptyTextOr12;
     `response`?: post_authn_api_wallet__state__dc_api_b_application_json_response_h114
   },
   `responses/200/content/application~1json/schema`: {
@@ -7572,62 +7064,6 @@ op `answerWalletDcApi`(`parameters/0/schema`: string,
   }): void;
   
 
-@hoisted union get_authn_api_logout_r200_application_json_view_families_i_rows_i_handle_h115 {string, numeric}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_authn_api_logout_r200_application_json_view_families_i_rows_i_label_h116 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_authn_api_logout_r200_application_json_view_families_i_rows_i_detail_h117 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model get_authn_api_logout_r200_application_json_view_families_i_rows_i_startedAt_h118 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model get_authn_api_logout_r200_application_json_view_families_i_rows_i_expiresAt_h119 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_authn_api_logout_r200_application_json_view_families_i_rows_i_why_h120 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_authn_api_logout_r200_application_json_view_families_i_rows_i_sessionId_h121 {}
-
-@hoisted union get_authn_api_logout_r400_application_json_view_families_i_rows_i_handle_h122 {string, numeric}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_authn_api_logout_r400_application_json_view_families_i_rows_i_label_h123 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_authn_api_logout_r400_application_json_view_families_i_rows_i_detail_h124 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model get_authn_api_logout_r400_application_json_view_families_i_rows_i_startedAt_h125 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model get_authn_api_logout_r400_application_json_view_families_i_rows_i_expiresAt_h126 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_authn_api_logout_r400_application_json_view_families_i_rows_i_why_h127 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_authn_api_logout_r400_application_json_view_families_i_rows_i_sessionId_h128 {}
-
-@hoisted union get_authn_api_logout_r401_application_json_view_families_i_rows_i_handle_h129 {string, numeric}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_authn_api_logout_r401_application_json_view_families_i_rows_i_label_h130 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_authn_api_logout_r401_application_json_view_families_i_rows_i_detail_h131 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model get_authn_api_logout_r401_application_json_view_families_i_rows_i_startedAt_h132 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model get_authn_api_logout_r401_application_json_view_families_i_rows_i_expiresAt_h133 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_authn_api_logout_r401_application_json_view_families_i_rows_i_why_h134 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_authn_api_logout_r401_application_json_view_families_i_rows_i_sessionId_h135 {}
-
-@hoisted union get_authn_api_logout_r403_application_json_view_families_i_rows_i_handle_h136 {string, numeric}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_authn_api_logout_r403_application_json_view_families_i_rows_i_label_h137 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_authn_api_logout_r403_application_json_view_families_i_rows_i_detail_h138 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model get_authn_api_logout_r403_application_json_view_families_i_rows_i_startedAt_h139 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model get_authn_api_logout_r403_application_json_view_families_i_rows_i_expiresAt_h140 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_authn_api_logout_r403_application_json_view_families_i_rows_i_why_h141 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_authn_api_logout_r403_application_json_view_families_i_rows_i_sessionId_h142 {}
-
 @endpoint("/authn-api/logout",
   "get",
   #{
@@ -7711,14 +7147,14 @@ op `getSignOut`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:
           `id`?: string;
           `family`?: string;
           `kind`?: string;
-          `handle`?: get_authn_api_logout_r200_application_json_view_families_i_rows_i_handle_h115;
-          `label`?: get_authn_api_logout_r200_application_json_view_families_i_rows_i_label_h116;
-          `detail`?: get_authn_api_logout_r200_application_json_view_families_i_rows_i_detail_h117;
-          `startedAt`?: get_authn_api_logout_r200_application_json_view_families_i_rows_i_startedAt_h118;
-          `expiresAt`?: get_authn_api_logout_r200_application_json_view_families_i_rows_i_expiresAt_h119;
+          `handle`?: StringOrNumeric;
+          `label`?: NullableString;
+          `detail`?: NullableString;
+          `startedAt`?: NullableNumber;
+          `expiresAt`?: NullableNumber;
           `terminable`?: boolean;
-          `why`?: get_authn_api_logout_r200_application_json_view_families_i_rows_i_why_h120;
-          `sessionId`?: get_authn_api_logout_r200_application_json_view_families_i_rows_i_sessionId_h121
+          `why`?: NullableString;
+          `sessionId`?: NullableString
         })[];
         `held`?: numeric;
         `notListed`?: numeric;
@@ -7766,14 +7202,14 @@ op `getSignOut`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:
           `id`?: string;
           `family`?: string;
           `kind`?: string;
-          `handle`?: get_authn_api_logout_r400_application_json_view_families_i_rows_i_handle_h122;
-          `label`?: get_authn_api_logout_r400_application_json_view_families_i_rows_i_label_h123;
-          `detail`?: get_authn_api_logout_r400_application_json_view_families_i_rows_i_detail_h124;
-          `startedAt`?: get_authn_api_logout_r400_application_json_view_families_i_rows_i_startedAt_h125;
-          `expiresAt`?: get_authn_api_logout_r400_application_json_view_families_i_rows_i_expiresAt_h126;
+          `handle`?: StringOrNumeric;
+          `label`?: NullableString;
+          `detail`?: NullableString;
+          `startedAt`?: NullableNumber;
+          `expiresAt`?: NullableNumber;
           `terminable`?: boolean;
-          `why`?: get_authn_api_logout_r400_application_json_view_families_i_rows_i_why_h127;
-          `sessionId`?: get_authn_api_logout_r400_application_json_view_families_i_rows_i_sessionId_h128
+          `why`?: NullableString;
+          `sessionId`?: NullableString
         })[];
         `held`?: numeric;
         `notListed`?: numeric;
@@ -7821,14 +7257,14 @@ op `getSignOut`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:
           `id`?: string;
           `family`?: string;
           `kind`?: string;
-          `handle`?: get_authn_api_logout_r401_application_json_view_families_i_rows_i_handle_h129;
-          `label`?: get_authn_api_logout_r401_application_json_view_families_i_rows_i_label_h130;
-          `detail`?: get_authn_api_logout_r401_application_json_view_families_i_rows_i_detail_h131;
-          `startedAt`?: get_authn_api_logout_r401_application_json_view_families_i_rows_i_startedAt_h132;
-          `expiresAt`?: get_authn_api_logout_r401_application_json_view_families_i_rows_i_expiresAt_h133;
+          `handle`?: StringOrNumeric;
+          `label`?: NullableString;
+          `detail`?: NullableString;
+          `startedAt`?: NullableNumber;
+          `expiresAt`?: NullableNumber;
           `terminable`?: boolean;
-          `why`?: get_authn_api_logout_r401_application_json_view_families_i_rows_i_why_h134;
-          `sessionId`?: get_authn_api_logout_r401_application_json_view_families_i_rows_i_sessionId_h135
+          `why`?: NullableString;
+          `sessionId`?: NullableString
         })[];
         `held`?: numeric;
         `notListed`?: numeric;
@@ -7876,14 +7312,14 @@ op `getSignOut`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:
           `id`?: string;
           `family`?: string;
           `kind`?: string;
-          `handle`?: get_authn_api_logout_r403_application_json_view_families_i_rows_i_handle_h136;
-          `label`?: get_authn_api_logout_r403_application_json_view_families_i_rows_i_label_h137;
-          `detail`?: get_authn_api_logout_r403_application_json_view_families_i_rows_i_detail_h138;
-          `startedAt`?: get_authn_api_logout_r403_application_json_view_families_i_rows_i_startedAt_h139;
-          `expiresAt`?: get_authn_api_logout_r403_application_json_view_families_i_rows_i_expiresAt_h140;
+          `handle`?: StringOrNumeric;
+          `label`?: NullableString;
+          `detail`?: NullableString;
+          `startedAt`?: NullableNumber;
+          `expiresAt`?: NullableNumber;
           `terminable`?: boolean;
-          `why`?: get_authn_api_logout_r403_application_json_view_families_i_rows_i_why_h141;
-          `sessionId`?: get_authn_api_logout_r403_application_json_view_families_i_rows_i_sessionId_h142
+          `why`?: NullableString;
+          `sessionId`?: NullableString
         })[];
         `held`?: numeric;
         `notListed`?: numeric;
@@ -7918,27 +7354,18 @@ op `getSignOut`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_authn_api_logout_b_application_json_scope_v0_h143 extends string;
   
 
 @hoisted union post_authn_api_logout_b_application_json_scope_h144 {
-    post_authn_api_logout_b_application_json_scope_v0_h143,
+    EmptyText,
     "global" | "selected"
   }
 
-@js(#{`maxLength`:4096}) @hoisted scalar post_authn_api_logout_b_application_json_select_i_h145 extends string;
   
 
-@js(#{`const`:""}) @hoisted scalar post_authn_api_logout_b_application_json_username_v0_h146 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:256}) @hoisted scalar post_authn_api_logout_b_application_json_username_v1_h147 extends string;
   
-
-@hoisted union post_authn_api_logout_b_application_json_username_h148 {
-    post_authn_api_logout_b_application_json_username_v0_h146,
-    post_authn_api_logout_b_application_json_username_v1_h147
-  }
 
 @endpoint("/authn-api/logout",
   "post",
@@ -7997,8 +7424,8 @@ op `getSignOut`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:
 op `signOut`(`parameters/0/schema`: string,
   `requestBody/content/application~1json/schema`: {
     `scope`?: post_authn_api_logout_b_application_json_scope_h144;
-    @js(#{`maxItems`:10000}) `select`?: (post_authn_api_logout_b_application_json_select_i_h145)[];
-    `username`?: post_authn_api_logout_b_application_json_username_h148;
+    @js(#{`maxItems`:10000}) `select`?: (StringMax4096)[];
+    `username`?: EmptyTextOrStringMin1Max256;
     @js(#{`minLength`:1,`maxLength`:600}) `account`?: string
   },
   `responses/200/content/application~1json/schema`: {
@@ -9425,18 +8852,6 @@ op `getAccounts`(`responses/200/content/application~1json/schema`: {
 @js(#{
     `additionalProperties`:false,
     `properties`:#{
-      `name`:#{`type`:"string"},
-      `logo`:#{`type`:"string"},
-      `logoOrigin`:#{`type`:"string"},
-      `policy`:#{`type`:"string"},
-      `tos`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_authn_api_consent__id__r200_application_json_view_clientDisplay_h149 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
       `description`:#{`type`:"string"},
       `name`:#{`type`:"string"},
       `identifier`:#{`type`:"string"},
@@ -9490,7 +8905,7 @@ op `getConsent`(`parameters/0/schema`: string,
       `username`?: string;
       `base`?: string;
       `client`?: {`id`?: string; `name`?: string};
-      `clientDisplay`?: get_authn_api_consent__id__r200_application_json_view_clientDisplay_h149;
+      `clientDisplay`?: NullableObject30;
       `resources`?: (string)[];
       `scopes`?: ({
         `scope`?: string;

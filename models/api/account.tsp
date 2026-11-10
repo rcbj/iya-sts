@@ -169,8 +169,10 @@
 // ---------------------------------------------------------------------------
 
 import "../lib/api_lib.tsp";
+import "./common.tsp";
 
 using IyaSts.ApiLib;
+using IyaSts.Api.Common;
 
 @apiDocument(#{
   `x-iya-every-operation`:#[#{`name`:"DPoP",`in`:"header",`required`:false,`schema`:#{`type`:"string"},`description`:"RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires."},#{`name`:"X-Requested-With",`in`:"header",`required`:false,`schema`:#{`type`:"string"},`description`:"Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it."}],
@@ -233,8 +235,6 @@ using IyaSts.ApiLib;
 namespace IyaSts.Api.Account {
   
 
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_r200_application_json_operations_i_mirrors_h1 {}
-
 @endpoint("/account-api",
   "get",
   #{
@@ -271,7 +271,7 @@ op `getIndex`(`responses/200/content/application~1json/schema`: {
       `operationId`?: string;
       `tag`?: string;
       `access`?: string;
-      `mirrors`?: get_account_api_r200_application_json_operations_i_mirrors_h1;
+      `mirrors`?: NullableString;
       `summary`?: string;
       `query`?: (string)[]
     })[]
@@ -353,9 +353,6 @@ op `getOpenApi`(`responses/200/content/application~1json/schema`: {
   }): void;
   
 
-@js(#{`$types`:#["number","null"]}) @hoisted model get_account_api_me_r200_application_json_expiresAt_h2 {}
-
-@js(#{`description`:"A translated message by its key."}) @hoisted model get_account_api_me_r200_application_json_locale_catalogs_ap_h3 is Record<string>;
   
 
 @endpoint("/account-api/me",
@@ -403,7 +400,7 @@ op `getMe`(`responses/200/content/application~1json/schema`: {
     };
     `realm`?: {`id`?: string; `prefix`?: string};
     `client`?: string;
-    `expiresAt`?: get_account_api_me_r200_application_json_expiresAt_h2;
+    `expiresAt`?: NullableNumber;
     `mode`?: string;
     `locale`?: {
       `negotiated`?: {
@@ -413,7 +410,7 @@ op `getMe`(`responses/200/content/application~1json/schema`: {
         `direction`?: "ltr" | "rtl";
         `matched`?: boolean
       };
-      @js(#{`description`:"Each catalog along the chain, by language tag."}) `catalogs`?: Record<get_account_api_me_r200_application_json_locale_catalogs_ap_h3>;
+      @js(#{`description`:"Each catalog along the chain, by language tag."}) `catalogs`?: Record<ListOfRecordString>;
       `offered`?: ({`tag`?: string; `name`?: string})[]
     };
     `version`?: {`version`?: string; `buildInfo`?: string}
@@ -533,7 +530,6 @@ op `getAnnouncements`(@js(#{`pattern`:"^[0-9]{1,16}$"}) `parameters/0/schema`: s
   }): void;
   
 
-@js(#{`description`:"A translated message by its key."}) @hoisted model get_account_api_locale_r200_application_json_locale_catalogs_ap_h4 is Record<string>;
   
 
 @endpoint("/account-api/locale",
@@ -572,7 +568,7 @@ op `getLocale`(`responses/200/content/application~1json/schema`: {
         `direction`?: "ltr" | "rtl";
         `matched`?: boolean
       };
-      @js(#{`description`:"Each catalog along the chain, by language tag."}) `catalogs`?: Record<get_account_api_locale_r200_application_json_locale_catalogs_ap_h4>;
+      @js(#{`description`:"Each catalog along the chain, by language tag."}) `catalogs`?: Record<ListOfRecordString>;
       `offered`?: ({`tag`?: string; `name`?: string})[]
     };
     `version`?: {`version`?: string; `buildInfo`?: string}
@@ -600,8 +596,6 @@ op `getLocale`(`responses/200/content/application~1json/schema`: {
     `properties`:#{`dn`:#{`type`:"string"}},
     `$types`:#["object","null"]
   }) @hoisted model get_account_api_overview_r200_application_json_entry_h5 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model get_account_api_overview_r200_application_json_timesSignedIn_h6 {}
 
 @js(#{
     `additionalProperties`:false,
@@ -731,7 +725,7 @@ op `getOverview`(@js(#{`maxLength`:200}) `parameters/0/schema`: string,
       }
     };
     `sessionEnds`?: numeric;
-    `timesSignedIn`?: get_account_api_overview_r200_application_json_timesSignedIn_h6;
+    `timesSignedIn`?: NullableNumber;
     `directory`?: get_account_api_overview_r200_application_json_directory_h7;
     `mechanisms`?: {
       `password`?: boolean;
@@ -1044,19 +1038,17 @@ op `removeProfilePhoto`(`responses/200/content/application~1json/schema`: {`ok`?
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_attributes_b_application_json_values_v0_h9 extends string;
   
 
-@js(#{`maxLength`:1024}) @hoisted scalar post_account_api_attributes_b_application_json_values_v1_i_h10 extends string;
   
 
-@js(#{`maxItems`:100}) @hoisted model post_account_api_attributes_b_application_json_values_v1_h11 is (post_account_api_attributes_b_application_json_values_v1_i_h10)[];
+@js(#{`maxItems`:100}) @hoisted model post_account_api_attributes_b_application_json_values_v1_h11 is (StringMax1024)[];
   
 
 @js(#{
     `description`:"Every value the attribute is to hold afterwards; none clears it. A single-valued attribute takes one."
   }) @hoisted union post_account_api_attributes_b_application_json_values_h12 {
-    post_account_api_attributes_b_application_json_values_v0_h9,
+    EmptyText,
     post_account_api_attributes_b_application_json_values_v1_h11
   }
 
@@ -1139,18 +1131,9 @@ op `setCustomAttribute`(`requestBody/content/application~1json/schema`: {
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar get_account_api_applications_p1_v0_h13 extends string;
   
 
-@js(#{`minimum`:1,`maximum`:100000}) @hoisted scalar get_account_api_applications_p1_v1_h14 extends integer;
   
-
-@hoisted union get_account_api_applications_p1_h15 {
-    get_account_api_applications_p1_v0_h13,
-    get_account_api_applications_p1_v1_h14
-  }
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_applications_r200_application_json_rows_i_homePage_h16 {}
 
 @endpoint("/account-api/applications",
   "get",
@@ -1207,7 +1190,7 @@ op `getApplications`(@js(#{`maxLength`:200}) `parameters/0/schema`: string,
     `rows`?: ({
       `identifier`?: string;
       `name`?: string;
-      `homePage`?: get_account_api_applications_r200_application_json_rows_i_homePage_h16;
+      `homePage`?: NullableString;
       `launchable`?: (string)[];
       `description`?: string;
       `families`?: (string)[];
@@ -1258,15 +1241,9 @@ op `getApplications`(@js(#{`maxLength`:200}) `parameters/0/schema`: string,
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar get_account_api_signals_p1_v0_h17 extends string;
   
 
-@js(#{`minimum`:1,`maximum`:100000}) @hoisted scalar get_account_api_signals_p1_v1_h18 extends integer;
   
-
-@hoisted union get_account_api_signals_p1_h19 {get_account_api_signals_p1_v0_h17, get_account_api_signals_p1_v1_h18}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model get_account_api_signals_r200_application_json_rows_i_at_h20 {}
 
 @js(#{
     `additionalProperties`:false,
@@ -1335,7 +1312,7 @@ op `getSecurityActivity`(@js(#{`maxLength`:200}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `incomplete`?: boolean;
     `rows`?: ({
-      `at`?: get_account_api_signals_r200_application_json_rows_i_at_h20;
+      `at`?: Shape;
       `name`?: string;
       `vocabulary`?: string;
       `type`?: string;
@@ -1491,17 +1468,9 @@ op `moveRiscParticipation`(`requestBody/content/application~1json/schema`: {
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar get_account_api_sign_ins_p0_v0_h22 extends string;
   
 
-@js(#{`minimum`:1,`maximum`:100000}) @hoisted scalar get_account_api_sign_ins_p0_v1_h23 extends integer;
   
-
-@hoisted union get_account_api_sign_ins_p0_h24 {get_account_api_sign_ins_p0_v0_h22, get_account_api_sign_ins_p0_v1_h23}
-
-@js(#{`$types`:#["string","number"]}) @hoisted model get_account_api_sign_ins_r200_application_json_rows_i_id_h25 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model get_account_api_sign_ins_r200_application_json_rows_i_at_h26 {}
 
 @endpoint("/account-api/sign-ins",
   "get",
@@ -1557,8 +1526,8 @@ op `getSignIns`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:
       `total`?: integer
     };
     `rows`?: ({
-      `id`?: get_account_api_sign_ins_r200_application_json_rows_i_id_h25;
-      `at`?: get_account_api_sign_ins_r200_application_json_rows_i_at_h26;
+      `id`?: Shape2;
+      `at`?: Shape;
       `city`?: string;
       `country`?: string;
       `asOrg`?: string;
@@ -1604,10 +1573,6 @@ op `getSignIns`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:
     `error_description`?: string
   }): void;
   
-
-@js(#{`$types`:#["string","number"]}) @hoisted model post_account_api_sign_ins_r200_application_json_view_rows_i_id_h27 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_sign_ins_r200_application_json_view_rows_i_at_h28 {}
 
 @endpoint("/account-api/sign-ins",
   "post",
@@ -1669,8 +1634,8 @@ op `answerSignIn`(`requestBody/content/application~1json/schema`: {
         `total`?: integer
       };
       `rows`?: ({
-        `id`?: post_account_api_sign_ins_r200_application_json_view_rows_i_id_h27;
-        `at`?: post_account_api_sign_ins_r200_application_json_view_rows_i_at_h28;
+        `id`?: Shape2;
+        `at`?: Shape;
         `city`?: string;
         `country`?: string;
         `asOrg`?: string;
@@ -1718,13 +1683,9 @@ op `answerSignIn`(`requestBody/content/application~1json/schema`: {
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar get_account_api_consents_p0_v0_h29 extends string;
   
 
-@js(#{`minimum`:1,`maximum`:100000}) @hoisted scalar get_account_api_consents_p0_v1_h30 extends integer;
   
-
-@hoisted union get_account_api_consents_p0_h31 {get_account_api_consents_p0_v0_h29, get_account_api_consents_p0_v1_h30}
 
 @endpoint("/account-api/consents",
   "get",
@@ -1821,16 +1782,9 @@ op `getConsents`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_consents_b_application_json_page_v0_h32 extends string;
   
 
-@js(#{`minimum`:1,`maximum`:100000}) @hoisted scalar post_account_api_consents_b_application_json_page_v1_h33 extends integer;
   
-
-@js(#{`description`:"The page of the list the form was on."}) @hoisted union post_account_api_consents_b_application_json_page_h34 {
-    post_account_api_consents_b_application_json_page_v0_h32,
-    post_account_api_consents_b_application_json_page_v1_h33
-  }
 
 @endpoint("/account-api/consents",
   "post",
@@ -1879,7 +1833,7 @@ op `withdrawConsent`(`requestBody/content/application~1json/schema`: {
       `description`:"The application's client_id."
     }) `client`: string;
     @js(#{`description`:"The scope, for `action=scope`.",`maxLength`:1024}) `scope`?: string;
-    `page`?: post_account_api_consents_b_application_json_page_h34
+    `page`?: EmptyTextOrIntegerFrom1To1000003
   },
   `responses/200/content/application~1json/schema`: {`ok`?: boolean; `message`?: string; `go`?: string},
   `responses/400/content/application~1json/schema`: {
@@ -1931,63 +1885,9 @@ op `withdrawConsent`(`requestBody/content/application~1json/schema`: {
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar get_account_api_gnap_p0_v0_h35 extends string;
   
 
-@js(#{`minimum`:1,`maximum`:100000}) @hoisted scalar get_account_api_gnap_p0_v1_h36 extends integer;
   
-
-@hoisted union get_account_api_gnap_p0_h37 {get_account_api_gnap_p0_v0_h35, get_account_api_gnap_p0_v1_h36}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `reason`:#{`type`:"string"},
-      `at`:#{`type`:"number"},
-      `note`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_account_api_gnap_r200_application_json_rows_i_finalization_h38 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_gnap_r200_application_json_rows_i_client_h39 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_gnap_r200_application_json_rows_i_clientName_h40 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_gnap_r200_application_json_rows_i_authorizationServer_h41 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model get_account_api_gnap_r200_application_json_rows_i_createdAt_h42 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model get_account_api_gnap_r200_application_json_rows_i_updatedAt_h43 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model get_account_api_gnap_r200_application_json_rows_i_grantExpiresAt_h44 {}
-
-@js(#{
-    `x-free-form`:"An RFC 9635 section 8 access right as the client asked for it: a reference string, or an object whose members the client and the resource server define.",
-    `description`:"An RFC 9635 section 8 access right as the client asked for it: a reference string, or an object whose members the client and the resource server define."
-  }) @hoisted model get_account_api_gnap_r200_application_json_rows_i_rights_i_h45 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model get_account_api_gnap_r200_application_json_rows_i_subjectReleasedAt_h46 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_gnap_r200_application_json_rows_i_derivedFrom_h47 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_gnap_r200_application_json_rows_i_tokens_i_label_h48 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_gnap_r200_application_json_rows_i_tokens_i_format_h49 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model get_account_api_gnap_r200_application_json_rows_i_tokens_i_issuedAt_h50 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model get_account_api_gnap_r200_application_json_rows_i_tokens_i_expiresAt_h51 {}
-
-@js(#{
-    `x-free-form`:"An RFC 9635 section 8 access right as the client asked for it: a reference string, or an object whose members the client and the resource server define.",
-    `description`:"An RFC 9635 section 8 access right as the client asked for it: a reference string, or an object whose members the client and the resource server define."
-  }) @hoisted model get_account_api_gnap_r200_application_json_rows_i_tokens_i_access_i_h52 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_gnap_r200_application_json_rows_i_tokens_i_revokedWhy_h53 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_gnap_r200_application_json_paging_param_h54 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_gnap_r200_application_json_paging_noun_h55 {}
 
 @endpoint("/account-api/gnap",
   "get",
@@ -2038,28 +1938,28 @@ op `getGnapGrants`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`typ
     `rows`?: ({
       `id`?: string;
       `state`?: string;
-      `finalization`?: get_account_api_gnap_r200_application_json_rows_i_finalization_h38;
-      `client`?: get_account_api_gnap_r200_application_json_rows_i_client_h39;
-      `clientName`?: get_account_api_gnap_r200_application_json_rows_i_clientName_h40;
-      `authorizationServer`?: get_account_api_gnap_r200_application_json_rows_i_authorizationServer_h41;
-      `createdAt`?: get_account_api_gnap_r200_application_json_rows_i_createdAt_h42;
-      `updatedAt`?: get_account_api_gnap_r200_application_json_rows_i_updatedAt_h43;
-      `grantExpiresAt`?: get_account_api_gnap_r200_application_json_rows_i_grantExpiresAt_h44;
+      `finalization`?: NullableObject;
+      `client`?: NullableString;
+      `clientName`?: NullableString;
+      `authorizationServer`?: NullableString;
+      `createdAt`?: Shape;
+      `updatedAt`?: Shape;
+      `grantExpiresAt`?: Shape;
       `approvedBy`?: string;
-      `rights`?: (get_account_api_gnap_r200_application_json_rows_i_rights_i_h45)[];
+      `rights`?: (Shape3)[];
       `rightsAre`?: string;
-      `subjectReleasedAt`?: get_account_api_gnap_r200_application_json_rows_i_subjectReleasedAt_h46;
-      `derivedFrom`?: get_account_api_gnap_r200_application_json_rows_i_derivedFrom_h47;
+      `subjectReleasedAt`?: Shape;
+      `derivedFrom`?: NullableString;
       `tokens`?: ({
         `jti`?: string;
-        `label`?: get_account_api_gnap_r200_application_json_rows_i_tokens_i_label_h48;
-        `format`?: get_account_api_gnap_r200_application_json_rows_i_tokens_i_format_h49;
-        `issuedAt`?: get_account_api_gnap_r200_application_json_rows_i_tokens_i_issuedAt_h50;
-        `expiresAt`?: get_account_api_gnap_r200_application_json_rows_i_tokens_i_expiresAt_h51;
+        `label`?: NullableString;
+        `format`?: NullableString;
+        `issuedAt`?: Shape;
+        `expiresAt`?: Shape;
         `state`?: string;
         `bearer`?: boolean;
-        `access`?: (get_account_api_gnap_r200_application_json_rows_i_tokens_i_access_i_h52)[];
-        `revokedWhy`?: get_account_api_gnap_r200_application_json_rows_i_tokens_i_revokedWhy_h53
+        `access`?: (Shape3)[];
+        `revokedWhy`?: NullableString
       })[];
       `revocable`?: boolean
     })[];
@@ -2070,8 +1970,8 @@ op `getGnapGrants`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`typ
       `firstRow`?: integer;
       `lastRow`?: integer;
       `total`?: integer;
-      `param`?: get_account_api_gnap_r200_application_json_paging_param_h54;
-      `noun`?: get_account_api_gnap_r200_application_json_paging_noun_h55
+      `param`?: NullableString;
+      `noun`?: NullableString
     };
     `cells`?: {
       `multiCell`?: boolean;
@@ -2114,66 +2014,9 @@ op `getGnapGrants`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`typ
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_gnap_b_application_json_page_v0_h56 extends string;
   
 
-@js(#{`minimum`:1,`maximum`:100000}) @hoisted scalar post_account_api_gnap_b_application_json_page_v1_h57 extends integer;
   
-
-@js(#{`description`:"The page of the list the form was on."}) @hoisted union post_account_api_gnap_b_application_json_page_h58 {
-    post_account_api_gnap_b_application_json_page_v0_h56,
-    post_account_api_gnap_b_application_json_page_v1_h57
-  }
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `reason`:#{`type`:"string"},
-      `at`:#{`type`:"number"},
-      `note`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_gnap_r400_application_json_view_rows_i_finalization_h59 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_gnap_r400_application_json_view_rows_i_client_h60 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_gnap_r400_application_json_view_rows_i_clientName_h61 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_gnap_r400_application_json_view_rows_i_authorizationServer_h62 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_gnap_r400_application_json_view_rows_i_createdAt_h63 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_gnap_r400_application_json_view_rows_i_updatedAt_h64 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_gnap_r400_application_json_view_rows_i_grantExpiresAt_h65 {}
-
-@js(#{
-    `x-free-form`:"An RFC 9635 section 8 access right as the client asked for it: a reference string, or an object whose members the client and the resource server define.",
-    `description`:"An RFC 9635 section 8 access right as the client asked for it: a reference string, or an object whose members the client and the resource server define."
-  }) @hoisted model post_account_api_gnap_r400_application_json_view_rows_i_rights_i_h66 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_gnap_r400_application_json_view_rows_i_subjectReleasedAt_h67 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_gnap_r400_application_json_view_rows_i_derivedFrom_h68 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_gnap_r400_application_json_view_rows_i_tokens_i_label_h69 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_gnap_r400_application_json_view_rows_i_tokens_i_format_h70 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_gnap_r400_application_json_view_rows_i_tokens_i_issuedAt_h71 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_gnap_r400_application_json_view_rows_i_tokens_i_expiresAt_h72 {}
-
-@js(#{
-    `x-free-form`:"An RFC 9635 section 8 access right as the client asked for it: a reference string, or an object whose members the client and the resource server define.",
-    `description`:"An RFC 9635 section 8 access right as the client asked for it: a reference string, or an object whose members the client and the resource server define."
-  }) @hoisted model post_account_api_gnap_r400_application_json_view_rows_i_tokens_i_access_i_h73 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_gnap_r400_application_json_view_rows_i_tokens_i_revokedWhy_h74 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_gnap_r400_application_json_view_paging_param_h75 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_gnap_r400_application_json_view_paging_noun_h76 {}
 
 @endpoint("/account-api/gnap",
   "post",
@@ -2219,7 +2062,7 @@ op `revokeGnapGrant`(`requestBody/content/application~1json/schema`: {
       `pattern`:"^[A-Za-z0-9_-]+$",
       `description`:"The grant to end, from the list."
     }) `grant`: string;
-    `page`?: post_account_api_gnap_b_application_json_page_h58
+    `page`?: EmptyTextOrIntegerFrom1To1000003
   },
   `responses/200/content/application~1json/schema`: {`ok`?: boolean; `message`?: string; `go`?: string},
   `responses/400/content/application~1json/schema`: {
@@ -2232,28 +2075,28 @@ op `revokeGnapGrant`(`requestBody/content/application~1json/schema`: {
       `rows`?: ({
         `id`?: string;
         `state`?: string;
-        `finalization`?: post_account_api_gnap_r400_application_json_view_rows_i_finalization_h59;
-        `client`?: post_account_api_gnap_r400_application_json_view_rows_i_client_h60;
-        `clientName`?: post_account_api_gnap_r400_application_json_view_rows_i_clientName_h61;
-        `authorizationServer`?: post_account_api_gnap_r400_application_json_view_rows_i_authorizationServer_h62;
-        `createdAt`?: post_account_api_gnap_r400_application_json_view_rows_i_createdAt_h63;
-        `updatedAt`?: post_account_api_gnap_r400_application_json_view_rows_i_updatedAt_h64;
-        `grantExpiresAt`?: post_account_api_gnap_r400_application_json_view_rows_i_grantExpiresAt_h65;
+        `finalization`?: NullableObject;
+        `client`?: NullableString;
+        `clientName`?: NullableString;
+        `authorizationServer`?: NullableString;
+        `createdAt`?: Shape;
+        `updatedAt`?: Shape;
+        `grantExpiresAt`?: Shape;
         `approvedBy`?: string;
-        `rights`?: (post_account_api_gnap_r400_application_json_view_rows_i_rights_i_h66)[];
+        `rights`?: (Shape3)[];
         `rightsAre`?: string;
-        `subjectReleasedAt`?: post_account_api_gnap_r400_application_json_view_rows_i_subjectReleasedAt_h67;
-        `derivedFrom`?: post_account_api_gnap_r400_application_json_view_rows_i_derivedFrom_h68;
+        `subjectReleasedAt`?: Shape;
+        `derivedFrom`?: NullableString;
         `tokens`?: ({
           `jti`?: string;
-          `label`?: post_account_api_gnap_r400_application_json_view_rows_i_tokens_i_label_h69;
-          `format`?: post_account_api_gnap_r400_application_json_view_rows_i_tokens_i_format_h70;
-          `issuedAt`?: post_account_api_gnap_r400_application_json_view_rows_i_tokens_i_issuedAt_h71;
-          `expiresAt`?: post_account_api_gnap_r400_application_json_view_rows_i_tokens_i_expiresAt_h72;
+          `label`?: NullableString;
+          `format`?: NullableString;
+          `issuedAt`?: Shape;
+          `expiresAt`?: Shape;
           `state`?: string;
           `bearer`?: boolean;
-          `access`?: (post_account_api_gnap_r400_application_json_view_rows_i_tokens_i_access_i_h73)[];
-          `revokedWhy`?: post_account_api_gnap_r400_application_json_view_rows_i_tokens_i_revokedWhy_h74
+          `access`?: (Shape3)[];
+          `revokedWhy`?: NullableString
         })[];
         `revocable`?: boolean
       })[];
@@ -2264,8 +2107,8 @@ op `revokeGnapGrant`(`requestBody/content/application~1json/schema`: {
         `firstRow`?: integer;
         `lastRow`?: integer;
         `total`?: integer;
-        `param`?: post_account_api_gnap_r400_application_json_view_paging_param_h75;
-        `noun`?: post_account_api_gnap_r400_application_json_view_paging_noun_h76
+        `param`?: NullableString;
+        `noun`?: NullableString
       };
       `cells`?: {
         `multiCell`?: boolean;
@@ -2301,23 +2144,9 @@ op `revokeGnapGrant`(`requestBody/content/application~1json/schema`: {
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar get_account_api_email_p0_v0_h77 extends string;
   
 
-@js(#{`minimum`:1,`maximum`:100000}) @hoisted scalar get_account_api_email_p0_v1_h78 extends integer;
   
-
-@hoisted union get_account_api_email_p0_h79 {get_account_api_email_p0_v0_h77, get_account_api_email_p0_v1_h78}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model get_account_api_email_r200_application_json_sent_i_queuedAt_h80 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_email_r200_application_json_sent_i_subject_h81 {}
-
-@hoisted union get_account_api_email_r200_application_json_sent_i_to_v1_h82 {string, (string)[]}
-
-@js(#{`$comb`:"oneOf"}) @hoisted union get_account_api_email_r200_application_json_sent_i_to_h83 {null, get_account_api_email_r200_application_json_sent_i_to_v1_h82}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_email_r200_application_json_sent_i_state_h84 {}
 
 @endpoint("/account-api/email",
   "get",
@@ -2376,10 +2205,10 @@ op `getEmail`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"i
       `sent`?: boolean
     })[];
     `sent`?: ({
-      `queuedAt`?: get_account_api_email_r200_application_json_sent_i_queuedAt_h80;
-      `subject`?: get_account_api_email_r200_application_json_sent_i_subject_h81;
-      `to`?: get_account_api_email_r200_application_json_sent_i_to_h83;
-      `state`?: get_account_api_email_r200_application_json_sent_i_state_h84
+      `queuedAt`?: Shape;
+      `subject`?: NullableString;
+      `to`?: NullOrStringOrString;
+      `state`?: NullableString
     })[];
     `sentPaging`?: {
       `page`?: integer;
@@ -2422,49 +2251,21 @@ op `getEmail`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"i
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_email_b_application_json_action_v0_h85 extends string;
   
 
 @js(#{
     `description`:"`verify` sends a link to the address on your entry; `change` sends one to `address`; `preferences` saves `notification`."
   }) @hoisted union post_account_api_email_b_application_json_action_h86 {
-    post_account_api_email_b_application_json_action_v0_h85,
+    EmptyText,
     "verify" | "preferences" | "change"
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_email_b_application_json_notification_v0_h87 extends string;
   
 
 @js(#{`description`:"`on` to be sent notifications, for `preferences`."}) @hoisted union post_account_api_email_b_application_json_notification_h88 {
-    post_account_api_email_b_application_json_notification_v0_h87,
+    EmptyText,
     "0" | "1" | "true" | "false" | "on" | "off" | "yes" | "no"
   }
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_email_r400_application_json_view_sent_i_queuedAt_h89 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_email_r400_application_json_view_sent_i_subject_h90 {}
-
-@hoisted union post_account_api_email_r400_application_json_view_sent_i_to_v1_h91 {string, (string)[]}
-
-@js(#{`$comb`:"oneOf"}) @hoisted union post_account_api_email_r400_application_json_view_sent_i_to_h92 {
-    null,
-    post_account_api_email_r400_application_json_view_sent_i_to_v1_h91
-  }
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_email_r400_application_json_view_sent_i_state_h93 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_email_r429_application_json_view_sent_i_queuedAt_h94 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_email_r429_application_json_view_sent_i_subject_h95 {}
-
-@hoisted union post_account_api_email_r429_application_json_view_sent_i_to_v1_h96 {string, (string)[]}
-
-@js(#{`$comb`:"oneOf"}) @hoisted union post_account_api_email_r429_application_json_view_sent_i_to_h97 {
-    null,
-    post_account_api_email_r429_application_json_view_sent_i_to_v1_h96
-  }
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_email_r429_application_json_view_sent_i_state_h98 {}
 
 @endpoint("/account-api/email",
   "post",
@@ -2530,10 +2331,10 @@ op `postEmail`(`requestBody/content/application~1json/schema`: {
         `sent`?: boolean
       })[];
       `sent`?: ({
-        `queuedAt`?: post_account_api_email_r400_application_json_view_sent_i_queuedAt_h89;
-        `subject`?: post_account_api_email_r400_application_json_view_sent_i_subject_h90;
-        `to`?: post_account_api_email_r400_application_json_view_sent_i_to_h92;
-        `state`?: post_account_api_email_r400_application_json_view_sent_i_state_h93
+        `queuedAt`?: Shape;
+        `subject`?: NullableString;
+        `to`?: NullOrStringOrString2;
+        `state`?: NullableString
       })[];
       `sentPaging`?: {
         `page`?: integer;
@@ -2576,10 +2377,10 @@ op `postEmail`(`requestBody/content/application~1json/schema`: {
         `sent`?: boolean
       })[];
       `sent`?: ({
-        `queuedAt`?: post_account_api_email_r429_application_json_view_sent_i_queuedAt_h94;
-        `subject`?: post_account_api_email_r429_application_json_view_sent_i_subject_h95;
-        `to`?: post_account_api_email_r429_application_json_view_sent_i_to_h97;
-        `state`?: post_account_api_email_r429_application_json_view_sent_i_state_h98
+        `queuedAt`?: Shape;
+        `subject`?: NullableString;
+        `to`?: NullOrStringOrString2;
+        `state`?: NullableString
       })[];
       `sentPaging`?: {
         `page`?: integer;
@@ -2599,16 +2400,9 @@ op `postEmail`(`requestBody/content/application~1json/schema`: {
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar get_account_api_verify_email_p0_v0_h99 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:256}) @hoisted scalar get_account_api_verify_email_p0_v1_h100 extends string;
   
-
-@hoisted union get_account_api_verify_email_p0_h101 {
-    get_account_api_verify_email_p0_v0_h99,
-    get_account_api_verify_email_p0_v1_h100
-  }
 
 @endpoint("/account-api/verify-email",
   "get",
@@ -2681,27 +2475,13 @@ op `getEmailVerification`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""}
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_verify_email_b_application_json_user_v0_h102 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:256}) @hoisted scalar post_account_api_verify_email_b_application_json_user_v1_h103 extends string;
   
 
-@js(#{`description`:"The username the link names."}) @hoisted union post_account_api_verify_email_b_application_json_user_h104 {
-    post_account_api_verify_email_b_application_json_user_v0_h102,
-    post_account_api_verify_email_b_application_json_user_v1_h103
-  }
-
-@js(#{`const`:""}) @hoisted scalar post_account_api_verify_email_b_application_json_token_v0_h105 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:4096,`pattern`:"^[A-Za-z0-9._~+/=-]+$"}) @hoisted scalar post_account_api_verify_email_b_application_json_token_v1_h106 extends string;
   
-
-@js(#{`description`:"The link's single-use secret."}) @hoisted union post_account_api_verify_email_b_application_json_token_h107 {
-    post_account_api_verify_email_b_application_json_token_v0_h105,
-    post_account_api_verify_email_b_application_json_token_v1_h106
-  }
 
 @endpoint("/account-api/verify-email",
   "post",
@@ -2737,8 +2517,8 @@ op `getEmailVerification`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""}
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`user`:"nobody-example",`token`:"no-such-token"}}}}
   })
 op `verifyEmail`(`requestBody/content/application~1json/schema`: {
-    `user`?: post_account_api_verify_email_b_application_json_user_h104;
-    `token`?: post_account_api_verify_email_b_application_json_token_h107
+    `user`?: EmptyTextOrStringMin1Max2562;
+    `token`?: EmptyTextOrStringMin1Max4096Matchingfb79a8
   },
   `responses/200/content/application~1json/schema`: {
     `ok`?: boolean;
@@ -2937,8 +2717,6 @@ op `requestPasswordReset`(`requestBody/content/application~1json/schema`: {
   }): void;
   
 
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_pseudonyms_r200_application_json_pending_h108 {}
-
 @endpoint("/account-api/pseudonyms",
   "get",
   #{
@@ -2981,7 +2759,7 @@ op `requestPasswordReset`(`requestBody/content/application~1json/schema`: {
   })
 op `getPseudonyms`(`responses/200/content/application~1json/schema`: {
     `pseudonyms`?: (string)[];
-    `pending`?: get_account_api_pseudonyms_r200_application_json_pending_h108;
+    `pending`?: NullableString;
     `cap`?: numeric;
     `available`?: boolean
   },
@@ -3025,21 +2803,14 @@ op `getPseudonyms`(`responses/200/content/application~1json/schema`: {
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_pseudonyms_b_application_json_action_v0_h109 extends string;
   
 
 @js(#{
     `description`:"`add` adds `value`; `remove` drops it; `cancel-pending` drops a name that is waiting for its link."
   }) @hoisted union post_account_api_pseudonyms_b_application_json_action_h110 {
-    post_account_api_pseudonyms_b_application_json_action_v0_h109,
+    EmptyText,
     "add" | "remove" | "cancel-pending"
   }
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_pseudonyms_r400_application_json_view_pending_h111 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_pseudonyms_r429_application_json_view_pending_h112 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_pseudonyms_r503_application_json_view_pending_h113 {}
 
 @endpoint("/account-api/pseudonyms",
   "post",
@@ -3097,7 +2868,7 @@ op `postPseudonyms`(`requestBody/content/application~1json/schema`: {
     `error`?: string;
     `view`?: {
       `pseudonyms`?: (string)[];
-      `pending`?: post_account_api_pseudonyms_r400_application_json_view_pending_h111;
+      `pending`?: NullableString;
       `cap`?: numeric;
       `available`?: boolean;
       `refused`?: string
@@ -3125,7 +2896,7 @@ op `postPseudonyms`(`requestBody/content/application~1json/schema`: {
     `error`?: string;
     `view`?: {
       `pseudonyms`?: (string)[];
-      `pending`?: post_account_api_pseudonyms_r429_application_json_view_pending_h112;
+      `pending`?: NullableString;
       `cap`?: numeric;
       `available`?: boolean;
       `refused`?: string
@@ -3137,7 +2908,7 @@ op `postPseudonyms`(`requestBody/content/application~1json/schema`: {
     `error`?: string;
     `view`?: {
       `pseudonyms`?: (string)[];
-      `pending`?: post_account_api_pseudonyms_r503_application_json_view_pending_h113;
+      `pending`?: NullableString;
       `cap`?: numeric;
       `available`?: boolean;
       `refused`?: string
@@ -3153,16 +2924,9 @@ op `postPseudonyms`(`requestBody/content/application~1json/schema`: {
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar get_account_api_verify_pseudonym_p0_v0_h114 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:256}) @hoisted scalar get_account_api_verify_pseudonym_p0_v1_h115 extends string;
   
-
-@hoisted union get_account_api_verify_pseudonym_p0_h116 {
-    get_account_api_verify_pseudonym_p0_v0_h114,
-    get_account_api_verify_pseudonym_p0_v1_h115
-  }
 
 @endpoint("/account-api/verify-pseudonym",
   "get",
@@ -3245,27 +3009,13 @@ op `getPseudonymVerification`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_verify_pseudonym_b_application_json_user_v0_h117 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:256}) @hoisted scalar post_account_api_verify_pseudonym_b_application_json_user_v1_h118 extends string;
   
 
-@js(#{`description`:"The username the link names."}) @hoisted union post_account_api_verify_pseudonym_b_application_json_user_h119 {
-    post_account_api_verify_pseudonym_b_application_json_user_v0_h117,
-    post_account_api_verify_pseudonym_b_application_json_user_v1_h118
-  }
-
-@js(#{`const`:""}) @hoisted scalar post_account_api_verify_pseudonym_b_application_json_token_v0_h120 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:4096,`pattern`:"^[A-Za-z0-9._~+/=-]+$"}) @hoisted scalar post_account_api_verify_pseudonym_b_application_json_token_v1_h121 extends string;
   
-
-@js(#{`description`:"The link's single-use secret."}) @hoisted union post_account_api_verify_pseudonym_b_application_json_token_h122 {
-    post_account_api_verify_pseudonym_b_application_json_token_v0_h120,
-    post_account_api_verify_pseudonym_b_application_json_token_v1_h121
-  }
 
 @endpoint("/account-api/verify-pseudonym",
   "post",
@@ -3305,8 +3055,8 @@ op `getPseudonymVerification`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`user`:"nobody-example",`token`:"no-such-token"}}}}
   })
 op `verifyPseudonym`(`requestBody/content/application~1json/schema`: {
-    `user`?: post_account_api_verify_pseudonym_b_application_json_user_h119;
-    `token`?: post_account_api_verify_pseudonym_b_application_json_token_h122
+    `user`?: EmptyTextOrStringMin1Max2562;
+    `token`?: EmptyTextOrStringMin1Max4096Matchingfb79a8
   },
   `responses/200/content/application~1json/schema`: {
     `ok`?: boolean;
@@ -3342,27 +3092,9 @@ op `verifyPseudonym`(`requestBody/content/application~1json/schema`: {
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar get_account_api_owned_roles_p0_v0_h123 extends string;
   
 
-@js(#{`minimum`:1,`maximum`:100000}) @hoisted scalar get_account_api_owned_roles_p0_v1_h124 extends integer;
   
-
-@hoisted union get_account_api_owned_roles_p0_h125 {
-    get_account_api_owned_roles_p0_v0_h123,
-    get_account_api_owned_roles_p0_v1_h124
-  }
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_owned_roles_r200_application_json_rows_i_detail_h126 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `you`:#{`type`:"boolean"},
-      `groups`:#{`type`:"array",`items`:#{`type`:"string"}}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_account_api_owned_roles_r200_application_json_rows_i_via_h127 {}
 
 @endpoint("/account-api/owned/roles",
   "get",
@@ -3420,8 +3152,8 @@ op `getOwnedRoles`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`typ
       `name`?: string;
       `id`?: string;
       `dn`?: string;
-      `detail`?: get_account_api_owned_roles_r200_application_json_rows_i_detail_h126;
-      `via`?: get_account_api_owned_roles_r200_application_json_rows_i_via_h127;
+      `detail`?: NullableString;
+      `via`?: NullableObject2;
       `closed`?: boolean
     })[]
   },
@@ -3459,27 +3191,9 @@ op `getOwnedRoles`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`typ
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar get_account_api_owned_groups_p0_v0_h128 extends string;
   
 
-@js(#{`minimum`:1,`maximum`:100000}) @hoisted scalar get_account_api_owned_groups_p0_v1_h129 extends integer;
   
-
-@hoisted union get_account_api_owned_groups_p0_h130 {
-    get_account_api_owned_groups_p0_v0_h128,
-    get_account_api_owned_groups_p0_v1_h129
-  }
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_owned_groups_r200_application_json_rows_i_detail_h131 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `you`:#{`type`:"boolean"},
-      `groups`:#{`type`:"array",`items`:#{`type`:"string"}}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_account_api_owned_groups_r200_application_json_rows_i_via_h132 {}
 
 @endpoint("/account-api/owned/groups",
   "get",
@@ -3537,8 +3251,8 @@ op `getOwnedGroups`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`ty
       `name`?: string;
       `id`?: string;
       `dn`?: string;
-      `detail`?: get_account_api_owned_groups_r200_application_json_rows_i_detail_h131;
-      `via`?: get_account_api_owned_groups_r200_application_json_rows_i_via_h132;
+      `detail`?: NullableString;
+      `via`?: NullableObject2;
       `closed`?: boolean
     })[]
   },
@@ -3576,27 +3290,9 @@ op `getOwnedGroups`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`ty
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar get_account_api_owned_service_accounts_p0_v0_h133 extends string;
   
 
-@js(#{`minimum`:1,`maximum`:100000}) @hoisted scalar get_account_api_owned_service_accounts_p0_v1_h134 extends integer;
   
-
-@hoisted union get_account_api_owned_service_accounts_p0_h135 {
-    get_account_api_owned_service_accounts_p0_v0_h133,
-    get_account_api_owned_service_accounts_p0_v1_h134
-  }
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_owned_service_accounts_r200_application_json_rows_i_detail_h136 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `you`:#{`type`:"boolean"},
-      `groups`:#{`type`:"array",`items`:#{`type`:"string"}}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_account_api_owned_service_accounts_r200_application_json_rows_i_via_h137 {}
 
 @endpoint("/account-api/owned/service-accounts",
   "get",
@@ -3654,8 +3350,8 @@ op `getOwnedServiceAccounts`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:
       `name`?: string;
       `id`?: string;
       `dn`?: string;
-      `detail`?: get_account_api_owned_service_accounts_r200_application_json_rows_i_detail_h136;
-      `via`?: get_account_api_owned_service_accounts_r200_application_json_rows_i_via_h137;
+      `detail`?: NullableString;
+      `via`?: NullableObject2;
       `closed`?: boolean
     })[]
   },
@@ -3693,27 +3389,9 @@ op `getOwnedServiceAccounts`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar get_account_api_owned_applications_p0_v0_h138 extends string;
   
 
-@js(#{`minimum`:1,`maximum`:100000}) @hoisted scalar get_account_api_owned_applications_p0_v1_h139 extends integer;
   
-
-@hoisted union get_account_api_owned_applications_p0_h140 {
-    get_account_api_owned_applications_p0_v0_h138,
-    get_account_api_owned_applications_p0_v1_h139
-  }
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_owned_applications_r200_application_json_rows_i_detail_h141 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `you`:#{`type`:"boolean"},
-      `groups`:#{`type`:"array",`items`:#{`type`:"string"}}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_account_api_owned_applications_r200_application_json_rows_i_via_h142 {}
 
 @endpoint("/account-api/owned/applications",
   "get",
@@ -3771,8 +3449,8 @@ op `getOwnedApplications`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""}
       `name`?: string;
       `id`?: string;
       `dn`?: string;
-      `detail`?: get_account_api_owned_applications_r200_application_json_rows_i_detail_h141;
-      `via`?: get_account_api_owned_applications_r200_application_json_rows_i_via_h142;
+      `detail`?: NullableString;
+      `via`?: NullableObject2;
       `closed`?: boolean
     })[]
   },
@@ -3810,15 +3488,9 @@ op `getOwnedApplications`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""}
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar get_account_api_shared_p0_v0_h143 extends string;
   
 
-@js(#{`minimum`:1,`maximum`:100000}) @hoisted scalar get_account_api_shared_p0_v1_h144 extends integer;
   
-
-@hoisted union get_account_api_shared_p0_h145 {get_account_api_shared_p0_v0_h143, get_account_api_shared_p0_v1_h144}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model get_account_api_shared_r200_application_json_version_h146 {}
 
 @endpoint("/account-api/shared",
   "get",
@@ -3893,7 +3565,7 @@ op `getShared`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"
     })[];
     `alfaEditing`?: boolean;
     `alfa`?: string;
-    `version`?: get_account_api_shared_r200_application_json_version_h146;
+    `version`?: Shape;
     `recipients`?: (string)[]
   },
   @js(#{
@@ -3930,155 +3602,120 @@ op `getShared`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_shared_b_application_json_pending_v0_h147 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:256,`pattern`:"^[\\x21-\\x7E]+$"}) @hoisted scalar post_account_api_shared_b_application_json_pending_v1_h148 extends string;
   
 
 @js(#{
     `description`:"approve, refuse: the waiting request's id, from the list."
   }) @hoisted union post_account_api_shared_b_application_json_pending_h149 {
-    post_account_api_shared_b_application_json_pending_v0_h147,
-    post_account_api_shared_b_application_json_pending_v1_h148
+    EmptyText,
+    StringMin1Max256Matching8fe5b0
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_shared_b_application_json_resource_v0_h150 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:256,`pattern`:"^[\\x21-\\x7E]+$"}) @hoisted scalar post_account_api_shared_b_application_json_resource_v1_h151 extends string;
   
 
 @js(#{`description`:"share: the resource's _id, one of yours."}) @hoisted union post_account_api_shared_b_application_json_resource_h152 {
-    post_account_api_shared_b_application_json_resource_v0_h150,
-    post_account_api_shared_b_application_json_resource_v1_h151
+    EmptyText,
+    StringMin1Max256Matching8fe5b0
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_shared_b_application_json_scope_v0_h153 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:256}) @hoisted scalar post_account_api_shared_b_application_json_scope_v1_v0_h154 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:256}) @hoisted scalar post_account_api_shared_b_application_json_scope_v1_v1_i_h155 extends string;
   
 
 @hoisted union post_account_api_shared_b_application_json_scope_v1_h156 {
-    post_account_api_shared_b_application_json_scope_v1_v0_h154,
-    (post_account_api_shared_b_application_json_scope_v1_v1_i_h155)[]
+    StringMin1Max256,
+    (StringMin1Max256)[]
   }
 
 @js(#{
     `description`:"share: the scopes, each one the resource was registered with."
   }) @hoisted union post_account_api_shared_b_application_json_scope_h157 {
-    post_account_api_shared_b_application_json_scope_v0_h153,
+    EmptyText,
     post_account_api_shared_b_application_json_scope_v1_h156
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_shared_b_application_json_recipientKind_v0_h158 extends string;
   
 
 @js(#{`description`:"share: who the share is with."}) @hoisted union post_account_api_shared_b_application_json_recipientKind_h159 {
-    post_account_api_shared_b_application_json_recipientKind_v0_h158,
+    EmptyText,
     "person" | "group" | "realm" | "claim"
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_shared_b_application_json_recipient_v0_h160 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:256}) @hoisted scalar post_account_api_shared_b_application_json_recipient_v1_h161 extends string;
   
 
 @js(#{
     `description`:"share: the username, the group's name, or the claim's value."
   }) @hoisted union post_account_api_shared_b_application_json_recipient_h162 {
-    post_account_api_shared_b_application_json_recipient_v0_h160,
-    post_account_api_shared_b_application_json_recipient_v1_h161
+    EmptyText,
+    StringMin1Max256
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_shared_b_application_json_claim_v0_h163 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:256}) @hoisted scalar post_account_api_shared_b_application_json_claim_v1_h164 extends string;
   
 
 @js(#{`description`:"share, recipientKind claim: the claim's name."}) @hoisted union post_account_api_shared_b_application_json_claim_h165 {
-    post_account_api_shared_b_application_json_claim_v0_h163,
-    post_account_api_shared_b_application_json_claim_v1_h164
+    EmptyText,
+    StringMin1Max256
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_shared_b_application_json_expires_v0_h166 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:256}) @hoisted scalar post_account_api_shared_b_application_json_expires_v1_h167 extends string;
   
 
 @js(#{`description`:"share: an optional date the share ends."}) @hoisted union post_account_api_shared_b_application_json_expires_h168 {
-    post_account_api_shared_b_application_json_expires_v0_h166,
-    post_account_api_shared_b_application_json_expires_v1_h167
+    EmptyText,
+    StringMin1Max256
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_shared_b_application_json_acr_v0_h169 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:256}) @hoisted scalar post_account_api_shared_b_application_json_acr_v1_h170 extends string;
   
 
 @js(#{
     `description`:"share: an optional authentication level the requesting party's session must meet."
   }) @hoisted union post_account_api_shared_b_application_json_acr_h171 {
-    post_account_api_shared_b_application_json_acr_v0_h169,
-    post_account_api_shared_b_application_json_acr_v1_h170
+    EmptyText,
+    StringMin1Max256
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_shared_b_application_json_askMe_v0_h172 extends string;
   
 
 @js(#{`description`:"share: ask the owner each time."}) @hoisted union post_account_api_shared_b_application_json_askMe_h173 {
-    post_account_api_shared_b_application_json_askMe_v0_h172,
+    EmptyText,
     "0" | "1" | "true" | "false" | "on" | "off" | "yes" | "no"
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_shared_b_application_json_share_v0_h174 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:256,`pattern`:"^[\\x21-\\x7E]+$"}) @hoisted scalar post_account_api_shared_b_application_json_share_v1_h175 extends string;
   
 
 @js(#{`description`:"unshare: the share's id, from the list."}) @hoisted union post_account_api_shared_b_application_json_share_h176 {
-    post_account_api_shared_b_application_json_share_v0_h174,
-    post_account_api_shared_b_application_json_share_v1_h175
+    EmptyText,
+    StringMin1Max256Matching8fe5b0
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_shared_b_application_json_alfa_v0_h177 extends string;
   
 
 @js(#{`maxLength`:65536}) @hoisted scalar post_account_api_shared_b_application_json_alfa_v1_h178 extends string;
   
 
 @js(#{`description`:"alfa: the whole document, as ALFA."}) @hoisted union post_account_api_shared_b_application_json_alfa_h179 {
-    post_account_api_shared_b_application_json_alfa_v0_h177,
+    EmptyText,
     post_account_api_shared_b_application_json_alfa_v1_h178
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_shared_b_application_json_page_v0_h180 extends string;
   
 
-@js(#{`minimum`:1,`maximum`:100000}) @hoisted scalar post_account_api_shared_b_application_json_page_v1_h181 extends integer;
   
-
-@js(#{`description`:"The page of the list the form was on."}) @hoisted union post_account_api_shared_b_application_json_page_h182 {
-    post_account_api_shared_b_application_json_page_v0_h180,
-    post_account_api_shared_b_application_json_page_v1_h181
-  }
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_shared_r200_application_json_view_version_h183 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_shared_r400_application_json_view_version_h184 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_shared_r403_application_json_view_version_h185 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_shared_r500_application_json_view_version_h186 {}
 
 @endpoint("/account-api/shared",
   "post",
@@ -4136,7 +3773,7 @@ op `actShared`(`requestBody/content/application~1json/schema`: {
     `askMe`?: post_account_api_shared_b_application_json_askMe_h173;
     `share`?: post_account_api_shared_b_application_json_share_h176;
     `alfa`?: post_account_api_shared_b_application_json_alfa_h179;
-    `page`?: post_account_api_shared_b_application_json_page_h182
+    `page`?: EmptyTextOrIntegerFrom1To1000003
   },
   `responses/200/content/application~1json/schema`: {
     `ok`?: boolean;
@@ -4172,7 +3809,7 @@ op `actShared`(`requestBody/content/application~1json/schema`: {
       })[];
       `alfaEditing`?: boolean;
       `alfa`?: string;
-      `version`?: post_account_api_shared_r200_application_json_view_version_h183;
+      `version`?: Shape;
       `recipients`?: (string)[]
     }
   },
@@ -4210,7 +3847,7 @@ op `actShared`(`requestBody/content/application~1json/schema`: {
       })[];
       `alfaEditing`?: boolean;
       `alfa`?: string;
-      `version`?: post_account_api_shared_r400_application_json_view_version_h184;
+      `version`?: Shape;
       `recipients`?: (string)[]
     }
   },
@@ -4256,7 +3893,7 @@ op `actShared`(`requestBody/content/application~1json/schema`: {
       })[];
       `alfaEditing`?: boolean;
       `alfa`?: string;
-      `version`?: post_account_api_shared_r403_application_json_view_version_h185;
+      `version`?: Shape;
       `recipients`?: (string)[]
     }
   },
@@ -4294,7 +3931,7 @@ op `actShared`(`requestBody/content/application~1json/schema`: {
       })[];
       `alfaEditing`?: boolean;
       `alfa`?: string;
-      `version`?: post_account_api_shared_r500_application_json_view_version_h186;
+      `version`?: Shape;
       `recipients`?: (string)[]
     }
   },
@@ -4308,16 +3945,9 @@ op `actShared`(`requestBody/content/application~1json/schema`: {
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar get_account_api_shared_with_me_p0_v0_h187 extends string;
   
 
-@js(#{`minimum`:1,`maximum`:100000}) @hoisted scalar get_account_api_shared_with_me_p0_v1_h188 extends integer;
   
-
-@hoisted union get_account_api_shared_with_me_p0_h189 {
-    get_account_api_shared_with_me_p0_v0_h187,
-    get_account_api_shared_with_me_p0_v1_h188
-  }
 
 @endpoint("/account-api/shared-with-me",
   "get",
@@ -4577,95 +4207,6 @@ op `changePassword`(`requestBody/content/application~1json/schema`: {
   }): void;
   
 
-@js(#{`$types`:#["string","number","null"]}) @hoisted model get_account_api_keys_r200_application_json_keys_i_enrolledAt_h190 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model get_account_api_keys_r200_application_json_keys_i_lastUsedAt_h191 {}
-
-@js(#{`$types`:#["boolean","null"]}) @hoisted model get_account_api_keys_r200_application_json_keys_i_backupEligible_h192 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `upgradedAt`:#{`type`:"number"},
-      `mode`:#{`type`:"string"},
-      `previousAlgorithm`:#{`type`:"string"},
-      `previousCredentialId`:#{`type`:"string"},
-      `upgradedTo`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_account_api_keys_r200_application_json_keys_i_upgrade_h193 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`at`:#{`type`:"number"}},
-    `$types`:#["object","null"]
-  }) @hoisted model get_account_api_keys_r200_application_json_keys_i_possiblyReplaced_h194 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `verified`:#{`type`:"boolean"},
-      `trusted`:#{`type`:"boolean"},
-      `model`:#{`type`:"string"},
-      `type`:#{`type`:"string"},
-      `androidStatus`:#{`type`:"string"},
-      `deviceSerial`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_account_api_keys_r200_application_json_keys_i_attestation_h195 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `id`:#{`type`:"string"},
-      `kind`:#{`type`:"string"},
-      `lane`:#{`type`:"string"},
-      `challenge`:#{`type`:"string"},
-      `rpId`:#{`type`:"string"},
-      `user`:#{`type`:"string"},
-      `userHandle`:#{`type`:"string"},
-      `display`:#{`type`:"string"},
-      `exclude`:#{`type`:"array",`items`:#{`type`:"string"}},
-      `options`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `rp`:#{
-            `type`:"object",
-            `additionalProperties`:false,
-            `properties`:#{`name`:#{`type`:"string"},`id`:#{`type`:"string"}}
-          },
-          `algorithms`:#{`type`:"array",`items`:#{`type`:"integer"}},
-          `attestation`:#{`type`:"string"},
-          `timeout`:#{`type`:"number"},
-          `authenticatorSelection`:#{
-            `type`:"object",
-            `additionalProperties`:false,
-            `properties`:#{
-              `userVerification`:#{`type`:"string"},
-              `residentKey`:#{`type`:"string"},
-              `requireResidentKey`:#{`type`:"boolean"},
-              `authenticatorAttachment`:#{`type`:"string"}
-            }
-          },
-          `credProps`:#{`type`:"boolean"},
-          `minPinLength`:#{`type`:"boolean"},
-          `hints`:#{`type`:"array",`items`:#{`type`:"string"}}
-        }
-      },
-      `fallback`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `asksPostQuantum`:#{`type`:"boolean"},
-          `classical`:#{`type`:"boolean"},
-          `retrying`:#{`type`:"boolean"}
-        }
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_account_api_keys_r200_application_json_enrol_pending_h196 {}
-
 @endpoint("/account-api/keys",
   "get",
   #{
@@ -4710,22 +4251,22 @@ op `getKeys`(`responses/200/content/application~1json/schema`: {
       `group`?: string;
       `name`?: string;
       `provider`?: string;
-      `enrolledAt`?: get_account_api_keys_r200_application_json_keys_i_enrolledAt_h190;
-      `lastUsedAt`?: get_account_api_keys_r200_application_json_keys_i_lastUsedAt_h191;
+      `enrolledAt`?: Shape;
+      `lastUsedAt`?: Shape;
       `syncedRefused`?: boolean;
       `attestationRefused`?: string;
       `pinRefused`?: string;
       `postQuantumRefused`?: boolean;
-      `backupEligible`?: get_account_api_keys_r200_application_json_keys_i_backupEligible_h192;
+      `backupEligible`?: NullableBoolean;
       `backupState`?: boolean;
       `transports`?: (string)[];
       `kind`?: string;
       `withoutUsername`?: string;
       `algorithm`?: {`text`?: string; `postQuantum`?: boolean; `insecure`?: boolean};
       `lane`?: string;
-      `upgrade`?: get_account_api_keys_r200_application_json_keys_i_upgrade_h193;
-      `possiblyReplaced`?: get_account_api_keys_r200_application_json_keys_i_possiblyReplaced_h194;
-      `attestation`?: get_account_api_keys_r200_application_json_keys_i_attestation_h195;
+      `upgrade`?: NullableObject3;
+      `possiblyReplaced`?: NullableObject4;
+      `attestation`?: NullableObject5;
       `aaguid`?: string
     })[];
     `enrol`?: {
@@ -4734,7 +4275,7 @@ op `getKeys`(`responses/200/content/application~1json/schema`: {
       `atCap`?: boolean;
       `allowed`?: boolean;
       `kinds`?: (string)[];
-      `pending`?: get_account_api_keys_r200_application_json_enrol_pending_h196;
+      `pending`?: NullableObject6;
       `lanes`?: (string)[]
     };
     `signals`?: ({
@@ -4780,240 +4321,55 @@ op `getKeys`(`responses/200/content/application~1json/schema`: {
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_keys_b_application_json_action_v0_h197 extends string;
   
 
 @js(#{
     `description`:"`begin` mints a challenge, `finish` answers it, `cancel` drops it."
   }) @hoisted union post_account_api_keys_b_application_json_action_h198 {
-    post_account_api_keys_b_application_json_action_v0_h197,
+    EmptyText,
     "begin" | "finish" | "cancel"
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_keys_b_application_json_role_v0_h199 extends string;
   
 
 @js(#{`description`:"Ignored since #1135: a passkey carries no role."}) @hoisted union post_account_api_keys_b_application_json_role_h200 {
-    post_account_api_keys_b_application_json_role_v0_h199,
+    EmptyText,
     "primary" | "mfa"
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_keys_b_application_json_kind_v0_h201 extends string;
   
 
 @js(#{`description`:"`begin`: which call to action was pressed."}) @hoisted union post_account_api_keys_b_application_json_kind_h202 {
-    post_account_api_keys_b_application_json_kind_v0_h201,
+    EmptyText,
     "passkey" | "security-key"
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_keys_b_application_json_lane_v0_h203 extends string;
   
 
 @js(#{
     `description`:"`begin`: `classical` (the default) or `pqc`, where the realm offers a post-quantum passkey beside a classical one."
   }) @hoisted union post_account_api_keys_b_application_json_lane_h204 {
-    post_account_api_keys_b_application_json_lane_v0_h203,
+    EmptyText,
     "classical" | "pqc"
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_keys_b_application_json_algorithms_v0_h205 extends string;
   
 
 @js(#{
     `description`:"`begin`: `classical` retries with the classical algorithms only, where `enrol.pending.fallback.classical` says the realm allows it."
   }) @hoisted union post_account_api_keys_b_application_json_algorithms_h206 {
-    post_account_api_keys_b_application_json_algorithms_v0_h205,
+    EmptyText,
     "classical"
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_keys_b_application_json_enrolment_id_v0_h207 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:4096,`pattern`:"^[A-Za-z0-9_-]+$"}) @hoisted scalar post_account_api_keys_b_application_json_enrolment_id_v1_h208 extends string;
   
 
 @js(#{`description`:"`finish`: the pending enrolment the ceremony answers."}) @hoisted union post_account_api_keys_b_application_json_enrolment_id_h209 {
-    post_account_api_keys_b_application_json_enrolment_id_v0_h207,
-    post_account_api_keys_b_application_json_enrolment_id_v1_h208
+    EmptyText,
+    StringMin1Max4096Matchinga5aa8a
   }
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_keys_r400_application_json_view_keys_i_enrolledAt_h210 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_keys_r400_application_json_view_keys_i_lastUsedAt_h211 {}
-
-@js(#{`$types`:#["boolean","null"]}) @hoisted model post_account_api_keys_r400_application_json_view_keys_i_backupEligible_h212 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `upgradedAt`:#{`type`:"number"},
-      `mode`:#{`type`:"string"},
-      `previousAlgorithm`:#{`type`:"string"},
-      `previousCredentialId`:#{`type`:"string"},
-      `upgradedTo`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_keys_r400_application_json_view_keys_i_upgrade_h213 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`at`:#{`type`:"number"}},
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_keys_r400_application_json_view_keys_i_possiblyReplaced_h214 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `verified`:#{`type`:"boolean"},
-      `trusted`:#{`type`:"boolean"},
-      `model`:#{`type`:"string"},
-      `type`:#{`type`:"string"},
-      `androidStatus`:#{`type`:"string"},
-      `deviceSerial`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_keys_r400_application_json_view_keys_i_attestation_h215 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `id`:#{`type`:"string"},
-      `kind`:#{`type`:"string"},
-      `lane`:#{`type`:"string"},
-      `challenge`:#{`type`:"string"},
-      `rpId`:#{`type`:"string"},
-      `user`:#{`type`:"string"},
-      `userHandle`:#{`type`:"string"},
-      `display`:#{`type`:"string"},
-      `exclude`:#{`type`:"array",`items`:#{`type`:"string"}},
-      `options`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `rp`:#{
-            `type`:"object",
-            `additionalProperties`:false,
-            `properties`:#{`name`:#{`type`:"string"},`id`:#{`type`:"string"}}
-          },
-          `algorithms`:#{`type`:"array",`items`:#{`type`:"integer"}},
-          `attestation`:#{`type`:"string"},
-          `timeout`:#{`type`:"number"},
-          `authenticatorSelection`:#{
-            `type`:"object",
-            `additionalProperties`:false,
-            `properties`:#{
-              `userVerification`:#{`type`:"string"},
-              `residentKey`:#{`type`:"string"},
-              `requireResidentKey`:#{`type`:"boolean"},
-              `authenticatorAttachment`:#{`type`:"string"}
-            }
-          },
-          `credProps`:#{`type`:"boolean"},
-          `minPinLength`:#{`type`:"boolean"},
-          `hints`:#{`type`:"array",`items`:#{`type`:"string"}}
-        }
-      },
-      `fallback`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `asksPostQuantum`:#{`type`:"boolean"},
-          `classical`:#{`type`:"boolean"},
-          `retrying`:#{`type`:"boolean"}
-        }
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_keys_r400_application_json_view_enrol_pending_h216 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_keys_r500_application_json_view_keys_i_enrolledAt_h217 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_keys_r500_application_json_view_keys_i_lastUsedAt_h218 {}
-
-@js(#{`$types`:#["boolean","null"]}) @hoisted model post_account_api_keys_r500_application_json_view_keys_i_backupEligible_h219 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `upgradedAt`:#{`type`:"number"},
-      `mode`:#{`type`:"string"},
-      `previousAlgorithm`:#{`type`:"string"},
-      `previousCredentialId`:#{`type`:"string"},
-      `upgradedTo`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_keys_r500_application_json_view_keys_i_upgrade_h220 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`at`:#{`type`:"number"}},
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_keys_r500_application_json_view_keys_i_possiblyReplaced_h221 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `verified`:#{`type`:"boolean"},
-      `trusted`:#{`type`:"boolean"},
-      `model`:#{`type`:"string"},
-      `type`:#{`type`:"string"},
-      `androidStatus`:#{`type`:"string"},
-      `deviceSerial`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_keys_r500_application_json_view_keys_i_attestation_h222 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `id`:#{`type`:"string"},
-      `kind`:#{`type`:"string"},
-      `lane`:#{`type`:"string"},
-      `challenge`:#{`type`:"string"},
-      `rpId`:#{`type`:"string"},
-      `user`:#{`type`:"string"},
-      `userHandle`:#{`type`:"string"},
-      `display`:#{`type`:"string"},
-      `exclude`:#{`type`:"array",`items`:#{`type`:"string"}},
-      `options`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `rp`:#{
-            `type`:"object",
-            `additionalProperties`:false,
-            `properties`:#{`name`:#{`type`:"string"},`id`:#{`type`:"string"}}
-          },
-          `algorithms`:#{`type`:"array",`items`:#{`type`:"integer"}},
-          `attestation`:#{`type`:"string"},
-          `timeout`:#{`type`:"number"},
-          `authenticatorSelection`:#{
-            `type`:"object",
-            `additionalProperties`:false,
-            `properties`:#{
-              `userVerification`:#{`type`:"string"},
-              `residentKey`:#{`type`:"string"},
-              `requireResidentKey`:#{`type`:"boolean"},
-              `authenticatorAttachment`:#{`type`:"string"}
-            }
-          },
-          `credProps`:#{`type`:"boolean"},
-          `minPinLength`:#{`type`:"boolean"},
-          `hints`:#{`type`:"array",`items`:#{`type`:"string"}}
-        }
-      },
-      `fallback`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `asksPostQuantum`:#{`type`:"boolean"},
-          `classical`:#{`type`:"boolean"},
-          `retrying`:#{`type`:"boolean"}
-        }
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_keys_r500_application_json_view_enrol_pending_h223 {}
 
 @endpoint("/account-api/keys",
   "post",
@@ -5081,22 +4437,22 @@ op `enrolKey`(`requestBody/content/application~1json/schema`: {
         `group`?: string;
         `name`?: string;
         `provider`?: string;
-        `enrolledAt`?: post_account_api_keys_r400_application_json_view_keys_i_enrolledAt_h210;
-        `lastUsedAt`?: post_account_api_keys_r400_application_json_view_keys_i_lastUsedAt_h211;
+        `enrolledAt`?: Shape;
+        `lastUsedAt`?: Shape;
         `syncedRefused`?: boolean;
         `attestationRefused`?: string;
         `pinRefused`?: string;
         `postQuantumRefused`?: boolean;
-        `backupEligible`?: post_account_api_keys_r400_application_json_view_keys_i_backupEligible_h212;
+        `backupEligible`?: NullableBoolean;
         `backupState`?: boolean;
         `transports`?: (string)[];
         `kind`?: string;
         `withoutUsername`?: string;
         `algorithm`?: {`text`?: string; `postQuantum`?: boolean; `insecure`?: boolean};
         `lane`?: string;
-        `upgrade`?: post_account_api_keys_r400_application_json_view_keys_i_upgrade_h213;
-        `possiblyReplaced`?: post_account_api_keys_r400_application_json_view_keys_i_possiblyReplaced_h214;
-        `attestation`?: post_account_api_keys_r400_application_json_view_keys_i_attestation_h215;
+        `upgrade`?: NullableObject3;
+        `possiblyReplaced`?: NullableObject4;
+        `attestation`?: NullableObject5;
         `aaguid`?: string
       })[];
       `enrol`?: {
@@ -5105,7 +4461,7 @@ op `enrolKey`(`requestBody/content/application~1json/schema`: {
         `atCap`?: boolean;
         `allowed`?: boolean;
         `kinds`?: (string)[];
-        `pending`?: post_account_api_keys_r400_application_json_view_enrol_pending_h216;
+        `pending`?: NullableObject6;
         `lanes`?: (string)[]
       };
       `signals`?: ({
@@ -5146,22 +4502,22 @@ op `enrolKey`(`requestBody/content/application~1json/schema`: {
         `group`?: string;
         `name`?: string;
         `provider`?: string;
-        `enrolledAt`?: post_account_api_keys_r500_application_json_view_keys_i_enrolledAt_h217;
-        `lastUsedAt`?: post_account_api_keys_r500_application_json_view_keys_i_lastUsedAt_h218;
+        `enrolledAt`?: Shape;
+        `lastUsedAt`?: Shape;
         `syncedRefused`?: boolean;
         `attestationRefused`?: string;
         `pinRefused`?: string;
         `postQuantumRefused`?: boolean;
-        `backupEligible`?: post_account_api_keys_r500_application_json_view_keys_i_backupEligible_h219;
+        `backupEligible`?: NullableBoolean;
         `backupState`?: boolean;
         `transports`?: (string)[];
         `kind`?: string;
         `withoutUsername`?: string;
         `algorithm`?: {`text`?: string; `postQuantum`?: boolean; `insecure`?: boolean};
         `lane`?: string;
-        `upgrade`?: post_account_api_keys_r500_application_json_view_keys_i_upgrade_h220;
-        `possiblyReplaced`?: post_account_api_keys_r500_application_json_view_keys_i_possiblyReplaced_h221;
-        `attestation`?: post_account_api_keys_r500_application_json_view_keys_i_attestation_h222;
+        `upgrade`?: NullableObject3;
+        `possiblyReplaced`?: NullableObject4;
+        `attestation`?: NullableObject5;
         `aaguid`?: string
       })[];
       `enrol`?: {
@@ -5170,7 +4526,7 @@ op `enrolKey`(`requestBody/content/application~1json/schema`: {
         `atCap`?: boolean;
         `allowed`?: boolean;
         `kinds`?: (string)[];
-        `pending`?: post_account_api_keys_r500_application_json_view_enrol_pending_h223;
+        `pending`?: NullableObject6;
         `lanes`?: (string)[]
       };
       `signals`?: ({
@@ -5193,105 +4549,9 @@ op `enrolKey`(`requestBody/content/application~1json/schema`: {
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_keys_remove_b_application_json_credentialId_v0_h224 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:4096,`pattern`:"^[A-Za-z0-9_-]+$"}) @hoisted scalar post_account_api_keys_remove_b_application_json_credentialId_v1_h225 extends string;
   
-
-@js(#{`description`:"One of your own passkeys."}) @hoisted union post_account_api_keys_remove_b_application_json_credentialId_h226 {
-    post_account_api_keys_remove_b_application_json_credentialId_v0_h224,
-    post_account_api_keys_remove_b_application_json_credentialId_v1_h225
-  }
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_keys_remove_r400_application_json_view_keys_i_enrolledAt_h227 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_keys_remove_r400_application_json_view_keys_i_lastUsedAt_h228 {}
-
-@js(#{`$types`:#["boolean","null"]}) @hoisted model post_account_api_keys_remove_r400_application_json_view_keys_i_backupEligible_h229 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `upgradedAt`:#{`type`:"number"},
-      `mode`:#{`type`:"string"},
-      `previousAlgorithm`:#{`type`:"string"},
-      `previousCredentialId`:#{`type`:"string"},
-      `upgradedTo`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_keys_remove_r400_application_json_view_keys_i_upgrade_h230 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`at`:#{`type`:"number"}},
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_keys_remove_r400_application_json_view_keys_i_possiblyReplaced_h231 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `verified`:#{`type`:"boolean"},
-      `trusted`:#{`type`:"boolean"},
-      `model`:#{`type`:"string"},
-      `type`:#{`type`:"string"},
-      `androidStatus`:#{`type`:"string"},
-      `deviceSerial`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_keys_remove_r400_application_json_view_keys_i_attestation_h232 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `id`:#{`type`:"string"},
-      `kind`:#{`type`:"string"},
-      `lane`:#{`type`:"string"},
-      `challenge`:#{`type`:"string"},
-      `rpId`:#{`type`:"string"},
-      `user`:#{`type`:"string"},
-      `userHandle`:#{`type`:"string"},
-      `display`:#{`type`:"string"},
-      `exclude`:#{`type`:"array",`items`:#{`type`:"string"}},
-      `options`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `rp`:#{
-            `type`:"object",
-            `additionalProperties`:false,
-            `properties`:#{`name`:#{`type`:"string"},`id`:#{`type`:"string"}}
-          },
-          `algorithms`:#{`type`:"array",`items`:#{`type`:"integer"}},
-          `attestation`:#{`type`:"string"},
-          `timeout`:#{`type`:"number"},
-          `authenticatorSelection`:#{
-            `type`:"object",
-            `additionalProperties`:false,
-            `properties`:#{
-              `userVerification`:#{`type`:"string"},
-              `residentKey`:#{`type`:"string"},
-              `requireResidentKey`:#{`type`:"boolean"},
-              `authenticatorAttachment`:#{`type`:"string"}
-            }
-          },
-          `credProps`:#{`type`:"boolean"},
-          `minPinLength`:#{`type`:"boolean"},
-          `hints`:#{`type`:"array",`items`:#{`type`:"string"}}
-        }
-      },
-      `fallback`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `asksPostQuantum`:#{`type`:"boolean"},
-          `classical`:#{`type`:"boolean"},
-          `retrying`:#{`type`:"boolean"}
-        }
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_keys_remove_r400_application_json_view_enrol_pending_h233 {}
 
 @endpoint("/account-api/keys/remove",
   "post",
@@ -5331,7 +4591,7 @@ op `enrolKey`(`requestBody/content/application~1json/schema`: {
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`credentialId`:"no-such-id"}}}}
   })
 op `removeKey`(`requestBody/content/application~1json/schema`: {
-    `credentialId`?: post_account_api_keys_remove_b_application_json_credentialId_h226
+    `credentialId`?: EmptyTextOrStringMin1Max4096Matchinga5aa8a
   },
   `responses/200/content/application~1json/schema`: {`stepUp`?: {`acrValues`?: string; `prompt`?: string; `maxAge`?: numeric}; 
     `ok`?: boolean;
@@ -5351,22 +4611,22 @@ op `removeKey`(`requestBody/content/application~1json/schema`: {
         `group`?: string;
         `name`?: string;
         `provider`?: string;
-        `enrolledAt`?: post_account_api_keys_remove_r400_application_json_view_keys_i_enrolledAt_h227;
-        `lastUsedAt`?: post_account_api_keys_remove_r400_application_json_view_keys_i_lastUsedAt_h228;
+        `enrolledAt`?: Shape;
+        `lastUsedAt`?: Shape;
         `syncedRefused`?: boolean;
         `attestationRefused`?: string;
         `pinRefused`?: string;
         `postQuantumRefused`?: boolean;
-        `backupEligible`?: post_account_api_keys_remove_r400_application_json_view_keys_i_backupEligible_h229;
+        `backupEligible`?: NullableBoolean;
         `backupState`?: boolean;
         `transports`?: (string)[];
         `kind`?: string;
         `withoutUsername`?: string;
         `algorithm`?: {`text`?: string; `postQuantum`?: boolean; `insecure`?: boolean};
         `lane`?: string;
-        `upgrade`?: post_account_api_keys_remove_r400_application_json_view_keys_i_upgrade_h230;
-        `possiblyReplaced`?: post_account_api_keys_remove_r400_application_json_view_keys_i_possiblyReplaced_h231;
-        `attestation`?: post_account_api_keys_remove_r400_application_json_view_keys_i_attestation_h232;
+        `upgrade`?: NullableObject3;
+        `possiblyReplaced`?: NullableObject4;
+        `attestation`?: NullableObject5;
         `aaguid`?: string
       })[];
       `enrol`?: {
@@ -5375,7 +4635,7 @@ op `removeKey`(`requestBody/content/application~1json/schema`: {
         `atCap`?: boolean;
         `allowed`?: boolean;
         `kinds`?: (string)[];
-        `pending`?: post_account_api_keys_remove_r400_application_json_view_enrol_pending_h233;
+        `pending`?: NullableObject6;
         `lanes`?: (string)[]
       };
       `signals`?: ({
@@ -5414,105 +4674,9 @@ op `removeKey`(`requestBody/content/application~1json/schema`: {
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_keys_rename_b_application_json_credentialId_v0_h234 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:4096,`pattern`:"^[A-Za-z0-9_-]+$"}) @hoisted scalar post_account_api_keys_rename_b_application_json_credentialId_v1_h235 extends string;
   
-
-@js(#{`description`:"One of your own passkeys."}) @hoisted union post_account_api_keys_rename_b_application_json_credentialId_h236 {
-    post_account_api_keys_rename_b_application_json_credentialId_v0_h234,
-    post_account_api_keys_rename_b_application_json_credentialId_v1_h235
-  }
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_keys_rename_r400_application_json_view_keys_i_enrolledAt_h237 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_keys_rename_r400_application_json_view_keys_i_lastUsedAt_h238 {}
-
-@js(#{`$types`:#["boolean","null"]}) @hoisted model post_account_api_keys_rename_r400_application_json_view_keys_i_backupEligible_h239 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `upgradedAt`:#{`type`:"number"},
-      `mode`:#{`type`:"string"},
-      `previousAlgorithm`:#{`type`:"string"},
-      `previousCredentialId`:#{`type`:"string"},
-      `upgradedTo`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_keys_rename_r400_application_json_view_keys_i_upgrade_h240 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`at`:#{`type`:"number"}},
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_keys_rename_r400_application_json_view_keys_i_possiblyReplaced_h241 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `verified`:#{`type`:"boolean"},
-      `trusted`:#{`type`:"boolean"},
-      `model`:#{`type`:"string"},
-      `type`:#{`type`:"string"},
-      `androidStatus`:#{`type`:"string"},
-      `deviceSerial`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_keys_rename_r400_application_json_view_keys_i_attestation_h242 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `id`:#{`type`:"string"},
-      `kind`:#{`type`:"string"},
-      `lane`:#{`type`:"string"},
-      `challenge`:#{`type`:"string"},
-      `rpId`:#{`type`:"string"},
-      `user`:#{`type`:"string"},
-      `userHandle`:#{`type`:"string"},
-      `display`:#{`type`:"string"},
-      `exclude`:#{`type`:"array",`items`:#{`type`:"string"}},
-      `options`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `rp`:#{
-            `type`:"object",
-            `additionalProperties`:false,
-            `properties`:#{`name`:#{`type`:"string"},`id`:#{`type`:"string"}}
-          },
-          `algorithms`:#{`type`:"array",`items`:#{`type`:"integer"}},
-          `attestation`:#{`type`:"string"},
-          `timeout`:#{`type`:"number"},
-          `authenticatorSelection`:#{
-            `type`:"object",
-            `additionalProperties`:false,
-            `properties`:#{
-              `userVerification`:#{`type`:"string"},
-              `residentKey`:#{`type`:"string"},
-              `requireResidentKey`:#{`type`:"boolean"},
-              `authenticatorAttachment`:#{`type`:"string"}
-            }
-          },
-          `credProps`:#{`type`:"boolean"},
-          `minPinLength`:#{`type`:"boolean"},
-          `hints`:#{`type`:"array",`items`:#{`type`:"string"}}
-        }
-      },
-      `fallback`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `asksPostQuantum`:#{`type`:"boolean"},
-          `classical`:#{`type`:"boolean"},
-          `retrying`:#{`type`:"boolean"}
-        }
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_keys_rename_r400_application_json_view_enrol_pending_h243 {}
 
 @endpoint("/account-api/keys/rename",
   "post",
@@ -5552,7 +4716,7 @@ op `removeKey`(`requestBody/content/application~1json/schema`: {
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`credentialId`:"no-such-id",`label`:"example"}}}}
   })
 op `renameKey`(`requestBody/content/application~1json/schema`: {
-    `credentialId`?: post_account_api_keys_rename_b_application_json_credentialId_h236;
+    `credentialId`?: EmptyTextOrStringMin1Max4096Matchinga5aa8a;
     @js(#{
       `description`:"Its new name; empty puts the default back.",
       `maxLength`:200
@@ -5571,22 +4735,22 @@ op `renameKey`(`requestBody/content/application~1json/schema`: {
         `group`?: string;
         `name`?: string;
         `provider`?: string;
-        `enrolledAt`?: post_account_api_keys_rename_r400_application_json_view_keys_i_enrolledAt_h237;
-        `lastUsedAt`?: post_account_api_keys_rename_r400_application_json_view_keys_i_lastUsedAt_h238;
+        `enrolledAt`?: Shape;
+        `lastUsedAt`?: Shape;
         `syncedRefused`?: boolean;
         `attestationRefused`?: string;
         `pinRefused`?: string;
         `postQuantumRefused`?: boolean;
-        `backupEligible`?: post_account_api_keys_rename_r400_application_json_view_keys_i_backupEligible_h239;
+        `backupEligible`?: NullableBoolean;
         `backupState`?: boolean;
         `transports`?: (string)[];
         `kind`?: string;
         `withoutUsername`?: string;
         `algorithm`?: {`text`?: string; `postQuantum`?: boolean; `insecure`?: boolean};
         `lane`?: string;
-        `upgrade`?: post_account_api_keys_rename_r400_application_json_view_keys_i_upgrade_h240;
-        `possiblyReplaced`?: post_account_api_keys_rename_r400_application_json_view_keys_i_possiblyReplaced_h241;
-        `attestation`?: post_account_api_keys_rename_r400_application_json_view_keys_i_attestation_h242;
+        `upgrade`?: NullableObject3;
+        `possiblyReplaced`?: NullableObject4;
+        `attestation`?: NullableObject5;
         `aaguid`?: string
       })[];
       `enrol`?: {
@@ -5595,7 +4759,7 @@ op `renameKey`(`requestBody/content/application~1json/schema`: {
         `atCap`?: boolean;
         `allowed`?: boolean;
         `kinds`?: (string)[];
-        `pending`?: post_account_api_keys_rename_r400_application_json_view_enrol_pending_h243;
+        `pending`?: NullableObject6;
         `lanes`?: (string)[]
       };
       `signals`?: ({
@@ -5633,76 +4797,6 @@ op `renameKey`(`requestBody/content/application~1json/schema`: {
     `error_description`?: string
   }): void;
   
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `enrolledAt`:#{`type`:#["string","number","null"]},
-      `lastUsedAt`:#{`type`:#["string","number","null"]},
-      `algorithm`:#{`type`:"string"},
-      `digits`:#{`type`:"number"},
-      `period`:#{`type`:"number"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_account_api_mfa_r200_application_json_totp_detail_h244 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model get_account_api_mfa_r200_application_json_totp_digits_h245 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model get_account_api_mfa_r200_application_json_totp_period_h246 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `grouped`:#{`type`:"string"},
-      `issuer`:#{`type`:"string"},
-      `qr`:#{`type`:"string"},
-      `algorithm`:#{`type`:"string"},
-      `digits`:#{`type`:"number"},
-      `period`:#{`type`:"number"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_account_api_mfa_r200_application_json_setup_h247 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `allowed`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{`code`:#{`type`:"boolean"},`link`:#{`type`:"boolean"}}
-      },
-      `optedIn`:#{`type`:"string"},
-      `usable`:#{`type`:"boolean"},
-      `kind`:#{`type`:"string"},
-      `why`:#{`type`:"string"},
-      `offered`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{`code`:#{`type`:"boolean"},`link`:#{`type`:"boolean"}}
-      },
-      `verified`:#{`type`:"boolean"},
-      `masked`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_account_api_mfa_r200_application_json_emailFactor_h248 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model get_account_api_mfa_r200_application_json_codes_count_h249 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model get_account_api_mfa_r200_application_json_codes_length_h250 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model get_account_api_mfa_r200_application_json_codes_generatedAt_h251 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model get_account_api_mfa_r200_application_json_codes_lastUsedAt_h252 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `handle`:#{`type`:"string"},
-      `replacing`:#{`type`:"boolean"},
-      `codes`:#{`type`:"array",`items`:#{`type`:"string"}}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_account_api_mfa_r200_application_json_fresh_h253 {}
 
 @endpoint("/account-api/mfa",
   "get",
@@ -5746,28 +4840,28 @@ op `getMfa`(`responses/200/content/application~1json/schema`: {
     `totp`?: {
       `enrolled`?: boolean;
       `usable`?: boolean;
-      `detail`?: get_account_api_mfa_r200_application_json_totp_detail_h244;
+      `detail`?: NullableObject7;
       `offered`?: boolean;
-      `digits`?: get_account_api_mfa_r200_application_json_totp_digits_h245;
-      `period`?: get_account_api_mfa_r200_application_json_totp_period_h246
+      `digits`?: NullableNumber;
+      `period`?: NullableNumber
     };
     `doors`?: {`applies`?: boolean; `refused`?: (string)[]};
-    `setup`?: get_account_api_mfa_r200_application_json_setup_h247;
-    `emailFactor`?: get_account_api_mfa_r200_application_json_emailFactor_h248;
+    `setup`?: NullableObject8;
+    `emailFactor`?: NullableObject9;
     `codes`?: {
       `enabled`?: boolean;
-      `count`?: get_account_api_mfa_r200_application_json_codes_count_h249;
-      `length`?: get_account_api_mfa_r200_application_json_codes_length_h250;
+      `count`?: NullableNumber;
+      `length`?: NullableNumber;
       `advised`?: boolean;
       `present`?: boolean;
       `usable`?: boolean;
       `why`?: string;
       `remaining`?: numeric;
       `total`?: numeric;
-      `generatedAt`?: get_account_api_mfa_r200_application_json_codes_generatedAt_h251;
-      `lastUsedAt`?: get_account_api_mfa_r200_application_json_codes_lastUsedAt_h252
+      `generatedAt`?: Shape;
+      `lastUsedAt`?: Shape
     };
-    `fresh`?: get_account_api_mfa_r200_application_json_fresh_h253
+    `fresh`?: NullableObject10
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
@@ -5803,232 +4897,20 @@ op `getMfa`(`responses/200/content/application~1json/schema`: {
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_mfa_b_application_json_action_v0_h254 extends string;
   
 
 @js(#{
     `description`:"The step: `start` an authenticator app, `confirm` it with a code, `remove` it; `generate-codes`, `confirm-codes` or `discard-codes` a set of recovery codes; `email-factor-on` or `email-factor-off`."
   }) @hoisted union post_account_api_mfa_b_application_json_action_h255 {
-    post_account_api_mfa_b_application_json_action_v0_h254,
+    EmptyText,
     "start" | "confirm" | "remove" | "generate-codes" | "confirm-codes" | "discard-codes" | "email-factor-on" | "email-factor-off"
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_mfa_b_application_json_kind_v0_h256 extends string;
   
 
 @js(#{
     `description`:"For `email-factor-on`: a mailed `code` or a sign-in `link`."
-  }) @hoisted union post_account_api_mfa_b_application_json_kind_h257 {post_account_api_mfa_b_application_json_kind_v0_h256, "code" | "link"}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `enrolledAt`:#{`type`:#["string","number","null"]},
-      `lastUsedAt`:#{`type`:#["string","number","null"]},
-      `algorithm`:#{`type`:"string"},
-      `digits`:#{`type`:"number"},
-      `period`:#{`type`:"number"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_mfa_r200_application_json_view_totp_detail_h258 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model post_account_api_mfa_r200_application_json_view_totp_digits_h259 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model post_account_api_mfa_r200_application_json_view_totp_period_h260 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `grouped`:#{`type`:"string"},
-      `issuer`:#{`type`:"string"},
-      `qr`:#{`type`:"string"},
-      `algorithm`:#{`type`:"string"},
-      `digits`:#{`type`:"number"},
-      `period`:#{`type`:"number"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_mfa_r200_application_json_view_setup_h261 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `allowed`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{`code`:#{`type`:"boolean"},`link`:#{`type`:"boolean"}}
-      },
-      `optedIn`:#{`type`:"string"},
-      `usable`:#{`type`:"boolean"},
-      `kind`:#{`type`:"string"},
-      `why`:#{`type`:"string"},
-      `offered`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{`code`:#{`type`:"boolean"},`link`:#{`type`:"boolean"}}
-      },
-      `verified`:#{`type`:"boolean"},
-      `masked`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_mfa_r200_application_json_view_emailFactor_h262 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model post_account_api_mfa_r200_application_json_view_codes_count_h263 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model post_account_api_mfa_r200_application_json_view_codes_length_h264 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_mfa_r200_application_json_view_codes_generatedAt_h265 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_mfa_r200_application_json_view_codes_lastUsedAt_h266 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `handle`:#{`type`:"string"},
-      `replacing`:#{`type`:"boolean"},
-      `codes`:#{`type`:"array",`items`:#{`type`:"string"}}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_mfa_r200_application_json_view_fresh_h267 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `enrolledAt`:#{`type`:#["string","number","null"]},
-      `lastUsedAt`:#{`type`:#["string","number","null"]},
-      `algorithm`:#{`type`:"string"},
-      `digits`:#{`type`:"number"},
-      `period`:#{`type`:"number"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_mfa_r400_application_json_view_totp_detail_h268 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model post_account_api_mfa_r400_application_json_view_totp_digits_h269 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model post_account_api_mfa_r400_application_json_view_totp_period_h270 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `grouped`:#{`type`:"string"},
-      `issuer`:#{`type`:"string"},
-      `qr`:#{`type`:"string"},
-      `algorithm`:#{`type`:"string"},
-      `digits`:#{`type`:"number"},
-      `period`:#{`type`:"number"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_mfa_r400_application_json_view_setup_h271 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `allowed`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{`code`:#{`type`:"boolean"},`link`:#{`type`:"boolean"}}
-      },
-      `optedIn`:#{`type`:"string"},
-      `usable`:#{`type`:"boolean"},
-      `kind`:#{`type`:"string"},
-      `why`:#{`type`:"string"},
-      `offered`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{`code`:#{`type`:"boolean"},`link`:#{`type`:"boolean"}}
-      },
-      `verified`:#{`type`:"boolean"},
-      `masked`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_mfa_r400_application_json_view_emailFactor_h272 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model post_account_api_mfa_r400_application_json_view_codes_count_h273 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model post_account_api_mfa_r400_application_json_view_codes_length_h274 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_mfa_r400_application_json_view_codes_generatedAt_h275 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_mfa_r400_application_json_view_codes_lastUsedAt_h276 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `handle`:#{`type`:"string"},
-      `replacing`:#{`type`:"boolean"},
-      `codes`:#{`type`:"array",`items`:#{`type`:"string"}}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_mfa_r400_application_json_view_fresh_h277 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `enrolledAt`:#{`type`:#["string","number","null"]},
-      `lastUsedAt`:#{`type`:#["string","number","null"]},
-      `algorithm`:#{`type`:"string"},
-      `digits`:#{`type`:"number"},
-      `period`:#{`type`:"number"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_mfa_r429_application_json_view_totp_detail_h278 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model post_account_api_mfa_r429_application_json_view_totp_digits_h279 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model post_account_api_mfa_r429_application_json_view_totp_period_h280 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `grouped`:#{`type`:"string"},
-      `issuer`:#{`type`:"string"},
-      `qr`:#{`type`:"string"},
-      `algorithm`:#{`type`:"string"},
-      `digits`:#{`type`:"number"},
-      `period`:#{`type`:"number"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_mfa_r429_application_json_view_setup_h281 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `allowed`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{`code`:#{`type`:"boolean"},`link`:#{`type`:"boolean"}}
-      },
-      `optedIn`:#{`type`:"string"},
-      `usable`:#{`type`:"boolean"},
-      `kind`:#{`type`:"string"},
-      `why`:#{`type`:"string"},
-      `offered`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{`code`:#{`type`:"boolean"},`link`:#{`type`:"boolean"}}
-      },
-      `verified`:#{`type`:"boolean"},
-      `masked`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_mfa_r429_application_json_view_emailFactor_h282 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model post_account_api_mfa_r429_application_json_view_codes_count_h283 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model post_account_api_mfa_r429_application_json_view_codes_length_h284 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_mfa_r429_application_json_view_codes_generatedAt_h285 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_mfa_r429_application_json_view_codes_lastUsedAt_h286 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `handle`:#{`type`:"string"},
-      `replacing`:#{`type`:"boolean"},
-      `codes`:#{`type`:"array",`items`:#{`type`:"string"}}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_mfa_r429_application_json_view_fresh_h287 {}
+  }) @hoisted union post_account_api_mfa_b_application_json_kind_h257 {EmptyText, "code" | "link"}
 
 @endpoint("/account-api/mfa",
   "post",
@@ -6090,28 +4972,28 @@ op `changeMfa`(`requestBody/content/application~1json/schema`: {
       `totp`?: {
         `enrolled`?: boolean;
         `usable`?: boolean;
-        `detail`?: post_account_api_mfa_r200_application_json_view_totp_detail_h258;
+        `detail`?: NullableObject7;
         `offered`?: boolean;
-        `digits`?: post_account_api_mfa_r200_application_json_view_totp_digits_h259;
-        `period`?: post_account_api_mfa_r200_application_json_view_totp_period_h260
+        `digits`?: NullableNumber;
+        `period`?: NullableNumber
       };
       `doors`?: {`applies`?: boolean; `refused`?: (string)[]};
-      `setup`?: post_account_api_mfa_r200_application_json_view_setup_h261;
-      `emailFactor`?: post_account_api_mfa_r200_application_json_view_emailFactor_h262;
+      `setup`?: NullableObject8;
+      `emailFactor`?: NullableObject9;
       `codes`?: {
         `enabled`?: boolean;
-        `count`?: post_account_api_mfa_r200_application_json_view_codes_count_h263;
-        `length`?: post_account_api_mfa_r200_application_json_view_codes_length_h264;
+        `count`?: NullableNumber;
+        `length`?: NullableNumber;
         `advised`?: boolean;
         `present`?: boolean;
         `usable`?: boolean;
         `why`?: string;
         `remaining`?: numeric;
         `total`?: numeric;
-        `generatedAt`?: post_account_api_mfa_r200_application_json_view_codes_generatedAt_h265;
-        `lastUsedAt`?: post_account_api_mfa_r200_application_json_view_codes_lastUsedAt_h266
+        `generatedAt`?: Shape;
+        `lastUsedAt`?: Shape
       };
-      `fresh`?: post_account_api_mfa_r200_application_json_view_fresh_h267
+      `fresh`?: NullableObject10
     };
     `sessionsEnded`?: integer
   },
@@ -6125,28 +5007,28 @@ op `changeMfa`(`requestBody/content/application~1json/schema`: {
       `totp`?: {
         `enrolled`?: boolean;
         `usable`?: boolean;
-        `detail`?: post_account_api_mfa_r400_application_json_view_totp_detail_h268;
+        `detail`?: NullableObject7;
         `offered`?: boolean;
-        `digits`?: post_account_api_mfa_r400_application_json_view_totp_digits_h269;
-        `period`?: post_account_api_mfa_r400_application_json_view_totp_period_h270
+        `digits`?: NullableNumber;
+        `period`?: NullableNumber
       };
       `doors`?: {`applies`?: boolean; `refused`?: (string)[]};
-      `setup`?: post_account_api_mfa_r400_application_json_view_setup_h271;
-      `emailFactor`?: post_account_api_mfa_r400_application_json_view_emailFactor_h272;
+      `setup`?: NullableObject8;
+      `emailFactor`?: NullableObject9;
       `codes`?: {
         `enabled`?: boolean;
-        `count`?: post_account_api_mfa_r400_application_json_view_codes_count_h273;
-        `length`?: post_account_api_mfa_r400_application_json_view_codes_length_h274;
+        `count`?: NullableNumber;
+        `length`?: NullableNumber;
         `advised`?: boolean;
         `present`?: boolean;
         `usable`?: boolean;
         `why`?: string;
         `remaining`?: numeric;
         `total`?: numeric;
-        `generatedAt`?: post_account_api_mfa_r400_application_json_view_codes_generatedAt_h275;
-        `lastUsedAt`?: post_account_api_mfa_r400_application_json_view_codes_lastUsedAt_h276
+        `generatedAt`?: Shape;
+        `lastUsedAt`?: Shape
       };
-      `fresh`?: post_account_api_mfa_r400_application_json_view_fresh_h277
+      `fresh`?: NullableObject10
     }
   },
   @js(#{
@@ -6175,28 +5057,28 @@ op `changeMfa`(`requestBody/content/application~1json/schema`: {
       `totp`?: {
         `enrolled`?: boolean;
         `usable`?: boolean;
-        `detail`?: post_account_api_mfa_r429_application_json_view_totp_detail_h278;
+        `detail`?: NullableObject7;
         `offered`?: boolean;
-        `digits`?: post_account_api_mfa_r429_application_json_view_totp_digits_h279;
-        `period`?: post_account_api_mfa_r429_application_json_view_totp_period_h280
+        `digits`?: NullableNumber;
+        `period`?: NullableNumber
       };
       `doors`?: {`applies`?: boolean; `refused`?: (string)[]};
-      `setup`?: post_account_api_mfa_r429_application_json_view_setup_h281;
-      `emailFactor`?: post_account_api_mfa_r429_application_json_view_emailFactor_h282;
+      `setup`?: NullableObject8;
+      `emailFactor`?: NullableObject9;
       `codes`?: {
         `enabled`?: boolean;
-        `count`?: post_account_api_mfa_r429_application_json_view_codes_count_h283;
-        `length`?: post_account_api_mfa_r429_application_json_view_codes_length_h284;
+        `count`?: NullableNumber;
+        `length`?: NullableNumber;
         `advised`?: boolean;
         `present`?: boolean;
         `usable`?: boolean;
         `why`?: string;
         `remaining`?: numeric;
         `total`?: numeric;
-        `generatedAt`?: post_account_api_mfa_r429_application_json_view_codes_generatedAt_h285;
-        `lastUsedAt`?: post_account_api_mfa_r429_application_json_view_codes_lastUsedAt_h286
+        `generatedAt`?: Shape;
+        `lastUsedAt`?: Shape
       };
-      `fresh`?: post_account_api_mfa_r429_application_json_view_fresh_h287
+      `fresh`?: NullableObject10
     }
   },
   @js(#{
@@ -6208,57 +5090,6 @@ op `changeMfa`(`requestBody/content/application~1json/schema`: {
     `error_description`?: string
   }): void;
   
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_signing_key_r200_application_json_tls_defaultKeyAlg_h288 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `kind`:#{`type`:"string"},
-      `issued`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `subject`:#{`type`:"string"},
-          `serialHex`:#{`type`:"string"},
-          `keyAlg`:#{`type`:"string"},
-          `notAfter`:#{`type`:"string"}
-        }
-      },
-      `purpose`:#{`type`:"string"},
-      `handle`:#{`type`:"string"},
-      `label`:#{`type`:"string"},
-      `files`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `key`:#{
-            `type`:"object",
-            `additionalProperties`:false,
-            `properties`:#{
-              `name`:#{`type`:"string"},
-              `mime`:#{`type`:"string"},
-              `base64`:#{`type`:"string"}
-            }
-          },
-          `chain`:#{
-            `type`:"object",
-            `additionalProperties`:false,
-            `properties`:#{
-              `name`:#{`type`:"string"},
-              `mime`:#{`type`:"string"},
-              `base64`:#{`type`:"string"}
-            }
-          }
-        }
-      },
-      `kid`:#{`type`:"string"},
-      `thumbprint`:#{`type`:"string"},
-      `jwsAlg`:#{`type`:"string"},
-      `issuer`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_account_api_signing_key_r200_application_json_fresh_h289 {}
 
 @endpoint("/account-api/signing-key",
   "get",
@@ -6334,7 +5165,7 @@ op `getSigningKeys`(`responses/200/content/application~1json/schema`: {
       `note`?: string;
       `maxPerPerson`?: numeric;
       `keyAlgs`?: (string)[];
-      `defaultKeyAlg`?: get_account_api_signing_key_r200_application_json_tls_defaultKeyAlg_h288;
+      `defaultKeyAlg`?: NullableString;
       `held`?: ({
         `label`?: string;
         `serialHex`?: string;
@@ -6345,7 +5176,7 @@ op `getSigningKeys`(`responses/200/content/application~1json/schema`: {
         `revokedAt`?: string
       })[]
     };
-    `fresh`?: get_account_api_signing_key_r200_application_json_fresh_h289
+    `fresh`?: NullableObject11
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
@@ -6381,296 +5212,37 @@ op `getSigningKeys`(`responses/200/content/application~1json/schema`: {
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_signing_key_b_application_json_action_v0_h290 extends string;
   
 
 @js(#{
     `description`:"`generate` a signing key pair (for `purpose`) or `revoke` one of yours (by `handle`); `generate-tls-client` or `revoke-tls-client` a TLS client certificate."
   }) @hoisted union post_account_api_signing_key_b_application_json_action_h291 {
-    post_account_api_signing_key_b_application_json_action_v0_h290,
+    EmptyText,
     "generate" | "revoke" | "generate-tls-client" | "revoke-tls-client"
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_signing_key_b_application_json_key_alg_v0_h292 extends string;
   
 
 @js(#{`description`:"For `generate-tls-client`: the key algorithm."}) @hoisted union post_account_api_signing_key_b_application_json_key_alg_h293 {
-    post_account_api_signing_key_b_application_json_key_alg_v0_h292,
+    EmptyText,
     "rsa-2048" | "rsa-3072" | "ec-p256" | "ec-p384"
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_signing_key_b_application_json_reason_v0_h294 extends string;
   
 
 @js(#{`description`:"For `revoke` and `revoke-tls-client`: why."}) @hoisted union post_account_api_signing_key_b_application_json_reason_h295 {
-    post_account_api_signing_key_b_application_json_reason_v0_h294,
+    EmptyText,
     "cessationOfOperation" | "keyCompromise"
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_signing_key_b_application_json_purpose_v0_h296 extends string;
   
 
 @js(#{
     `description`:"For `generate` and `revoke`: RFC 7523's `jwt` key pairs (the default) or RFC 7522's `saml` ones."
   }) @hoisted union post_account_api_signing_key_b_application_json_purpose_h297 {
-    post_account_api_signing_key_b_application_json_purpose_v0_h296,
+    EmptyText,
     "jwt" | "saml"
   }
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_signing_key_r200_application_json_view_tls_defaultKeyAlg_h298 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `kind`:#{`type`:"string"},
-      `issued`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `subject`:#{`type`:"string"},
-          `serialHex`:#{`type`:"string"},
-          `keyAlg`:#{`type`:"string"},
-          `notAfter`:#{`type`:"string"}
-        }
-      },
-      `purpose`:#{`type`:"string"},
-      `handle`:#{`type`:"string"},
-      `label`:#{`type`:"string"},
-      `files`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `key`:#{
-            `type`:"object",
-            `additionalProperties`:false,
-            `properties`:#{
-              `name`:#{`type`:"string"},
-              `mime`:#{`type`:"string"},
-              `base64`:#{`type`:"string"}
-            }
-          },
-          `chain`:#{
-            `type`:"object",
-            `additionalProperties`:false,
-            `properties`:#{
-              `name`:#{`type`:"string"},
-              `mime`:#{`type`:"string"},
-              `base64`:#{`type`:"string"}
-            }
-          }
-        }
-      },
-      `kid`:#{`type`:"string"},
-      `thumbprint`:#{`type`:"string"},
-      `jwsAlg`:#{`type`:"string"},
-      `issuer`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_signing_key_r200_application_json_view_fresh_h299 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_signing_key_r400_application_json_view_tls_defaultKeyAlg_h300 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `kind`:#{`type`:"string"},
-      `issued`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `subject`:#{`type`:"string"},
-          `serialHex`:#{`type`:"string"},
-          `keyAlg`:#{`type`:"string"},
-          `notAfter`:#{`type`:"string"}
-        }
-      },
-      `purpose`:#{`type`:"string"},
-      `handle`:#{`type`:"string"},
-      `label`:#{`type`:"string"},
-      `files`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `key`:#{
-            `type`:"object",
-            `additionalProperties`:false,
-            `properties`:#{
-              `name`:#{`type`:"string"},
-              `mime`:#{`type`:"string"},
-              `base64`:#{`type`:"string"}
-            }
-          },
-          `chain`:#{
-            `type`:"object",
-            `additionalProperties`:false,
-            `properties`:#{
-              `name`:#{`type`:"string"},
-              `mime`:#{`type`:"string"},
-              `base64`:#{`type`:"string"}
-            }
-          }
-        }
-      },
-      `kid`:#{`type`:"string"},
-      `thumbprint`:#{`type`:"string"},
-      `jwsAlg`:#{`type`:"string"},
-      `issuer`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_signing_key_r400_application_json_view_fresh_h301 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_signing_key_r403_application_json_view_tls_defaultKeyAlg_h302 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `kind`:#{`type`:"string"},
-      `issued`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `subject`:#{`type`:"string"},
-          `serialHex`:#{`type`:"string"},
-          `keyAlg`:#{`type`:"string"},
-          `notAfter`:#{`type`:"string"}
-        }
-      },
-      `purpose`:#{`type`:"string"},
-      `handle`:#{`type`:"string"},
-      `label`:#{`type`:"string"},
-      `files`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `key`:#{
-            `type`:"object",
-            `additionalProperties`:false,
-            `properties`:#{
-              `name`:#{`type`:"string"},
-              `mime`:#{`type`:"string"},
-              `base64`:#{`type`:"string"}
-            }
-          },
-          `chain`:#{
-            `type`:"object",
-            `additionalProperties`:false,
-            `properties`:#{
-              `name`:#{`type`:"string"},
-              `mime`:#{`type`:"string"},
-              `base64`:#{`type`:"string"}
-            }
-          }
-        }
-      },
-      `kid`:#{`type`:"string"},
-      `thumbprint`:#{`type`:"string"},
-      `jwsAlg`:#{`type`:"string"},
-      `issuer`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_signing_key_r403_application_json_view_fresh_h303 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_signing_key_r429_application_json_view_tls_defaultKeyAlg_h304 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `kind`:#{`type`:"string"},
-      `issued`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `subject`:#{`type`:"string"},
-          `serialHex`:#{`type`:"string"},
-          `keyAlg`:#{`type`:"string"},
-          `notAfter`:#{`type`:"string"}
-        }
-      },
-      `purpose`:#{`type`:"string"},
-      `handle`:#{`type`:"string"},
-      `label`:#{`type`:"string"},
-      `files`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `key`:#{
-            `type`:"object",
-            `additionalProperties`:false,
-            `properties`:#{
-              `name`:#{`type`:"string"},
-              `mime`:#{`type`:"string"},
-              `base64`:#{`type`:"string"}
-            }
-          },
-          `chain`:#{
-            `type`:"object",
-            `additionalProperties`:false,
-            `properties`:#{
-              `name`:#{`type`:"string"},
-              `mime`:#{`type`:"string"},
-              `base64`:#{`type`:"string"}
-            }
-          }
-        }
-      },
-      `kid`:#{`type`:"string"},
-      `thumbprint`:#{`type`:"string"},
-      `jwsAlg`:#{`type`:"string"},
-      `issuer`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_signing_key_r429_application_json_view_fresh_h305 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_signing_key_r500_application_json_view_tls_defaultKeyAlg_h306 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `kind`:#{`type`:"string"},
-      `issued`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `subject`:#{`type`:"string"},
-          `serialHex`:#{`type`:"string"},
-          `keyAlg`:#{`type`:"string"},
-          `notAfter`:#{`type`:"string"}
-        }
-      },
-      `purpose`:#{`type`:"string"},
-      `handle`:#{`type`:"string"},
-      `label`:#{`type`:"string"},
-      `files`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `key`:#{
-            `type`:"object",
-            `additionalProperties`:false,
-            `properties`:#{
-              `name`:#{`type`:"string"},
-              `mime`:#{`type`:"string"},
-              `base64`:#{`type`:"string"}
-            }
-          },
-          `chain`:#{
-            `type`:"object",
-            `additionalProperties`:false,
-            `properties`:#{
-              `name`:#{`type`:"string"},
-              `mime`:#{`type`:"string"},
-              `base64`:#{`type`:"string"}
-            }
-          }
-        }
-      },
-      `kid`:#{`type`:"string"},
-      `thumbprint`:#{`type`:"string"},
-      `jwsAlg`:#{`type`:"string"},
-      `issuer`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_signing_key_r500_application_json_view_fresh_h307 {}
 
 @endpoint("/account-api/signing-key",
   "post",
@@ -6779,7 +5351,7 @@ op `changeSigningKeys`(`requestBody/content/application~1json/schema`: {
         `note`?: string;
         `maxPerPerson`?: numeric;
         `keyAlgs`?: (string)[];
-        `defaultKeyAlg`?: post_account_api_signing_key_r200_application_json_view_tls_defaultKeyAlg_h298;
+        `defaultKeyAlg`?: NullableString;
         `held`?: ({
           `label`?: string;
           `serialHex`?: string;
@@ -6790,7 +5362,7 @@ op `changeSigningKeys`(`requestBody/content/application~1json/schema`: {
           `revokedAt`?: string
         })[]
       };
-      `fresh`?: post_account_api_signing_key_r200_application_json_view_fresh_h299
+      `fresh`?: NullableObject11
     }
   },
   `responses/400/content/application~1json/schema`: {
@@ -6835,7 +5407,7 @@ op `changeSigningKeys`(`requestBody/content/application~1json/schema`: {
         `note`?: string;
         `maxPerPerson`?: numeric;
         `keyAlgs`?: (string)[];
-        `defaultKeyAlg`?: post_account_api_signing_key_r400_application_json_view_tls_defaultKeyAlg_h300;
+        `defaultKeyAlg`?: NullableString;
         `held`?: ({
           `label`?: string;
           `serialHex`?: string;
@@ -6846,7 +5418,7 @@ op `changeSigningKeys`(`requestBody/content/application~1json/schema`: {
           `revokedAt`?: string
         })[]
       };
-      `fresh`?: post_account_api_signing_key_r400_application_json_view_fresh_h301
+      `fresh`?: NullableObject11
     }
   },
   @js(#{
@@ -6899,7 +5471,7 @@ op `changeSigningKeys`(`requestBody/content/application~1json/schema`: {
         `note`?: string;
         `maxPerPerson`?: numeric;
         `keyAlgs`?: (string)[];
-        `defaultKeyAlg`?: post_account_api_signing_key_r403_application_json_view_tls_defaultKeyAlg_h302;
+        `defaultKeyAlg`?: NullableString;
         `held`?: ({
           `label`?: string;
           `serialHex`?: string;
@@ -6910,7 +5482,7 @@ op `changeSigningKeys`(`requestBody/content/application~1json/schema`: {
           `revokedAt`?: string
         })[]
       };
-      `fresh`?: post_account_api_signing_key_r403_application_json_view_fresh_h303
+      `fresh`?: NullableObject11
     }
   },
   `responses/429/content/application~1json/schema`: {
@@ -6955,7 +5527,7 @@ op `changeSigningKeys`(`requestBody/content/application~1json/schema`: {
         `note`?: string;
         `maxPerPerson`?: numeric;
         `keyAlgs`?: (string)[];
-        `defaultKeyAlg`?: post_account_api_signing_key_r429_application_json_view_tls_defaultKeyAlg_h304;
+        `defaultKeyAlg`?: NullableString;
         `held`?: ({
           `label`?: string;
           `serialHex`?: string;
@@ -6966,7 +5538,7 @@ op `changeSigningKeys`(`requestBody/content/application~1json/schema`: {
           `revokedAt`?: string
         })[]
       };
-      `fresh`?: post_account_api_signing_key_r429_application_json_view_fresh_h305
+      `fresh`?: NullableObject11
     }
   },
   `responses/500/content/application~1json/schema`: {
@@ -7011,7 +5583,7 @@ op `changeSigningKeys`(`requestBody/content/application~1json/schema`: {
         `note`?: string;
         `maxPerPerson`?: numeric;
         `keyAlgs`?: (string)[];
-        `defaultKeyAlg`?: post_account_api_signing_key_r500_application_json_view_tls_defaultKeyAlg_h306;
+        `defaultKeyAlg`?: NullableString;
         `held`?: ({
           `label`?: string;
           `serialHex`?: string;
@@ -7022,7 +5594,7 @@ op `changeSigningKeys`(`requestBody/content/application~1json/schema`: {
           `revokedAt`?: string
         })[]
       };
-      `fresh`?: post_account_api_signing_key_r500_application_json_view_fresh_h307
+      `fresh`?: NullableObject11
     }
   },
   @js(#{
@@ -7034,74 +5606,6 @@ op `changeSigningKeys`(`requestBody/content/application~1json/schema`: {
     `error_description`?: string
   }): void;
   
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model get_account_api_certificates_r200_application_json_fresh_expiresAt_h308 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `kind`:#{`type`:"string"},
-      `id`:#{`type`:"string"},
-      `admin`:#{`type`:"boolean"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_account_api_certificates_r200_application_json_enrolled_i_requestedBy_h309 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_certificates_r200_application_json_enrolled_i_replaces_h310 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `keys`:#{
-        `type`:"array",
-        `items`:#{
-          `type`:"object",
-          `additionalProperties`:false,
-          `properties`:#{
-            `kid`:#{`type`:"string"},
-            `createdAt`:#{`type`:#["string","number","null"]},
-            `expiresAt`:#{`type`:#["string","number","null"]},
-            `createdBy`:#{`type`:#["string","null"]},
-            `boundAccount`:#{`type`:#["string","null"]},
-            `boundAt`:#{`type`:#["string","number","null"]},
-            `status`:#{`type`:"string"}
-          }
-        }
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_account_api_certificates_r200_application_json_acme_h311 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`profiles`:#{`type`:"array",`items`:#{`type`:"string"}}},
-    `$types`:#["object","null"]
-  }) @hoisted model get_account_api_certificates_r200_application_json_est_h312 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `challenges`:#{
-        `type`:"array",
-        `items`:#{
-          `type`:"object",
-          `additionalProperties`:false,
-          `properties`:#{
-            `id`:#{`type`:"string"},
-            `profile`:#{`type`:#["string","null"]},
-            `createdAt`:#{`type`:#["string","number","null"]},
-            `expiresAt`:#{`type`:#["string","number","null"]},
-            `createdBy`:#{`type`:#["string","null"]},
-            `usedAt`:#{`type`:#["string","number","null"]},
-            `status`:#{`type`:"string"}
-          }
-        }
-      },
-      `profiles`:#{`type`:"array",`items`:#{`type`:"string"}},
-      `defaultProfile`:#{`type`:#["string","null"]}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_account_api_certificates_r200_application_json_scep_h313 {}
 
 @endpoint("/account-api/certificates",
   "get",
@@ -7151,7 +5655,7 @@ op `getCertificates`(`responses/200/content/application~1json/schema`: {
       `hmacKey`?: string;
       `challenge`?: string;
       `profile`?: string;
-      `expiresAt`?: get_account_api_certificates_r200_application_json_fresh_expiresAt_h308;
+      `expiresAt`?: Shape;
       `scepUrl`?: string;
       `plainScepUrl`?: string
     };
@@ -7166,10 +5670,10 @@ op `getCertificates`(`responses/200/content/application~1json/schema`: {
       `notBefore`?: string;
       `notAfter`?: string;
       `issuedAt`?: string;
-      `requestedBy`?: get_account_api_certificates_r200_application_json_enrolled_i_requestedBy_h309;
+      `requestedBy`?: NullableObject12;
       `via`?: string;
       `keySource`?: string;
-      `replaces`?: get_account_api_certificates_r200_application_json_enrolled_i_replaces_h310;
+      `replaces`?: NullableString;
       `certificatePem`?: string;
       `chainPem`?: (string)[];
       `revoked`?: {`at`?: string; `reason`?: string; `by`?: string};
@@ -7177,9 +5681,9 @@ op `getCertificates`(`responses/200/content/application~1json/schema`: {
       `status`?: string
     })[];
     `hostNames`?: (string)[];
-    `acme`?: get_account_api_certificates_r200_application_json_acme_h311;
-    `est`?: get_account_api_certificates_r200_application_json_est_h312;
-    `scep`?: get_account_api_certificates_r200_application_json_scep_h313
+    `acme`?: NullableObject13;
+    `est`?: NullableObject14;
+    `scep`?: NullableObject15
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
@@ -7215,641 +5719,26 @@ op `getCertificates`(`responses/200/content/application~1json/schema`: {
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_certificates_b_application_json_action_v0_h314 extends string;
   
 
 @js(#{`description`:"What to do."}) @hoisted union post_account_api_certificates_b_application_json_action_h315 {
-    post_account_api_certificates_b_application_json_action_v0_h314,
+    EmptyText,
     "create-eab" | "delete-eab" | "create-challenge" | "delete-challenge" | "revoke"
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_certificates_b_application_json_profile_v0_h316 extends string;
   
 
 @js(#{`description`:"The profile a new SCEP challenge is for."}) @hoisted union post_account_api_certificates_b_application_json_profile_h317 {
-    post_account_api_certificates_b_application_json_profile_v0_h316,
+    EmptyText,
     "tls-server" | "tls-client" | "tls-server-client" | "digital-signature" | "key-encipherment" | "code-signing" | "email" | "timestamping" | "smartcard-logon" | "device"
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_certificates_b_application_json_reason_v0_h318 extends string;
   
 
 @js(#{`description`:"The RFC 5280 reason for a revocation."}) @hoisted union post_account_api_certificates_b_application_json_reason_h319 {
-    post_account_api_certificates_b_application_json_reason_v0_h318,
+    EmptyText,
     "unspecified" | "keyCompromise" | "affiliationChanged" | "superseded" | "cessationOfOperation"
   }
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_certificates_r200_application_json_view_fresh_expiresAt_h320 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `kind`:#{`type`:"string"},
-      `id`:#{`type`:"string"},
-      `admin`:#{`type`:"boolean"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r200_application_json_view_enrolled_i_requestedBy_h321 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_certificates_r200_application_json_view_enrolled_i_replaces_h322 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `keys`:#{
-        `type`:"array",
-        `items`:#{
-          `type`:"object",
-          `additionalProperties`:false,
-          `properties`:#{
-            `kid`:#{`type`:"string"},
-            `createdAt`:#{`type`:#["string","number","null"]},
-            `expiresAt`:#{`type`:#["string","number","null"]},
-            `createdBy`:#{`type`:#["string","null"]},
-            `boundAccount`:#{`type`:#["string","null"]},
-            `boundAt`:#{`type`:#["string","number","null"]},
-            `status`:#{`type`:"string"}
-          }
-        }
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r200_application_json_view_acme_h323 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`profiles`:#{`type`:"array",`items`:#{`type`:"string"}}},
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r200_application_json_view_est_h324 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `challenges`:#{
-        `type`:"array",
-        `items`:#{
-          `type`:"object",
-          `additionalProperties`:false,
-          `properties`:#{
-            `id`:#{`type`:"string"},
-            `profile`:#{`type`:#["string","null"]},
-            `createdAt`:#{`type`:#["string","number","null"]},
-            `expiresAt`:#{`type`:#["string","number","null"]},
-            `createdBy`:#{`type`:#["string","null"]},
-            `usedAt`:#{`type`:#["string","number","null"]},
-            `status`:#{`type`:"string"}
-          }
-        }
-      },
-      `profiles`:#{`type`:"array",`items`:#{`type`:"string"}},
-      `defaultProfile`:#{`type`:#["string","null"]}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r200_application_json_view_scep_h325 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_certificates_r400_application_json_view_fresh_expiresAt_h326 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `kind`:#{`type`:"string"},
-      `id`:#{`type`:"string"},
-      `admin`:#{`type`:"boolean"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r400_application_json_view_enrolled_i_requestedBy_h327 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_certificates_r400_application_json_view_enrolled_i_replaces_h328 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `keys`:#{
-        `type`:"array",
-        `items`:#{
-          `type`:"object",
-          `additionalProperties`:false,
-          `properties`:#{
-            `kid`:#{`type`:"string"},
-            `createdAt`:#{`type`:#["string","number","null"]},
-            `expiresAt`:#{`type`:#["string","number","null"]},
-            `createdBy`:#{`type`:#["string","null"]},
-            `boundAccount`:#{`type`:#["string","null"]},
-            `boundAt`:#{`type`:#["string","number","null"]},
-            `status`:#{`type`:"string"}
-          }
-        }
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r400_application_json_view_acme_h329 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`profiles`:#{`type`:"array",`items`:#{`type`:"string"}}},
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r400_application_json_view_est_h330 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `challenges`:#{
-        `type`:"array",
-        `items`:#{
-          `type`:"object",
-          `additionalProperties`:false,
-          `properties`:#{
-            `id`:#{`type`:"string"},
-            `profile`:#{`type`:#["string","null"]},
-            `createdAt`:#{`type`:#["string","number","null"]},
-            `expiresAt`:#{`type`:#["string","number","null"]},
-            `createdBy`:#{`type`:#["string","null"]},
-            `usedAt`:#{`type`:#["string","number","null"]},
-            `status`:#{`type`:"string"}
-          }
-        }
-      },
-      `profiles`:#{`type`:"array",`items`:#{`type`:"string"}},
-      `defaultProfile`:#{`type`:#["string","null"]}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r400_application_json_view_scep_h331 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_certificates_r401_application_json_view_fresh_expiresAt_h332 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `kind`:#{`type`:"string"},
-      `id`:#{`type`:"string"},
-      `admin`:#{`type`:"boolean"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r401_application_json_view_enrolled_i_requestedBy_h333 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_certificates_r401_application_json_view_enrolled_i_replaces_h334 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `keys`:#{
-        `type`:"array",
-        `items`:#{
-          `type`:"object",
-          `additionalProperties`:false,
-          `properties`:#{
-            `kid`:#{`type`:"string"},
-            `createdAt`:#{`type`:#["string","number","null"]},
-            `expiresAt`:#{`type`:#["string","number","null"]},
-            `createdBy`:#{`type`:#["string","null"]},
-            `boundAccount`:#{`type`:#["string","null"]},
-            `boundAt`:#{`type`:#["string","number","null"]},
-            `status`:#{`type`:"string"}
-          }
-        }
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r401_application_json_view_acme_h335 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`profiles`:#{`type`:"array",`items`:#{`type`:"string"}}},
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r401_application_json_view_est_h336 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `challenges`:#{
-        `type`:"array",
-        `items`:#{
-          `type`:"object",
-          `additionalProperties`:false,
-          `properties`:#{
-            `id`:#{`type`:"string"},
-            `profile`:#{`type`:#["string","null"]},
-            `createdAt`:#{`type`:#["string","number","null"]},
-            `expiresAt`:#{`type`:#["string","number","null"]},
-            `createdBy`:#{`type`:#["string","null"]},
-            `usedAt`:#{`type`:#["string","number","null"]},
-            `status`:#{`type`:"string"}
-          }
-        }
-      },
-      `profiles`:#{`type`:"array",`items`:#{`type`:"string"}},
-      `defaultProfile`:#{`type`:#["string","null"]}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r401_application_json_view_scep_h337 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_certificates_r403_application_json_view_fresh_expiresAt_h338 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `kind`:#{`type`:"string"},
-      `id`:#{`type`:"string"},
-      `admin`:#{`type`:"boolean"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r403_application_json_view_enrolled_i_requestedBy_h339 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_certificates_r403_application_json_view_enrolled_i_replaces_h340 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `keys`:#{
-        `type`:"array",
-        `items`:#{
-          `type`:"object",
-          `additionalProperties`:false,
-          `properties`:#{
-            `kid`:#{`type`:"string"},
-            `createdAt`:#{`type`:#["string","number","null"]},
-            `expiresAt`:#{`type`:#["string","number","null"]},
-            `createdBy`:#{`type`:#["string","null"]},
-            `boundAccount`:#{`type`:#["string","null"]},
-            `boundAt`:#{`type`:#["string","number","null"]},
-            `status`:#{`type`:"string"}
-          }
-        }
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r403_application_json_view_acme_h341 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`profiles`:#{`type`:"array",`items`:#{`type`:"string"}}},
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r403_application_json_view_est_h342 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `challenges`:#{
-        `type`:"array",
-        `items`:#{
-          `type`:"object",
-          `additionalProperties`:false,
-          `properties`:#{
-            `id`:#{`type`:"string"},
-            `profile`:#{`type`:#["string","null"]},
-            `createdAt`:#{`type`:#["string","number","null"]},
-            `expiresAt`:#{`type`:#["string","number","null"]},
-            `createdBy`:#{`type`:#["string","null"]},
-            `usedAt`:#{`type`:#["string","number","null"]},
-            `status`:#{`type`:"string"}
-          }
-        }
-      },
-      `profiles`:#{`type`:"array",`items`:#{`type`:"string"}},
-      `defaultProfile`:#{`type`:#["string","null"]}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r403_application_json_view_scep_h343 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_certificates_r404_application_json_view_fresh_expiresAt_h344 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `kind`:#{`type`:"string"},
-      `id`:#{`type`:"string"},
-      `admin`:#{`type`:"boolean"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r404_application_json_view_enrolled_i_requestedBy_h345 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_certificates_r404_application_json_view_enrolled_i_replaces_h346 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `keys`:#{
-        `type`:"array",
-        `items`:#{
-          `type`:"object",
-          `additionalProperties`:false,
-          `properties`:#{
-            `kid`:#{`type`:"string"},
-            `createdAt`:#{`type`:#["string","number","null"]},
-            `expiresAt`:#{`type`:#["string","number","null"]},
-            `createdBy`:#{`type`:#["string","null"]},
-            `boundAccount`:#{`type`:#["string","null"]},
-            `boundAt`:#{`type`:#["string","number","null"]},
-            `status`:#{`type`:"string"}
-          }
-        }
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r404_application_json_view_acme_h347 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`profiles`:#{`type`:"array",`items`:#{`type`:"string"}}},
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r404_application_json_view_est_h348 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `challenges`:#{
-        `type`:"array",
-        `items`:#{
-          `type`:"object",
-          `additionalProperties`:false,
-          `properties`:#{
-            `id`:#{`type`:"string"},
-            `profile`:#{`type`:#["string","null"]},
-            `createdAt`:#{`type`:#["string","number","null"]},
-            `expiresAt`:#{`type`:#["string","number","null"]},
-            `createdBy`:#{`type`:#["string","null"]},
-            `usedAt`:#{`type`:#["string","number","null"]},
-            `status`:#{`type`:"string"}
-          }
-        }
-      },
-      `profiles`:#{`type`:"array",`items`:#{`type`:"string"}},
-      `defaultProfile`:#{`type`:#["string","null"]}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r404_application_json_view_scep_h349 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_certificates_r409_application_json_view_fresh_expiresAt_h350 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `kind`:#{`type`:"string"},
-      `id`:#{`type`:"string"},
-      `admin`:#{`type`:"boolean"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r409_application_json_view_enrolled_i_requestedBy_h351 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_certificates_r409_application_json_view_enrolled_i_replaces_h352 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `keys`:#{
-        `type`:"array",
-        `items`:#{
-          `type`:"object",
-          `additionalProperties`:false,
-          `properties`:#{
-            `kid`:#{`type`:"string"},
-            `createdAt`:#{`type`:#["string","number","null"]},
-            `expiresAt`:#{`type`:#["string","number","null"]},
-            `createdBy`:#{`type`:#["string","null"]},
-            `boundAccount`:#{`type`:#["string","null"]},
-            `boundAt`:#{`type`:#["string","number","null"]},
-            `status`:#{`type`:"string"}
-          }
-        }
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r409_application_json_view_acme_h353 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`profiles`:#{`type`:"array",`items`:#{`type`:"string"}}},
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r409_application_json_view_est_h354 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `challenges`:#{
-        `type`:"array",
-        `items`:#{
-          `type`:"object",
-          `additionalProperties`:false,
-          `properties`:#{
-            `id`:#{`type`:"string"},
-            `profile`:#{`type`:#["string","null"]},
-            `createdAt`:#{`type`:#["string","number","null"]},
-            `expiresAt`:#{`type`:#["string","number","null"]},
-            `createdBy`:#{`type`:#["string","null"]},
-            `usedAt`:#{`type`:#["string","number","null"]},
-            `status`:#{`type`:"string"}
-          }
-        }
-      },
-      `profiles`:#{`type`:"array",`items`:#{`type`:"string"}},
-      `defaultProfile`:#{`type`:#["string","null"]}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r409_application_json_view_scep_h355 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_certificates_r429_application_json_view_fresh_expiresAt_h356 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `kind`:#{`type`:"string"},
-      `id`:#{`type`:"string"},
-      `admin`:#{`type`:"boolean"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r429_application_json_view_enrolled_i_requestedBy_h357 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_certificates_r429_application_json_view_enrolled_i_replaces_h358 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `keys`:#{
-        `type`:"array",
-        `items`:#{
-          `type`:"object",
-          `additionalProperties`:false,
-          `properties`:#{
-            `kid`:#{`type`:"string"},
-            `createdAt`:#{`type`:#["string","number","null"]},
-            `expiresAt`:#{`type`:#["string","number","null"]},
-            `createdBy`:#{`type`:#["string","null"]},
-            `boundAccount`:#{`type`:#["string","null"]},
-            `boundAt`:#{`type`:#["string","number","null"]},
-            `status`:#{`type`:"string"}
-          }
-        }
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r429_application_json_view_acme_h359 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`profiles`:#{`type`:"array",`items`:#{`type`:"string"}}},
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r429_application_json_view_est_h360 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `challenges`:#{
-        `type`:"array",
-        `items`:#{
-          `type`:"object",
-          `additionalProperties`:false,
-          `properties`:#{
-            `id`:#{`type`:"string"},
-            `profile`:#{`type`:#["string","null"]},
-            `createdAt`:#{`type`:#["string","number","null"]},
-            `expiresAt`:#{`type`:#["string","number","null"]},
-            `createdBy`:#{`type`:#["string","null"]},
-            `usedAt`:#{`type`:#["string","number","null"]},
-            `status`:#{`type`:"string"}
-          }
-        }
-      },
-      `profiles`:#{`type`:"array",`items`:#{`type`:"string"}},
-      `defaultProfile`:#{`type`:#["string","null"]}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r429_application_json_view_scep_h361 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_certificates_r500_application_json_view_fresh_expiresAt_h362 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `kind`:#{`type`:"string"},
-      `id`:#{`type`:"string"},
-      `admin`:#{`type`:"boolean"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r500_application_json_view_enrolled_i_requestedBy_h363 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_certificates_r500_application_json_view_enrolled_i_replaces_h364 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `keys`:#{
-        `type`:"array",
-        `items`:#{
-          `type`:"object",
-          `additionalProperties`:false,
-          `properties`:#{
-            `kid`:#{`type`:"string"},
-            `createdAt`:#{`type`:#["string","number","null"]},
-            `expiresAt`:#{`type`:#["string","number","null"]},
-            `createdBy`:#{`type`:#["string","null"]},
-            `boundAccount`:#{`type`:#["string","null"]},
-            `boundAt`:#{`type`:#["string","number","null"]},
-            `status`:#{`type`:"string"}
-          }
-        }
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r500_application_json_view_acme_h365 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`profiles`:#{`type`:"array",`items`:#{`type`:"string"}}},
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r500_application_json_view_est_h366 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `challenges`:#{
-        `type`:"array",
-        `items`:#{
-          `type`:"object",
-          `additionalProperties`:false,
-          `properties`:#{
-            `id`:#{`type`:"string"},
-            `profile`:#{`type`:#["string","null"]},
-            `createdAt`:#{`type`:#["string","number","null"]},
-            `expiresAt`:#{`type`:#["string","number","null"]},
-            `createdBy`:#{`type`:#["string","null"]},
-            `usedAt`:#{`type`:#["string","number","null"]},
-            `status`:#{`type`:"string"}
-          }
-        }
-      },
-      `profiles`:#{`type`:"array",`items`:#{`type`:"string"}},
-      `defaultProfile`:#{`type`:#["string","null"]}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r500_application_json_view_scep_h367 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_certificates_r503_application_json_view_fresh_expiresAt_h368 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `kind`:#{`type`:"string"},
-      `id`:#{`type`:"string"},
-      `admin`:#{`type`:"boolean"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r503_application_json_view_enrolled_i_requestedBy_h369 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_certificates_r503_application_json_view_enrolled_i_replaces_h370 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `keys`:#{
-        `type`:"array",
-        `items`:#{
-          `type`:"object",
-          `additionalProperties`:false,
-          `properties`:#{
-            `kid`:#{`type`:"string"},
-            `createdAt`:#{`type`:#["string","number","null"]},
-            `expiresAt`:#{`type`:#["string","number","null"]},
-            `createdBy`:#{`type`:#["string","null"]},
-            `boundAccount`:#{`type`:#["string","null"]},
-            `boundAt`:#{`type`:#["string","number","null"]},
-            `status`:#{`type`:"string"}
-          }
-        }
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r503_application_json_view_acme_h371 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`profiles`:#{`type`:"array",`items`:#{`type`:"string"}}},
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r503_application_json_view_est_h372 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `challenges`:#{
-        `type`:"array",
-        `items`:#{
-          `type`:"object",
-          `additionalProperties`:false,
-          `properties`:#{
-            `id`:#{`type`:"string"},
-            `profile`:#{`type`:#["string","null"]},
-            `createdAt`:#{`type`:#["string","number","null"]},
-            `expiresAt`:#{`type`:#["string","number","null"]},
-            `createdBy`:#{`type`:#["string","null"]},
-            `usedAt`:#{`type`:#["string","number","null"]},
-            `status`:#{`type`:"string"}
-          }
-        }
-      },
-      `profiles`:#{`type`:"array",`items`:#{`type`:"string"}},
-      `defaultProfile`:#{`type`:#["string","null"]}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_certificates_r503_application_json_view_scep_h373 {}
 
 @endpoint("/account-api/certificates",
   "post",
@@ -7944,7 +5833,7 @@ op `changeCertificates`(`requestBody/content/application~1json/schema`: {
         `hmacKey`?: string;
         `challenge`?: string;
         `profile`?: string;
-        `expiresAt`?: post_account_api_certificates_r200_application_json_view_fresh_expiresAt_h320;
+        `expiresAt`?: Shape;
         `scepUrl`?: string;
         `plainScepUrl`?: string
       };
@@ -7959,10 +5848,10 @@ op `changeCertificates`(`requestBody/content/application~1json/schema`: {
         `notBefore`?: string;
         `notAfter`?: string;
         `issuedAt`?: string;
-        `requestedBy`?: post_account_api_certificates_r200_application_json_view_enrolled_i_requestedBy_h321;
+        `requestedBy`?: NullableObject12;
         `via`?: string;
         `keySource`?: string;
-        `replaces`?: post_account_api_certificates_r200_application_json_view_enrolled_i_replaces_h322;
+        `replaces`?: NullableString;
         `certificatePem`?: string;
         `chainPem`?: (string)[];
         `revoked`?: {`at`?: string; `reason`?: string; `by`?: string};
@@ -7970,9 +5859,9 @@ op `changeCertificates`(`requestBody/content/application~1json/schema`: {
         `status`?: string
       })[];
       `hostNames`?: (string)[];
-      `acme`?: post_account_api_certificates_r200_application_json_view_acme_h323;
-      `est`?: post_account_api_certificates_r200_application_json_view_est_h324;
-      `scep`?: post_account_api_certificates_r200_application_json_view_scep_h325
+      `acme`?: NullableObject13;
+      `est`?: NullableObject14;
+      `scep`?: NullableObject15
     }
   },
   `responses/400/content/application~1json/schema`: {
@@ -7991,7 +5880,7 @@ op `changeCertificates`(`requestBody/content/application~1json/schema`: {
         `hmacKey`?: string;
         `challenge`?: string;
         `profile`?: string;
-        `expiresAt`?: post_account_api_certificates_r400_application_json_view_fresh_expiresAt_h326;
+        `expiresAt`?: Shape;
         `scepUrl`?: string;
         `plainScepUrl`?: string
       };
@@ -8006,10 +5895,10 @@ op `changeCertificates`(`requestBody/content/application~1json/schema`: {
         `notBefore`?: string;
         `notAfter`?: string;
         `issuedAt`?: string;
-        `requestedBy`?: post_account_api_certificates_r400_application_json_view_enrolled_i_requestedBy_h327;
+        `requestedBy`?: NullableObject12;
         `via`?: string;
         `keySource`?: string;
-        `replaces`?: post_account_api_certificates_r400_application_json_view_enrolled_i_replaces_h328;
+        `replaces`?: NullableString;
         `certificatePem`?: string;
         `chainPem`?: (string)[];
         `revoked`?: {`at`?: string; `reason`?: string; `by`?: string};
@@ -8017,9 +5906,9 @@ op `changeCertificates`(`requestBody/content/application~1json/schema`: {
         `status`?: string
       })[];
       `hostNames`?: (string)[];
-      `acme`?: post_account_api_certificates_r400_application_json_view_acme_h329;
-      `est`?: post_account_api_certificates_r400_application_json_view_est_h330;
-      `scep`?: post_account_api_certificates_r400_application_json_view_scep_h331
+      `acme`?: NullableObject13;
+      `est`?: NullableObject14;
+      `scep`?: NullableObject15
     }
   },
   `responses/401/content/application~1json/schema`: {
@@ -8038,7 +5927,7 @@ op `changeCertificates`(`requestBody/content/application~1json/schema`: {
         `hmacKey`?: string;
         `challenge`?: string;
         `profile`?: string;
-        `expiresAt`?: post_account_api_certificates_r401_application_json_view_fresh_expiresAt_h332;
+        `expiresAt`?: Shape;
         `scepUrl`?: string;
         `plainScepUrl`?: string
       };
@@ -8053,10 +5942,10 @@ op `changeCertificates`(`requestBody/content/application~1json/schema`: {
         `notBefore`?: string;
         `notAfter`?: string;
         `issuedAt`?: string;
-        `requestedBy`?: post_account_api_certificates_r401_application_json_view_enrolled_i_requestedBy_h333;
+        `requestedBy`?: NullableObject12;
         `via`?: string;
         `keySource`?: string;
-        `replaces`?: post_account_api_certificates_r401_application_json_view_enrolled_i_replaces_h334;
+        `replaces`?: NullableString;
         `certificatePem`?: string;
         `chainPem`?: (string)[];
         `revoked`?: {`at`?: string; `reason`?: string; `by`?: string};
@@ -8064,9 +5953,9 @@ op `changeCertificates`(`requestBody/content/application~1json/schema`: {
         `status`?: string
       })[];
       `hostNames`?: (string)[];
-      `acme`?: post_account_api_certificates_r401_application_json_view_acme_h335;
-      `est`?: post_account_api_certificates_r401_application_json_view_est_h336;
-      `scep`?: post_account_api_certificates_r401_application_json_view_scep_h337
+      `acme`?: NullableObject13;
+      `est`?: NullableObject14;
+      `scep`?: NullableObject15
     }
   },
   `responses/403/content/application~1json/schema`: {
@@ -8085,7 +5974,7 @@ op `changeCertificates`(`requestBody/content/application~1json/schema`: {
         `hmacKey`?: string;
         `challenge`?: string;
         `profile`?: string;
-        `expiresAt`?: post_account_api_certificates_r403_application_json_view_fresh_expiresAt_h338;
+        `expiresAt`?: Shape;
         `scepUrl`?: string;
         `plainScepUrl`?: string
       };
@@ -8100,10 +5989,10 @@ op `changeCertificates`(`requestBody/content/application~1json/schema`: {
         `notBefore`?: string;
         `notAfter`?: string;
         `issuedAt`?: string;
-        `requestedBy`?: post_account_api_certificates_r403_application_json_view_enrolled_i_requestedBy_h339;
+        `requestedBy`?: NullableObject12;
         `via`?: string;
         `keySource`?: string;
-        `replaces`?: post_account_api_certificates_r403_application_json_view_enrolled_i_replaces_h340;
+        `replaces`?: NullableString;
         `certificatePem`?: string;
         `chainPem`?: (string)[];
         `revoked`?: {`at`?: string; `reason`?: string; `by`?: string};
@@ -8111,9 +6000,9 @@ op `changeCertificates`(`requestBody/content/application~1json/schema`: {
         `status`?: string
       })[];
       `hostNames`?: (string)[];
-      `acme`?: post_account_api_certificates_r403_application_json_view_acme_h341;
-      `est`?: post_account_api_certificates_r403_application_json_view_est_h342;
-      `scep`?: post_account_api_certificates_r403_application_json_view_scep_h343
+      `acme`?: NullableObject13;
+      `est`?: NullableObject14;
+      `scep`?: NullableObject15
     }
   },
   `responses/404/content/application~1json/schema`: {
@@ -8132,7 +6021,7 @@ op `changeCertificates`(`requestBody/content/application~1json/schema`: {
         `hmacKey`?: string;
         `challenge`?: string;
         `profile`?: string;
-        `expiresAt`?: post_account_api_certificates_r404_application_json_view_fresh_expiresAt_h344;
+        `expiresAt`?: Shape;
         `scepUrl`?: string;
         `plainScepUrl`?: string
       };
@@ -8147,10 +6036,10 @@ op `changeCertificates`(`requestBody/content/application~1json/schema`: {
         `notBefore`?: string;
         `notAfter`?: string;
         `issuedAt`?: string;
-        `requestedBy`?: post_account_api_certificates_r404_application_json_view_enrolled_i_requestedBy_h345;
+        `requestedBy`?: NullableObject12;
         `via`?: string;
         `keySource`?: string;
-        `replaces`?: post_account_api_certificates_r404_application_json_view_enrolled_i_replaces_h346;
+        `replaces`?: NullableString;
         `certificatePem`?: string;
         `chainPem`?: (string)[];
         `revoked`?: {`at`?: string; `reason`?: string; `by`?: string};
@@ -8158,9 +6047,9 @@ op `changeCertificates`(`requestBody/content/application~1json/schema`: {
         `status`?: string
       })[];
       `hostNames`?: (string)[];
-      `acme`?: post_account_api_certificates_r404_application_json_view_acme_h347;
-      `est`?: post_account_api_certificates_r404_application_json_view_est_h348;
-      `scep`?: post_account_api_certificates_r404_application_json_view_scep_h349
+      `acme`?: NullableObject13;
+      `est`?: NullableObject14;
+      `scep`?: NullableObject15
     }
   },
   `responses/409/content/application~1json/schema`: {
@@ -8179,7 +6068,7 @@ op `changeCertificates`(`requestBody/content/application~1json/schema`: {
         `hmacKey`?: string;
         `challenge`?: string;
         `profile`?: string;
-        `expiresAt`?: post_account_api_certificates_r409_application_json_view_fresh_expiresAt_h350;
+        `expiresAt`?: Shape;
         `scepUrl`?: string;
         `plainScepUrl`?: string
       };
@@ -8194,10 +6083,10 @@ op `changeCertificates`(`requestBody/content/application~1json/schema`: {
         `notBefore`?: string;
         `notAfter`?: string;
         `issuedAt`?: string;
-        `requestedBy`?: post_account_api_certificates_r409_application_json_view_enrolled_i_requestedBy_h351;
+        `requestedBy`?: NullableObject12;
         `via`?: string;
         `keySource`?: string;
-        `replaces`?: post_account_api_certificates_r409_application_json_view_enrolled_i_replaces_h352;
+        `replaces`?: NullableString;
         `certificatePem`?: string;
         `chainPem`?: (string)[];
         `revoked`?: {`at`?: string; `reason`?: string; `by`?: string};
@@ -8205,9 +6094,9 @@ op `changeCertificates`(`requestBody/content/application~1json/schema`: {
         `status`?: string
       })[];
       `hostNames`?: (string)[];
-      `acme`?: post_account_api_certificates_r409_application_json_view_acme_h353;
-      `est`?: post_account_api_certificates_r409_application_json_view_est_h354;
-      `scep`?: post_account_api_certificates_r409_application_json_view_scep_h355
+      `acme`?: NullableObject13;
+      `est`?: NullableObject14;
+      `scep`?: NullableObject15
     }
   },
   `responses/429/content/application~1json/schema`: {
@@ -8226,7 +6115,7 @@ op `changeCertificates`(`requestBody/content/application~1json/schema`: {
         `hmacKey`?: string;
         `challenge`?: string;
         `profile`?: string;
-        `expiresAt`?: post_account_api_certificates_r429_application_json_view_fresh_expiresAt_h356;
+        `expiresAt`?: Shape;
         `scepUrl`?: string;
         `plainScepUrl`?: string
       };
@@ -8241,10 +6130,10 @@ op `changeCertificates`(`requestBody/content/application~1json/schema`: {
         `notBefore`?: string;
         `notAfter`?: string;
         `issuedAt`?: string;
-        `requestedBy`?: post_account_api_certificates_r429_application_json_view_enrolled_i_requestedBy_h357;
+        `requestedBy`?: NullableObject12;
         `via`?: string;
         `keySource`?: string;
-        `replaces`?: post_account_api_certificates_r429_application_json_view_enrolled_i_replaces_h358;
+        `replaces`?: NullableString;
         `certificatePem`?: string;
         `chainPem`?: (string)[];
         `revoked`?: {`at`?: string; `reason`?: string; `by`?: string};
@@ -8252,9 +6141,9 @@ op `changeCertificates`(`requestBody/content/application~1json/schema`: {
         `status`?: string
       })[];
       `hostNames`?: (string)[];
-      `acme`?: post_account_api_certificates_r429_application_json_view_acme_h359;
-      `est`?: post_account_api_certificates_r429_application_json_view_est_h360;
-      `scep`?: post_account_api_certificates_r429_application_json_view_scep_h361
+      `acme`?: NullableObject13;
+      `est`?: NullableObject14;
+      `scep`?: NullableObject15
     }
   },
   `responses/500/content/application~1json/schema`: {
@@ -8273,7 +6162,7 @@ op `changeCertificates`(`requestBody/content/application~1json/schema`: {
         `hmacKey`?: string;
         `challenge`?: string;
         `profile`?: string;
-        `expiresAt`?: post_account_api_certificates_r500_application_json_view_fresh_expiresAt_h362;
+        `expiresAt`?: Shape;
         `scepUrl`?: string;
         `plainScepUrl`?: string
       };
@@ -8288,10 +6177,10 @@ op `changeCertificates`(`requestBody/content/application~1json/schema`: {
         `notBefore`?: string;
         `notAfter`?: string;
         `issuedAt`?: string;
-        `requestedBy`?: post_account_api_certificates_r500_application_json_view_enrolled_i_requestedBy_h363;
+        `requestedBy`?: NullableObject12;
         `via`?: string;
         `keySource`?: string;
-        `replaces`?: post_account_api_certificates_r500_application_json_view_enrolled_i_replaces_h364;
+        `replaces`?: NullableString;
         `certificatePem`?: string;
         `chainPem`?: (string)[];
         `revoked`?: {`at`?: string; `reason`?: string; `by`?: string};
@@ -8299,9 +6188,9 @@ op `changeCertificates`(`requestBody/content/application~1json/schema`: {
         `status`?: string
       })[];
       `hostNames`?: (string)[];
-      `acme`?: post_account_api_certificates_r500_application_json_view_acme_h365;
-      `est`?: post_account_api_certificates_r500_application_json_view_est_h366;
-      `scep`?: post_account_api_certificates_r500_application_json_view_scep_h367
+      `acme`?: NullableObject13;
+      `est`?: NullableObject14;
+      `scep`?: NullableObject15
     }
   },
   `responses/503/content/application~1json/schema`: {
@@ -8320,7 +6209,7 @@ op `changeCertificates`(`requestBody/content/application~1json/schema`: {
         `hmacKey`?: string;
         `challenge`?: string;
         `profile`?: string;
-        `expiresAt`?: post_account_api_certificates_r503_application_json_view_fresh_expiresAt_h368;
+        `expiresAt`?: Shape;
         `scepUrl`?: string;
         `plainScepUrl`?: string
       };
@@ -8335,10 +6224,10 @@ op `changeCertificates`(`requestBody/content/application~1json/schema`: {
         `notBefore`?: string;
         `notAfter`?: string;
         `issuedAt`?: string;
-        `requestedBy`?: post_account_api_certificates_r503_application_json_view_enrolled_i_requestedBy_h369;
+        `requestedBy`?: NullableObject12;
         `via`?: string;
         `keySource`?: string;
-        `replaces`?: post_account_api_certificates_r503_application_json_view_enrolled_i_replaces_h370;
+        `replaces`?: NullableString;
         `certificatePem`?: string;
         `chainPem`?: (string)[];
         `revoked`?: {`at`?: string; `reason`?: string; `by`?: string};
@@ -8346,9 +6235,9 @@ op `changeCertificates`(`requestBody/content/application~1json/schema`: {
         `status`?: string
       })[];
       `hostNames`?: (string)[];
-      `acme`?: post_account_api_certificates_r503_application_json_view_acme_h371;
-      `est`?: post_account_api_certificates_r503_application_json_view_est_h372;
-      `scep`?: post_account_api_certificates_r503_application_json_view_scep_h373
+      `acme`?: NullableObject13;
+      `est`?: NullableObject14;
+      `scep`?: NullableObject15
     }
   },
   @js(#{
@@ -8360,10 +6249,6 @@ op `changeCertificates`(`requestBody/content/application~1json/schema`: {
     `error_description`?: string
   }): void;
   
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model get_account_api_app_passwords_r200_application_json_passwords_i_createdAt_h374 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model get_account_api_app_passwords_r200_application_json_passwords_i_lastUsedAt_h375 {}
 
 @endpoint("/account-api/app-passwords",
   "get",
@@ -8411,8 +6296,8 @@ op `getAppPasswords`(`responses/200/content/application~1json/schema`: {
       `id`?: string;
       `name`?: string;
       `doors`?: (string)[];
-      `createdAt`?: get_account_api_app_passwords_r200_application_json_passwords_i_createdAt_h374;
-      `lastUsedAt`?: get_account_api_app_passwords_r200_application_json_passwords_i_lastUsedAt_h375;
+      `createdAt`?: Shape;
+      `lastUsedAt`?: Shape;
       `lastUsedDoor`?: string
     })[];
     `enabled`?: boolean;
@@ -8458,69 +6343,47 @@ op `getAppPasswords`(`responses/200/content/application~1json/schema`: {
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_app_passwords_b_application_json_action_v0_h376 extends string;
   
 
 @js(#{`description`:"`create` makes one; `revoke` ends the one `id` names."}) @hoisted union post_account_api_app_passwords_b_application_json_action_h377 {
-    post_account_api_app_passwords_b_application_json_action_v0_h376,
+    EmptyText,
     "create" | "revoke"
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_app_passwords_b_application_json_door_ldap_v0_h378 extends string;
   
 
 @js(#{`description`:"Accept the new password at the ldap door."}) @hoisted union post_account_api_app_passwords_b_application_json_door_ldap_h379 {
-    post_account_api_app_passwords_b_application_json_door_ldap_v0_h378,
+    EmptyText,
     "0" | "1" | "true" | "false" | "on" | "off" | "yes" | "no"
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_app_passwords_b_application_json_door_wstrust_v0_h380 extends string;
   
 
 @js(#{`description`:"Accept the new password at the wstrust door."}) @hoisted union post_account_api_app_passwords_b_application_json_door_wstrust_h381 {
-    post_account_api_app_passwords_b_application_json_door_wstrust_v0_h380,
+    EmptyText,
     "0" | "1" | "true" | "false" | "on" | "off" | "yes" | "no"
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_app_passwords_b_application_json_door_scim_v0_h382 extends string;
   
 
 @js(#{`description`:"Accept the new password at the scim door."}) @hoisted union post_account_api_app_passwords_b_application_json_door_scim_h383 {
-    post_account_api_app_passwords_b_application_json_door_scim_v0_h382,
+    EmptyText,
     "0" | "1" | "true" | "false" | "on" | "off" | "yes" | "no"
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_app_passwords_b_application_json_door_ssf_v0_h384 extends string;
   
 
 @js(#{`description`:"Accept the new password at the ssf door."}) @hoisted union post_account_api_app_passwords_b_application_json_door_ssf_h385 {
-    post_account_api_app_passwords_b_application_json_door_ssf_v0_h384,
+    EmptyText,
     "0" | "1" | "true" | "false" | "on" | "off" | "yes" | "no"
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_app_passwords_b_application_json_door_est_v0_h386 extends string;
   
 
 @js(#{`description`:"Accept the new password at the est door."}) @hoisted union post_account_api_app_passwords_b_application_json_door_est_h387 {
-    post_account_api_app_passwords_b_application_json_door_est_v0_h386,
+    EmptyText,
     "0" | "1" | "true" | "false" | "on" | "off" | "yes" | "no"
   }
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_app_passwords_r200_application_json_view_passwords_i_createdAt_h388 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_app_passwords_r200_application_json_view_passwords_i_lastUsedAt_h389 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_app_passwords_r400_application_json_view_passwords_i_createdAt_h390 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_app_passwords_r400_application_json_view_passwords_i_lastUsedAt_h391 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_app_passwords_r404_application_json_view_passwords_i_createdAt_h392 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_app_passwords_r404_application_json_view_passwords_i_lastUsedAt_h393 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_app_passwords_r429_application_json_view_passwords_i_createdAt_h394 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_app_passwords_r429_application_json_view_passwords_i_lastUsedAt_h395 {}
 
 @endpoint("/account-api/app-passwords",
   "post",
@@ -8598,8 +6461,8 @@ op `changeAppPasswords`(`requestBody/content/application~1json/schema`: {
         `id`?: string;
         `name`?: string;
         `doors`?: (string)[];
-        `createdAt`?: post_account_api_app_passwords_r200_application_json_view_passwords_i_createdAt_h388;
-        `lastUsedAt`?: post_account_api_app_passwords_r200_application_json_view_passwords_i_lastUsedAt_h389;
+        `createdAt`?: Shape;
+        `lastUsedAt`?: Shape;
         `lastUsedDoor`?: string
       })[];
       `enabled`?: boolean;
@@ -8626,8 +6489,8 @@ op `changeAppPasswords`(`requestBody/content/application~1json/schema`: {
         `id`?: string;
         `name`?: string;
         `doors`?: (string)[];
-        `createdAt`?: post_account_api_app_passwords_r400_application_json_view_passwords_i_createdAt_h390;
-        `lastUsedAt`?: post_account_api_app_passwords_r400_application_json_view_passwords_i_lastUsedAt_h391;
+        `createdAt`?: Shape;
+        `lastUsedAt`?: Shape;
         `lastUsedDoor`?: string
       })[];
       `enabled`?: boolean;
@@ -8670,8 +6533,8 @@ op `changeAppPasswords`(`requestBody/content/application~1json/schema`: {
         `id`?: string;
         `name`?: string;
         `doors`?: (string)[];
-        `createdAt`?: post_account_api_app_passwords_r404_application_json_view_passwords_i_createdAt_h392;
-        `lastUsedAt`?: post_account_api_app_passwords_r404_application_json_view_passwords_i_lastUsedAt_h393;
+        `createdAt`?: Shape;
+        `lastUsedAt`?: Shape;
         `lastUsedDoor`?: string
       })[];
       `enabled`?: boolean;
@@ -8698,8 +6561,8 @@ op `changeAppPasswords`(`requestBody/content/application~1json/schema`: {
         `id`?: string;
         `name`?: string;
         `doors`?: (string)[];
-        `createdAt`?: post_account_api_app_passwords_r429_application_json_view_passwords_i_createdAt_h394;
-        `lastUsedAt`?: post_account_api_app_passwords_r429_application_json_view_passwords_i_lastUsedAt_h395;
+        `createdAt`?: Shape;
+        `lastUsedAt`?: Shape;
         `lastUsedDoor`?: string
       })[];
       `enabled`?: boolean;
@@ -8721,25 +6584,6 @@ op `changeAppPasswords`(`requestBody/content/application~1json/schema`: {
     `error_description`?: string
   }): void;
   
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `kvno`:#{`type`:#["number","null"]},
-      `current`:#{`type`:"boolean"},
-      `etypes`:#{
-        `type`:"array",
-        `items`:#{
-          `type`:"object",
-          `additionalProperties`:false,
-          `properties`:#{`name`:#{`type`:"string"}}
-        }
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_account_api_kerberos_r200_application_json_keys_h396 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model get_account_api_kerberos_r200_application_json_made_kvno_h397 {}
 
 @endpoint("/account-api/kerberos",
   "get",
@@ -8783,10 +6627,10 @@ op `getKerberos`(`responses/200/content/application~1json/schema`: {
     `principal`?: string;
     `productKdc`?: boolean;
     `disabled`?: boolean;
-    `keys`?: get_account_api_kerberos_r200_application_json_keys_h396;
+    `keys`?: NullableObject16;
     `made`?: {
       `principal`?: string;
-      `kvno`?: get_account_api_kerberos_r200_application_json_made_kvno_h397;
+      `kvno`?: NullableNumber;
       `etypes`?: (string)[];
       `source`?: string;
       `keytab`?: string;
@@ -8827,67 +6671,9 @@ op `getKerberos`(`responses/200/content/application~1json/schema`: {
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_kerberos_b_application_json_action_v0_h398 extends string;
   
 
-@js(#{`description`:"`keytab`, the one thing this page does."}) @hoisted union post_account_api_kerberos_b_application_json_action_h399 {post_account_api_kerberos_b_application_json_action_v0_h398, "keytab"}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `kvno`:#{`type`:#["number","null"]},
-      `current`:#{`type`:"boolean"},
-      `etypes`:#{
-        `type`:"array",
-        `items`:#{
-          `type`:"object",
-          `additionalProperties`:false,
-          `properties`:#{`name`:#{`type`:"string"}}
-        }
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_kerberos_r200_application_json_view_keys_h400 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model post_account_api_kerberos_r200_application_json_view_made_kvno_h401 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `kvno`:#{`type`:#["number","null"]},
-      `current`:#{`type`:"boolean"},
-      `etypes`:#{
-        `type`:"array",
-        `items`:#{
-          `type`:"object",
-          `additionalProperties`:false,
-          `properties`:#{`name`:#{`type`:"string"}}
-        }
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_kerberos_r400_application_json_view_keys_h402 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model post_account_api_kerberos_r400_application_json_view_made_kvno_h403 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `kvno`:#{`type`:#["number","null"]},
-      `current`:#{`type`:"boolean"},
-      `etypes`:#{
-        `type`:"array",
-        `items`:#{
-          `type`:"object",
-          `additionalProperties`:false,
-          `properties`:#{`name`:#{`type`:"string"}}
-        }
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_kerberos_r429_application_json_view_keys_h404 {}
-
-@js(#{`$types`:#["number","null"]}) @hoisted model post_account_api_kerberos_r429_application_json_view_made_kvno_h405 {}
+@js(#{`description`:"`keytab`, the one thing this page does."}) @hoisted union post_account_api_kerberos_b_application_json_action_h399 {EmptyText, "keytab"}
 
 @endpoint("/account-api/kerberos",
   "post",
@@ -8947,10 +6733,10 @@ op `makeKeytab`(`requestBody/content/application~1json/schema`: {
       `principal`?: string;
       `productKdc`?: boolean;
       `disabled`?: boolean;
-      `keys`?: post_account_api_kerberos_r200_application_json_view_keys_h400;
+      `keys`?: NullableObject16;
       `made`?: {
         `principal`?: string;
-        `kvno`?: post_account_api_kerberos_r200_application_json_view_made_kvno_h401;
+        `kvno`?: NullableNumber;
         `etypes`?: (string)[];
         `source`?: string;
         `keytab`?: string;
@@ -8968,10 +6754,10 @@ op `makeKeytab`(`requestBody/content/application~1json/schema`: {
       `principal`?: string;
       `productKdc`?: boolean;
       `disabled`?: boolean;
-      `keys`?: post_account_api_kerberos_r400_application_json_view_keys_h402;
+      `keys`?: NullableObject16;
       `made`?: {
         `principal`?: string;
-        `kvno`?: post_account_api_kerberos_r400_application_json_view_made_kvno_h403;
+        `kvno`?: NullableNumber;
         `etypes`?: (string)[];
         `source`?: string;
         `keytab`?: string;
@@ -9005,10 +6791,10 @@ op `makeKeytab`(`requestBody/content/application~1json/schema`: {
       `principal`?: string;
       `productKdc`?: boolean;
       `disabled`?: boolean;
-      `keys`?: post_account_api_kerberos_r429_application_json_view_keys_h404;
+      `keys`?: NullableObject16;
       `made`?: {
         `principal`?: string;
-        `kvno`?: post_account_api_kerberos_r429_application_json_view_made_kvno_h405;
+        `kvno`?: NullableNumber;
         `etypes`?: (string)[];
         `source`?: string;
         `keytab`?: string;
@@ -9025,12 +6811,6 @@ op `makeKeytab`(`requestBody/content/application~1json/schema`: {
     `error_description`?: string
   }): void;
   
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`kind`:#{`type`:"string"}},
-    `$types`:#["object","null"]
-  }) @hoisted model get_account_api_delegate_r200_application_json_delegate_h406 {}
 
 @endpoint("/account-api/delegate",
   "get",
@@ -9070,7 +6850,7 @@ op `makeKeytab`(`requestBody/content/application~1json/schema`: {
   })
 op `getDelegate`(`responses/200/content/application~1json/schema`: {
     `mayAct`?: string;
-    `delegate`?: get_account_api_delegate_r200_application_json_delegate_h406;
+    `delegate`?: NullableObject17;
     `notDelegated`?: boolean
   },
   @js(#{
@@ -9107,19 +6887,12 @@ op `getDelegate`(`responses/200/content/application~1json/schema`: {
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_delegate_b_application_json_action_v0_h407 extends string;
   
 
 @js(#{`description`:"`set` names the delegate; `clear` removes it."}) @hoisted union post_account_api_delegate_b_application_json_action_h408 {
-    post_account_api_delegate_b_application_json_action_v0_h407,
+    EmptyText,
     "set" | "clear"
   }
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`kind`:#{`type`:"string"}},
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_delegate_r400_application_json_view_delegate_h409 {}
 
 @endpoint("/account-api/delegate",
   "post",
@@ -9172,7 +6945,7 @@ op `setDelegate`(`requestBody/content/application~1json/schema`: {
     `error`?: string;
     `view`?: {
       `mayAct`?: string;
-      `delegate`?: post_account_api_delegate_r400_application_json_view_delegate_h409;
+      `delegate`?: NullableObject17;
       `notDelegated`?: boolean
     }
   },
@@ -9309,135 +7082,23 @@ op `findDelegateCandidates`(@js(#{`maxLength`:256}) `parameters/0/schema`: strin
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar get_account_api_self_issued_p0_v0_h410 extends string;
   
 
-@hoisted union get_account_api_self_issued_p0_h411 {get_account_api_self_issued_p0_v0_h410, "1"}
-
-@js(#{`const`:""}) @hoisted scalar get_account_api_self_issued_p1_v0_h412 extends string;
   
 
 @hoisted union get_account_api_self_issued_p1_h413 {
-    get_account_api_self_issued_p1_v0_h412,
+    EmptyText,
     "published" | "authorized" | "changed"
   }
 
-@js(#{`const`:""}) @hoisted scalar get_account_api_self_issued_p2_v0_h414 extends string;
   
 
-@js(#{`pattern`:"^[A-Za-z0-9_-]{22}(?:[A-Za-z0-9_-]{12})?$"}) @hoisted scalar get_account_api_self_issued_p2_v1_h415 extends string;
   
 
 @hoisted union get_account_api_self_issued_p2_h416 {
-    get_account_api_self_issued_p2_v0_h414,
-    get_account_api_self_issued_p2_v1_h415
+    EmptyText,
+    StringMatchinga3848a
   }
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `setting`:#{`type`:"string"},
-      `env`:#{`type`:"string"},
-      `administrator`:#{`type`:"boolean"},
-      `page`:#{`type`:#["string","null"]}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_account_api_self_issued_r200_application_json_turnOn_h417 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `enabled`:#{`type`:"boolean"},
-      `custody`:#{`type`:"string"},
-      `maxPerPerson`:#{`type`:"number"},
-      `keyAlgorithm`:#{`type`:"string"},
-      `active`:#{`type`:"integer"},
-      `canPublish`:#{`type`:"boolean"},
-      `dids`:#{
-        `type`:#["array","null"],
-        `items`:#{
-          `type`:"object",
-          `additionalProperties`:false,
-          `properties`:#{
-            `rid`:#{`type`:"string"},
-            `did`:#{`type`:"string"},
-            `custody`:#{`type`:"string"},
-            `documentUrl`:#{`type`:"string"},
-            `createdAt`:#{`type`:#["string","number","null"]},
-            `by`:#{`type`:#["string","null"]},
-            `state`:#{`type`:"string"},
-            `deactivated`:#{
-              `type`:#["object","null"],
-              `additionalProperties`:false,
-              `properties`:#{
-                `at`:#{`type`:"string"},
-                `by`:#{`type`:#["string","null"]},
-                `reason`:#{`type`:#["string","null"]}
-              }
-            },
-            `proof`:#{`type`:"string"},
-            `preferred`:#{`type`:"boolean"},
-            `currentVersion`:#{`type`:"number"},
-            `pending`:#{
-              `type`:#["object","null"],
-              `additionalProperties`:false,
-              `properties`:#{`change`:#{`type`:"string"},`expiresAt`:#{`type`:"string"}}
-            },
-            `versions`:#{
-              `type`:"array",
-              `items`:#{
-                `type`:"object",
-                `additionalProperties`:false,
-                `properties`:#{
-                  `versionId`:#{`type`:"number"},
-                  `created`:#{`type`:#["string","number","null"]},
-                  `change`:#{`type`:"string"},
-                  `keys`:#{
-                    `type`:"array",
-                    `items`:#{
-                      `type`:"object",
-                      `additionalProperties`:false,
-                      `properties`:#{
-                        `id`:#{`type`:"string"},
-                        `kty`:#{`type`:"string"},
-                        `crv`:#{`type`:"string"},
-                        `alg`:#{`type`:"string"}
-                      }
-                    }
-                  },
-                  `authorizedBy`:#{
-                    `type`:"array",
-                    `items`:#{
-                      `type`:"object",
-                      `additionalProperties`:false,
-                      `properties`:#{
-                        `kind`:#{`type`:"string"},
-                        `subject`:#{`type`:"string"},
-                        `keyThumbprint`:#{`type`:"string"},
-                        `versionId`:#{`type`:"number"},
-                        `transaction`:#{`type`:"string"},
-                        `at`:#{`type`:"string"},
-                        `actor`:#{`type`:"string"}
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_account_api_self_issued_r200_application_json_published_h418 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model get_account_api_self_issued_r200_application_json_subjects_i_enrolledAt_h419 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`kind`:#{`type`:"string"},`value`:#{`type`:"string"}},
-    `$types`:#["object","null"]
-  }) @hoisted model get_account_api_self_issued_r200_application_json_subjects_i_location_h420 {}
 
 @endpoint("/account-api/self-issued",
   "get",
@@ -9505,18 +7166,18 @@ op `getSelfIssued`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`typ
   @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`pattern`:"^[A-Za-z0-9_-]{22}(?:[A-Za-z0-9_-]{12})?$"}]}}) `parameters/2/schema`: unknown,
   `responses/200/content/application~1json/schema`: {
     `enabled`?: boolean;
-    `turnOn`?: get_account_api_self_issued_r200_application_json_turnOn_h417;
+    `turnOn`?: NullableObject18;
     `loginHint`?: string;
     `didClaim`?: boolean;
-    `published`?: get_account_api_self_issued_r200_application_json_published_h418;
+    `published`?: NullableObject19;
     `subjects`?: ({
       `subject`?: string;
       `label`?: string;
-      `enrolledAt`?: get_account_api_self_issued_r200_application_json_subjects_i_enrolledAt_h419;
+      `enrolledAt`?: Shape;
       `by`?: string;
       `proof`?: string;
       `preferred`?: boolean;
-      `location`?: get_account_api_self_issued_r200_application_json_subjects_i_location_h420;
+      `location`?: NullableObject20;
       `didDocumentUrl`?: string;
       `didResolved`?: boolean
     })[];
@@ -9570,227 +7231,14 @@ op `getSelfIssued`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`typ
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_self_issued_b_application_json_action_v0_h421 extends string;
   
 
 @js(#{
     `description`:"`remove` (the default) takes the subject off; `prefer` marks it as your preferred DID (#693), and `unprefer` clears the mark."
   }) @hoisted union post_account_api_self_issued_b_application_json_action_h422 {
-    post_account_api_self_issued_b_application_json_action_v0_h421,
+    EmptyText,
     "remove" | "prefer" | "unprefer"
   }
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `setting`:#{`type`:"string"},
-      `env`:#{`type`:"string"},
-      `administrator`:#{`type`:"boolean"},
-      `page`:#{`type`:#["string","null"]}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_self_issued_r200_application_json_view_turnOn_h423 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `enabled`:#{`type`:"boolean"},
-      `custody`:#{`type`:"string"},
-      `maxPerPerson`:#{`type`:"number"},
-      `keyAlgorithm`:#{`type`:"string"},
-      `active`:#{`type`:"integer"},
-      `canPublish`:#{`type`:"boolean"},
-      `dids`:#{
-        `type`:#["array","null"],
-        `items`:#{
-          `type`:"object",
-          `additionalProperties`:false,
-          `properties`:#{
-            `rid`:#{`type`:"string"},
-            `did`:#{`type`:"string"},
-            `custody`:#{`type`:"string"},
-            `documentUrl`:#{`type`:"string"},
-            `createdAt`:#{`type`:#["string","number","null"]},
-            `by`:#{`type`:#["string","null"]},
-            `state`:#{`type`:"string"},
-            `deactivated`:#{
-              `type`:#["object","null"],
-              `additionalProperties`:false,
-              `properties`:#{
-                `at`:#{`type`:"string"},
-                `by`:#{`type`:#["string","null"]},
-                `reason`:#{`type`:#["string","null"]}
-              }
-            },
-            `proof`:#{`type`:"string"},
-            `preferred`:#{`type`:"boolean"},
-            `currentVersion`:#{`type`:"number"},
-            `pending`:#{
-              `type`:#["object","null"],
-              `additionalProperties`:false,
-              `properties`:#{`change`:#{`type`:"string"},`expiresAt`:#{`type`:"string"}}
-            },
-            `versions`:#{
-              `type`:"array",
-              `items`:#{
-                `type`:"object",
-                `additionalProperties`:false,
-                `properties`:#{
-                  `versionId`:#{`type`:"number"},
-                  `created`:#{`type`:#["string","number","null"]},
-                  `change`:#{`type`:"string"},
-                  `keys`:#{
-                    `type`:"array",
-                    `items`:#{
-                      `type`:"object",
-                      `additionalProperties`:false,
-                      `properties`:#{
-                        `id`:#{`type`:"string"},
-                        `kty`:#{`type`:"string"},
-                        `crv`:#{`type`:"string"},
-                        `alg`:#{`type`:"string"}
-                      }
-                    }
-                  },
-                  `authorizedBy`:#{
-                    `type`:"array",
-                    `items`:#{
-                      `type`:"object",
-                      `additionalProperties`:false,
-                      `properties`:#{
-                        `kind`:#{`type`:"string"},
-                        `subject`:#{`type`:"string"},
-                        `keyThumbprint`:#{`type`:"string"},
-                        `versionId`:#{`type`:"number"},
-                        `transaction`:#{`type`:"string"},
-                        `at`:#{`type`:"string"},
-                        `actor`:#{`type`:"string"}
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_self_issued_r200_application_json_view_published_h424 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_self_issued_r200_application_json_view_subjects_i_enrolledAt_h425 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`kind`:#{`type`:"string"},`value`:#{`type`:"string"}},
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_self_issued_r200_application_json_view_subjects_i_location_h426 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `setting`:#{`type`:"string"},
-      `env`:#{`type`:"string"},
-      `administrator`:#{`type`:"boolean"},
-      `page`:#{`type`:#["string","null"]}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_self_issued_r400_application_json_view_turnOn_h427 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `enabled`:#{`type`:"boolean"},
-      `custody`:#{`type`:"string"},
-      `maxPerPerson`:#{`type`:"number"},
-      `keyAlgorithm`:#{`type`:"string"},
-      `active`:#{`type`:"integer"},
-      `canPublish`:#{`type`:"boolean"},
-      `dids`:#{
-        `type`:#["array","null"],
-        `items`:#{
-          `type`:"object",
-          `additionalProperties`:false,
-          `properties`:#{
-            `rid`:#{`type`:"string"},
-            `did`:#{`type`:"string"},
-            `custody`:#{`type`:"string"},
-            `documentUrl`:#{`type`:"string"},
-            `createdAt`:#{`type`:#["string","number","null"]},
-            `by`:#{`type`:#["string","null"]},
-            `state`:#{`type`:"string"},
-            `deactivated`:#{
-              `type`:#["object","null"],
-              `additionalProperties`:false,
-              `properties`:#{
-                `at`:#{`type`:"string"},
-                `by`:#{`type`:#["string","null"]},
-                `reason`:#{`type`:#["string","null"]}
-              }
-            },
-            `proof`:#{`type`:"string"},
-            `preferred`:#{`type`:"boolean"},
-            `currentVersion`:#{`type`:"number"},
-            `pending`:#{
-              `type`:#["object","null"],
-              `additionalProperties`:false,
-              `properties`:#{`change`:#{`type`:"string"},`expiresAt`:#{`type`:"string"}}
-            },
-            `versions`:#{
-              `type`:"array",
-              `items`:#{
-                `type`:"object",
-                `additionalProperties`:false,
-                `properties`:#{
-                  `versionId`:#{`type`:"number"},
-                  `created`:#{`type`:#["string","number","null"]},
-                  `change`:#{`type`:"string"},
-                  `keys`:#{
-                    `type`:"array",
-                    `items`:#{
-                      `type`:"object",
-                      `additionalProperties`:false,
-                      `properties`:#{
-                        `id`:#{`type`:"string"},
-                        `kty`:#{`type`:"string"},
-                        `crv`:#{`type`:"string"},
-                        `alg`:#{`type`:"string"}
-                      }
-                    }
-                  },
-                  `authorizedBy`:#{
-                    `type`:"array",
-                    `items`:#{
-                      `type`:"object",
-                      `additionalProperties`:false,
-                      `properties`:#{
-                        `kind`:#{`type`:"string"},
-                        `subject`:#{`type`:"string"},
-                        `keyThumbprint`:#{`type`:"string"},
-                        `versionId`:#{`type`:"number"},
-                        `transaction`:#{`type`:"string"},
-                        `at`:#{`type`:"string"},
-                        `actor`:#{`type`:"string"}
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_self_issued_r400_application_json_view_published_h428 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_self_issued_r400_application_json_view_subjects_i_enrolledAt_h429 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`kind`:#{`type`:"string"},`value`:#{`type`:"string"}},
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_self_issued_r400_application_json_view_subjects_i_location_h430 {}
 
 @endpoint("/account-api/self-issued",
   "post",
@@ -9839,18 +7287,18 @@ op `removeSelfIssued`(`requestBody/content/application~1json/schema`: {
     `go`?: string;
     `view`?: {
       `enabled`?: boolean;
-      `turnOn`?: post_account_api_self_issued_r200_application_json_view_turnOn_h423;
+      `turnOn`?: NullableObject18;
       `loginHint`?: string;
       `didClaim`?: boolean;
-      `published`?: post_account_api_self_issued_r200_application_json_view_published_h424;
+      `published`?: NullableObject19;
       `subjects`?: ({
         `subject`?: string;
         `label`?: string;
-        `enrolledAt`?: post_account_api_self_issued_r200_application_json_view_subjects_i_enrolledAt_h425;
+        `enrolledAt`?: Shape;
         `by`?: string;
         `proof`?: string;
         `preferred`?: boolean;
-        `location`?: post_account_api_self_issued_r200_application_json_view_subjects_i_location_h426;
+        `location`?: NullableObject20;
         `didDocumentUrl`?: string;
         `didResolved`?: boolean
       })[];
@@ -9869,18 +7317,18 @@ op `removeSelfIssued`(`requestBody/content/application~1json/schema`: {
     `error`?: string;
     `view`?: {
       `enabled`?: boolean;
-      `turnOn`?: post_account_api_self_issued_r400_application_json_view_turnOn_h427;
+      `turnOn`?: NullableObject18;
       `loginHint`?: string;
       `didClaim`?: boolean;
-      `published`?: post_account_api_self_issued_r400_application_json_view_published_h428;
+      `published`?: NullableObject19;
       `subjects`?: ({
         `subject`?: string;
         `label`?: string;
-        `enrolledAt`?: post_account_api_self_issued_r400_application_json_view_subjects_i_enrolledAt_h429;
+        `enrolledAt`?: Shape;
         `by`?: string;
         `proof`?: string;
         `preferred`?: boolean;
-        `location`?: post_account_api_self_issued_r400_application_json_view_subjects_i_location_h430;
+        `location`?: NullableObject20;
         `didDocumentUrl`?: string;
         `didResolved`?: boolean
       })[];
@@ -9919,15 +7367,13 @@ op `removeSelfIssued`(`requestBody/content/application~1json/schema`: {
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar get_account_api_self_issued_did_p0_v0_h431 extends string;
   
 
-@js(#{`maxLength`:2048}) @hoisted scalar get_account_api_self_issued_did_p0_v1_h432 extends string;
   
 
 @hoisted union get_account_api_self_issued_did_p0_h433 {
-    get_account_api_self_issued_did_p0_v0_h431,
-    get_account_api_self_issued_did_p0_v1_h432
+    EmptyText,
+    StringMax2048
   }
 
 @endpoint("/account-api/self-issued/did",
@@ -10028,230 +7474,16 @@ op `getSelfIssuedDidDocument`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_self_issued_dids_b_application_json_rid_v0_h434 extends string;
   
 
-@js(#{`pattern`:"^[A-Za-z0-9_-]{22}(?:[A-Za-z0-9_-]{12})?$"}) @hoisted scalar post_account_api_self_issued_dids_b_application_json_rid_v1_h435 extends string;
   
 
 @js(#{
     `description`:"The published DID's random id, from the list; every action but `publish` names one."
   }) @hoisted union post_account_api_self_issued_dids_b_application_json_rid_h436 {
-    post_account_api_self_issued_dids_b_application_json_rid_v0_h434,
-    post_account_api_self_issued_dids_b_application_json_rid_v1_h435
+    EmptyText,
+    StringMatchinga3848a
   }
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `setting`:#{`type`:"string"},
-      `env`:#{`type`:"string"},
-      `administrator`:#{`type`:"boolean"},
-      `page`:#{`type`:#["string","null"]}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_self_issued_dids_r200_application_json_view_turnOn_h437 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `enabled`:#{`type`:"boolean"},
-      `custody`:#{`type`:"string"},
-      `maxPerPerson`:#{`type`:"number"},
-      `keyAlgorithm`:#{`type`:"string"},
-      `active`:#{`type`:"integer"},
-      `canPublish`:#{`type`:"boolean"},
-      `dids`:#{
-        `type`:#["array","null"],
-        `items`:#{
-          `type`:"object",
-          `additionalProperties`:false,
-          `properties`:#{
-            `rid`:#{`type`:"string"},
-            `did`:#{`type`:"string"},
-            `custody`:#{`type`:"string"},
-            `documentUrl`:#{`type`:"string"},
-            `createdAt`:#{`type`:#["string","number","null"]},
-            `by`:#{`type`:#["string","null"]},
-            `state`:#{`type`:"string"},
-            `deactivated`:#{
-              `type`:#["object","null"],
-              `additionalProperties`:false,
-              `properties`:#{
-                `at`:#{`type`:"string"},
-                `by`:#{`type`:#["string","null"]},
-                `reason`:#{`type`:#["string","null"]}
-              }
-            },
-            `proof`:#{`type`:"string"},
-            `preferred`:#{`type`:"boolean"},
-            `currentVersion`:#{`type`:"number"},
-            `pending`:#{
-              `type`:#["object","null"],
-              `additionalProperties`:false,
-              `properties`:#{`change`:#{`type`:"string"},`expiresAt`:#{`type`:"string"}}
-            },
-            `versions`:#{
-              `type`:"array",
-              `items`:#{
-                `type`:"object",
-                `additionalProperties`:false,
-                `properties`:#{
-                  `versionId`:#{`type`:"number"},
-                  `created`:#{`type`:#["string","number","null"]},
-                  `change`:#{`type`:"string"},
-                  `keys`:#{
-                    `type`:"array",
-                    `items`:#{
-                      `type`:"object",
-                      `additionalProperties`:false,
-                      `properties`:#{
-                        `id`:#{`type`:"string"},
-                        `kty`:#{`type`:"string"},
-                        `crv`:#{`type`:"string"},
-                        `alg`:#{`type`:"string"}
-                      }
-                    }
-                  },
-                  `authorizedBy`:#{
-                    `type`:"array",
-                    `items`:#{
-                      `type`:"object",
-                      `additionalProperties`:false,
-                      `properties`:#{
-                        `kind`:#{`type`:"string"},
-                        `subject`:#{`type`:"string"},
-                        `keyThumbprint`:#{`type`:"string"},
-                        `versionId`:#{`type`:"number"},
-                        `transaction`:#{`type`:"string"},
-                        `at`:#{`type`:"string"},
-                        `actor`:#{`type`:"string"}
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_self_issued_dids_r200_application_json_view_published_h438 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_self_issued_dids_r200_application_json_view_subjects_i_enrolledAt_h439 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`kind`:#{`type`:"string"},`value`:#{`type`:"string"}},
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_self_issued_dids_r200_application_json_view_subjects_i_location_h440 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `setting`:#{`type`:"string"},
-      `env`:#{`type`:"string"},
-      `administrator`:#{`type`:"boolean"},
-      `page`:#{`type`:#["string","null"]}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_self_issued_dids_r400_application_json_view_turnOn_h441 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `enabled`:#{`type`:"boolean"},
-      `custody`:#{`type`:"string"},
-      `maxPerPerson`:#{`type`:"number"},
-      `keyAlgorithm`:#{`type`:"string"},
-      `active`:#{`type`:"integer"},
-      `canPublish`:#{`type`:"boolean"},
-      `dids`:#{
-        `type`:#["array","null"],
-        `items`:#{
-          `type`:"object",
-          `additionalProperties`:false,
-          `properties`:#{
-            `rid`:#{`type`:"string"},
-            `did`:#{`type`:"string"},
-            `custody`:#{`type`:"string"},
-            `documentUrl`:#{`type`:"string"},
-            `createdAt`:#{`type`:#["string","number","null"]},
-            `by`:#{`type`:#["string","null"]},
-            `state`:#{`type`:"string"},
-            `deactivated`:#{
-              `type`:#["object","null"],
-              `additionalProperties`:false,
-              `properties`:#{
-                `at`:#{`type`:"string"},
-                `by`:#{`type`:#["string","null"]},
-                `reason`:#{`type`:#["string","null"]}
-              }
-            },
-            `proof`:#{`type`:"string"},
-            `preferred`:#{`type`:"boolean"},
-            `currentVersion`:#{`type`:"number"},
-            `pending`:#{
-              `type`:#["object","null"],
-              `additionalProperties`:false,
-              `properties`:#{`change`:#{`type`:"string"},`expiresAt`:#{`type`:"string"}}
-            },
-            `versions`:#{
-              `type`:"array",
-              `items`:#{
-                `type`:"object",
-                `additionalProperties`:false,
-                `properties`:#{
-                  `versionId`:#{`type`:"number"},
-                  `created`:#{`type`:#["string","number","null"]},
-                  `change`:#{`type`:"string"},
-                  `keys`:#{
-                    `type`:"array",
-                    `items`:#{
-                      `type`:"object",
-                      `additionalProperties`:false,
-                      `properties`:#{
-                        `id`:#{`type`:"string"},
-                        `kty`:#{`type`:"string"},
-                        `crv`:#{`type`:"string"},
-                        `alg`:#{`type`:"string"}
-                      }
-                    }
-                  },
-                  `authorizedBy`:#{
-                    `type`:"array",
-                    `items`:#{
-                      `type`:"object",
-                      `additionalProperties`:false,
-                      `properties`:#{
-                        `kind`:#{`type`:"string"},
-                        `subject`:#{`type`:"string"},
-                        `keyThumbprint`:#{`type`:"string"},
-                        `versionId`:#{`type`:"number"},
-                        `transaction`:#{`type`:"string"},
-                        `at`:#{`type`:"string"},
-                        `actor`:#{`type`:"string"}
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_self_issued_dids_r400_application_json_view_published_h442 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_self_issued_dids_r400_application_json_view_subjects_i_enrolledAt_h443 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`kind`:#{`type`:"string"},`value`:#{`type`:"string"}},
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_self_issued_dids_r400_application_json_view_subjects_i_location_h444 {}
 
 @endpoint("/account-api/self-issued/dids",
   "post",
@@ -10302,18 +7534,18 @@ op `actOnPublishedDid`(`requestBody/content/application~1json/schema`: {
     `go`?: string;
     `view`?: {
       `enabled`?: boolean;
-      `turnOn`?: post_account_api_self_issued_dids_r200_application_json_view_turnOn_h437;
+      `turnOn`?: NullableObject18;
       `loginHint`?: string;
       `didClaim`?: boolean;
-      `published`?: post_account_api_self_issued_dids_r200_application_json_view_published_h438;
+      `published`?: NullableObject19;
       `subjects`?: ({
         `subject`?: string;
         `label`?: string;
-        `enrolledAt`?: post_account_api_self_issued_dids_r200_application_json_view_subjects_i_enrolledAt_h439;
+        `enrolledAt`?: Shape;
         `by`?: string;
         `proof`?: string;
         `preferred`?: boolean;
-        `location`?: post_account_api_self_issued_dids_r200_application_json_view_subjects_i_location_h440;
+        `location`?: NullableObject20;
         `didDocumentUrl`?: string;
         `didResolved`?: boolean
       })[];
@@ -10332,18 +7564,18 @@ op `actOnPublishedDid`(`requestBody/content/application~1json/schema`: {
     `error`?: string;
     `view`?: {
       `enabled`?: boolean;
-      `turnOn`?: post_account_api_self_issued_dids_r400_application_json_view_turnOn_h441;
+      `turnOn`?: NullableObject18;
       `loginHint`?: string;
       `didClaim`?: boolean;
-      `published`?: post_account_api_self_issued_dids_r400_application_json_view_published_h442;
+      `published`?: NullableObject19;
       `subjects`?: ({
         `subject`?: string;
         `label`?: string;
-        `enrolledAt`?: post_account_api_self_issued_dids_r400_application_json_view_subjects_i_enrolledAt_h443;
+        `enrolledAt`?: Shape;
         `by`?: string;
         `proof`?: string;
         `preferred`?: boolean;
-        `location`?: post_account_api_self_issued_dids_r400_application_json_view_subjects_i_location_h444;
+        `location`?: NullableObject20;
         `didDocumentUrl`?: string;
         `didResolved`?: boolean
       })[];
@@ -10382,44 +7614,9 @@ op `actOnPublishedDid`(`requestBody/content/application~1json/schema`: {
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar get_account_api_credentials_offerable_p0_v0_h445 extends string;
   
 
-@js(#{`minimum`:1,`maximum`:100000}) @hoisted scalar get_account_api_credentials_offerable_p0_v1_h446 extends integer;
   
-
-@hoisted union get_account_api_credentials_offerable_p0_h447 {
-    get_account_api_credentials_offerable_p0_v0_h445,
-    get_account_api_credentials_offerable_p0_v1_h446
-  }
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_credentials_offerable_r200_application_json_wallet_h448 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_credentials_offerable_r200_application_json_issued_i_configurationId_h449 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_credentials_offerable_r200_application_json_issued_i_format_h450 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_credentials_offerable_r200_application_json_issued_i_walletEvent_h451 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_credentials_offerable_r200_application_json_issued_i_copies_i_walletEvent_h452 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_credentials_offerable_r200_application_json_issued_i_copies_i_keyThumbprint_h453 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_credentials_offerable_r200_application_json_issued_i_copies_i_holderDid_h454 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model get_account_api_credentials_offerable_r200_application_json_issued_i_copies_i_statusIndex_h455 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_credentials_offerable_r200_application_json_offer_txCode_h456 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `credentialOfferUri`:#{`type`:"string"},
-      `offerUri`:#{`type`:"string"},
-      `walletUrl`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_account_api_credentials_offerable_r200_application_json_offer_byReference_h457 {}
 
 @endpoint("/account-api/credentials/offerable",
   "get",
@@ -10476,20 +7673,20 @@ op `getOfferableCredentials`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:
     })[];
     `modes`?: (string)[];
     `lifetimeSeconds`?: numeric;
-    `wallet`?: get_account_api_credentials_offerable_r200_application_json_wallet_h448;
+    `wallet`?: NullableString;
     `batchSize`?: numeric;
     `issued`?: ({
       `id`?: string;
-      `configurationId`?: get_account_api_credentials_offerable_r200_application_json_issued_i_configurationId_h449;
+      `configurationId`?: NullableString;
       `name`?: string;
-      `format`?: get_account_api_credentials_offerable_r200_application_json_issued_i_format_h450;
+      `format`?: NullableString;
       `issuedAt`?: string;
       `expiresAt`?: string;
       `status`?: string;
       @js(#{`description`:"How many copies are in each status."}) `counts`?: Record<integer>;
       `removable`?: boolean;
       `removedAt`?: string;
-      `walletEvent`?: get_account_api_credentials_offerable_r200_application_json_issued_i_walletEvent_h451;
+      `walletEvent`?: NullableString;
       `walletEventAt`?: string;
       `copies`?: ({
         `id`?: string;
@@ -10500,11 +7697,11 @@ op `getOfferableCredentials`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:
         `status`?: string;
         `removable`?: boolean;
         `removedAt`?: string;
-        `walletEvent`?: get_account_api_credentials_offerable_r200_application_json_issued_i_copies_i_walletEvent_h452;
+        `walletEvent`?: NullableString;
         `walletEventAt`?: string;
-        `keyThumbprint`?: get_account_api_credentials_offerable_r200_application_json_issued_i_copies_i_keyThumbprint_h453;
-        `holderDid`?: get_account_api_credentials_offerable_r200_application_json_issued_i_copies_i_holderDid_h454;
-        `statusIndex`?: get_account_api_credentials_offerable_r200_application_json_issued_i_copies_i_statusIndex_h455
+        `keyThumbprint`?: NullableString;
+        `holderDid`?: NullableString;
+        `statusIndex`?: Shape
       })[]
     })[];
     `paging`?: {
@@ -10528,10 +7725,10 @@ op `getOfferableCredentials`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:
           `authorization_code`?: {`issuer_state`?: string}
         }
       };
-      `txCode`?: get_account_api_credentials_offerable_r200_application_json_offer_txCode_h456;
+      `txCode`?: NullableString;
       `expiresAt`?: string;
       `byValue`?: {`offerUri`?: string; `walletUrl`?: string};
-      `byReference`?: get_account_api_credentials_offerable_r200_application_json_offer_byReference_h457
+      `byReference`?: NullableObject21
     }
   },
   @js(#{
@@ -10568,114 +7765,9 @@ op `getOfferableCredentials`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_credentials_offers_b_application_json_page_v0_h458 extends string;
   
 
-@js(#{`minimum`:1,`maximum`:100000}) @hoisted scalar post_account_api_credentials_offers_b_application_json_page_v1_h459 extends integer;
   
-
-@js(#{
-    `description`:"Which page of `issued`, newest first. Clamped to the last."
-  }) @hoisted union post_account_api_credentials_offers_b_application_json_page_h460 {
-    post_account_api_credentials_offers_b_application_json_page_v0_h458,
-    post_account_api_credentials_offers_b_application_json_page_v1_h459
-  }
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_offers_r200_application_json_offer_txCode_h461 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `credentialOfferUri`:#{`type`:"string"},
-      `offerUri`:#{`type`:"string"},
-      `walletUrl`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_credentials_offers_r200_application_json_offer_byReference_h462 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_offers_r200_application_json_view_wallet_h463 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_offers_r200_application_json_view_issued_i_configurationId_h464 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_offers_r200_application_json_view_issued_i_format_h465 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_offers_r200_application_json_view_issued_i_walletEvent_h466 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_offers_r200_application_json_view_issued_i_copies_i_walletEvent_h467 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_offers_r200_application_json_view_issued_i_copies_i_keyThumbprint_h468 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_offers_r200_application_json_view_issued_i_copies_i_holderDid_h469 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_credentials_offers_r200_application_json_view_issued_i_copies_i_statusIndex_h470 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_offers_r200_application_json_view_offer_txCode_h471 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `credentialOfferUri`:#{`type`:"string"},
-      `offerUri`:#{`type`:"string"},
-      `walletUrl`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_credentials_offers_r200_application_json_view_offer_byReference_h472 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_offers_r400_application_json_view_wallet_h473 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_offers_r400_application_json_view_issued_i_configurationId_h474 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_offers_r400_application_json_view_issued_i_format_h475 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_offers_r400_application_json_view_issued_i_walletEvent_h476 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_offers_r400_application_json_view_issued_i_copies_i_walletEvent_h477 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_offers_r400_application_json_view_issued_i_copies_i_keyThumbprint_h478 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_offers_r400_application_json_view_issued_i_copies_i_holderDid_h479 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_credentials_offers_r400_application_json_view_issued_i_copies_i_statusIndex_h480 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_offers_r400_application_json_view_offer_txCode_h481 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `credentialOfferUri`:#{`type`:"string"},
-      `offerUri`:#{`type`:"string"},
-      `walletUrl`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_credentials_offers_r400_application_json_view_offer_byReference_h482 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_offers_r403_application_json_view_wallet_h483 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_offers_r403_application_json_view_issued_i_configurationId_h484 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_offers_r403_application_json_view_issued_i_format_h485 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_offers_r403_application_json_view_issued_i_walletEvent_h486 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_offers_r403_application_json_view_issued_i_copies_i_walletEvent_h487 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_offers_r403_application_json_view_issued_i_copies_i_keyThumbprint_h488 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_offers_r403_application_json_view_issued_i_copies_i_holderDid_h489 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_credentials_offers_r403_application_json_view_issued_i_copies_i_statusIndex_h490 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_offers_r403_application_json_view_offer_txCode_h491 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `credentialOfferUri`:#{`type`:"string"},
-      `offerUri`:#{`type`:"string"},
-      `walletUrl`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_credentials_offers_r403_application_json_view_offer_byReference_h492 {}
 
 @endpoint("/account-api/credentials/offers",
   "post",
@@ -10727,7 +7819,7 @@ op `createCredentialOffer`(`requestBody/content/application~1json/schema`: {
       `description`:"The algorithm the credential is signed with, one of the configuration's `signingAlgs`; left out or empty, the configured `oid4vci.credentialSigningAlgorithm`.",
       `maxLength`:64
     }) `signingAlg`?: string;
-    `page`?: post_account_api_credentials_offers_b_application_json_page_h460
+    `page`?: EmptyTextOrIntegerFrom1To1000004
   },
   `responses/200/content/application~1json/schema`: {
     `ok`?: boolean;
@@ -10748,10 +7840,10 @@ op `createCredentialOffer`(`requestBody/content/application~1json/schema`: {
           `authorization_code`?: {`issuer_state`?: string}
         }
       };
-      `txCode`?: post_account_api_credentials_offers_r200_application_json_offer_txCode_h461;
+      `txCode`?: NullableString;
       `expiresAt`?: string;
       `byValue`?: {`offerUri`?: string; `walletUrl`?: string};
-      `byReference`?: post_account_api_credentials_offers_r200_application_json_offer_byReference_h462
+      `byReference`?: NullableObject21
     };
     `view`?: {
       `configurations`?: ({
@@ -10764,20 +7856,20 @@ op `createCredentialOffer`(`requestBody/content/application~1json/schema`: {
       })[];
       `modes`?: (string)[];
       `lifetimeSeconds`?: numeric;
-      `wallet`?: post_account_api_credentials_offers_r200_application_json_view_wallet_h463;
+      `wallet`?: NullableString;
       `batchSize`?: numeric;
       `issued`?: ({
         `id`?: string;
-        `configurationId`?: post_account_api_credentials_offers_r200_application_json_view_issued_i_configurationId_h464;
+        `configurationId`?: NullableString;
         `name`?: string;
-        `format`?: post_account_api_credentials_offers_r200_application_json_view_issued_i_format_h465;
+        `format`?: NullableString;
         `issuedAt`?: string;
         `expiresAt`?: string;
         `status`?: string;
         @js(#{`description`:"How many copies are in each status."}) `counts`?: Record<integer>;
         `removable`?: boolean;
         `removedAt`?: string;
-        `walletEvent`?: post_account_api_credentials_offers_r200_application_json_view_issued_i_walletEvent_h466;
+        `walletEvent`?: NullableString;
         `walletEventAt`?: string;
         `copies`?: ({
           `id`?: string;
@@ -10788,11 +7880,11 @@ op `createCredentialOffer`(`requestBody/content/application~1json/schema`: {
           `status`?: string;
           `removable`?: boolean;
           `removedAt`?: string;
-          `walletEvent`?: post_account_api_credentials_offers_r200_application_json_view_issued_i_copies_i_walletEvent_h467;
+          `walletEvent`?: NullableString;
           `walletEventAt`?: string;
-          `keyThumbprint`?: post_account_api_credentials_offers_r200_application_json_view_issued_i_copies_i_keyThumbprint_h468;
-          `holderDid`?: post_account_api_credentials_offers_r200_application_json_view_issued_i_copies_i_holderDid_h469;
-          `statusIndex`?: post_account_api_credentials_offers_r200_application_json_view_issued_i_copies_i_statusIndex_h470
+          `keyThumbprint`?: NullableString;
+          `holderDid`?: NullableString;
+          `statusIndex`?: Shape
         })[]
       })[];
       `paging`?: {
@@ -10816,10 +7908,10 @@ op `createCredentialOffer`(`requestBody/content/application~1json/schema`: {
             `authorization_code`?: {`issuer_state`?: string}
           }
         };
-        `txCode`?: post_account_api_credentials_offers_r200_application_json_view_offer_txCode_h471;
+        `txCode`?: NullableString;
         `expiresAt`?: string;
         `byValue`?: {`offerUri`?: string; `walletUrl`?: string};
-        `byReference`?: post_account_api_credentials_offers_r200_application_json_view_offer_byReference_h472
+        `byReference`?: NullableObject21
       }
     }
   },
@@ -10838,20 +7930,20 @@ op `createCredentialOffer`(`requestBody/content/application~1json/schema`: {
       })[];
       `modes`?: (string)[];
       `lifetimeSeconds`?: numeric;
-      `wallet`?: post_account_api_credentials_offers_r400_application_json_view_wallet_h473;
+      `wallet`?: NullableString;
       `batchSize`?: numeric;
       `issued`?: ({
         `id`?: string;
-        `configurationId`?: post_account_api_credentials_offers_r400_application_json_view_issued_i_configurationId_h474;
+        `configurationId`?: NullableString;
         `name`?: string;
-        `format`?: post_account_api_credentials_offers_r400_application_json_view_issued_i_format_h475;
+        `format`?: NullableString;
         `issuedAt`?: string;
         `expiresAt`?: string;
         `status`?: string;
         @js(#{`description`:"How many copies are in each status."}) `counts`?: Record<integer>;
         `removable`?: boolean;
         `removedAt`?: string;
-        `walletEvent`?: post_account_api_credentials_offers_r400_application_json_view_issued_i_walletEvent_h476;
+        `walletEvent`?: NullableString;
         `walletEventAt`?: string;
         `copies`?: ({
           `id`?: string;
@@ -10862,11 +7954,11 @@ op `createCredentialOffer`(`requestBody/content/application~1json/schema`: {
           `status`?: string;
           `removable`?: boolean;
           `removedAt`?: string;
-          `walletEvent`?: post_account_api_credentials_offers_r400_application_json_view_issued_i_copies_i_walletEvent_h477;
+          `walletEvent`?: NullableString;
           `walletEventAt`?: string;
-          `keyThumbprint`?: post_account_api_credentials_offers_r400_application_json_view_issued_i_copies_i_keyThumbprint_h478;
-          `holderDid`?: post_account_api_credentials_offers_r400_application_json_view_issued_i_copies_i_holderDid_h479;
-          `statusIndex`?: post_account_api_credentials_offers_r400_application_json_view_issued_i_copies_i_statusIndex_h480
+          `keyThumbprint`?: NullableString;
+          `holderDid`?: NullableString;
+          `statusIndex`?: Shape
         })[]
       })[];
       `paging`?: {
@@ -10890,10 +7982,10 @@ op `createCredentialOffer`(`requestBody/content/application~1json/schema`: {
             `authorization_code`?: {`issuer_state`?: string}
           }
         };
-        `txCode`?: post_account_api_credentials_offers_r400_application_json_view_offer_txCode_h481;
+        `txCode`?: NullableString;
         `expiresAt`?: string;
         `byValue`?: {`offerUri`?: string; `walletUrl`?: string};
-        `byReference`?: post_account_api_credentials_offers_r400_application_json_view_offer_byReference_h482
+        `byReference`?: NullableObject21
       }
     }
   },
@@ -10920,20 +8012,20 @@ op `createCredentialOffer`(`requestBody/content/application~1json/schema`: {
       })[];
       `modes`?: (string)[];
       `lifetimeSeconds`?: numeric;
-      `wallet`?: post_account_api_credentials_offers_r403_application_json_view_wallet_h483;
+      `wallet`?: NullableString;
       `batchSize`?: numeric;
       `issued`?: ({
         `id`?: string;
-        `configurationId`?: post_account_api_credentials_offers_r403_application_json_view_issued_i_configurationId_h484;
+        `configurationId`?: NullableString;
         `name`?: string;
-        `format`?: post_account_api_credentials_offers_r403_application_json_view_issued_i_format_h485;
+        `format`?: NullableString;
         `issuedAt`?: string;
         `expiresAt`?: string;
         `status`?: string;
         @js(#{`description`:"How many copies are in each status."}) `counts`?: Record<integer>;
         `removable`?: boolean;
         `removedAt`?: string;
-        `walletEvent`?: post_account_api_credentials_offers_r403_application_json_view_issued_i_walletEvent_h486;
+        `walletEvent`?: NullableString;
         `walletEventAt`?: string;
         `copies`?: ({
           `id`?: string;
@@ -10944,11 +8036,11 @@ op `createCredentialOffer`(`requestBody/content/application~1json/schema`: {
           `status`?: string;
           `removable`?: boolean;
           `removedAt`?: string;
-          `walletEvent`?: post_account_api_credentials_offers_r403_application_json_view_issued_i_copies_i_walletEvent_h487;
+          `walletEvent`?: NullableString;
           `walletEventAt`?: string;
-          `keyThumbprint`?: post_account_api_credentials_offers_r403_application_json_view_issued_i_copies_i_keyThumbprint_h488;
-          `holderDid`?: post_account_api_credentials_offers_r403_application_json_view_issued_i_copies_i_holderDid_h489;
-          `statusIndex`?: post_account_api_credentials_offers_r403_application_json_view_issued_i_copies_i_statusIndex_h490
+          `keyThumbprint`?: NullableString;
+          `holderDid`?: NullableString;
+          `statusIndex`?: Shape
         })[]
       })[];
       `paging`?: {
@@ -10972,10 +8064,10 @@ op `createCredentialOffer`(`requestBody/content/application~1json/schema`: {
             `authorization_code`?: {`issuer_state`?: string}
           }
         };
-        `txCode`?: post_account_api_credentials_offers_r403_application_json_view_offer_txCode_h491;
+        `txCode`?: NullableString;
         `expiresAt`?: string;
         `byValue`?: {`offerUri`?: string; `walletUrl`?: string};
-        `byReference`?: post_account_api_credentials_offers_r403_application_json_view_offer_byReference_h492
+        `byReference`?: NullableObject21
       }
     }
   },
@@ -10989,74 +8081,9 @@ op `createCredentialOffer`(`requestBody/content/application~1json/schema`: {
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_credentials_remove_b_application_json_page_v0_h493 extends string;
   
 
-@js(#{`minimum`:1,`maximum`:100000}) @hoisted scalar post_account_api_credentials_remove_b_application_json_page_v1_h494 extends integer;
   
-
-@js(#{
-    `description`:"Which page of `issued`, newest first. Clamped to the last."
-  }) @hoisted union post_account_api_credentials_remove_b_application_json_page_h495 {
-    post_account_api_credentials_remove_b_application_json_page_v0_h493,
-    post_account_api_credentials_remove_b_application_json_page_v1_h494
-  }
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_remove_r200_application_json_view_wallet_h496 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_remove_r200_application_json_view_issued_i_configurationId_h497 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_remove_r200_application_json_view_issued_i_format_h498 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_remove_r200_application_json_view_issued_i_walletEvent_h499 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_remove_r200_application_json_view_issued_i_copies_i_walletEvent_h500 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_remove_r200_application_json_view_issued_i_copies_i_keyThumbprint_h501 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_remove_r200_application_json_view_issued_i_copies_i_holderDid_h502 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_credentials_remove_r200_application_json_view_issued_i_copies_i_statusIndex_h503 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_remove_r200_application_json_view_offer_txCode_h504 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `credentialOfferUri`:#{`type`:"string"},
-      `offerUri`:#{`type`:"string"},
-      `walletUrl`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_credentials_remove_r200_application_json_view_offer_byReference_h505 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_remove_r400_application_json_view_wallet_h506 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_remove_r400_application_json_view_issued_i_configurationId_h507 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_remove_r400_application_json_view_issued_i_format_h508 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_remove_r400_application_json_view_issued_i_walletEvent_h509 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_remove_r400_application_json_view_issued_i_copies_i_walletEvent_h510 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_remove_r400_application_json_view_issued_i_copies_i_keyThumbprint_h511 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_remove_r400_application_json_view_issued_i_copies_i_holderDid_h512 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_credentials_remove_r400_application_json_view_issued_i_copies_i_statusIndex_h513 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_credentials_remove_r400_application_json_view_offer_txCode_h514 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `credentialOfferUri`:#{`type`:"string"},
-      `offerUri`:#{`type`:"string"},
-      `walletUrl`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_credentials_remove_r400_application_json_view_offer_byReference_h515 {}
 
 @endpoint("/account-api/credentials/remove",
   "post",
@@ -11101,7 +8128,7 @@ op `removeIssuedCredential`(`requestBody/content/application~1json/schema`: {
       `maxLength`:64,
       `description`:"An issuance's `id`, from `issued` in `GET /account-api/credentials/offerable`, which removes every copy of it; or one copy's, from its `copies`, which removes that copy alone."
     }) `id`: string;
-    `page`?: post_account_api_credentials_remove_b_application_json_page_h495
+    `page`?: EmptyTextOrIntegerFrom1To1000004
   },
   `responses/200/content/application~1json/schema`: {
     `ok`?: boolean;
@@ -11120,20 +8147,20 @@ op `removeIssuedCredential`(`requestBody/content/application~1json/schema`: {
       })[];
       `modes`?: (string)[];
       `lifetimeSeconds`?: numeric;
-      `wallet`?: post_account_api_credentials_remove_r200_application_json_view_wallet_h496;
+      `wallet`?: NullableString;
       `batchSize`?: numeric;
       `issued`?: ({
         `id`?: string;
-        `configurationId`?: post_account_api_credentials_remove_r200_application_json_view_issued_i_configurationId_h497;
+        `configurationId`?: NullableString;
         `name`?: string;
-        `format`?: post_account_api_credentials_remove_r200_application_json_view_issued_i_format_h498;
+        `format`?: NullableString;
         `issuedAt`?: string;
         `expiresAt`?: string;
         `status`?: string;
         @js(#{`description`:"How many copies are in each status."}) `counts`?: Record<integer>;
         `removable`?: boolean;
         `removedAt`?: string;
-        `walletEvent`?: post_account_api_credentials_remove_r200_application_json_view_issued_i_walletEvent_h499;
+        `walletEvent`?: NullableString;
         `walletEventAt`?: string;
         `copies`?: ({
           `id`?: string;
@@ -11144,11 +8171,11 @@ op `removeIssuedCredential`(`requestBody/content/application~1json/schema`: {
           `status`?: string;
           `removable`?: boolean;
           `removedAt`?: string;
-          `walletEvent`?: post_account_api_credentials_remove_r200_application_json_view_issued_i_copies_i_walletEvent_h500;
+          `walletEvent`?: NullableString;
           `walletEventAt`?: string;
-          `keyThumbprint`?: post_account_api_credentials_remove_r200_application_json_view_issued_i_copies_i_keyThumbprint_h501;
-          `holderDid`?: post_account_api_credentials_remove_r200_application_json_view_issued_i_copies_i_holderDid_h502;
-          `statusIndex`?: post_account_api_credentials_remove_r200_application_json_view_issued_i_copies_i_statusIndex_h503
+          `keyThumbprint`?: NullableString;
+          `holderDid`?: NullableString;
+          `statusIndex`?: Shape
         })[]
       })[];
       `paging`?: {
@@ -11172,10 +8199,10 @@ op `removeIssuedCredential`(`requestBody/content/application~1json/schema`: {
             `authorization_code`?: {`issuer_state`?: string}
           }
         };
-        `txCode`?: post_account_api_credentials_remove_r200_application_json_view_offer_txCode_h504;
+        `txCode`?: NullableString;
         `expiresAt`?: string;
         `byValue`?: {`offerUri`?: string; `walletUrl`?: string};
-        `byReference`?: post_account_api_credentials_remove_r200_application_json_view_offer_byReference_h505
+        `byReference`?: NullableObject21
       }
     }
   },
@@ -11194,20 +8221,20 @@ op `removeIssuedCredential`(`requestBody/content/application~1json/schema`: {
       })[];
       `modes`?: (string)[];
       `lifetimeSeconds`?: numeric;
-      `wallet`?: post_account_api_credentials_remove_r400_application_json_view_wallet_h506;
+      `wallet`?: NullableString;
       `batchSize`?: numeric;
       `issued`?: ({
         `id`?: string;
-        `configurationId`?: post_account_api_credentials_remove_r400_application_json_view_issued_i_configurationId_h507;
+        `configurationId`?: NullableString;
         `name`?: string;
-        `format`?: post_account_api_credentials_remove_r400_application_json_view_issued_i_format_h508;
+        `format`?: NullableString;
         `issuedAt`?: string;
         `expiresAt`?: string;
         `status`?: string;
         @js(#{`description`:"How many copies are in each status."}) `counts`?: Record<integer>;
         `removable`?: boolean;
         `removedAt`?: string;
-        `walletEvent`?: post_account_api_credentials_remove_r400_application_json_view_issued_i_walletEvent_h509;
+        `walletEvent`?: NullableString;
         `walletEventAt`?: string;
         `copies`?: ({
           `id`?: string;
@@ -11218,11 +8245,11 @@ op `removeIssuedCredential`(`requestBody/content/application~1json/schema`: {
           `status`?: string;
           `removable`?: boolean;
           `removedAt`?: string;
-          `walletEvent`?: post_account_api_credentials_remove_r400_application_json_view_issued_i_copies_i_walletEvent_h510;
+          `walletEvent`?: NullableString;
           `walletEventAt`?: string;
-          `keyThumbprint`?: post_account_api_credentials_remove_r400_application_json_view_issued_i_copies_i_keyThumbprint_h511;
-          `holderDid`?: post_account_api_credentials_remove_r400_application_json_view_issued_i_copies_i_holderDid_h512;
-          `statusIndex`?: post_account_api_credentials_remove_r400_application_json_view_issued_i_copies_i_statusIndex_h513
+          `keyThumbprint`?: NullableString;
+          `holderDid`?: NullableString;
+          `statusIndex`?: Shape
         })[]
       })[];
       `paging`?: {
@@ -11246,10 +8273,10 @@ op `removeIssuedCredential`(`requestBody/content/application~1json/schema`: {
             `authorization_code`?: {`issuer_state`?: string}
           }
         };
-        `txCode`?: post_account_api_credentials_remove_r400_application_json_view_offer_txCode_h514;
+        `txCode`?: NullableString;
         `expiresAt`?: string;
         `byValue`?: {`offerUri`?: string; `walletUrl`?: string};
-        `byReference`?: post_account_api_credentials_remove_r400_application_json_view_offer_byReference_h515
+        `byReference`?: NullableObject21
       }
     }
   },
@@ -11278,38 +8305,6 @@ op `removeIssuedCredential`(`requestBody/content/application~1json/schema`: {
     `error_description`?: string
   }): void;
   
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model get_account_api_devices_r200_application_json_devices_i_lastUsed_h516 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `challenge`:#{`type`:"string"},
-      `expiresAt`:#{`type`:#["string","number","null"]}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_account_api_devices_r200_application_json_proof_h517 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `challenge`:#{`type`:"string"},
-      `rpId`:#{`type`:"string"},
-      `user`:#{`type`:"string"},
-      `allow`:#{`type`:"string"},
-      `options`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `rpId`:#{`type`:"string"},
-          `userVerification`:#{`type`:"string"},
-          `timeout`:#{`type`:"number"},
-          `hints`:#{`type`:"array",`items`:#{`type`:"string"}}
-        }
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_account_api_devices_r200_application_json_linking_h518 {}
 
 @endpoint("/account-api/devices",
   "get",
@@ -11357,13 +8352,13 @@ op `getDevices`(`responses/200/content/application~1json/schema`: {
       `keys`?: ({`kind`?: string; `level`?: string})[];
       `attestation`?: string;
       `enrolment`?: string;
-      `lastUsed`?: get_account_api_devices_r200_application_json_devices_i_lastUsed_h516
+      `lastUsed`?: Shape
     })[];
     `platforms`?: (string)[];
-    `proof`?: get_account_api_devices_r200_application_json_proof_h517;
+    `proof`?: NullableObject22;
     `audience`?: string;
     `proofTyp`?: string;
-    `linking`?: get_account_api_devices_r200_application_json_linking_h518;
+    `linking`?: NullableObject23;
     `link`?: {
       `enrolled`?: integer;
       `keys`?: ({`credentialId`?: string; `name`?: string; `trusted`?: boolean})[];
@@ -11405,45 +8400,12 @@ op `getDevices`(`responses/200/content/application~1json/schema`: {
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_devices_b_application_json_action_v0_h519 extends string;
   
 
 @js(#{`description`:"What to do; `remove` where none is named."}) @hoisted union post_account_api_devices_b_application_json_action_h520 {
-    post_account_api_devices_b_application_json_action_v0_h519,
+    EmptyText,
     "remove" | "challenge" | "prove" | "cancel-proof" | "link-begin" | "link-finish" | "link-cancel" | "remember-browser"
   }
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_devices_r400_application_json_view_devices_i_lastUsed_h521 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `challenge`:#{`type`:"string"},
-      `expiresAt`:#{`type`:#["string","number","null"]}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_devices_r400_application_json_view_proof_h522 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `challenge`:#{`type`:"string"},
-      `rpId`:#{`type`:"string"},
-      `user`:#{`type`:"string"},
-      `allow`:#{`type`:"string"},
-      `options`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `rpId`:#{`type`:"string"},
-          `userVerification`:#{`type`:"string"},
-          `timeout`:#{`type`:"number"},
-          `hints`:#{`type`:"array",`items`:#{`type`:"string"}}
-        }
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_devices_r400_application_json_view_linking_h523 {}
 
 @endpoint("/account-api/devices",
   "post",
@@ -11534,13 +8496,13 @@ op `actOnDevices`(`requestBody/content/application~1json/schema`: {
         `keys`?: ({`kind`?: string; `level`?: string})[];
         `attestation`?: string;
         `enrolment`?: string;
-        `lastUsed`?: post_account_api_devices_r400_application_json_view_devices_i_lastUsed_h521
+        `lastUsed`?: Shape
       })[];
       `platforms`?: (string)[];
-      `proof`?: post_account_api_devices_r400_application_json_view_proof_h522;
+      `proof`?: NullableObject22;
       `audience`?: string;
       `proofTyp`?: string;
-      `linking`?: post_account_api_devices_r400_application_json_view_linking_h523;
+      `linking`?: NullableObject23;
       `link`?: {
         `enrolled`?: integer;
         `keys`?: ({`credentialId`?: string; `name`?: string; `trusted`?: boolean})[];
@@ -11574,8 +8536,6 @@ op `actOnDevices`(`requestBody/content/application~1json/schema`: {
     `error_description`?: string
   }): void;
   
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_devices_challenge_r200_application_json_expires_at_h524 {}
 
 @endpoint("/account-api/devices/challenge",
   "post",
@@ -11621,7 +8581,7 @@ op `deviceChallenge`(`requestBody/content/application~1json/schema`: {
     `challenge`?: string;
     `audience`?: string;
     `typ`?: string;
-    `expires_at`?: post_account_api_devices_challenge_r200_application_json_expires_at_h524;
+    `expires_at`?: Shape;
     `proof_endpoint`?: string
   },
   @js(#{
@@ -11657,434 +8617,6 @@ op `deviceChallenge`(`requestBody/content/application~1json/schema`: {
     `error_description`?: string
   }): void;
   
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `id`:#{`type`:"string"},
-      `dn`:#{`type`:"string"},
-      `owner`:#{`type`:"string"},
-      `ownerKind`:#{`type`:"string"},
-      `label`:#{`type`:"string"},
-      `applications`:#{`type`:"array",`items`:#{`type`:"string"}},
-      `keys`:#{
-        `type`:"array",
-        `items`:#{
-          `type`:"object",
-          `additionalProperties`:false,
-          `properties`:#{
-            `id`:#{`type`:"string"},
-            `kind`:#{`type`:"string"},
-            `thumbprint`:#{`type`:"string"},
-            `label`:#{`type`:"string"},
-            `added`:#{`type`:"string"},
-            `addedBy`:#{`type`:"string"},
-            `proof`:#{`type`:"string"},
-            `attestation`:#{
-              `type`:"object",
-              `additionalProperties`:false,
-              `properties`:#{
-                `level`:#{`type`:"string"},
-                `format`:#{`type`:"string"},
-                `summary`:#{`type`:"string"},
-                `verifiedAt`:#{`type`:"string"},
-                `chainSerials`:#{`type`:"array",`items`:#{`type`:"string"}},
-                `revocation`:#{
-                  `type`:"object",
-                  `additionalProperties`:false,
-                  `properties`:#{
-                    `status`:#{`type`:"string"},
-                    `reason`:#{`type`:"string"},
-                    `serial`:#{`type`:"string"},
-                    `listVersion`:#{`type`:"string"},
-                    `checkedAt`:#{`type`:"string"},
-                    `chainSerials`:#{`type`:"array",`items`:#{`type`:"string"}},
-                    `why`:#{`type`:"string"}
-                  }
-                },
-                `freshness`:#{
-                  `type`:"object",
-                  `additionalProperties`:false,
-                  `properties`:#{`status`:#{`type`:"string"},`detail`:#{`type`:"string"}}
-                }
-              }
-            },
-            `material`:#{
-              `type`:"object",
-              `additionalProperties`:false,
-              `properties`:#{
-                `certificate`:#{`type`:"string"},
-                `subject`:#{`type`:"string"},
-                `issuer`:#{`type`:"string"},
-                `serial`:#{`type`:"string"},
-                `notAfter`:#{`type`:"string"},
-                `jwk`:#{
-                  `x-free-form`:"A public JWK as the device presented it (RFC 7517): its members depend on its key type.",
-                  `description`:"A public JWK as the device presented it (RFC 7517): its members depend on its key type."
-                },
-                `credentialId`:#{`type`:"string"},
-                `aaguid`:#{`type`:"string"},
-                `attachment`:#{`type`:"string"}
-              }
-            }
-          }
-        }
-      },
-      `keyKinds`:#{`type`:"array",`items`:#{`type`:"string"}},
-      `attestation`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `level`:#{`type`:"string"},
-          `format`:#{`type`:"string"},
-          `summary`:#{`type`:"string"},
-          `keyId`:#{`type`:"string"}
-        }
-      },
-      `compliance`:#{`type`:"string"},
-      `complianceChange`:#{
-        `type`:#["object","null"],
-        `additionalProperties`:false,
-        `properties`:#{
-          `status`:#{`type`:"string"},
-          `previous`:#{`type`:"string"},
-          `at`:#{`type`:"string"},
-          `source`:#{`type`:"string"},
-          `actor`:#{`type`:"string"},
-          `reason`:#{`type`:"string"}
-        }
-      },
-      `status`:#{`type`:"string"},
-      `statusChange`:#{
-        `type`:#["object","null"],
-        `additionalProperties`:false,
-        `properties`:#{
-          `status`:#{`type`:"string"},
-          `previous`:#{`type`:"string"},
-          `at`:#{`type`:"string"},
-          `source`:#{`type`:"string"},
-          `actor`:#{`type`:"string"},
-          `reason`:#{`type`:"string"}
-        }
-      },
-      `riskLevel`:#{`type`:"string"},
-      `riskChange`:#{
-        `type`:#["object","null"],
-        `additionalProperties`:false,
-        `properties`:#{
-          `level`:#{`type`:"string"},
-          `previous`:#{`type`:"string"},
-          `at`:#{`type`:"string"},
-          `source`:#{`type`:"string"},
-          `actor`:#{`type`:"string"},
-          `reason`:#{`type`:"string"},
-          `beforeCompromise`:#{`type`:"string"}
-        }
-      },
-      `platform`:#{`type`:"string"},
-      `model`:#{`type`:"string"},
-      `os`:#{`type`:"string"},
-      `enrolment`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `method`:#{`type`:"string"},
-          `at`:#{`type`:"string"},
-          `actor`:#{`type`:"string"}
-        }
-      },
-      `nativeSso`:#{`type`:"boolean"},
-      `rememberedBrowser`:#{
-        `type`:#["object","null"],
-        `additionalProperties`:false,
-        `properties`:#{
-          `generation`:#{`type`:"number"},
-          `issuedAt`:#{`type`:"string"},
-          `browser`:#{`type`:"string"},
-          `secondFactorAt`:#{`type`:"string"}
-        }
-      },
-      `sessionLive`:#{`type`:"boolean"},
-      `lastUsed`:#{`type`:"string"},
-      `created`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_devices_proof_r200_application_json_device_h525 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `id`:#{`type`:"string"},
-      `kind`:#{`type`:"string"},
-      `thumbprint`:#{`type`:"string"},
-      `label`:#{`type`:"string"},
-      `added`:#{`type`:"string"},
-      `addedBy`:#{`type`:"string"},
-      `proof`:#{`type`:"string"},
-      `attestation`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `level`:#{`type`:"string"},
-          `format`:#{`type`:"string"},
-          `summary`:#{`type`:"string"},
-          `verifiedAt`:#{`type`:"string"},
-          `chainSerials`:#{`type`:"array",`items`:#{`type`:"string"}},
-          `revocation`:#{
-            `type`:"object",
-            `additionalProperties`:false,
-            `properties`:#{
-              `status`:#{`type`:"string"},
-              `reason`:#{`type`:"string"},
-              `serial`:#{`type`:"string"},
-              `listVersion`:#{`type`:"string"},
-              `checkedAt`:#{`type`:"string"},
-              `chainSerials`:#{`type`:"array",`items`:#{`type`:"string"}},
-              `why`:#{`type`:"string"}
-            }
-          },
-          `freshness`:#{
-            `type`:"object",
-            `additionalProperties`:false,
-            `properties`:#{`status`:#{`type`:"string"},`detail`:#{`type`:"string"}}
-          }
-        }
-      },
-      `material`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `certificate`:#{`type`:"string"},
-          `subject`:#{`type`:"string"},
-          `issuer`:#{`type`:"string"},
-          `serial`:#{`type`:"string"},
-          `notAfter`:#{`type`:"string"},
-          `jwk`:#{
-            `x-free-form`:"A public JWK as the device presented it (RFC 7517): its members depend on its key type.",
-            `description`:"A public JWK as the device presented it (RFC 7517): its members depend on its key type."
-          },
-          `credentialId`:#{`type`:"string"},
-          `aaguid`:#{`type`:"string"},
-          `attachment`:#{`type`:"string"}
-        }
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_devices_proof_r200_application_json_key_h526 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `id`:#{`type`:"string"},
-      `dn`:#{`type`:"string"},
-      `owner`:#{`type`:"string"},
-      `ownerKind`:#{`type`:"string"},
-      `label`:#{`type`:"string"},
-      `applications`:#{`type`:"array",`items`:#{`type`:"string"}},
-      `keys`:#{
-        `type`:"array",
-        `items`:#{
-          `type`:"object",
-          `additionalProperties`:false,
-          `properties`:#{
-            `id`:#{`type`:"string"},
-            `kind`:#{`type`:"string"},
-            `thumbprint`:#{`type`:"string"},
-            `label`:#{`type`:"string"},
-            `added`:#{`type`:"string"},
-            `addedBy`:#{`type`:"string"},
-            `proof`:#{`type`:"string"},
-            `attestation`:#{
-              `type`:"object",
-              `additionalProperties`:false,
-              `properties`:#{
-                `level`:#{`type`:"string"},
-                `format`:#{`type`:"string"},
-                `summary`:#{`type`:"string"},
-                `verifiedAt`:#{`type`:"string"},
-                `chainSerials`:#{`type`:"array",`items`:#{`type`:"string"}},
-                `revocation`:#{
-                  `type`:"object",
-                  `additionalProperties`:false,
-                  `properties`:#{
-                    `status`:#{`type`:"string"},
-                    `reason`:#{`type`:"string"},
-                    `serial`:#{`type`:"string"},
-                    `listVersion`:#{`type`:"string"},
-                    `checkedAt`:#{`type`:"string"},
-                    `chainSerials`:#{`type`:"array",`items`:#{`type`:"string"}},
-                    `why`:#{`type`:"string"}
-                  }
-                },
-                `freshness`:#{
-                  `type`:"object",
-                  `additionalProperties`:false,
-                  `properties`:#{`status`:#{`type`:"string"},`detail`:#{`type`:"string"}}
-                }
-              }
-            },
-            `material`:#{
-              `type`:"object",
-              `additionalProperties`:false,
-              `properties`:#{
-                `certificate`:#{`type`:"string"},
-                `subject`:#{`type`:"string"},
-                `issuer`:#{`type`:"string"},
-                `serial`:#{`type`:"string"},
-                `notAfter`:#{`type`:"string"},
-                `jwk`:#{
-                  `x-free-form`:"A public JWK as the device presented it (RFC 7517): its members depend on its key type.",
-                  `description`:"A public JWK as the device presented it (RFC 7517): its members depend on its key type."
-                },
-                `credentialId`:#{`type`:"string"},
-                `aaguid`:#{`type`:"string"},
-                `attachment`:#{`type`:"string"}
-              }
-            }
-          }
-        }
-      },
-      `keyKinds`:#{`type`:"array",`items`:#{`type`:"string"}},
-      `attestation`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `level`:#{`type`:"string"},
-          `format`:#{`type`:"string"},
-          `summary`:#{`type`:"string"},
-          `keyId`:#{`type`:"string"}
-        }
-      },
-      `compliance`:#{`type`:"string"},
-      `complianceChange`:#{
-        `type`:#["object","null"],
-        `additionalProperties`:false,
-        `properties`:#{
-          `status`:#{`type`:"string"},
-          `previous`:#{`type`:"string"},
-          `at`:#{`type`:"string"},
-          `source`:#{`type`:"string"},
-          `actor`:#{`type`:"string"},
-          `reason`:#{`type`:"string"}
-        }
-      },
-      `status`:#{`type`:"string"},
-      `statusChange`:#{
-        `type`:#["object","null"],
-        `additionalProperties`:false,
-        `properties`:#{
-          `status`:#{`type`:"string"},
-          `previous`:#{`type`:"string"},
-          `at`:#{`type`:"string"},
-          `source`:#{`type`:"string"},
-          `actor`:#{`type`:"string"},
-          `reason`:#{`type`:"string"}
-        }
-      },
-      `riskLevel`:#{`type`:"string"},
-      `riskChange`:#{
-        `type`:#["object","null"],
-        `additionalProperties`:false,
-        `properties`:#{
-          `level`:#{`type`:"string"},
-          `previous`:#{`type`:"string"},
-          `at`:#{`type`:"string"},
-          `source`:#{`type`:"string"},
-          `actor`:#{`type`:"string"},
-          `reason`:#{`type`:"string"},
-          `beforeCompromise`:#{`type`:"string"}
-        }
-      },
-      `platform`:#{`type`:"string"},
-      `model`:#{`type`:"string"},
-      `os`:#{`type`:"string"},
-      `enrolment`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `method`:#{`type`:"string"},
-          `at`:#{`type`:"string"},
-          `actor`:#{`type`:"string"}
-        }
-      },
-      `nativeSso`:#{`type`:"boolean"},
-      `rememberedBrowser`:#{
-        `type`:#["object","null"],
-        `additionalProperties`:false,
-        `properties`:#{
-          `generation`:#{`type`:"number"},
-          `issuedAt`:#{`type`:"string"},
-          `browser`:#{`type`:"string"},
-          `secondFactorAt`:#{`type`:"string"}
-        }
-      },
-      `sessionLive`:#{`type`:"boolean"},
-      `lastUsed`:#{`type`:"string"},
-      `created`:#{`type`:"string"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_devices_proof_r201_application_json_device_h527 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `id`:#{`type`:"string"},
-      `kind`:#{`type`:"string"},
-      `thumbprint`:#{`type`:"string"},
-      `label`:#{`type`:"string"},
-      `added`:#{`type`:"string"},
-      `addedBy`:#{`type`:"string"},
-      `proof`:#{`type`:"string"},
-      `attestation`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `level`:#{`type`:"string"},
-          `format`:#{`type`:"string"},
-          `summary`:#{`type`:"string"},
-          `verifiedAt`:#{`type`:"string"},
-          `chainSerials`:#{`type`:"array",`items`:#{`type`:"string"}},
-          `revocation`:#{
-            `type`:"object",
-            `additionalProperties`:false,
-            `properties`:#{
-              `status`:#{`type`:"string"},
-              `reason`:#{`type`:"string"},
-              `serial`:#{`type`:"string"},
-              `listVersion`:#{`type`:"string"},
-              `checkedAt`:#{`type`:"string"},
-              `chainSerials`:#{`type`:"array",`items`:#{`type`:"string"}},
-              `why`:#{`type`:"string"}
-            }
-          },
-          `freshness`:#{
-            `type`:"object",
-            `additionalProperties`:false,
-            `properties`:#{`status`:#{`type`:"string"},`detail`:#{`type`:"string"}}
-          }
-        }
-      },
-      `material`:#{
-        `type`:"object",
-        `additionalProperties`:false,
-        `properties`:#{
-          `certificate`:#{`type`:"string"},
-          `subject`:#{`type`:"string"},
-          `issuer`:#{`type`:"string"},
-          `serial`:#{`type`:"string"},
-          `notAfter`:#{`type`:"string"},
-          `jwk`:#{
-            `x-free-form`:"A public JWK as the device presented it (RFC 7517): its members depend on its key type.",
-            `description`:"A public JWK as the device presented it (RFC 7517): its members depend on its key type."
-          },
-          `credentialId`:#{`type`:"string"},
-          `aaguid`:#{`type`:"string"},
-          `attachment`:#{`type`:"string"}
-        }
-      }
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_devices_proof_r201_application_json_key_h528 {}
 
 @endpoint("/account-api/devices/proof",
   "post",
@@ -12149,13 +8681,13 @@ op `deviceProof`(`requestBody/content/application~1json/schema`: {
   },
   `responses/200/content/application~1json/schema`: {
     `ok`?: boolean;
-    `device`?: post_account_api_devices_proof_r200_application_json_device_h525;
-    `key`?: post_account_api_devices_proof_r200_application_json_key_h526
+    `device`?: NullableObject24;
+    `key`?: NullableObject25
   },
   `responses/201/content/application~1json/schema`: {
     `ok`?: boolean;
-    `device`?: post_account_api_devices_proof_r201_application_json_device_h527;
-    `key`?: post_account_api_devices_proof_r201_application_json_key_h528
+    `device`?: NullableObject24;
+    `key`?: NullableObject25
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
@@ -12191,8 +8723,6 @@ op `deviceProof`(`requestBody/content/application~1json/schema`: {
   }): void;
   
 
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_ciba_r200_application_json_requests_i_clientName_h529 {}
-
 @js(#{
     `items`:#{
       `type`:"object",
@@ -12201,16 +8731,6 @@ op `deviceProof`(`requestBody/content/application~1json/schema`: {
     },
     `$types`:#["array","null"]
   }) @hoisted model get_account_api_ciba_r200_application_json_requests_i_requestContext_h530 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_ciba_r200_application_json_requests_i_scope_h531 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model get_account_api_ciba_r200_application_json_requests_i_expiresAt_h532 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_ciba_r200_application_json_gnap_i_display_h533 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_ciba_r200_application_json_gnap_i_client_h534 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model get_account_api_ciba_r200_application_json_gnap_i_expiresAt_h535 {}
 
 @endpoint("/account-api/ciba",
   "get",
@@ -12268,23 +8788,23 @@ op `getSignInRequests`(@js(#{`maxLength`:256}) `parameters/0/schema`: string,
     `enabled`?: boolean;
     `requests`?: ({
       `id`?: string;
-      `clientName`?: get_account_api_ciba_r200_application_json_requests_i_clientName_h529;
+      `clientName`?: NullableString;
       `bindingMessage`?: string;
       `requestContext`?: get_account_api_ciba_r200_application_json_requests_i_requestContext_h530;
-      `scope`?: get_account_api_ciba_r200_application_json_requests_i_scope_h531;
+      `scope`?: NullableString;
       `acrValues`?: (string)[];
-      `expiresAt`?: get_account_api_ciba_r200_application_json_requests_i_expiresAt_h532
+      `expiresAt`?: Shape
     })[];
     `hasCode`?: boolean;
     `gnap`?: ({
       `id`?: string;
-      `display`?: get_account_api_ciba_r200_application_json_gnap_i_display_h533;
-      `client`?: get_account_api_ciba_r200_application_json_gnap_i_client_h534;
+      `display`?: NullableString;
+      `client`?: NullableString;
       `declared`?: boolean;
       `requestedBy`?: string;
       `acr`?: (string)[];
       `subject`?: boolean;
-      `expiresAt`?: get_account_api_ciba_r200_application_json_gnap_i_expiresAt_h535;
+      `expiresAt`?: Shape;
       `rights`?: ({
         `field`?: string;
         `limitsHtml`?: string;
@@ -12413,34 +8933,6 @@ op `answerSignInRequest`(@js(#{
   }): void;
   
 
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_access_requests_r200_application_json_rows_i_requester_h537 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`id`:#{`type`:"string"},`name`:#{`type`:"string"}},
-    `$types`:#["object","null"]
-  }) @hoisted model get_account_api_access_requests_r200_application_json_rows_i_client_h538 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_access_requests_r200_application_json_rows_i_application_h539 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model get_account_api_access_requests_r200_application_json_rows_i_createdAt_h540 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model get_account_api_access_requests_r200_application_json_rows_i_expiresAt_h541 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model get_account_api_access_requests_r200_application_json_rows_i_finishedAt_h542 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `id`:#{`type`:"string"},
-      `approvedAt`:#{`type`:#["string","number","null"]},
-      `approvedUntil`:#{`type`:#["string","number","null"]},
-      `approver`:#{`type`:#["string","null"]},
-      `revoked`:#{`type`:"boolean"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_account_api_access_requests_r200_application_json_rows_i_approval_h543 {}
-
 @endpoint("/account-api/access-requests",
   "get",
   #{
@@ -12482,9 +8974,9 @@ op `getAccessRequests`(`responses/200/content/application~1json/schema`: {
     `rows`?: ({
       `id`?: string;
       `status`?: string;
-      `requester`?: get_account_api_access_requests_r200_application_json_rows_i_requester_h537;
-      `client`?: get_account_api_access_requests_r200_application_json_rows_i_client_h538;
-      `application`?: get_account_api_access_requests_r200_application_json_rows_i_application_h539;
+      `requester`?: NullableString;
+      `client`?: NullableObject26;
+      `application`?: NullableString;
       @js(#{
         `x-free-form`:"An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define.",
         `description`:"An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define."
@@ -12503,11 +8995,11 @@ op `getAccessRequests`(`responses/200/content/application~1json/schema`: {
       }) `context`?: unknown;
       `emergency`?: boolean;
       `justification`?: string;
-      `createdAt`?: get_account_api_access_requests_r200_application_json_rows_i_createdAt_h540;
-      `expiresAt`?: get_account_api_access_requests_r200_application_json_rows_i_expiresAt_h541;
-      `finishedAt`?: get_account_api_access_requests_r200_application_json_rows_i_finishedAt_h542;
+      `createdAt`?: Shape;
+      `expiresAt`?: Shape;
+      `finishedAt`?: Shape;
       `decidedBy`?: string;
-      `approval`?: get_account_api_access_requests_r200_application_json_rows_i_approval_h543;
+      `approval`?: NullableObject27;
       `approvers`?: {`roles`?: (string)[]; `groups`?: (string)[]; `owners`?: boolean}
     })[]
   },
@@ -12544,34 +9036,6 @@ op `getAccessRequests`(`responses/200/content/application~1json/schema`: {
     `error_description`?: string
   }): void;
   
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_access_requests_r400_application_json_view_rows_i_requester_h544 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{`id`:#{`type`:"string"},`name`:#{`type`:"string"}},
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_access_requests_r400_application_json_view_rows_i_client_h545 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_access_requests_r400_application_json_view_rows_i_application_h546 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_access_requests_r400_application_json_view_rows_i_createdAt_h547 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_access_requests_r400_application_json_view_rows_i_expiresAt_h548 {}
-
-@js(#{`$types`:#["string","number","null"]}) @hoisted model post_account_api_access_requests_r400_application_json_view_rows_i_finishedAt_h549 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `id`:#{`type`:"string"},
-      `approvedAt`:#{`type`:#["string","number","null"]},
-      `approvedUntil`:#{`type`:#["string","number","null"]},
-      `approver`:#{`type`:#["string","null"]},
-      `revoked`:#{`type`:"boolean"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_access_requests_r400_application_json_view_rows_i_approval_h550 {}
 
 @endpoint("/account-api/access-requests",
   "post",
@@ -12629,9 +9093,9 @@ op `decideAccessRequest`(`requestBody/content/application~1json/schema`: {
       `rows`?: ({
         `id`?: string;
         `status`?: string;
-        `requester`?: post_account_api_access_requests_r400_application_json_view_rows_i_requester_h544;
-        `client`?: post_account_api_access_requests_r400_application_json_view_rows_i_client_h545;
-        `application`?: post_account_api_access_requests_r400_application_json_view_rows_i_application_h546;
+        `requester`?: NullableString;
+        `client`?: NullableObject26;
+        `application`?: NullableString;
         @js(#{
           `x-free-form`:"An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define.",
           `description`:"An AuthZEN Authorization API 1.0 member as the PEP sent it: its `properties` and its context are the caller's to define."
@@ -12650,11 +9114,11 @@ op `decideAccessRequest`(`requestBody/content/application~1json/schema`: {
         }) `context`?: unknown;
         `emergency`?: boolean;
         `justification`?: string;
-        `createdAt`?: post_account_api_access_requests_r400_application_json_view_rows_i_createdAt_h547;
-        `expiresAt`?: post_account_api_access_requests_r400_application_json_view_rows_i_expiresAt_h548;
-        `finishedAt`?: post_account_api_access_requests_r400_application_json_view_rows_i_finishedAt_h549;
+        `createdAt`?: Shape;
+        `expiresAt`?: Shape;
+        `finishedAt`?: Shape;
         `decidedBy`?: string;
-        `approval`?: post_account_api_access_requests_r400_application_json_view_rows_i_approval_h550;
+        `approval`?: NullableObject27;
         `approvers`?: {`roles`?: (string)[]; `groups`?: (string)[]; `owners`?: boolean}
       })[]
     }
@@ -12684,42 +9148,6 @@ op `decideAccessRequest`(`requestBody/content/application~1json/schema`: {
     `error_description`?: string
   }): void;
   
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `userCode`:#{`type`:"string"},
-      `clientId`:#{`type`:"string"},
-      `clientName`:#{`type`:"string"},
-      `scope`:#{`type`:"string"},
-      `expiresAt`:#{`type`:#["string","number","null"]}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_account_api_device_r200_application_json_record_h551 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `userCode`:#{`type`:"string"},
-      `clientId`:#{`type`:"string"},
-      `clientName`:#{`type`:"string"},
-      `scope`:#{`type`:"string"},
-      `expiresAt`:#{`type`:#["string","number","null"]}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_account_api_device_r404_application_json_view_record_h552 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `userCode`:#{`type`:"string"},
-      `clientId`:#{`type`:"string"},
-      `clientName`:#{`type`:"string"},
-      `scope`:#{`type`:"string"},
-      `expiresAt`:#{`type`:#["string","number","null"]}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_account_api_device_r429_application_json_view_record_h553 {}
 
 @endpoint("/account-api/device",
   "get",
@@ -12776,7 +9204,7 @@ op `getDeviceRequest`(@js(#{`maxLength`:32}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `enabled`?: boolean;
     `typed`?: string;
-    `record`?: get_account_api_device_r200_application_json_record_h551
+    `record`?: NullableObject28
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
@@ -12809,7 +9237,7 @@ op `getDeviceRequest`(@js(#{`maxLength`:32}) `parameters/0/schema`: string,
     `view`?: {
       `enabled`?: boolean;
       `typed`?: string;
-      `record`?: get_account_api_device_r404_application_json_view_record_h552
+      `record`?: NullableObject28
     }
   },
   `responses/429/content/application~1json/schema`: {
@@ -12819,7 +9247,7 @@ op `getDeviceRequest`(@js(#{`maxLength`:32}) `parameters/0/schema`: string,
     `view`?: {
       `enabled`?: boolean;
       `typed`?: string;
-      `record`?: get_account_api_device_r429_application_json_view_record_h553
+      `record`?: NullableObject28
     }
   },
   @js(#{
@@ -12831,30 +9259,6 @@ op `getDeviceRequest`(@js(#{`maxLength`:32}) `parameters/0/schema`: string,
     `error_description`?: string
   }): void;
   
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `userCode`:#{`type`:"string"},
-      `clientId`:#{`type`:"string"},
-      `clientName`:#{`type`:"string"},
-      `scope`:#{`type`:"string"},
-      `expiresAt`:#{`type`:#["string","number","null"]}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_device_r400_application_json_view_record_h554 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `userCode`:#{`type`:"string"},
-      `clientId`:#{`type`:"string"},
-      `clientName`:#{`type`:"string"},
-      `scope`:#{`type`:"string"},
-      `expiresAt`:#{`type`:#["string","number","null"]}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_device_r429_application_json_view_record_h555 {}
 
 @endpoint("/account-api/device",
   "post",
@@ -12915,7 +9319,7 @@ op `answerDeviceRequest`(`requestBody/content/application~1json/schema`: {
     `view`?: {
       `enabled`?: boolean;
       `typed`?: string;
-      `record`?: post_account_api_device_r400_application_json_view_record_h554
+      `record`?: NullableObject28
     }
   },
   @js(#{
@@ -12941,7 +9345,7 @@ op `answerDeviceRequest`(`requestBody/content/application~1json/schema`: {
     `view`?: {
       `enabled`?: boolean;
       `typed`?: string;
-      `record`?: post_account_api_device_r429_application_json_view_record_h555
+      `record`?: NullableObject28
     }
   },
   @js(#{
@@ -12954,31 +9358,9 @@ op `answerDeviceRequest`(`requestBody/content/application~1json/schema`: {
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar get_account_api_claim_sources_p0_v0_h556 extends string;
   
 
-@js(#{`minimum`:1,`maximum`:100000}) @hoisted scalar get_account_api_claim_sources_p0_v1_h557 extends integer;
   
-
-@hoisted union get_account_api_claim_sources_p0_h558 {
-    get_account_api_claim_sources_p0_v0_h556,
-    get_account_api_claim_sources_p0_v1_h557
-  }
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_claim_sources_r200_application_json_providers_i_name_h559 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_claim_sources_r200_application_json_providers_i_issuer_h560 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_claim_sources_r200_application_json_providers_i_delivery_h561 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `linkedAt`:#{`type`:#["string","number","null"]},
-      `stale`:#{`type`:"boolean"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model get_account_api_claim_sources_r200_application_json_providers_i_link_h562 {}
 
 @endpoint("/account-api/claim-sources",
   "get",
@@ -13043,11 +9425,11 @@ op `getClaimSources`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`t
   `responses/200/content/application~1json/schema`: {
     `providers`?: ({
       `id`?: string;
-      `name`?: get_account_api_claim_sources_r200_application_json_providers_i_name_h559;
-      `issuer`?: get_account_api_claim_sources_r200_application_json_providers_i_issuer_h560;
+      `name`?: NullableString;
+      `issuer`?: NullableString;
       `claims`?: (string)[];
-      `delivery`?: get_account_api_claim_sources_r200_application_json_providers_i_delivery_h561;
-      `link`?: get_account_api_claim_sources_r200_application_json_providers_i_link_h562
+      `delivery`?: NullableString;
+      `link`?: NullableObject29
     })[];
     `paging`?: {
       `page`?: integer;
@@ -13092,21 +9474,6 @@ op `getClaimSources`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`t
     `error_description`?: string
   }): void;
   
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_claim_sources_r400_application_json_view_providers_i_name_h563 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_claim_sources_r400_application_json_view_providers_i_issuer_h564 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_claim_sources_r400_application_json_view_providers_i_delivery_h565 {}
-
-@js(#{
-    `additionalProperties`:false,
-    `properties`:#{
-      `linkedAt`:#{`type`:#["string","number","null"]},
-      `stale`:#{`type`:"boolean"}
-    },
-    `$types`:#["object","null"]
-  }) @hoisted model post_account_api_claim_sources_r400_application_json_view_providers_i_link_h566 {}
 
 @endpoint("/account-api/claim-sources",
   "post",
@@ -13159,11 +9526,11 @@ op `linkClaimSource`(`requestBody/content/application~1json/schema`: {
     `view`?: {
       `providers`?: ({
         `id`?: string;
-        `name`?: post_account_api_claim_sources_r400_application_json_view_providers_i_name_h563;
-        `issuer`?: post_account_api_claim_sources_r400_application_json_view_providers_i_issuer_h564;
+        `name`?: NullableString;
+        `issuer`?: NullableString;
         `claims`?: (string)[];
-        `delivery`?: post_account_api_claim_sources_r400_application_json_view_providers_i_delivery_h565;
-        `link`?: post_account_api_claim_sources_r400_application_json_view_providers_i_link_h566
+        `delivery`?: NullableString;
+        `link`?: NullableObject29
       })[];
       `paging`?: {
         `page`?: integer;
@@ -13201,12 +9568,6 @@ op `linkClaimSource`(`requestBody/content/application~1json/schema`: {
     `error_description`?: string
   }): void;
   
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_connected_accounts_r200_application_json_providers_i_name_h567 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_connected_accounts_r200_application_json_providers_i_provider_h568 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model get_account_api_connected_accounts_r200_application_json_providers_i_providerLabel_h569 {}
 
 @endpoint("/account-api/connected-accounts",
   "get",
@@ -13263,9 +9624,9 @@ op `getConnectedAccounts`(@js(#{`maxLength`:200}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `providers`?: ({
       `id`?: string;
-      `name`?: get_account_api_connected_accounts_r200_application_json_providers_i_name_h567;
-      `provider`?: get_account_api_connected_accounts_r200_application_json_providers_i_provider_h568;
-      `providerLabel`?: get_account_api_connected_accounts_r200_application_json_providers_i_providerLabel_h569;
+      `name`?: NullableString;
+      `provider`?: NullableString;
+      `providerLabel`?: NullableString;
       `connected`?: boolean
     })[];
     `connected`?: integer;
@@ -13305,24 +9666,6 @@ op `getConnectedAccounts`(@js(#{`maxLength`:200}) `parameters/0/schema`: string,
     `error_description`?: string
   }): void;
   
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_connected_accounts_r400_application_json_view_providers_i_name_h570 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_connected_accounts_r400_application_json_view_providers_i_provider_h571 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_connected_accounts_r400_application_json_view_providers_i_providerLabel_h572 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_connected_accounts_r403_application_json_view_providers_i_name_h573 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_connected_accounts_r403_application_json_view_providers_i_provider_h574 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_connected_accounts_r403_application_json_view_providers_i_providerLabel_h575 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_connected_accounts_r409_application_json_view_providers_i_name_h576 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_connected_accounts_r409_application_json_view_providers_i_provider_h577 {}
-
-@js(#{`$types`:#["string","null"]}) @hoisted model post_account_api_connected_accounts_r409_application_json_view_providers_i_providerLabel_h578 {}
 
 @endpoint("/account-api/connected-accounts",
   "post",
@@ -13385,9 +9728,9 @@ op `connectAccount`(`requestBody/content/application~1json/schema`: {
     `view`?: {
       `providers`?: ({
         `id`?: string;
-        `name`?: post_account_api_connected_accounts_r400_application_json_view_providers_i_name_h570;
-        `provider`?: post_account_api_connected_accounts_r400_application_json_view_providers_i_provider_h571;
-        `providerLabel`?: post_account_api_connected_accounts_r400_application_json_view_providers_i_providerLabel_h572;
+        `name`?: NullableString;
+        `provider`?: NullableString;
+        `providerLabel`?: NullableString;
         `connected`?: boolean
       })[];
       `connected`?: integer;
@@ -13410,9 +9753,9 @@ op `connectAccount`(`requestBody/content/application~1json/schema`: {
     `view`?: {
       `providers`?: ({
         `id`?: string;
-        `name`?: post_account_api_connected_accounts_r403_application_json_view_providers_i_name_h573;
-        `provider`?: post_account_api_connected_accounts_r403_application_json_view_providers_i_provider_h574;
-        `providerLabel`?: post_account_api_connected_accounts_r403_application_json_view_providers_i_providerLabel_h575;
+        `name`?: NullableString;
+        `provider`?: NullableString;
+        `providerLabel`?: NullableString;
         `connected`?: boolean
       })[];
       `connected`?: integer;
@@ -13427,9 +9770,9 @@ op `connectAccount`(`requestBody/content/application~1json/schema`: {
     `view`?: {
       `providers`?: ({
         `id`?: string;
-        `name`?: post_account_api_connected_accounts_r409_application_json_view_providers_i_name_h576;
-        `provider`?: post_account_api_connected_accounts_r409_application_json_view_providers_i_provider_h577;
-        `providerLabel`?: post_account_api_connected_accounts_r409_application_json_view_providers_i_providerLabel_h578;
+        `name`?: NullableString;
+        `provider`?: NullableString;
+        `providerLabel`?: NullableString;
         `connected`?: boolean
       })[];
       `connected`?: integer;
@@ -13447,16 +9790,9 @@ op `connectAccount`(`requestBody/content/application~1json/schema`: {
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar get_account_api_activation_p0_v0_h579 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:256}) @hoisted scalar get_account_api_activation_p0_v1_h580 extends string;
   
-
-@hoisted union get_account_api_activation_p0_h581 {
-    get_account_api_activation_p0_v0_h579,
-    get_account_api_activation_p0_v1_h580
-  }
 
 @endpoint("/account-api/activation",
   "get",
@@ -13709,89 +10045,72 @@ op `getActivation`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`typ
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_activation_b_application_json_user_v0_h582 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:256}) @hoisted scalar post_account_api_activation_b_application_json_user_v1_h583 extends string;
   
 
-@js(#{`description`:"The username the link names."}) @hoisted union post_account_api_activation_b_application_json_user_h584 {
-    post_account_api_activation_b_application_json_user_v0_h582,
-    post_account_api_activation_b_application_json_user_v1_h583
-  }
-
-@js(#{`const`:""}) @hoisted scalar post_account_api_activation_b_application_json_token_v0_h585 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:4096,`pattern`:"^[A-Za-z0-9._~+/=-]+$"}) @hoisted scalar post_account_api_activation_b_application_json_token_v1_h586 extends string;
   
 
 @js(#{`description`:"The link's single-use token."}) @hoisted union post_account_api_activation_b_application_json_token_h587 {
-    post_account_api_activation_b_application_json_token_v0_h585,
-    post_account_api_activation_b_application_json_token_v1_h586
+    EmptyText,
+    StringMin1Max4096Matchingfb79a8
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_activation_b_application_json_passkey_v0_h588 extends string;
   
 
 @js(#{`description`:"`setup`: `1` registers a passkey."}) @hoisted union post_account_api_activation_b_application_json_passkey_h589 {
-    post_account_api_activation_b_application_json_passkey_v0_h588,
+    EmptyText,
     "0" | "1" | "true" | "false" | "on" | "off" | "yes" | "no"
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_activation_b_application_json_key_role_v0_h590 extends string;
   
 
 @js(#{
     `description`:"Before #1135: `primary` or `mfa` registers a passkey, `none` does not; `passkey` says the same."
   }) @hoisted union post_account_api_activation_b_application_json_key_role_h591 {
-    post_account_api_activation_b_application_json_key_role_v0_h590,
+    EmptyText,
     "none" | "primary" | "mfa"
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_activation_b_application_json_totp_v0_h592 extends string;
   
 
 @js(#{`description`:"`1`: set up an authenticator app too."}) @hoisted union post_account_api_activation_b_application_json_totp_h593 {
-    post_account_api_activation_b_application_json_totp_v0_h592,
+    EmptyText,
     "0" | "1" | "true" | "false" | "on" | "off" | "yes" | "no"
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_activation_b_application_json_step_v0_h594 extends string;
   
 
 @js(#{`description`:"Which step this answers."}) @hoisted union post_account_api_activation_b_application_json_step_h595 {
-    post_account_api_activation_b_application_json_step_v0_h594,
+    EmptyText,
     "setup" | "key" | "totp"
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_activation_b_application_json_kind_v0_h596 extends string;
   
 
 @js(#{`description`:"`setup`: where the passkey lives."}) @hoisted union post_account_api_activation_b_application_json_kind_h597 {
-    post_account_api_activation_b_application_json_kind_v0_h596,
+    EmptyText,
     "passkey" | "security-key"
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_activation_b_application_json_lane_v0_h598 extends string;
   
 
 @js(#{
     `description`:"`setup`: `classical` (the default) or `pqc`, where the realm offers a post-quantum passkey beside a classical one."
   }) @hoisted union post_account_api_activation_b_application_json_lane_h599 {
-    post_account_api_activation_b_application_json_lane_v0_h598,
+    EmptyText,
     "classical" | "pqc"
   }
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_activation_b_application_json_enrolment_id_v0_h600 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:4096,`pattern`:"^[A-Za-z0-9_-]+$"}) @hoisted scalar post_account_api_activation_b_application_json_enrolment_id_v1_h601 extends string;
   
 
 @js(#{`description`:"`key`: the pending registration."}) @hoisted union post_account_api_activation_b_application_json_enrolment_id_h602 {
-    post_account_api_activation_b_application_json_enrolment_id_v0_h600,
-    post_account_api_activation_b_application_json_enrolment_id_v1_h601
+    EmptyText,
+    StringMin1Max4096Matchinga5aa8a
   }
 
 @endpoint("/account-api/activation",
@@ -13828,7 +10147,7 @@ op `getActivation`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`typ
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`user`:"nobody-example",`token`:"no-such-token",`password`:"not",`confirm`:"equal"}}}}
   })
 op `activate`(`requestBody/content/application~1json/schema`: {
-    `user`?: post_account_api_activation_b_application_json_user_h584;
+    `user`?: EmptyTextOrStringMin1Max2562;
     `token`?: post_account_api_activation_b_application_json_token_h587;
     @js(#{`description`:"`setup`: the password to set.",`maxLength`:1024}) `password`?: string;
     @js(#{`description`:"`setup`: the password again.",`maxLength`:1024}) `confirm`?: string;
@@ -14056,16 +10375,9 @@ op `activate`(`requestBody/content/application~1json/schema`: {
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar get_account_api_reset_password_p0_v0_h603 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:256}) @hoisted scalar get_account_api_reset_password_p0_v1_h604 extends string;
   
-
-@hoisted union get_account_api_reset_password_p0_h605 {
-    get_account_api_reset_password_p0_v0_h603,
-    get_account_api_reset_password_p0_v1_h604
-  }
 
 @endpoint("/account-api/reset-password",
   "get",
@@ -14184,27 +10496,13 @@ op `getPasswordReset`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`
   }): void;
   
 
-@js(#{`const`:""}) @hoisted scalar post_account_api_reset_password_b_application_json_user_v0_h606 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:256}) @hoisted scalar post_account_api_reset_password_b_application_json_user_v1_h607 extends string;
   
 
-@js(#{`description`:"The username the link names."}) @hoisted union post_account_api_reset_password_b_application_json_user_h608 {
-    post_account_api_reset_password_b_application_json_user_v0_h606,
-    post_account_api_reset_password_b_application_json_user_v1_h607
-  }
-
-@js(#{`const`:""}) @hoisted scalar post_account_api_reset_password_b_application_json_token_v0_h609 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:4096,`pattern`:"^[A-Za-z0-9._~+/=-]+$"}) @hoisted scalar post_account_api_reset_password_b_application_json_token_v1_h610 extends string;
   
-
-@js(#{`description`:"The link's single-use secret."}) @hoisted union post_account_api_reset_password_b_application_json_token_h611 {
-    post_account_api_reset_password_b_application_json_token_v0_h609,
-    post_account_api_reset_password_b_application_json_token_v1_h610
-  }
 
 @endpoint("/account-api/reset-password",
   "post",
@@ -14248,8 +10546,8 @@ op `getPasswordReset`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`user`:"nobody-example",`token`:"no-such-token",`password`:"not",`confirm`:"equal"}}}}
   })
 op `spendPasswordReset`(`requestBody/content/application~1json/schema`: {
-    `user`?: post_account_api_reset_password_b_application_json_user_h608;
-    `token`?: post_account_api_reset_password_b_application_json_token_h611;
+    `user`?: EmptyTextOrStringMin1Max2562;
+    `token`?: EmptyTextOrStringMin1Max4096Matchingfb79a8;
     @js(#{`description`:"The new password.",`maxLength`:1024}) `password`?: string;
     @js(#{`description`:"The new password again.",`maxLength`:1024}) `confirm`?: string
   },
