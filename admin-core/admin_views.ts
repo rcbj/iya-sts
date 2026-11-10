@@ -1684,13 +1684,15 @@ class AdminViews {
       throw new Error('the sign-on sessions could not be read');
     }
     matched.forEach(function (session) {
-      const id = session && session.id;
+      // The row is the `Session` concept (#1579); the WS-Federation realms
+      // and the device binding are their owners' own.
+      const view = DomainClasses.Session.fromRecord(session);
       rows.push(Object.assign({
-        id: id,
-        username: (session.user && session.user.username) || '',
-        sub: (session.user && session.user.sub) || '',
-        amr: (session.amr || []).join(', '),
-        acr: session.acr || '',
+        id: view.id,
+        username: view.username || '',
+        sub: view.sub || '',
+        amr: (view.methods || []).join(', '),
+        acr: view.assuranceLevel || '',
         // TWO INSTANTS SINCE 2026-09-14, and they stopped being one when a
         // session learned to hold several authentications: `startedAt` is when
         // it BEGAN (its first event) and `authTime` the MOST RECENT
@@ -1698,11 +1700,11 @@ class AdminViews {
         // "Signed in" drawn from `authTime` showed an hour-old session as a
         // minute old.
         startedAt: sessionStartedAt(session),
-        authTime: (session.authTime || 0) * 1000,
-        authentications: (Array.isArray(session.events)
-          ? session.events.length : 1) + (session.eventsDropped || 0),
-        expires: session.expires || 0,
-        expired: !!session.expires && session.expires <= nowMs,
+        authTime: (view.authTime || 0) * 1000,
+        authentications: (view.events ? view.events.length : 1) +
+          (view.eventsDropped || 0),
+        expires: view.expires || 0,
+        expired: !!view.expires && view.expires <= nowMs,
         // Which WS-Federation relying parties this session signed into. It is
         // the list wsignout1.0 has to fan out to, and seeing it is the only way
         // to know in advance what a sign-out is about to do.
@@ -1715,8 +1717,7 @@ class AdminViews {
       // THE BROWSER'S ACCOUNT SET IT BELONGS TO (#561), where it is in one —
       // several signed-in accounts in one browser, `authn/CLAUDE.md`. Only
       // then, so a row is unchanged with `authn.multipleAccounts` off.
-      session.accountSetId ? { accountSet: String(session.accountSetId) }
-                           : {}));
+      view.accountSetId ? { accountSet: String(view.accountSetId) } : {}));
     });
     rows.sort(function (a, b) { return b.startedAt - a.startedAt; });
     log.debug("Leaving AdminViews.signOnSessionRows(). " + rows.length +

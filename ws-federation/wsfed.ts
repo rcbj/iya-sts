@@ -927,7 +927,9 @@ class WsFederation {
                                'fresh ' +
                                'authentication.' };
     }
-    const ageMin = (Date.now() / 1000 - (session.authTime || 0)) / 60;
+    // Read through the `Session` concept (#1579).
+    const ageMin = (Date.now() / 1000 -
+                    (authn.sessionView(session).authTime || 0)) / 60;
     if (ageMin > minutes) {
       log.debug("Leaving WsFederation.freshEnough(). The session is " +
                 Math.round(ageMin) +
@@ -1942,7 +1944,9 @@ class WsFederation {
     });
     const user = session.user;
     const methods = this.authnMethodsFor(session);
-    const authnInstant = new Date((session.authTime || 0) * 1000).toISOString();
+    // When they authenticated, read through the `Session` concept (#1579).
+    const authnInstant = new Date((authn.sessionView(session).authTime || 0) *
+                                  1000).toISOString();
     // THE ISSUER (#523): the realm's one name, its OAuth issuer, for every
     // relying party — the name its metadata publishes, and the one SAML SSO,
     // WS-Trust and every JWT carry (`common/issuer_names.ts`).

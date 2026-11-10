@@ -2354,7 +2354,9 @@ class Saml2Sso {
       // The SESSION, not the assertion, is what a LogoutRequest names later.
       // This is the line that makes Single Logout able to find anything.
       sessionIndex: session.id,
-      authnInstant: new Date((session.authTime || 0) * 1000).toISOString(),
+      // When they authenticated, read through the `Session` concept (#1579).
+      authnInstant: new Date((authn.sessionView(session).authTime || 0) *
+                             1000).toISOString(),
       attributes: this.attributesFor(user),
       sign: this.signsAssertionFor(spEntityId)
     });
