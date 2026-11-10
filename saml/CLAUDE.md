@@ -1852,7 +1852,9 @@ and `saml_model.ts` reads that file.
   `SamlModel.read(id, element)` answers the attributes the model marks
   `read` — an xs:boolean true only for `"true"`, anything else its text, ''
   when absent — and `readAuthnRequest()`, the LogoutRequest's envelope and
-  the NameIDPolicy are read through it; `accepts()` is the Version
+  the NameIDPolicy are read through it, and so are a service provider's
+  `md:SPSSODescriptor` flags and endpoints where `sp_metadata.ts` consumes
+  them (`md.SPSSODescriptor`, `md.Endpoint`); `accepts()` is the Version
   `envelopeProblem()` holds a request to. Writing: every builder —
   `buildSamlAssertion()`, `buildSaml11Assertion()`, both `buildResponse()`s,
   the ArtifactResponse, both logout messages, the Status, and the metadata's

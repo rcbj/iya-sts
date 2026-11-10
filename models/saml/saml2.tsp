@@ -1033,3 +1033,119 @@ model EntityDescriptor {
               written: false, cite: "saml-metadata-2.0-os 2.3.2" })
   additionalMetadataLocation?: string;
 }
+
+// ---------------------------------------------------------------------------
+// A SERVICE PROVIDER'S METADATA, AS `saml/sp_metadata.ts` CONSUMES IT (#37).
+// ---------------------------------------------------------------------------
+
+/**
+ * An AssertionConsumerService or a SingleLogoutService: the endpoint types
+ * of saml-metadata-2.0-os section 2.2.2 and 2.2.3. `isDefault` is read as
+ * its text, because "absent" is a third answer the default selection needs.
+ */
+@message(#{ id: "md.Endpoint", element: "AssertionConsumerService",
+            xmlns: "urn:oasis:names:tc:SAML:2.0:metadata",
+            direction: "read", cite: "saml-metadata-2.0-os section 2.2.2" })
+model Endpoint {
+  @attribute(#{ xml: "Binding", read: true,
+                cite: "saml-metadata-2.0-os 2.2.2" })
+  binding: string;
+
+  @attribute(#{ xml: "Location", read: true,
+                cite: "saml-metadata-2.0-os 2.2.2" })
+  location: string;
+
+  @attribute(#{ xml: "ResponseLocation", read: true,
+                cite: "saml-metadata-2.0-os 2.2.2" })
+  responseLocation?: string;
+
+  @attribute(#{ xml: "index", read: true,
+                cite: "saml-metadata-2.0-os 2.2.3" })
+  index?: string;
+
+  @attribute(#{ xml: "isDefault", read: true,
+                cite: "saml-metadata-2.0-os 2.2.3" })
+  isDefault?: string;
+}
+
+/**
+ * The role a service provider's metadata is consumed for: the two flags,
+ * the validity, and the children `consume()` writes onto the application
+ * entry.
+ */
+@message(#{ id: "md.SPSSODescriptor", element: "SPSSODescriptor",
+            xmlns: "urn:oasis:names:tc:SAML:2.0:metadata",
+            direction: "read", cite: "saml-metadata-2.0-os section 2.4.4" })
+model SpSsoDescriptor {
+  @attribute(#{ xml: "ID", read: false, cite: "saml-metadata-2.0-os 2.4.1" })
+  id?: string;
+
+  @attribute(#{ xml: "validUntil", read: true,
+                cite: "saml-metadata-2.0-os 2.4.1" })
+  validUntil?: string;
+
+  @attribute(#{ xml: "cacheDuration", read: true,
+                cite: "saml-metadata-2.0-os 2.4.1" })
+  cacheDuration?: string;
+
+  @attribute(#{ xml: "protocolSupportEnumeration", read: true,
+                cite: "saml-metadata-2.0-os 2.4.1" })
+  protocolSupportEnumeration: string;
+
+  @attribute(#{ xml: "errorURL", read: false,
+                cite: "saml-metadata-2.0-os 2.4.1" })
+  errorUrl?: string;
+
+  @attribute(#{ xml: "AuthnRequestsSigned", read: true,
+                cite: "saml-metadata-2.0-os 2.4.4" })
+  authnRequestsSigned?: boolean;
+
+  @attribute(#{ xml: "WantAssertionsSigned", read: true,
+                cite: "saml-metadata-2.0-os 2.4.4" })
+  wantAssertionsSigned?: boolean;
+
+  @element(#{ xml: "Signature", occurs: "optional", read: true,
+              cite: "saml-metadata-2.0-os 2.4.1" })
+  signature?: string;
+
+  @element(#{ xml: "Extensions", occurs: "optional", read: false,
+              cite: "saml-metadata-2.0-os 2.4.1" })
+  extensions?: string;
+
+  /** `use="signing"` or none: the registered set; `encryption`: the key. */
+  @element(#{ xml: "KeyDescriptor", occurs: "many", read: true,
+              cite: "saml-metadata-2.0-os 2.4.1.1" })
+  keyDescriptor?: string;
+
+  @element(#{ xml: "Organization", occurs: "optional", read: false,
+              cite: "saml-metadata-2.0-os 2.4.1" })
+  organization?: string;
+
+  @element(#{ xml: "ContactPerson", occurs: "many", read: false,
+              cite: "saml-metadata-2.0-os 2.4.1" })
+  contactPerson?: string;
+
+  @element(#{ xml: "ArtifactResolutionService", occurs: "many", read: false,
+              cite: "saml-metadata-2.0-os 2.4.2" })
+  artifactResolutionService?: string;
+
+  @element(#{ xml: "SingleLogoutService", occurs: "many", read: true,
+              cite: "saml-metadata-2.0-os 2.4.2" })
+  singleLogoutService?: Endpoint;
+
+  @element(#{ xml: "ManageNameIDService", occurs: "many", read: false,
+              cite: "saml-metadata-2.0-os 2.4.2" })
+  manageNameIdService?: string;
+
+  @element(#{ xml: "NameIDFormat", occurs: "many", read: true,
+              cite: "saml-metadata-2.0-os 2.4.2" })
+  nameIdFormat?: string;
+
+  @element(#{ xml: "AssertionConsumerService", occurs: "many", read: true,
+              cite: "saml-metadata-2.0-os 2.4.4" })
+  assertionConsumerService: Endpoint;
+
+  @element(#{ xml: "AttributeConsumingService", occurs: "many", read: false,
+              cite: "saml-metadata-2.0-os 2.4.4" })
+  attributeConsumingService?: string;
+}

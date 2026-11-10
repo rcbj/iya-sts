@@ -394,8 +394,8 @@ class SpMetadata {
     const protocolLabel = protocol === 'saml11' ? 'SAML 1.1' : 'SAML 2.0';
     const sp = this.childrenByLocal(entity, 'SPSSODescriptor').filter(
         function (one) {
-      return String(one.getAttribute('protocolSupportEnumeration') || '')
-        .split(/\s+/).indexOf(protocolUri) >= 0;
+      return String(SamlModel.read('md.SPSSODescriptor', one)
+        .protocolSupportEnumeration).split(/\s+/).indexOf(protocolUri) >= 0;
     })[0];
     if (!sp) {
       log.debug("Leaving SpMetadata.parse(). No " + protocolLabel +
@@ -406,6 +406,9 @@ class SpMetadata {
                protocolLabel + ' service provider' };
     }
 
+    // The descriptor's flags, read as the model says (#1579): an
+    // xs:boolean true only for "true".
+    const spRead = SamlModel.read('md.SPSSODescriptor', sp);
     const out: ParsedMetadata = {
       ok: true,
       entityId: entity.getAttribute('entityID') || '',
@@ -417,10 +420,8 @@ class SpMetadata {
       acsEndpoints: [],
       sloEndpoints: [],
       nameIdFormats: [],
-      authnRequestsSigned:
-        String(sp.getAttribute('AuthnRequestsSigned') || '') === 'true',
-      wantAssertionsSigned:
-        String(sp.getAttribute('WantAssertionsSigned') || '') === 'true',
+      authnRequestsSigned: spRead.authnRequestsSigned,
+      wantAssertionsSigned: spRead.wantAssertionsSigned,
       // THE EFFECTIVE EXPIRY is the earliest validUntil anywhere on the way
       // down — every enclosing EntitiesDescriptor, the EntityDescriptor, the
       // SPSSODescriptor — and the effective cacheDuration the SHORTEST
@@ -474,14 +475,17 @@ class SpMetadata {
 
     this.childrenByLocal(sp, 'AssertionConsumerService').forEach(
         function (el) {
-      const location = String(el.getAttribute('Location') || '').trim();
-      const binding = String(el.getAttribute('Binding') || '').trim();
+      // An endpoint's attributes, read as the model says (#1579).
+      const endpoint = SamlModel.read('md.Endpoint', el);
+      const location = String(endpoint.location).trim();
+      const binding = String(endpoint.binding).trim();
       if (!self.endpointProblem(location, binding, out.skipped,
                                 'AssertionConsumerService')) {
-        const isDefault = el.getAttribute('isDefault');
+        // '' when absent, which is neither answer: the third.
+        const isDefault = endpoint.isDefault;
         out.acsEndpoints.push({
           binding: binding, location: location,
-          index: String(el.getAttribute('index') || '').trim(),
+          index: String(endpoint.index).trim(),
           isDefault: isDefault === 'true' ? 'true'
             : (isDefault === 'false' ? 'false' : '-')
         });
@@ -491,9 +495,10 @@ class SpMetadata {
       }
     });
     this.childrenByLocal(sp, 'SingleLogoutService').forEach(function (el) {
-      const location = String(el.getAttribute('Location') || '').trim();
-      const binding = String(el.getAttribute('Binding') || '').trim();
-      const response = String(el.getAttribute('ResponseLocation') || '').trim();
+      const endpoint = SamlModel.read('md.Endpoint', el);
+      const location = String(endpoint.location).trim();
+      const binding = String(endpoint.binding).trim();
+      const response = String(endpoint.responseLocation).trim();
       if (!self.endpointProblem(location, binding, out.skipped,
                                 'SingleLogoutService') &&
           !(response && self.endpointProblem(response, binding, out.skipped,
