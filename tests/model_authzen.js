@@ -138,11 +138,12 @@ function readers(t) {
     [/BATCH_MEMBERS|SUBMISSION_MEMBERS/, 'a list of the members a request ' +
      'takes'],
     [/\bconst MEMBERS\b/, 'the entities\' member lists'],
-    [/'execute_all'|'deny_on_first_deny'/, 'the batch semantics'],
+    [/\[\s*'execute_all',\s*'deny_on_first_deny'/, 'the batch semantics'],
     [/'step-up':\s*\{/, 'the obligation types'],
     [/not_requestable:\s*'/, 'the problem types\' titles'],
     [/'pending',\s*'approved'/, 'the task statuses'],
-    [/'application',\s*\n?\s*'supported_obligations'/, 'the reserved context'],
+    [/freeze\(\[\s*'application',\s*'supported_obligations'/,
+     'the reserved context'],
     [/must be a JSON object|is required, and a non-empty string|has no member "/,
      'a shape refusal\'s sentence'],
     [/page is an object with token/, 'the page refusal']

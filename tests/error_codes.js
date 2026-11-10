@@ -134,9 +134,13 @@ function sourceFiles() {
         return;
       }
       // Source only: a `.ts`, or a `.js` that is not its compiled twin (#50),
-      // or the Rust conversion's `.rs` (#444).
+      // or the Rust conversion's `.rs` (#444), or the model's TypeSpec
+      // (#1579): a request the model declares refuses with the code it
+      // names there, and no service file writes that code again.
       const rust = rel.indexOf('rust/') === 0 && /\.rs$/.test(entry.name);
-      if (!rust && !isSourceFile(entry.name, names)) return;
+      const model = rel.indexOf('models/') === 0 &&
+        /\.tsp$/.test(entry.name);
+      if (!rust && !model && !isSourceFile(entry.name, names)) return;
       if (GENERATED_FILES.indexOf(rel) >= 0) return;
       out.push(rel);
     });
