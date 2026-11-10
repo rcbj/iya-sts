@@ -311,6 +311,7 @@ Every `scep.*` setting is runtime and per trust realm, on **Protocols → Cert i
 | Setting | Environment variable | Default | Runtime? | What it does |
 |---|---|---|---|---|
 | `scep.enabled` | `STS_SCEP_ENABLED` | `true` | yes | Off makes every `/enroll/scep` request answer 503 in this realm; certificates already issued are kept. |
+| `scep.allowInProduct` | `STS_SCEP_ALLOW_IN_PRODUCT` | `false` | yes | Product mode only. Off, every `/enroll/scep` request answers 503 (`STS-SCEP-0067`). On, SCEP answers in product. **Warning:** RFC 8894 requires RSAES-PKCS1-v1.5 and AES-CBC, which ASVS 5.0.0 11.3.1 and 11.3.2 do not accept. |
 | `scep.allowedProfiles` | `STS_SCEP_ALLOWED_PROFILES` | all nine leaf profiles | yes | The `/admin/pki` profiles a challenge password may be made for; the five CA, OCSP and KDC profiles never are. |
 | `scep.defaultProfile` | `STS_SCEP_DEFAULT_PROFILE` | `tls-client` | yes | The profile preselected when a challenge password is made. |
 | `scep.certificateLifetimeDays` | `STS_SCEP_CERTIFICATE_LIFETIME_DAYS` | `365` | yes | The validity of a SCEP certificate, shortened to the SCEP Issuing CA's own expiry. |
