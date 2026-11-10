@@ -107,6 +107,11 @@ screens is drawn through one renderer. It removes scripts, event handlers and
 unsafe addresses from the markup before it reaches the page, on top of each
 page's Content Security Policy.
 
+An unexpected failure is answered without its internal error text: at the
+management API, the OAuth and OpenID Connect endpoints (the sign-out page
+included), WS-Trust and the wallet sign-in. The text is in the log, under the
+failure's error code.
+
 ## Secrets in addresses
 
 * The admin console, portal and report application receive their authorization
