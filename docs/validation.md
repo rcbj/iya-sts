@@ -42,6 +42,7 @@ client, a person or a password is known or correct is a separate question, and
 | XML | Parsed with no external entities and no document type declaration. |
 | Compressed messages | Inflated up to a fixed limit, so a small message cannot expand without bound. |
 | Passwords | The realm's [password policy](authentication.md#passwords). |
+| Text this service sends back | A directory entry's `description`, and an application permission's name or description, may not contain anything shaped like one of this service's [error codes](error-codes.md) (`STS-…-NNNN`). A code is recorded and never sent, so such a value is refused and not stored, and the refusal does not repeat it. A `description` is checked on an LDAP write too; a permission written with `ldapmodify` is not. |
 
 ## Checks across fields
 
