@@ -942,7 +942,9 @@ async function signInSections(formats, sdKey, sd, jwtKey, jwtVc,
   check("the door sends the browser to the wait page and binds the " +
         "transaction to it with an HttpOnly cookie", function () {
           assert.strictEqual(s.door.status, 303, s.door.text.slice(0, 300));
-          assert.ok(/\/authn\/wallet\/wait\?/.test(s.waitUrl), s.waitUrl);
+          // The step's ids are in the fragment in product (#1454,
+          // `mode.hidesStepIds()`), the query in development.
+          assert.ok(/\/authn\/wallet\/wait[?#]/.test(s.waitUrl), s.waitUrl);
           // Prefixed on the wire in product (common/cookie_wire.ts).
           assert.ok(browser.cookies.sts_wallet_binding ||
                     browser.cookies["__Host-sts_wallet_binding"] ||
@@ -1016,8 +1018,9 @@ async function signInSections(formats, sdKey, sd, jwtKey, jwtVc,
         "and the wallet is sent back to the wait page with a response_code",
         function () {
           assert.strictEqual(r.status, 200, r.text.slice(0, 400));
-          assert.ok(/\/authn\/wallet\/wait\?/.test(redirect), redirect);
-          assert.ok(/[?&]response_code=/.test(redirect), redirect);
+          // Query in development, fragment in product (#1454).
+          assert.ok(/\/authn\/wallet\/wait[?#]/.test(redirect), redirect);
+          assert.ok(/[?&#]response_code=/.test(redirect), redirect);
           assert.ok(!setsSession(r), "the wallet's request sets no session");
         });
   const verdict = await verdictOf(ro.state);

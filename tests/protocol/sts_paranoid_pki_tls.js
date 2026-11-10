@@ -261,22 +261,43 @@ async function theMainPortHolds() {
   log.info("  paranoid PKI mode: " + trust.json.master.inForce + " (" +
            trust.json.master.decidedBy + "); tls-client row in force: " +
            tlsRow.inForce);
+  const verified = function (view) {
+    log.debug("Entering verified().");
+    log.debug("Leaving verified().");
+    return view.clientCertificate && view.clientCertificate.verified;
+  };
+  // A SETTING REACHES THE HANDSHAKE WHEN THE FRONT PROCESS HAS IT (2026-11-10).
+  // `/admin-api/config/set` and `/pki/trust/set-row` are answered by a request
+  // worker wherever requests are dispatched, and the listener is the front
+  // process's, which takes the change from the store a moment later. So a
+  // handshake made at once can still meet the old value: single-node's run
+  // 14 saw the row turned off and the CA still demoted. Each check that
+  // follows a change asks again until the handshake shows it, for at most
+  // ten seconds, and a change that never arrives still fails.
+  const seenUntil = async function (client, want) {
+    log.debug("Entering seenUntil().");
+    const deadline = Date.now() + 10000;
+    let view = await seen(client);
+    while (verified(view) !== want && Date.now() < deadline) {
+      await new Promise(function (resolve) {
+        setTimeout(resolve, 250);
+      });
+      view = await seen(client);
+    }
+    log.debug("Leaving seenUntil().");
+    return view;
+  };
   try {
     const before = await seen(caLeaf);
     await send("POST", "/admin-api/config/set",
                { key: "pki.paranoid", value: "on" });
+    const onCa = await seenUntil(caLeaf, false);
     const onGood = await seen(good);
-    const onCa = await seen(caLeaf);
     // A handshake has no realm in it, so a realm's row decides nothing here.
     await setRow(realmApi(), "pki.paranoidTlsClient", false);
     const realmRowOff = await seen(caLeaf);
     await setRow("/admin-api", "pki.paranoidTlsClient", false);
-    const rowOff = await seen(caLeaf);
-    const verified = function (view) {
-      log.debug("Entering verified().");
-      log.debug("Leaving verified().");
-      return view.clientCertificate && view.clientCertificate.verified;
-    };
+    const rowOff = await seenUntil(caLeaf, true);
     check("before the master is set here, a CA presented as a client is " +
           "unverified exactly when the tls-client row is in force (" +
           heldBefore + ")", function () {
