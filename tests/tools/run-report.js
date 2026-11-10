@@ -1540,8 +1540,9 @@ async function refreshAdminApiToken(instance, jobTimeoutMs) {
 // six validators and was killed at 300 s in a full run on a loaded machine
 // (its first driver alone took 78 s) while every case agreed; the other three
 // are the same kind of file. Its signer pass alone was measured at 6-17 min
-// on a machine running other sessions' stacks, so it has 25. A raise only
-// ever lengthens: the larger of this and --timeout wins, exactly as for a
+// on a machine running other sessions' stacks, so it had 25; it took about 28
+// beside a fuzz run and two other stacks (2026-11-10), so it has 45. A raise
+// only ever lengthens: the larger of this and --timeout wins, exactly as for a
 // protocol job.
 // exchange_policy_exhaustive (#186) walks 2,488,320 combinations of the
 // exchange policy's facts against its oracle — about six minutes alone,
@@ -1549,7 +1550,7 @@ async function refreshAdminApiToken(instance, jobTimeoutMs) {
 // suite runs; it has 30.
 const UNIT_WATCHDOG_MS = {
   exchange_policy_exhaustive: 1800000,
-  x509_limbo: 1500000,
+  x509_limbo: 2700000,
   nist_pkits: 600000,
   acvp_pqc: 600000,
   wycheproof: 600000
