@@ -540,7 +540,8 @@ class ModelZod {
   }
 
   /**
-   * The validator of an operation's query.
+   * The validator of an operation's query. A parameter that declares
+   * `allowEmptyValue` takes an empty value as none.
    *
    * @param document - the document's file name part
    * @param operationId - the operation
@@ -554,9 +555,14 @@ class ModelZod {
       .filter(function (one: Json) {
         return one.in === 'query';
       }).forEach(function (one: Json) {
-        properties[one.name] = one.description ?
+        const schema = one.description ?
           Object.assign({}, one.schema, { description: one.description }) :
           one.schema;
+        // OpenAPI's `allowEmptyValue` (#1579): an empty value is no value,
+        // what a form's untouched control sends — `validation.types.opt()`'s
+        // reading, which the console views' hand-written queries had.
+        properties[one.name] = one.allowEmptyValue === true ?
+          { anyOf: [{ const: '' }, schema] } : schema;
         if (one.required) {
           required.push(one.name);
         }

@@ -1475,7 +1475,7 @@ namespace IyaSts.Api.Common;
 
 @hoisted model WithIdTypeCanonicalEtc15 { `id`?: string; `type`?: string; `canonical`?: boolean; `name`?: string; `enabled`?: boolean; `refusedByMode`?: string; `setting`?: string; `primary`?: boolean; `scoped`?: boolean; `applicationScoped`?: boolean; `recorded`?: boolean; `challenged`?: boolean; `spec`?: string; `specUri`?: string; `description`?: string }
 
-@hoisted model WithDescriptionKindMaxLengthEtc8 { @js(#{`description`:"Whether the entry is a person or an application."}) `kind`: "person" | "application"; @js(#{ `maxLength`:256, `description`:"The username or the application identifier, in this realm." }) `identifier`: string; @js(#{`maxLength`:253,`description`:"A DNS name or an IP address."}) `hostName`: string }
+@hoisted model WithDescriptionKindMaxLengthEtc8 { @js(#{`description`:"Whether the entry is a person or an application."}) `kind`: "person" | "application"; @js(#{ `minLength`:1, `maxLength`:256, `description`:"The username or the application identifier, in this realm." }) `identifier`: string; @js(#{`minLength`:1,`maxLength`:253,`description`:"A DNS name or an IP address."}) `hostName`: string }
 
 @hoisted model WithAttributeTypeWhatEtc16 { `attribute`?: string; `type`?: string; `what`?: string; `example`?: string; `forText`?: string; `families`?: (string)[]; `everyFamily`?: boolean; `group`?: string; `simple`?: boolean; `required`?: boolean; `label`?: string; `schema`?: string; `claim`?: (string)[]; `multi`?: boolean; `custom`?: boolean; `takes`?: string }
 

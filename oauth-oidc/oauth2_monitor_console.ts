@@ -83,8 +83,6 @@ interface OAuth2MonitorConsoleDeps {
   stepUp: typeof stepUp;
 }
 
-const vz = validation.z;
-const vt = validation.types;
 
 // The page's path and the filter's states are the RENDERER's since #446 —
 // `web_oauth2_monitor.ts` draws from both and may require no server module —
@@ -104,28 +102,13 @@ const MAX_LIMIT = 500;
 
 const DEFAULT_LIMIT = 50;
 
-// The query both doors accept. `format` is the console's `?format=json`.
-//
-// **NOT THE MODEL'S, AND WHY (#1579).** `getOauth2Monitor` in
-// `models/api/management.tsp` declares these parameters, but not as this
-// check takes them: the operation gives `page`, `clientsPage`,
-// `stepUpClientsPage` and `offset` no upper bound where this has one, has no
-// `format` (the console's own), and does not read an empty value as none
-// (`vt.opt()`), which a form's empty control sends. `ModelZod.query()` of the
-// operation would accept and refuse different requests, and the refusal
-// quotes zod's message. Making it the model's means changing the published
-// Management API document to say what this says — rcbj's decision.
-const QUERY = vz.looseObject({
-  state: vt.opt(vt.oneOf(STATES)),
-  client_id: vt.opt(vt.identifier),
-  page: vt.opt(vt.integer(1, 1000000)),
-  per: vt.opt(vt.integer(1, MAX_LIMIT)),
-  clientsPage: vt.opt(vt.integer(1, 1000000)),
-  stepUpClientsPage: vt.opt(vt.integer(1, 1000000)),
-  offset: vt.opt(vt.integer(0, 100000000)),
-  limit: vt.opt(vt.integer(1, MAX_LIMIT)),
-  format: vt.opt(vt.oneOf(['json', 'JSON', 'html']))
-});
+// The query both doors accept: `getOauth2Monitor`'s in the Management API
+// OpenAPI document (#1579). The operation states the upper bound of every page
+// and offset this check applies, the client_id's shape, and `allowEmptyValue`
+// on each parameter, which is `validation.types.opt()`'s reading of a form's
+// empty control; `common/model_zod.ts` builds the check from it. The
+// console's own `format` went with the server-drawn pages (#446).
+const QUERY = ModelZod.query('management', 'getOauth2Monitor');
 
 // BY THE HANDLE (#614): the digest of the whole request_uri, which is what
 // the store is keyed by and the page lists. The request_uri itself is held

@@ -20,10 +20,10 @@
 //   GET  /admin/acme/monitor   acmeMonitorView()   Monitoring -> enrollments
 //   POST /admin/acme           acmeAction()        the six actions below
 //
-// **EVERY ACTION VALIDATES ITS OWN BODY** with zod here rather than trusting
-// the door that called it: the console posts a form and `/admin-api` posts JSON
-// already held to an ajv schema, and a check made once in the shared layer is
-// the one a third door would also get.
+// **EVERY ACTION VALIDATES ITS OWN BODY** here rather than trusting the door
+// that called it, so a third door gets the same check — and since #1579 the
+// check is the operation's own body in the Management API OpenAPI document,
+// built by `common/model_zod.ts`, not a second statement of it.
 //
 // **THE EAB KEY IS IN A REPLY EXACTLY ONCE.** `create-eab` answers the MAC key
 // in the clear, because a client cannot be configured without it; the key is
@@ -49,13 +49,12 @@ import audit = require('../common/audit');
 import mode = require('../common/mode');
 import core = require('../common/cert_enrollment');
 import monitor = require('../common/enrollment_monitor');
-import validation = require('../common/validation');
 import revocation = require('../common/pki_revocation');
 import adminViews = require('../admin-core/admin_views');
 import store = require('./acme_store');
 import InstanceSlot = require('../common/instance_slot');
+import ModelZod = require('../common/model_zod');
 
-const vz = validation.z;
 
 const FAMILY = 'acme';
 
@@ -67,32 +66,23 @@ const ACME_ACTIONS = ['create-eab', 'delete-eab', 'deactivate-account',
                       'revoke-certificate', 'add-host-name',
                       'remove-host-name'];
 
-const KIND = vz.enum(['person', 'application']);
-const IDENTIFIER = vz.string().min(1).max(256)
-  .regex(/^[^\u0000-\u001f\u007f]+$/);
-
-const SCHEMAS = {
-  'create-eab': vz.looseObject({
-    kind: KIND,
-    identifier: IDENTIFIER,
-    lifetimeS: vz.union([vz.literal(''),
-                         vz.coerce.number().int().min(60).max(31536000)])
-      .optional()
-  }),
-  'delete-eab': vz.looseObject({ kid: vz.string().min(1).max(512) }),
-  'deactivate-account': vz.looseObject({
-    account: vz.string().regex(/^[A-Za-z0-9_-]{8,64}$/)
-  }),
-  'revoke-certificate': vz.looseObject({
-    serial: vz.string().min(1).max(128).regex(/^[0-9A-Fa-f:]+$/),
-    reason: vz.union([vz.literal(''), vz.enum(revocation.REASONS.map(
-      function (one) { return one.id; }))]).optional()
-  }),
-  'add-host-name': vz.looseObject({ kind: KIND, identifier: IDENTIFIER,
-                                    hostName: vz.string().min(1).max(253) }),
-  'remove-host-name': vz.looseObject({ kind: KIND, identifier: IDENTIFIER,
-                                       hostName: vz.string().min(1).max(253) })
+// EACH ACTION'S BODY IS ITS OPERATION'S IN THE MANAGEMENT API OPENAPI DOCUMENT
+// (#1579): `models/api/management.tsp`, which `/admin-api` already holds the
+// request to before this runs. The validator is built from it, so an
+// in-process caller meets the same check and the document is the one source.
+const OPERATIONS: Record<string, string> = {
+  'create-eab': 'createAcmeEab',
+  'delete-eab': 'deleteAcmeEab',
+  'deactivate-account': 'deactivateAcmeAccount',
+  'revoke-certificate': 'revokeAcmeCertificate',
+  'add-host-name': 'addAcmeHostName',
+  'remove-host-name': 'removeAcmeHostName'
 };
+
+const SCHEMAS: Record<string, any> = {};
+Object.keys(OPERATIONS).forEach(function (action) {
+  SCHEMAS[action] = ModelZod.body('management', OPERATIONS[action]);
+});
 
 // What `AcmeConsole` needs from the rest of the service: the modules this file
 // used to reach for itself, passed in so that the composition root can build
@@ -582,7 +572,12 @@ class AcmeConsole {
                           action.slice(0, 60) + '". The six are: ' +
                           ACME_ACTIONS.join(', ') + '.');
     }
-    const parsed = SCHEMAS[action].safeParse(body || {});
+    // What the request carries beside the operation's body: the action (the
+    // path's), and the actor the management API names (#446).
+    const fields = Object.assign({}, body || {});
+    delete fields.action;
+    delete fields.actor;
+    const parsed = SCHEMAS[action].safeParse(fields);
     if (!parsed.success) {
       const issue = (parsed.error.issues || [])[0] || {};
       log.debug("Leaving AcmeConsole.acmeAction(). Malformed body.");
@@ -597,8 +592,7 @@ class AcmeConsole {
     if (action === 'create-eab') {
       const created = core.createEab({ target: this.entryOf(value),
                                        createdBy: actor,
-                                       lifetimeS: value.lifetimeS === ''
-                                         ? undefined : value.lifetimeS });
+                                       lifetimeS: value.lifetimeS });
       if (!created.ok) {
         log.debug("Leaving AcmeConsole.acmeAction(). EAB refused.");
         return this.handedOn(created, 'STS-ACME-0094');
