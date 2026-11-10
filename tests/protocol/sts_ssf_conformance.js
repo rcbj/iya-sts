@@ -48,6 +48,7 @@ const nodeCrypto = require("crypto");
 const { usernameFor } = require("./random_username.js");
 const testPeer = require("./test_peer.js");
 const ssfRoles = require("./ssf_roles.js");
+const serviceFacts = require("./service_facts.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -246,6 +247,9 @@ function typeOf(set) {
 // issuer, addressed to the stream's aud, with the state and a txn — and the
 // header the receiver asked for, which the peer refuses a push without.
 // Answers how many checks ran; none, saying so, in a run with no peer.
+// In a product stack the push is refused instead (STS-SSF-0158: product
+// dials no private address, and the peer is on one), and that refusal is
+// what is asserted, as sts_backchannel_logout.js's product realm does.
 // ---------------------------------------------------------------------------
 async function pushToTheTestPeer(issuer) {
   log.debug("Entering pushToTheTestPeer().");
@@ -286,6 +290,45 @@ async function pushToTheTestPeer(issuer) {
   check("7b. a verification request answers 204", function () {
     assert.strictEqual(r.status, 204, r.text);
   });
+  if (await serviceFacts.isProduct(realmApi)) {
+    // PRODUCT DOES NOT DIAL A PRIVATE ADDRESS (#1492, ASVS 5.0.0 1.3.6), and
+    // every test stack keeps the peer on one, so what is asserted there is
+    // the refusal (rcbj, 2026-11-10; sts_backchannel_logout.js's product
+    // realm makes the same argument): the push lands on the stream's
+    // dead-letter queue under STS-SSF-0158 and nothing reaches the peer.
+    let letter = null;
+    for (let i = 0; i < 60 && !letter; i += 1) {
+      const d = await call("GET", realmApi + "/ssf/dead-letters?dlstream=" +
+                                  encodeURIComponent(stream));
+      letter = ((d.json && d.json.letters) || []).filter(function (one) {
+        return one && (one.errorCode === "STS-SSF-0158" ||
+                       one.code === "STS-SSF-0158");
+      })[0] || null;
+      if (!letter) {
+        await new Promise(function (resolve) {
+          setTimeout(resolve, 250);
+        });
+      }
+    }
+    const got = await testPeer.received(view.tenant, "ssf", since);
+    check("7b. in product the push to the peer's private address is " +
+          "refused: the stream's dead letter carries STS-SSF-0158 and " +
+          "nothing reaches the peer", function () {
+      assert.ok(letter, "no dead letter on " + stream + " carries " +
+                        "STS-SSF-0158");
+      assert.strictEqual((got.events || []).length, 0,
+                         JSON.stringify(got.events).slice(0, 400));
+    });
+    r = await carol.send("DELETE", "/ssf/stream?stream_id=" +
+                                   encodeURIComponent(stream));
+    check("7b. carol deletes her push stream", function () {
+      assert.strictEqual(r.status, 204, r.text);
+    });
+    await ok(realmApi + "/config/reset", { key: "ssf.pushCaFile" },
+             "reset ssf.pushCaFile");
+    log.debug("Leaving pushToTheTestPeer(). Product refused the push.");
+    return 4;
+  }
   const seen = {};
   const arrived = await testPeer.waitFor(view.tenant, "ssf", since,
     function (one) {
