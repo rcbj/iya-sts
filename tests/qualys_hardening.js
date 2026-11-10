@@ -25,6 +25,12 @@
 //      and its password field `autocomplete="off"`.
 //   E. THE REALM PREFIX IN A LINK (QID 150938): `WebPage.realmLinks()` escapes
 //      it as the attribute value it becomes.
+//   F. A CALLER'S NAME IN A REFUSAL (QID 150084): `ClosedSets.saidName()`
+//      says an ordinary name as it was and percent-encodes markup.
+//   G. THE FOUR SENTENCES THE SCAN FOUND (the published APIs' query refusal,
+//      SAML 2.0's and 1.1's unregistered party, OpenID4VCI's unknown issuer)
+//      refuse without repeating the probe.
+//   H. A 501 FOR A SWITCHED-OFF FEATURE is audited `refused`, not `error`.
 // ===========================================================================
 
 const fs = require('fs');
@@ -178,6 +184,61 @@ function childMain() {
          '<a href="/realm/acme/x">x</a>',
          'E2. an ordinary prefix is put on unchanged',
          WebPage.realmLinks('<a href="/x">x</a>', '/realm/acme'));
+
+    // F. A caller's name in a refusal sentence (QID 150084).
+    const ClosedSets = require(ROOT_DIR + '/common/closed_sets');
+    note(ClosedSets.saidName('page') === '"page"' &&
+         ClosedSets.saidName('filter[name]') === '"filter[name]"' &&
+         ClosedSets.saidName('https://sp.example/md?x=1&y=%20') ===
+           '"https://sp.example/md?x=1&y=%20"',
+         'F1. an ordinary name, a URL with a query among them, is said as it ' +
+         'was', ClosedSets.saidName('https://sp.example/md?x=1&y=%20'));
+    note(ClosedSets.saidName('"><script>alert(81)</script>') ===
+           '"%22%3E%3Cscript%3Ealert(81)%3C%2Fscript%3E"' &&
+         ClosedSets.saidName('z--><qss>') === '"z--%3E%3Cqss%3E"',
+         'F2. markup and quotes are percent-encoded',
+         ClosedSets.saidName('"><script>alert(81)</script>'));
+
+    // G. The four sentences the scan found reflecting its probes.
+    const probes = [
+      ['/account-api/locale?%22%3E%3Cscript%3Ealert(81)%3C/script%3E=',
+       '<script>'],
+      ['/saml2/metadata/z--%3E%3Cqss%3E', '<qss>'],
+      ['/saml11/metadata/z--%3E%3Cqss%3E', '<qss>'],
+      ['/.well-known/jwt-vc-issuer/z--%3E%3Cqss%3E', '<qss>']
+    ];
+    // SAML refuses an unregistered party in PRODUCT mode only (outside it,
+    // it describes itself to anybody), so the mode is set for these two.
+    const config = require(ROOT_DIR + '/common/config');
+    for (const one of probes) {
+      const saml = /^\/saml/.test(one[0]);
+      if (saml) {
+        config.setOverride('global.mode', 'product');
+      }
+      let r = null;
+      try {
+        r = await get(one[0], { accept: 'application/json' });
+      } finally {
+        if (saml) {
+          config.clearOverride('global.mode');
+        }
+      }
+      note(r.status >= 400 && r.status < 500 &&
+           r.body.indexOf(one[1]) < 0 && /%3C/i.test(r.body),
+           'G. ' + one[0].split('?')[0] + ' refuses without repeating the ' +
+           'probe', r.status + ' ' + r.body.slice(0, 240));
+    }
+
+    // H. A 501 for a feature switched off is a refusal, not a failure.
+    const audit = require(ROOT_DIR + '/common/audit');
+    const vc = await get('/vc-api/issuers', { accept: 'application/json' });
+    const row = audit.list().filter(function (one) {
+      return String(one.target || '').indexOf('/vc-api/issuers') >= 0 ||
+             String(one.summary || '').indexOf('/vc-api/issuers') >= 0;
+    })[0];
+    note(vc.status === 501 && row && row.outcome === 'refused',
+         'H1. the switched-off VC API\'s 501 is audited as refused',
+         vc.status + ' ' + JSON.stringify(row || null).slice(0, 300));
 
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify(findings));

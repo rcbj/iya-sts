@@ -160,6 +160,7 @@ import realms = require('../common/realms');
 // The other listeners SAML 2.0 is on, for its metadata (#472). A LEAF.
 import listenerMap = require('../common/listener_map');
 import xmldom = require('../common/xml_parser');
+import ClosedSets = require('../common/closed_sets');
 // Every signature and every cipher in this service is in one module since
 // 2026-08-27. This file signs four documents and verifies two, and xml-crypto
 // is no longer required here: `common/crypto.js` sits over the parent
@@ -963,8 +964,11 @@ class Saml2Sso {
     res.status(404)
        .type('text/plain')
        .set('Cache-Control', 'no-store')
-       .send('There is no SAML 2.0 service provider registered here as "' +
-             scoped.entityId + '", so ' + path + ' has nothing to answer ' +
+       // The name as ClosedSets.saidName() says one: a caller's markup is
+       // percent-encoded rather than repeated.
+       .send('There is no SAML 2.0 service provider registered here as ' +
+             ClosedSets.saidName(scoped.entityId) + ', so ' + path +
+             ' has nothing to answer ' +
              'for it. This identity provider publishes itself only to a ' +
              'service provider an operator registered (product mode).\n');
     log.debug("Leaving Saml2Sso.refusedUnregistered(). 404.");
