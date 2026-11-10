@@ -136,9 +136,17 @@ function adminDoorOf(url) {
 }
 
 // What a request would change of the policies the run signs in through, as
-// a short label, or null.
-function touchesSignInPolicy(url, bodyBuf) {
+// a short label, or null. A GET or HEAD changes nothing, and the harness's
+// own strict probes are reads that must reach the service's own refusal
+// (fuzz run 13: a probe of GET /admin-api/policies answered by this guard's
+// 422 failed every admin-api cell as a strict_request_miss).
+function touchesSignInPolicy(url, bodyBuf, method) {
   log.debug("Entering touchesSignInPolicy().");
+  const verb = String(method || "POST").toUpperCase();
+  if (verb === "GET" || verb === "HEAD") {
+    log.debug("Leaving touchesSignInPolicy(). a read");
+    return null;
+  }
   const door = adminDoorOf(url);
   if (!door) {
     log.debug("Leaving touchesSignInPolicy(). not a policy door");
@@ -173,14 +181,15 @@ function touchesSignInPolicy(url, bodyBuf) {
       return value === undefined || value === null || s === "" ||
         s === "default";
     };
-    // A save or a reset (admin-core/policy_kinds.ts names them
-    // save-<kind>-policy and reset-<kind>-policy) writes the profile it is
-    // given, whatever `name` holds, so only `profile` counts for those.
-    // Another act is aimed by its `name`.
+    // Only a save or a reset writes a profile (admin-core/policy_kinds.ts
+    // names them save-<kind>-policy and reset-<kind>-policy), and it writes
+    // the profile it is given whatever `name` holds. Every other action
+    // (clear-passkey-client and the rest) is fuzzed: in fuzz run 13 the
+    // first version of this guard also refused those, thousands a cell.
     const savesProfile = /^(save|reset)-.+-policy$/.test(door[1]);
-    if (isDefault(body.profile) && (savesProfile || isDefault(body.name))) {
+    if (savesProfile && isDefault(body.profile)) {
       log.debug("Leaving touchesSignInPolicy(). default profile");
-      return "the realm-default " + (door[1] || "policy") + " profile";
+      return "the realm-default " + door[1] + " profile";
     }
     log.debug("Leaving touchesSignInPolicy(). named profile");
     return null;
@@ -621,7 +630,8 @@ async function handle(req, res) {
   const body = await readBody(req);
   const url = SERVICE_BASE + REALM_PREFIX + req.url;
   if (GUARDS_INFRA) {
-    const named = namesProtected(url, body) || touchesSignInPolicy(url, body);
+    const named = namesProtected(url, body) ||
+      touchesSignInPolicy(url, body, req.method);
     if (named) {
       protectedRefused = protectedRefused + 1;
       // Counted and logged, NOT forwarded and NOT a finding: a 4xx trips no
