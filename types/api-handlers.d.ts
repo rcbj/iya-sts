@@ -23,8 +23,9 @@
 // answers `result.ok ? 200 : 400` with one value cannot say which body goes
 // with which status, so that answer is left to the runtime check
 // (`common/response_models.ts`), which holds every answer to the same model
-// whatever the type says. `tests/api_handler_types.js` proves both halves
-// with fixtures the checker must refuse.
+// whatever the type says. `tests/model_api_handlers.js` proves the binding:
+// it edits a real handler of each API in a scratch copy of the tree and
+// requires the checker to refuse each edit.
 // ---------------------------------------------------------------------------
 
 declare namespace IyaApi {
