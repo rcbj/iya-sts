@@ -1359,6 +1359,18 @@
     "en": "a037c255a759deb1",
     "text": "Förfrågningsloggar utelämnar autentiseringsuppgifter och innehåll på alla nivåer, och ett standardlösenord för databasen stoppar tjänsten om inte persistence.allowDefaultDatabasePassword är på."
   },
+  "mode.requirements.secrets-from-store.what": {
+    "en": "51a0285e7263826e",
+    "text": "Tjänstens hemligheter kommer från ett hemlighetsvalv"
+  },
+  "mode.requirements.secrets-from-store.development": {
+    "en": "14c3b25b8289b3fa",
+    "text": "Nyckelkrypteringsnyckeln får vara en fil, och databaslösenordet får finnas i en fil eller i anslutningssträngen."
+  },
+  "mode.requirements.secrets-from-store.product": {
+    "en": "8a3820f8013ed174",
+    "text": "Nyckelkrypteringsnycklarna kommer från ett hemlighetsvalv eller en nyckelhanteringstjänst, och databaslösenordet från ett hemlighetsvalv. En fil eller ett lösenord i anslutningssträngen stoppar tjänsten om inte secrets.allowLocalSecrets är på. En tidigare nyckelkrypteringsnyckel får fortfarande vara en fil, så att en driftsättning kan lämna den."
+  },
   "mode.requirements.audit-destination.what": {
     "en": "93abf5e422347728",
     "text": "Granskningsloggen bör lämna tjänsten"

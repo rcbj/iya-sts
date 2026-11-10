@@ -3670,6 +3670,9 @@ namespace IyaSts.Api.Management {
     }) `actorForm`?: string;
       `mac`?: string;
     @js(#{
+      `description`:"The `mac` of the row the same process wrote before this one in this realm, covered by this row's own `mac`: a row removed from between two held ones leaves the next naming a checksum no held row has. Empty on a process's first row."
+    }) `prev`?: string;
+    @js(#{
       `description`:"What it was done to: a DN, a request path, a session id."
     }) `target`?: string;
     @js(#{
@@ -45983,7 +45986,7 @@ op `endAllSessions`(`responses/200/content/application~1json/schema`: WithOkMess
   #{
     `operationId`:"getAuditIntegrity",
     `summary`:"Check the held audit rows against their checksums",
-    `description`:"Each row carries a keyed checksum whose key is not in the database. `altered` lists the seq of any row that no longer matches. `unsigned` counts rows written with no key-encryption key in the process.",
+    `description`:"Each row carries a keyed checksum whose key is not in the database, and the checksum of the row its process wrote before it. `altered` lists the seq of any row that no longer matches. `missing` lists each place a row is gone from between two held rows of one process. `head` says whether this process's newest row is still there: `intact`; `truncated` when its newest rows were removed; `altered` when the record of which row is newest was changed; `none` when it has written no signed row. The oldest rows leave by design at `audit.maxEvents`. `unsigned` counts rows written with no key-encryption key in the process.",
     `tags`:#["Audit log"],
     `responses`:#{
       `200`:#{
@@ -46000,7 +46003,13 @@ op `endAllSessions`(`responses/200/content/application~1json/schema`: WithOkMess
 op `getAuditIntegrity`(`responses/200/content/application~1json/schema`: {
     `checked`: integer;
     `unsigned`: integer;
-    `altered`: (integer)[]
+    `altered`: (integer)[];
+    `missing`: ({
+      `origin`: string;
+      `after`: integer;
+      `before`: integer;
+    })[];
+    `head`: "intact" | "truncated" | "altered" | "none"
   },
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
 }

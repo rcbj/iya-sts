@@ -36,6 +36,8 @@
 // ===========================================================================
 
 delete process.env.STS_KEYS_KEK_PROVIDER;
+
+delete process.env.STS_SECRETS_ALLOW_LOCAL_SECRETS;
 delete process.env.STS_KEYS_KEK_VAULT;
 delete process.env.STS_KEYS_KEK_REF;
 delete process.env.STS_KEYS_KEK_FIELD;
@@ -167,6 +169,7 @@ async function run(t) {
   try {
     await withEnvironment({
       STS_KEYS_KEK_PROVIDER: 'file',
+      STS_SECRETS_ALLOW_LOCAL_SECRETS: 'true',
       STS_KEYS_KEK_FILE: file,
       STS_KEYS_KEK_FIELD: 'kek',
       STS_DATABASE_PASSWORD_PROVIDER: 'file'

@@ -208,6 +208,7 @@ function childMain() {
       config.setOverride('global.mode', 'product');
       process.env.STS_KEYS_SOURCE = 'persisted';
       process.env.STS_KEYS_KEK_PROVIDER = 'file';
+      process.env.STS_SECRETS_ALLOW_LOCAL_SECRETS = 'true';
       process.env.STS_KEYS_KEK_FILE = path.join(dir, 'kek');
       keystore.reset();
       keystore.setStore({
@@ -251,6 +252,7 @@ function childMain() {
       });
       delete process.env.STS_KEYS_SOURCE;
       delete process.env.STS_KEYS_KEK_PROVIDER;
+      delete process.env.STS_SECRETS_ALLOW_LOCAL_SECRETS;
       delete process.env.STS_KEYS_KEK_FILE;
       keystore.reset();
       config.clearOverride('global.mode');

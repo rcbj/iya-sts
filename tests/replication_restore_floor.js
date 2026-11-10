@@ -289,6 +289,7 @@ function inChild(t) {
     STS_PUBLIC_BASE_URL: 'https://idp.example',
     STS_KEYS_SOURCE: 'persisted',
     STS_KEYS_KEK_PROVIDER: 'file',
+    STS_SECRETS_ALLOW_LOCAL_SECRETS: 'true',
     STS_KEYS_KEK_FILE: kek,
     STS_CLUSTER_MODE: 'off'
   });

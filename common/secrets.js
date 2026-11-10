@@ -1908,8 +1908,28 @@ function tagReadFailure(spec, err) {
  * @throws an Error, tagged with its code, when the provider is unknown or
  *   the read fails
  */
+// A KEY-ENCRYPTION KEY IN A FILE IS REFUSED IN PRODUCT (ASVS 5.0.0 13.3.1),
+// unless secrets.allowLocalSecrets is on: the key that wraps every other key
+// would otherwise sit on the host beside what it protects. The PREVIOUS key is
+// not asked, because reading it is how a deployment moves off a file.
+function refuseFileKek(setting) {
+  log.debug('Entering refuseFileKek(). ' + setting);
+  if (String(config.value(setting) || '') === 'file' &&
+      require('./mode').requiresSecretStore()) {
+    log.debug('Leaving refuseFileKek(). Refused.');
+    throw new Error(errorCodes.tag('STS-KEYS-0197') + setting + ' is ' +
+                    '"file", and product mode takes a key-encryption key ' +
+                    'from a secret store or a key management service ' +
+                    '(vault, vault-transit, aws, aws-kms, gcp, gcp-kms, ' +
+                    'azure or azure-keys). Configure one, or turn on ' +
+                    'secrets.allowLocalSecrets to accept the file.');
+  }
+  log.debug('Leaving refuseFileKek().');
+}
+
 async function readKek() {
   log.debug('Entering readKek().');
+  refuseFileKek(KEK.provider);
   const value = await read(KEK);
   log.debug('Leaving readKek().');
   return value;
@@ -2012,6 +2032,7 @@ async function readCellKek() {
     log.debug('Leaving readCellKek(). Not configured.');
     return null;
   }
+  refuseFileKek(CELL_KEK.provider);
   const provider = String(config.value(CELL_KEK.provider) || '');
   const serviceProvider = String(config.value(KEK.provider) || '');
   // The service key's location is `keys.kekFile` for a file and

@@ -757,6 +757,7 @@ function productEnvironment(mode, dir) {
            KRB5_KRBTGT_PASSWORD: 'ad-' +
              require('crypto').randomBytes(12).toString('hex'),
            STS_KEYS_SOURCE: 'persisted', STS_KEYS_KEK_PROVIDER: 'file',
+           STS_SECRETS_ALLOW_LOCAL_SECRETS: 'true',
            STS_KEYS_KEK_FILE: kekFile };
 }
 

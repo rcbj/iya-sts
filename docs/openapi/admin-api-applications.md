@@ -174,6 +174,7 @@ Scope: `admin:read`.
 | `authenticationEvents[].mac` | string |  |  |
 | `authenticationEvents[].origin` | string, or number, or null |  |  |
 | `authenticationEvents[].outcome` | string |  |  |
+| `authenticationEvents[].prev` | string |  |  |
 | `authenticationEvents[].protocol` | string |  |  |
 | `authenticationEvents[].seq` | number |  |  |
 | `authenticationEvents[].summary` | string |  |  |

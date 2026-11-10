@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5396** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5402** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -53,18 +53,18 @@ is an ordinary outcome.
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 105
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 51
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 109
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 110
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 22
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 185
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 186
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 258
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 434
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 750
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 751
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 118
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 70
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
@@ -75,7 +75,7 @@ is an ordinary outcome.
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
-* [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 84
+* [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 85
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 153
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 60
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 164
@@ -91,9 +91,9 @@ is an ordinary outcome.
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 92
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 266
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 267
 * [Management API (`STS-API`)](#sts-api) — 95
-* [User portal (`STS-PORTAL`)](#sts-portal) — 121
+* [User portal (`STS-PORTAL`)](#sts-portal) — 122
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 23
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 15
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
@@ -441,6 +441,7 @@ Raised from: persistence/.
 | `STS-STORE-0168` | A directory flush dropped one row whose value the database can never store (a NUL byte, or another permanent data error) and committed every other row of the batch (#1391). The entry stays in this process's memory and is absent from the store until the process restarts; the next flush does not send the same value again. | none — logged; the request that wrote it was already answered |
 | `STS-STORE-0169` | A realm or settings save dropped one value the database can never store (a NUL, half of a surrogate pair, or another permanent data error) and committed everything else in the flush (#1463). The value stays in this process's memory and is absent from the store until the process restarts; the next flush does not send it again. | none — logged; the request that wrote it was already answered |
 | `STS-STORE-0170` | The service did not start because the database password is a well-known default. | — |
+| `STS-STORE-0171` | The service did not start because, in product mode, a database password was in a file or in the connection string rather than in a secret store. | ASVS 5.0.0 13.3.1 |
 
 ## STS-CLUSTER
 
@@ -804,6 +805,7 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0194` | A write to tls.signatureAlgorithms names a signature algorithm this service has no row for. | none — a write refused at the console or the API (#1368) |
 | `STS-KEYS-0195` | An XML element encrypted with AES-CBC was refused in product mode (#1455). | — |
 | `STS-KEYS-0196` | An XML element whose key is wrapped with OAEP over SHA-1 was refused: crypto.allowLegacyHashes is off (#1469). | — |
+| `STS-KEYS-0197` | The service did not start because, in product mode, a key-encryption key was to be read from a file rather than a secret store or a key management service. | ASVS 5.0.0 13.3.1 |
 
 ## STS-PKI
 
@@ -2514,6 +2516,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-1000` | A client assertion was verified by a certificate from the realm's authority that was not issued to that client (ASVS 5.0.0 9.1.3). | invalid_client |
 | `STS-OAUTH-1001` | An RFC 7523 assertion was verified by a certificate from the realm's authority that was not issued to its issuer (ASVS 5.0.0 9.1.3). | invalid_grant |
 | `STS-OAUTH-1002` | A confidential client sent no code_challenge, in product (ASVS 5.0.0 10.4.6). | invalid_request |
+| `STS-OAUTH-1003` | A dynamic client registration was refused because the register did not store it (ASVS 5.0.0 2.3.3). | invalid_client_metadata |
 
 ## STS-SAML
 
@@ -3686,6 +3689,7 @@ Raised from: scim/.
 | `STS-SCIM-0087` | A SCIM User write carried a value of one of the realm's custom attributes (the CustomAttributes extension) that its syntax refuses, several values for a single-valued one, or an integer past what a JSON number carries exactly; nothing was written (#699). | SCIM invalidValue (HTTP 400) |
 | `STS-SCIM-0088` | The identity gate threw on a verified client certificate, so it was not taken as a SCIM credential (#1360). | the caller's 401: another scheme, or none |
 | `STS-SCIM-0089` | An HTTP Basic credential was refused without being checked: too many recent failures (#1448). | HTTP 401 |
+| `STS-SCIM-0090` | A SCIM create that was refused after its entry was written could not delete that entry again (ASVS 5.0.0 2.3.3). | — |
 
 ## STS-SPIFFE
 
@@ -5526,6 +5530,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0915` | A software statement was asked for with a lifetimeSeconds that puts its expiry past the last date this service can write (#1470). | a refusal naming the field |
 | `STS-ADMIN-0916` | A second factor was not cleared because the administrator did not say how the person was verified. | HTTP 400 |
 | `STS-ADMIN-0917` | An application was not created because the metadata document given with it was refused. | HTTP 400 |
+| `STS-ADMIN-0918` | A passkey an administrator enrolled was recorded, and the account signal about it could not be sent (ASVS 5.0.0 2.3.3). | — |
 
 ## STS-API
 
@@ -5760,6 +5765,7 @@ Raised from: portal/.
 | `STS-PORTAL-0634` | POST /account-api/photo in a realm whose profilePhoto.selfService is off (#719). | HTTP 403 JSON |
 | `STS-PORTAL-0635` | A profile photo was not saved in product mode: its address would be built on a Host header, because global.publicBaseUrl is not set (#719). | HTTP 409 JSON |
 | `STS-PORTAL-0636` | GET /web/photo/{id} answered 404: no such photo, its person was deleted, or their account is disabled (#719). | HTTP 404 |
+| `STS-PORTAL-0637` | A password reset or an authenticator app setup was done and recorded, and its failure count could not be cleared (ASVS 5.0.0 2.3.3). | — |
 
 ## STS-ACCOUNT
 

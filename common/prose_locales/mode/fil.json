@@ -1359,6 +1359,18 @@
     "en": "a037c255a759deb1",
     "text": "Inaalis ng mga request log ang mga credential at body sa bawat level, at pinapahinto ng default na database password ang service maliban kung naka-on ang persistence.allowDefaultDatabasePassword."
   },
+  "mode.requirements.secrets-from-store.what": {
+    "en": "51a0285e7263826e",
+    "text": "Nanggagaling sa isang secret store ang mga backend secret"
+  },
+  "mode.requirements.secrets-from-store.development": {
+    "en": "14c3b25b8289b3fa",
+    "text": "Maaaring file ang key-encryption key, at maaaring nasa isang file o sa connection string ang password ng database."
+  },
+  "mode.requirements.secrets-from-store.product": {
+    "en": "8a3820f8013ed174",
+    "text": "Nanggagaling ang mga key-encryption key sa isang secret store o isang key management service, at ang password ng database sa isang secret store. Pinahihinto ng isang file o ng password sa connection string ang serbisyo maliban kung naka-on ang secrets.allowLocalSecrets. Maaari pa ring file ang naunang key-encryption key, para makaalis dito ang isang deployment."
+  },
   "mode.requirements.audit-destination.what": {
     "en": "93abf5e422347728",
     "text": "Dapat lumabas sa service na ito ang audit log"

@@ -444,6 +444,29 @@ function childMain() {
              ' is read as 1: the first two names',
              pageShape(r) + ' vs ' + order.slice(0, 2).join(','));
       }
+
+      // R. A CREATE REFUSED AFTER ITS ENTRY WAS WRITTEN LEAVES NOTHING
+      // (ASVS 5.0.0 2.3.3): the write that merges the resource is made to
+      // refuse, and the same userName must then be creatable, not a 409.
+      const realWrite = ldap.writePerson;
+      ldap.writePerson = function () {
+        return { ok: false, reason: 'refused for the test' };
+      };
+      try {
+        r = await scim('POST', '/Users', { schemas: [USER],
+                                           userName: 'sc-undone' });
+      } finally {
+        ldap.writePerson = realWrite;
+      }
+      note(r.status === 400,
+           'R1. a create refused after its entry was written is refused',
+           r.status + ' ' + r.text.slice(0, 160));
+      r = await scim('POST', '/Users', { schemas: [USER],
+                                         userName: 'sc-undone' });
+      note(r.status === 201,
+           'R2. and left no entry behind: the same userName is created ' +
+           'again rather than meeting a 409',
+           r.status + ' ' + r.text.slice(0, 160));
     });
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify({ findings: findings }));

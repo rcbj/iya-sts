@@ -1359,6 +1359,18 @@
     "en": "a037c255a759deb1",
     "text": "要求日誌在任何層級都不包含認證資料和本文；預設資料庫密碼會使服務停止，除非開啟 persistence.allowDefaultDatabasePassword。"
   },
+  "mode.requirements.secrets-from-store.what": {
+    "en": "51a0285e7263826e",
+    "text": "後端密鑰來自密鑰儲存區"
+  },
+  "mode.requirements.secrets-from-store.development": {
+    "en": "14c3b25b8289b3fa",
+    "text": "金鑰加密金鑰可以是檔案，資料庫密碼可以在檔案中或連線字串中。"
+  },
+  "mode.requirements.secrets-from-store.product": {
+    "en": "8a3820f8013ed174",
+    "text": "金鑰加密金鑰來自密鑰儲存區或金鑰管理服務，資料庫密碼來自密鑰儲存區。檔案或連線字串中的密碼會使服務停止，除非開啟 secrets.allowLocalSecrets。先前的金鑰加密金鑰仍可以是檔案，以便部署能夠遷移出去。"
+  },
   "mode.requirements.audit-destination.what": {
     "en": "93abf5e422347728",
     "text": "稽核日誌應傳送至此服務之外"

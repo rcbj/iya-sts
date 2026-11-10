@@ -315,6 +315,14 @@
     "en": "7324a27b3b761012",
     "text": "Ett tak för alla förfrågningar från en adress, per process. Det är en broms mot missbruk, skild från gränserna för inloggningsförsök. 0 betyder inget tak, standardvärdet i utveckling. Produktläget använder 6000 som standard. Bakom en proxy, ange global.trustedProxies så att adresser läses korrekt."
   },
+  "security.pbes2MinIterations|label": {
+    "en": "099bacdecdd8c71d",
+    "text": "Minsta antal PBKDF2-iterationer som godtas i en PBES2-JWE"
+  },
+  "security.pbes2MinIterations|description": {
+    "en": "c6f00e313b689b2b",
+    "text": "En JWE som krypterats till ett lösenord (PBES2, RFC 7518 avsnitt 4.8) anger sitt eget antal iterationer, och ett lägre antal än detta avvisas innan något härleds. Produktläget har 600000 som standard, OWASP:s siffra för PBKDF2-HMAC-SHA256 (ASVS 5.0.0 11.4.4); utvecklingsläget 1000, som RFC 7518 rekommenderar. En avsändare som använder ett biblioteks mindre standardvärde avvisas i produktläget tills detta sänks. Nyckeln härleds i libuvs trådpool, aldrig i händelseloopen, och fler än 1000000 iterationer avvisas."
+  },
   "audit.allowPlainSyslog|label": {
     "en": "1401e9d7380768e3",
     "text": "Tillåt okrypterad syslog-export av granskningsloggen i produktläge"
@@ -1866,6 +1874,18 @@
   "keys.kekProvider|restartReason": {
     "en": "0956d2f97d1df86a",
     "text": "nyckelkrypteringsnyckeln läses en gång, vid start, innan signeringsnycklarna dekrypteras"
+  },
+  "secrets.allowLocalSecrets|label": {
+    "en": "b746acd0225ed6a2",
+    "text": "Tillåt lokala hemligheter i produktläge"
+  },
+  "secrets.allowLocalSecrets|description": {
+    "en": "ecfd7489f63a1df3",
+    "text": "Av, standard, tar produktläget sina nyckelkrypteringsnycklar (keys.kekProvider, keys.cellKekProvider) från ett hemlighetsvalv eller en nyckelhanteringstjänst och ett databaslösenord från ett hemlighetsvalv; en nyckelkrypteringsnyckel i en fil, eller ett databaslösenord i en fil eller i anslutningssträngen, stoppar tjänsten (ASVS 5.0.0 13.3.1). På accepteras de, vilket lämnar hemligheten på värden. En tidigare nyckelkrypteringsnyckel får vara en fil i båda fallen. Utvecklingsläget accepterar dem oavsett vad den här inställningen säger."
+  },
+  "secrets.allowLocalSecrets|restartReason": {
+    "en": "3c6a25d74849bf35",
+    "text": "nyckelkrypteringsnyckeln och databaslösenordet läses en gång, vid start"
   },
   "keys.kekTransitMount|label": {
     "en": "efe8c3a4233dd778",
@@ -4480,8 +4500,8 @@
     "text": "Kryptering av uppdateringstoken: nyckelhantering (alg)"
   },
   "oauth2.refreshTokenEncryptionAlg|description": {
-    "en": "edc32ded102e4226",
-    "text": "Den JWE-algoritm för nyckelhantering som varje uppdateringstoken krypteras under. En uppdateringstoken är en signerad JWT förseglad till DEN HÄR sfärens egna nycklar och är ogenomskinlig för sin klient, så valet syns inte utanför den här tjänsten. RSA-OAEP-algoritmerna använder sfärens RSA-nyckel, ECDH-ES-algoritmerna dess EC-nyckel och resten en hemlighet som är sfärens egen. En ändring påverkar tokens som utfärdas därefter; redan utfärdade tokens kan fortfarande öppnas, eftersom sfären har en nyckel av varje slag. RSA1_5 erbjuds inte. ML-KEM- och HPKE-algoritmerna (#82 — utkast, se keys.encryptionKemAlgs) förseglar till ett nyckelpar som HÄRLETTS från sfärens hemlighet för den algoritmen och aldrig publiceras, så att välja en här kräver ingen nyckel och ändrar inget som en klient ser; HPKE-10-KE (X-Wing) gör en uppdateringstoken som fångas i dag säker mot en framtida kvantmotståndare såväl som en klassisk."
+    "en": "93e63f4a8c7ba5b2",
+    "text": "Den JWE-algoritm för nyckelhantering som varje uppdateringstoken krypteras under. En uppdateringstoken är en signerad JWT förseglad till DEN HÄR sfärens egna nycklar och är ogenomskinlig för sin klient, så valet syns inte utanför den här tjänsten. RSA-OAEP-algoritmerna använder sfärens RSA-nyckel, ECDH-ES-algoritmerna dess EC-nyckel och resten en hemlighet som är sfärens egen. PBES2 erbjuds inte: hemligheten är slumpmässig, så att sträcka ut den som ett lösenord tillför ingenting. En ändring påverkar tokens som utfärdas därefter; redan utfärdade tokens kan fortfarande öppnas, eftersom sfären har en nyckel av varje slag. RSA1_5 erbjuds inte. ML-KEM- och HPKE-algoritmerna (#82 — utkast, se keys.encryptionKemAlgs) förseglar till ett nyckelpar som HÄRLETTS från sfärens hemlighet för den algoritmen och aldrig publiceras, så att välja en här kräver ingen nyckel och ändrar inget som en klient ser; HPKE-10-KE (X-Wing) gör en uppdateringstoken som fångas i dag säker mot en framtida kvantmotståndare såväl som en klassisk."
   },
   "oauth2.refreshTokenEncryptionEnc|label": {
     "en": "901d0b6a281af825",

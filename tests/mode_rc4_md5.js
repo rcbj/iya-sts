@@ -323,6 +323,7 @@ function inProduct(t) {
              KRB5_KRBTGT_PASSWORD: 'not-the-published-krbtgt-secret-182',
              KRB5_SERVICE_PASSWORD: 'not-the-published-service-secret-182',
              STS_KEYS_SOURCE: 'persisted', STS_KEYS_KEK_PROVIDER: 'file',
+             STS_SECRETS_ALLOW_LOCAL_SECRETS: 'true',
              STS_KEYS_KEK_FILE: kekFile };
   }, 'product', t);
   const r = got.report;

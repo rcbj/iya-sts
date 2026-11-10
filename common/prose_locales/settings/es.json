@@ -315,6 +315,14 @@
     "en": "7324a27b3b761012",
     "text": "Límite de todas las solicitudes de una dirección, por proceso. Es un freno al abuso, distinto de los límites de intentos de credenciales. 0 significa sin límite, el valor predeterminado en desarrollo. El modo producto usa 6000 por defecto. Detrás de un proxy, defina global.trustedProxies para que las direcciones se lean correctamente."
   },
+  "security.pbes2MinIterations|label": {
+    "en": "099bacdecdd8c71d",
+    "text": "Mínimo de iteraciones PBKDF2 aceptadas en un JWE PBES2"
+  },
+  "security.pbes2MinIterations|description": {
+    "en": "c6f00e313b689b2b",
+    "text": "Un JWE cifrado para una contraseña (PBES2, RFC 7518 sección 4.8) indica su propio número de iteraciones, y uno inferior a este se rechaza antes de derivar nada. El modo producto usa 600000 por defecto, la cifra de OWASP para PBKDF2-HMAC-SHA256 (ASVS 5.0.0 11.4.4); el modo desarrollo, el 1000 que recomienda la RFC 7518. Un emisor que use el valor predeterminado menor de una biblioteca se rechaza en modo producto hasta que se reduzca este ajuste. La clave se deriva en el grupo de hilos de libuv, nunca en el bucle de eventos, y más de 1000000 iteraciones se rechaza."
+  },
   "audit.allowPlainSyslog|label": {
     "en": "1401e9d7380768e3",
     "text": "Permitir la exportación de auditoría syslog sin cifrar en modo producto"
@@ -1866,6 +1874,18 @@
   "keys.kekProvider|restartReason": {
     "en": "0956d2f97d1df86a",
     "text": "la clave de cifrado de claves se lee una sola vez, al arrancar, antes de descifrar las claves de firma"
+  },
+  "secrets.allowLocalSecrets|label": {
+    "en": "b746acd0225ed6a2",
+    "text": "Permitir secretos locales en modo producto"
+  },
+  "secrets.allowLocalSecrets|description": {
+    "en": "ecfd7489f63a1df3",
+    "text": "Desactivado, el valor predeterminado, el modo producto toma sus claves de cifrado de claves (keys.kekProvider, keys.cellKekProvider) de un almacén de secretos o un servicio de gestión de claves, y la contraseña de la base de datos de un almacén de secretos; una clave de cifrado de claves en un archivo, o una contraseña de la base de datos en un archivo o en la cadena de conexión, detiene el servicio (ASVS 5.0.0 13.3.1). Activado, se aceptan, lo que deja el secreto en el host. Una clave de cifrado de claves anterior puede ser un archivo en ambos casos. El modo desarrollo los acepta diga lo que diga este ajuste."
+  },
+  "secrets.allowLocalSecrets|restartReason": {
+    "en": "3c6a25d74849bf35",
+    "text": "la clave de cifrado de claves y la contraseña de la base de datos se leen una vez, al arrancar"
   },
   "keys.kekTransitMount|label": {
     "en": "efe8c3a4233dd778",
@@ -4480,8 +4500,8 @@
     "text": "Cifrado del token de actualización: gestión de claves (alg)"
   },
   "oauth2.refreshTokenEncryptionAlg|description": {
-    "en": "edc32ded102e4226",
-    "text": "El algoritmo de gestión de claves JWE con el que se cifra todo token de actualización. Un token de actualización es un JWT firmado sellado con las claves propias de ESTE dominio y es opaco para su cliente, así que la elección es invisible fuera de este servicio. Los algoritmos RSA-OAEP usan la clave RSA del dominio, los ECDH-ES su clave EC y el resto un secreto propio del dominio. Cambiarlo afecta a los tokens emitidos a partir de entonces; los ya emitidos se siguen abriendo, porque el dominio tiene una clave de cada tipo. RSA1_5 no se ofrece. Los algoritmos ML-KEM y HPKE (#82 — borradores, consulte keys.encryptionKemAlgs) sellan con un par de claves DERIVADO del secreto del dominio para ese algoritmo, nunca publicado, así que elegir uno aquí no necesita clave y no cambia nada de lo que ve un cliente; HPKE-10-KE (X-Wing) hace que un token de actualización capturado hoy esté a salvo de un futuro adversario cuántico además de uno clásico."
+    "en": "93e63f4a8c7ba5b2",
+    "text": "El algoritmo de gestión de claves JWE con el que se cifra todo token de actualización. Un token de actualización es un JWT firmado sellado con las claves propias de ESTE dominio y es opaco para su cliente, así que la elección es invisible fuera de este servicio. Los algoritmos RSA-OAEP usan la clave RSA del dominio, los ECDH-ES su clave EC y el resto un secreto propio del dominio. PBES2 no se ofrece: el secreto es aleatorio, así que estirarlo como una contraseña no aporta nada. Cambiarlo afecta a los tokens emitidos a partir de entonces; los ya emitidos se siguen abriendo, porque el dominio tiene una clave de cada tipo. RSA1_5 no se ofrece. Los algoritmos ML-KEM y HPKE (#82 — borradores, consulte keys.encryptionKemAlgs) sellan con un par de claves DERIVADO del secreto del dominio para ese algoritmo, nunca publicado, así que elegir uno aquí no necesita clave y no cambia nada de lo que ve un cliente; HPKE-10-KE (X-Wing) hace que un token de actualización capturado hoy esté a salvo de un futuro adversario cuántico además de uno clásico."
   },
   "oauth2.refreshTokenEncryptionEnc|label": {
     "en": "901d0b6a281af825",

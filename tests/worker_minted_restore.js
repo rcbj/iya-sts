@@ -145,6 +145,7 @@ async function run(t) {
   // (`tests/session_window.js` holds that half).
   process.env.STS_AUTHN_SESSION_WINDOW = 'off';
   process.env.STS_KEYS_KEK_PROVIDER = 'file';
+  process.env.STS_SECRETS_ALLOW_LOCAL_SECRETS = 'true';
   process.env.STS_KEYS_KEK_FILE = kekFile;
   const config = require('../common/config');
   const realms = require('../common/realms');

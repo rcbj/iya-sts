@@ -425,7 +425,16 @@ class AccountMfa {
         changeType: 'create', initiatingEntity: 'user', via: 'portal',
         reasonAdmin: username + ' set up an authenticator app.',
         reasonUser: 'You set up an authenticator app.' });
-      await websecurity.succeededShared('mfa-code', req, username);
+      try {
+        await websecurity.succeededShared('mfa-code', req, username);
+      } catch (e) {
+        // The app is enrolled and recorded; only the failure count was not
+        // cleared (ASVS 5.0.0 2.3.3).
+        log.warn(ctx.errorCodes.tag('STS-PORTAL-0637') + 'portal: ' +
+                 username + '\'s authenticator app is set up, and its ' +
+                 'failure count could not be cleared: ' +
+                 ((e && e.message) || e));
+      }
       log.info('portal: ' + username + ' set up an authenticator app. A ' +
                'password alone will no longer sign them in.');
       // NO RECOVERY CODES ARE ISSUED BY THIS ENROLMENT (2026-09-11): a set is

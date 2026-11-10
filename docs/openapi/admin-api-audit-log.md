@@ -96,6 +96,7 @@ Scope: `admin:read`.
 | `events[].mac` | string |  |  |
 | `events[].origin` | string, or null |  |  |
 | `events[].outcome` | string |  |  |
+| `events[].prev` | string |  |  |
 | `events[].protocol` | string |  |  |
 | `events[].seq` | number |  |  |
 | `events[].summary` | string |  |  |
@@ -218,7 +219,7 @@ Scope: `admin:read`.
 
 **Check the held audit rows against their checksums**
 
-Each row carries a keyed checksum whose key is not in the database. `altered` lists the seq of any row that no longer matches. `unsigned` counts rows written with no key-encryption key in the process.
+Each row carries a keyed checksum whose key is not in the database, and the checksum of the row its process wrote before it. `altered` lists the seq of any row that no longer matches. `missing` lists each place a row is gone from between two held rows of one process. `head` says whether this process's newest row is still there: `intact`; `truncated` when its newest rows were removed; `altered` when the record of which row is newest was changed; `none` when it has written no signed row. The oldest rows leave by design at `audit.maxEvents`. `unsigned` counts rows written with no key-encryption key in the process.
 
 Scope: `admin:read`.
 
@@ -236,6 +237,11 @@ Scope: `admin:read`.
 | `altered` | list | yes |  |
 | `altered[]` | integer |  |  |
 | `checked` | integer | yes |  |
+| `head` | one of `intact`, `truncated`, `altered`, `none` | yes |  |
+| `missing` | list | yes |  |
+| `missing[].after` | integer | yes |  |
+| `missing[].before` | integer | yes |  |
+| `missing[].origin` | string | yes |  |
 | `unsigned` | integer | yes |  |
 
 ## GET /admin-api/error-codes

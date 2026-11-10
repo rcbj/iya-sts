@@ -2366,13 +2366,22 @@ function resolveDatabaseUrl() {
   if (!secrets.configuredFor(secrets.DATABASE_PASSWORD)) {
     log.debug('Leaving resolveDatabaseUrl(). No provider is configured.');
     return Promise.resolve().then(function () {
+      refuseLocalDatabasePassword(raw, 'persistence.databaseUrl',
+                                  'persistence.databasePasswordProvider');
       return refuseDefaultDatabasePassword(raw);
     });
   }
   log.debug("Leaving resolveDatabaseUrl().");
-  return secrets.readDatabasePassword().then(function (password) {
+  return Promise.resolve().then(function () {
+    // Before the read: a `file` provider is refused without being opened.
+    refuseLocalDatabasePassword('', 'persistence.databaseUrl',
+                                'persistence.databasePasswordProvider');
+    return secrets.readDatabasePassword();
+  }).then(function (password) {
     if (!password) {
       log.debug('Leaving resolveDatabaseUrl(). Nothing was read.');
+      refuseLocalDatabasePassword(raw, 'persistence.databaseUrl',
+                                  'persistence.databasePasswordProvider');
       return refuseDefaultDatabasePassword(raw);
     }
     let parsed = null;
@@ -2402,6 +2411,52 @@ function resolveDatabaseUrl() {
     log.debug('Leaving resolveDatabaseUrl(). Injected.');
     return refuseDefaultDatabasePassword(parsed.toString());
   });
+}
+
+// ---------------------------------------------------------------------------
+// A DATABASE PASSWORD COMES FROM A SECRET STORE IN PRODUCT (ASVS 5.0.0 13.3.1),
+// unless secrets.allowLocalSecrets is on. One written into the connection
+// string is in the service's configuration for anyone who can read that, and
+// the `file` provider is a file on the host; both are refused. A connection
+// string with no password, which a database authenticating some other way is
+// dialled with, is not asked about.
+// ---------------------------------------------------------------------------
+/**
+ * Refuses, in product mode, a database password from the connection string
+ * or from the `file` provider.
+ *
+ * @param url - the connection string as configured, or '' when a provider
+ *   supplies the password
+ * @param urlSetting - the setting that holds the connection string
+ * @param providerSetting - the setting that names the password's provider
+ */
+function refuseLocalDatabasePassword(url, urlSetting, providerSetting) {
+  log.debug("Entering refuseLocalDatabasePassword(). " + urlSetting);
+  if (!require('../common/mode').requiresSecretStore()) {
+    log.debug("Leaving refuseLocalDatabasePassword(). Not asked.");
+    return;
+  }
+  let inline = false;
+  try {
+    inline = !!(url && new URL(url).password);
+  } catch (e) {
+    log.debug("Caught in refuseLocalDatabasePassword(): " +
+              ((e && e.message) || e));
+    // libpq's keyword/value form: a `password=` in it is the same thing.
+    inline = /(^|\s)password\s*=/i.test(String(url || ''));
+  }
+  if (inline || String(config.value(providerSetting) || '') === 'file') {
+    log.debug("Leaving refuseLocalDatabasePassword(). Refused.");
+    throw new Error(errorCodes.tag('STS-STORE-0171') +
+                    (inline ? urlSetting + ' carries the database password'
+                            : providerSetting + ' is "file"') +
+                    ', and product mode takes a database password from a ' +
+                    'secret store (vault, aws, gcp or azure). Set ' +
+                    providerSetting + ' and leave the password out of the ' +
+                    'connection string, or turn on ' +
+                    'secrets.allowLocalSecrets to accept it.');
+  }
+  log.debug("Leaving refuseLocalDatabasePassword().");
 }
 
 // The passwords a shipped example or a habit produces (ASVS 5.0.0 13.2.3).
@@ -2835,6 +2890,9 @@ function resolveGlobalUrls() {
   log.debug("Leaving resolveGlobalUrls().");
   return secrets.readGlobalDatabasePassword().then(function (password) {
     const inject = function (raw) {
+      refuseLocalDatabasePassword(password ? '' : raw,
+                                  'persistence.globalDatabaseUrl',
+                                  'persistence.globalDatabasePasswordProvider');
       if (!password) {
         return raw;
       }

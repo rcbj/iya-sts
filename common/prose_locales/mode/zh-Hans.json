@@ -1359,6 +1359,18 @@
     "en": "a037c255a759deb1",
     "text": "请求日志在任何级别都不包含凭据和正文；默认数据库密码会使服务停止，除非开启 persistence.allowDefaultDatabasePassword。"
   },
+  "mode.requirements.secrets-from-store.what": {
+    "en": "51a0285e7263826e",
+    "text": "后端密钥来自密钥存储"
+  },
+  "mode.requirements.secrets-from-store.development": {
+    "en": "14c3b25b8289b3fa",
+    "text": "密钥加密密钥可以是文件，数据库密码可以在文件中或连接字符串中。"
+  },
+  "mode.requirements.secrets-from-store.product": {
+    "en": "8a3820f8013ed174",
+    "text": "密钥加密密钥来自密钥存储或密钥管理服务，数据库密码来自密钥存储。文件或连接字符串中的密码会使服务停止，除非开启 secrets.allowLocalSecrets。先前的密钥加密密钥仍可以是文件，以便部署能够迁移出去。"
+  },
   "mode.requirements.audit-destination.what": {
     "en": "93abf5e422347728",
     "text": "审计日志应发送到此服务之外"

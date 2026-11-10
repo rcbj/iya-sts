@@ -315,6 +315,14 @@
     "en": "7324a27b3b761012",
     "text": "Limitasyon sa lahat ng request mula sa isang address, bawat process. Preno ito sa pang-aabuso, hiwalay sa mga limitasyon sa pagsubok ng credential. Ang 0 ay walang limitasyon, ang default sa development. 6000 ang default ng product mode. Sa likod ng proxy, itakda ang global.trustedProxies para mabasa nang tama ang mga address."
   },
+  "security.pbes2MinIterations|label": {
+    "en": "099bacdecdd8c71d",
+    "text": "Pinakakaunting PBKDF2 iteration na tinatanggap sa isang PBES2 JWE"
+  },
+  "security.pbes2MinIterations|description": {
+    "en": "c6f00e313b689b2b",
+    "text": "Ang isang JWE na naka-encrypt sa isang password (PBES2, RFC 7518 seksiyon 4.8) ay nagsasaad ng sarili nitong bilang ng iteration, at tinatanggihan ang mas mababa rito bago may i-derive. Ang default ng product mode ay 600000, ang bilang ng OWASP para sa PBKDF2-HMAC-SHA256 (ASVS 5.0.0 11.4.4); ang sa development ay ang 1000 na inirerekomenda ng RFC 7518. Tinatanggihan sa product ang isang sender na gumagamit ng mas maliit na default ng isang library hangga’t hindi ito ibinababa. Dine-derive ang key sa thread pool ng libuv, hindi kailanman sa event loop, at tinatanggihan ang higit sa 1000000 iteration."
+  },
   "audit.allowPlainSyslog|label": {
     "en": "1401e9d7380768e3",
     "text": "Payagan ang plain syslog audit export sa product mode"
@@ -1866,6 +1874,18 @@
   "keys.kekProvider|restartReason": {
     "en": "0956d2f97d1df86a",
     "text": "isang beses binabasa ang key-encryption key, sa startup, bago i-decrypt ang mga signing key"
+  },
+  "secrets.allowLocalSecrets|label": {
+    "en": "b746acd0225ed6a2",
+    "text": "Payagan ang mga lokal na secret sa product mode"
+  },
+  "secrets.allowLocalSecrets|description": {
+    "en": "ecfd7489f63a1df3",
+    "text": "Naka-off, ang default, kinukuha ng product mode ang mga key-encryption key nito (keys.kekProvider, keys.cellKekProvider) mula sa isang secret store o isang key management service, at ang password ng database mula sa isang secret store; pinahihinto ng isang key-encryption key sa isang file, o ng password ng database sa isang file o sa connection string, ang serbisyo (ASVS 5.0.0 13.3.1). Naka-on, tinatanggap ang mga ito, kaya naiiwan ang secret sa host. Maaaring file ang naunang key-encryption key alinman dito. Tinatanggap ang mga ito ng development mode anuman ang sabihin nito."
+  },
+  "secrets.allowLocalSecrets|restartReason": {
+    "en": "3c6a25d74849bf35",
+    "text": "binabasa nang isang beses ang key-encryption key at ang password ng database, sa pagsisimula"
   },
   "keys.kekTransitMount|label": {
     "en": "efe8c3a4233dd778",
@@ -4480,8 +4500,8 @@
     "text": "Encryption ng refresh token: key management (alg)"
   },
   "oauth2.refreshTokenEncryptionAlg|description": {
-    "en": "edc32ded102e4226",
-    "text": "Ang JWE key management algorithm na ginagamit sa pag-encrypt ng bawat refresh token. Ang refresh token ay isang pinirmahang JWT na naka-seal sa sariling mga key ng realm NA ITO at opaque sa client nito, kaya hindi nakikita sa labas ng serbisyong ito ang pagpili. Ginagamit ng mga RSA-OAEP algorithm ang RSA key ng realm, ng mga ECDH-ES ang EC key nito, at ng iba pa ang sariling secret ng realm. Ang pagbabago nito ay nakakaapekto sa mga token na iniisyu mula noon; nabubuksan pa rin ang mga naiisyu na, dahil may hawak ang realm na key ng bawat uri. Hindi iniaalok ang RSA1_5. Ang mga ML-KEM at HPKE algorithm (#82 — mga draft, tingnan ang keys.encryptionKemAlgs) ay nagse-seal sa key pair na HINANGO mula sa secret ng realm para sa algorithm na iyon, hindi kailanman inilalathala, kaya ang pagpili ng isa rito ay hindi nangangailangan ng key at walang binabagong nakikita ng client; ginagawang ligtas ng HPKE-10-KE (X-Wing) ang refresh token na nakuha ngayon laban sa hinaharap na quantum na kalaban pati sa classical."
+    "en": "93e63f4a8c7ba5b2",
+    "text": "Ang JWE key management algorithm na ginagamit sa pag-encrypt ng bawat refresh token. Ang refresh token ay isang pinirmahang JWT na naka-seal sa sariling mga key ng realm NA ITO at opaque sa client nito, kaya hindi nakikita sa labas ng serbisyong ito ang pagpili. Ginagamit ng mga RSA-OAEP algorithm ang RSA key ng realm, ng mga ECDH-ES ang EC key nito, at ng iba pa ang sariling secret ng realm. Hindi iniaalok ang PBES2: random ang secret, kaya walang naidaragdag ang pag-stretch dito bilang password. Ang pagbabago nito ay nakakaapekto sa mga token na iniisyu mula noon; nabubuksan pa rin ang mga naiisyu na, dahil may hawak ang realm na key ng bawat uri. Hindi iniaalok ang RSA1_5. Ang mga ML-KEM at HPKE algorithm (#82 — mga draft, tingnan ang keys.encryptionKemAlgs) ay nagse-seal sa key pair na HINANGO mula sa secret ng realm para sa algorithm na iyon, hindi kailanman inilalathala, kaya ang pagpili ng isa rito ay hindi nangangailangan ng key at walang binabagong nakikita ng client; ginagawang ligtas ng HPKE-10-KE (X-Wing) ang refresh token na nakuha ngayon laban sa hinaharap na quantum na kalaban pati sa classical."
   },
   "oauth2.refreshTokenEncryptionEnc|label": {
     "en": "901d0b6a281af825",

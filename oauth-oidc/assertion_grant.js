@@ -350,10 +350,10 @@ function keysFrom(jwksText) {
  *
  * @param presented - the assertion as presented
  * @param opts - `secret`, a client secret for a symmetric JWE
- * @returns `{ ok: true, jws, encrypted, ... }`, or `{ ok: false, errorCode,
- *   description }`
+ * @returns a promise of `{ ok: true, jws, encrypted, ... }`, or of
+ *   `{ ok: false, errorCode, description }`
  */
-function unwrapAssertion(presented, opts) {
+async function unwrapAssertion(presented, opts) {
   log.debug('Entering unwrapAssertion().');
   const options = opts || {};
   const compact = String(presented || '').trim();
@@ -457,7 +457,10 @@ function unwrapAssertion(presented, opts) {
   let lastError = '';
   for (let i = 0; i < candidates.length && !opened; i++) {
     try {
-      opened = stsCrypto.decryptJweCompact(compact, Object.assign({
+      // ASYNC, so that a PBES2 key is derived off the event loop (ASVS
+      // 5.0.0 11.4.4). One candidate at a time: a second derivation runs
+      // only when the first key did not open it.
+      opened = await stsCrypto.decryptJweCompactAsync(compact, Object.assign({
         // Every `enc` this service knows. Narrowing here would be this service
         // advertising a content encryption algorithm it then refused, and the
         // list it advertises is exactly this one.
@@ -951,8 +954,8 @@ async function verify(opts) {
   }
 
   // --- RFC 7523 section 3 claim 10: it may be encrypted ---------------------
-  const unwrapped = unwrapAssertion(presented,
-                                    { secret: options.clientSecret });
+  const unwrapped = await unwrapAssertion(presented,
+                                          { secret: options.clientSecret });
   if (!unwrapped.ok) {
     log.debug('Leaving verify(). It would not decrypt.');
     return { ok: false, errorCode: unwrapped.errorCode, error: GRANT_ERROR,

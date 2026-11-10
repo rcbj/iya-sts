@@ -1396,6 +1396,7 @@ async function run(t) {
   // and it resolves only on a postgres store; no store is opened for it.
   process.env.STS_KEYS_SOURCE = 'persisted';
   process.env.STS_KEYS_KEK_PROVIDER = 'file';
+  process.env.STS_SECRETS_ALLOW_LOCAL_SECRETS = 'true';
   process.env.STS_KEYS_KEK_FILE = kekFile;
   process.env.STS_CLUSTER_MODE = 'active-active';
   process.env.STS_PERSISTENCE_MODE = 'postgres';

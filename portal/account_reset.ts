@@ -423,13 +423,23 @@ class AccountReset {
     res[LINK_SPENT] = true;
     credentials.consumePasswordReset(username);
     credentials.setPasswordResetRequired(username, false);
-    await websecurity.succeededShared('password-reset', req, username);
+    // RECORDED BEFORE ANYTHING ELSE CAN FAIL (ASVS 5.0.0 2.3.3): the password
+    // is set and the link is spent, so the row has to exist whatever follows.
     audit.record({
       category: 'authentication', action: 'portal.password-reset',
       actor: username, target: username, outcome: 'success',
       summary: username + ' chose a new password from a reset link',
       detail: { address: websecurity.addressOf(req) }
     });
+    try {
+      await websecurity.succeededShared('password-reset', req, username);
+    } catch (e) {
+      // The reset happened; only the failure count was not cleared, and a
+      // 500 for an act that is done would send the person to repeat it.
+      log.warn(errorCodes.tag('STS-PORTAL-0637') + 'portal: the reset of ' +
+               username + ' is done, and its failure count could not be ' +
+               'cleared: ' + ((e && e.message) || e));
+    }
     this.deps.accountSignals().credentialChanged({ username: username,
       credentialType: 'password', changeType: 'create',
       initiatingEntity: 'user', via: 'portal',

@@ -2057,6 +2057,11 @@ const CODES = [
   // ===== CLUSTER ===========================================================
   { code: 'STS-STORE-0170',
     summary: 'The service did not start because the database password is a well-known default.' },
+  { code: 'STS-STORE-0171',
+    summary: 'The service did not start because, in product mode, a ' +
+      'database password was in a file or in the connection string rather ' +
+      'than in a secret store.',
+    spec: 'ASVS 5.0.0 13.3.1' },
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
       'membership row had expired, or a lease the write needed was no longer ' +
@@ -3678,6 +3683,11 @@ const CODES = [
     summary: 'An XML element whose key is wrapped with OAEP over SHA-1 ' +
       'was refused: crypto.allowLegacyHashes is off (#1469).',
     spec: '' },
+  { code: 'STS-KEYS-0197',
+    summary: 'The service did not start because, in product mode, a ' +
+      'key-encryption key was to be read from a file rather than a secret ' +
+      'store or a key management service.',
+    spec: 'ASVS 5.0.0 13.3.1' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +
@@ -11515,6 +11525,10 @@ const CODES = [
     summary: 'A confidential client sent no code_challenge, in product ' +
       '(ASVS 5.0.0 10.4.6).',
     spec: 'invalid_request' },
+  { code: 'STS-OAUTH-1003',
+    summary: 'A dynamic client registration was refused because the ' +
+      'register did not store it (ASVS 5.0.0 2.3.3).',
+    spec: 'invalid_client_metadata' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -16705,6 +16719,10 @@ const CODES = [
     summary: 'An HTTP Basic credential was refused without being checked: ' +
       'too many recent failures (#1448).',
     spec: 'HTTP 401' },
+  { code: 'STS-SCIM-0090',
+    summary: 'A SCIM create that was refused after its entry was written ' +
+      'could not delete that entry again (ASVS 5.0.0 2.3.3).',
+    spec: '' },
   { code: 'STS-SPIFFE-0001',
     summary: 'A SPIFFE gRPC handler failed with something that was not a ' +
       'gRPC status, which is a defect in this service (or the request ' +
@@ -25056,6 +25074,10 @@ const CODES = [
   { code: 'STS-ADMIN-0917',
     summary: 'An application was not created because the metadata document given with it was refused.',
     spec: 'HTTP 400' },
+  { code: 'STS-ADMIN-0918',
+    summary: 'A passkey an administrator enrolled was recorded, and the ' +
+      'account signal about it could not be sent (ASVS 5.0.0 2.3.3).',
+    spec: '' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -26096,6 +26118,11 @@ const CODES = [
     summary: 'GET /web/photo/{id} answered 404: no such photo, its person ' +
       'was deleted, or their account is disabled (#719).',
     spec: 'HTTP 404' },
+  { code: 'STS-PORTAL-0637',
+    summary: 'A password reset or an authenticator app setup was done and ' +
+      'recorded, and its failure count could not be cleared (ASVS 5.0.0 ' +
+      '2.3.3).',
+    spec: '' },
   { code: 'STS-ACCOUNT-0001',
     summary: 'A request to /account-api presented no access token.',
     spec: 'RFC 6750 section 3.1 (401, WWW-Authenticate: DPoP)' },

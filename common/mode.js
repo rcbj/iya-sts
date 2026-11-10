@@ -655,6 +655,18 @@ function refusesDefaultDatabasePassword() {
 }
 
 /**
+ * @returns true when the key-encryption keys and the database passwords must
+ *   come from a secret store or a key management service, not from a file on
+ *   the host or the connection string (ASVS 5.0.0 13.3.1)
+ */
+function requiresSecretStore() {
+  log.debug("Entering requiresSecretStore().");
+  log.debug("Leaving requiresSecretStore().");
+  return isProduct() &&
+    config.value('secrets.allowLocalSecrets') !== true;
+}
+
+/**
  * @returns true when a syslog destination must use tls
  */
 function refusesPlainSyslog() {
@@ -3311,6 +3323,18 @@ const REQUIREMENTS = [
              'level, and a default database password stops the service ' +
              'unless persistence.allowDefaultDatabasePassword is on.',
     where: 'common/helpers.js, persistence/persistence.js' },
+  // ASVS 5.0.0 13.3.1.
+  { id: 'secrets-from-store',
+    what: 'Backend secrets come from a secret store',
+    development: 'The key-encryption key may be a file, and the database ' +
+                 'password may be in a file or in the connection string.',
+    product: 'The key-encryption keys come from a secret store or a key ' +
+             'management service, and a database password from a secret ' +
+             'store. A file or a password in the connection string stops ' +
+             'the service unless secrets.allowLocalSecrets is on. A ' +
+             'previous key-encryption key may still be a file, so that a ' +
+             'deployment can move off one.',
+    where: 'common/secrets.js, persistence/persistence.js' },
   { id: 'audit-destination',
     what: 'The audit log should leave this service',
     development: 'Nothing is said about audit export.',
@@ -4917,6 +4941,7 @@ module.exports = {
   omitsUnapprovedSigningCurves: omitsUnapprovedSigningCurves,
   refusesPlainSyslog: refusesPlainSyslog,
   refusesDefaultDatabasePassword: refusesDefaultDatabasePassword,
+  requiresSecretStore: requiresSecretStore,
   redactsRequestLog: redactsRequestLog,
   requiresTypedLogoutToken: requiresTypedLogoutToken,
   hidesFailureDetail: hidesFailureDetail,
