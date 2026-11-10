@@ -67,13 +67,16 @@ declare namespace IyaApi {
   // What a handler holding response `R` may send with status `S`: the
   // model's answer at a literal 2xx status, nothing at a 2xx status the model
   // gives no JSON answer, and anything at a status that is not a literal (or
-  // through a response that is not typed).
+  // through a response that is not typed). For a handler serving several
+  // operations, any one of their answers at that status.
   type AnswerOf<R, S extends number> =
     R extends { readonly __iyaAnswers?: infer M }
-      ? (number extends S ? unknown
-        : S extends keyof M ? M[S]
-          : S extends 200 | 201 | 202 | 203 | 204 | 206 ? never : unknown)
+      ? (number extends S ? unknown : AnswerIn<M, S>)
       : unknown;
+  type AnswerIn<M, S> = M extends unknown
+    ? (S extends keyof M ? M[S]
+      : S extends 200 | 201 | 202 | 203 | 204 | 206 ? never : unknown)
+    : never;
 
   // What a route that checks the request before its handler hands it: the
   // query and the body as the model declares them.

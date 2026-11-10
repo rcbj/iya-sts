@@ -98,7 +98,8 @@ interface PolicyModule {
 // audit action, what it does (for the API's description) and its body.
 interface ExtraAction {
   action: string;
-  operationId: string;
+  // The model's (#1579): `models/api/management.tsp` declares the operation.
+  operationId: keyof IyaApi.Management.Operations;
   summary: string;
   description: string;
   auditAction: string;
