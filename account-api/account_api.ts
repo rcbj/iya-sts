@@ -416,7 +416,8 @@ class AccountApi {
     log.debug("Entering AccountApi.signedInRecently().");
     const limit = this.recentAuthSeconds();
     // Read through the `Session` concept (#1579), by the session's owner.
-    const at = this.deps.authn().lastAuthenticatedAt((caller as Json).signOn);
+    const at = this.deps.lazy.authn()
+      .lastAuthenticatedAt((caller as Json).signOn);
     log.debug("Leaving AccountApi.signedInRecently().");
     return limit === 0 ||
       (at > 0 && Date.now() / 1000 - at <= limit);

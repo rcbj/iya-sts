@@ -69,6 +69,9 @@ import os = require('os');
 import path = require('path');
 // Every random value is crypto.js's (`tests/crypto_centralised.js`).
 import stsCrypto = require('./crypto');
+// The audit row as the model says it means (#1579): `canonical()` reads it
+// through the `AuditEvent` concept.
+import DomainClasses = require('./domain_classes');
 import tls = require('tls');
 import audit = require('./audit');
 import config = require('./config');
@@ -1553,16 +1556,18 @@ class AuditExport {
    */
   static canonical(row: Json, opts: Json): Json {
     log.debug("Entering AuditExport.canonical().");
-    const one = row || {};
-    const detail = one.detail && typeof one.detail === 'object'
-      ? one.detail : {};
+    // THE ROW IS READ THROUGH THE `AuditEvent` CONCEPT (#1579), so the
+    // model is the one statement of what an audit row holds. The wire
+    // format below is the export's own and does not change with it.
+    const one = DomainClasses.AuditEvent.fromRecord(row || {});
+    const detail: Json = one.detail || {};
     const origin = opts.origin || one.origin || '';
     const at = Number(one.at) || Date.now();
     const outcome = String(one.outcome || '');
     log.debug("Leaving AuditExport.canonical().");
     return {
-      id: (origin || 'local') + ':' + one.seq,
-      seq: one.seq,
+      id: (origin || 'local') + ':' + one.sequence,
+      seq: one.sequence,
       origin: origin || '',
       timestamp: new Date(at).toISOString(),
       at: at,

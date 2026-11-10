@@ -79,6 +79,8 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import realms = require('../common/realms');
+// A token register row as the model says it means (#1579).
+import DomainClasses = require('../common/domain_classes');
 import applications = require('../common/applications');
 import errorCodes = require('../common/error_codes');
 import audit = require('../common/audit');
@@ -1470,9 +1472,11 @@ class ProviderCommands {
       const stats = this.deps.stats();
       const key = String(stats.identityKeyOf(username) || username);
       // This person's records, through the register's index (#820 part 3).
+      // Each register row read through the `IssuedToken` concept (#1579).
       stats.tokenList(username).forEach(function (record: Json) {
-        const who = String(record.username || record.subject || '');
-        const client = String(record.clientId || record.client_id || '');
+        const token = DomainClasses.IssuedToken.fromRecord(record);
+        const who = String(token.username || '');
+        const client = String(token.clientId || '');
         if (client && who && (who === username ||
             String(stats.identityKeyOf(who) || who) === key)) {
           out[client] = true;

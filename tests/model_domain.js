@@ -268,6 +268,104 @@ async function records(t) {
   log.debug("Leaving records().");
 }
 
+// THE SERVICE READS THESE RECORDS THROUGH THEIR CONCEPTS (#1579): each
+// reader below is asked with `DomainMap.fromRecord()` watched, so a reader
+// that goes back to the raw record fails here. The audit export's wire
+// format is held byte for byte, because reading through the concept must not
+// change what a destination receives.
+async function readers(t) {
+  log.debug("Entering readers().");
+  const realms = require('../common/realms');
+  const authn = require('../authn/authn');
+  const logout = require('../logout/logout');
+  const adminViews = require('../admin-core/admin_views');
+  const audit = require('../common/audit');
+  const AuditExport = require('../common/audit_export').AuditExport;
+  const asked = [];
+  const original = DomainMap.fromRecord;
+  DomainMap.fromRecord = function (name, record, options, at) {
+    asked.push(name);
+    return original.call(DomainMap, name, record, options, at);
+  };
+  const through = function (name, what, fn) {
+    asked.length = 0;
+    const out = fn();
+    t.check(asked.indexOf(name) >= 0, what + ' reads through ' + name,
+      JSON.stringify(asked));
+    return out;
+  };
+  const res = { req: null };
+  ['set', 'append', 'status', 'type', 'send'].forEach(function (name) {
+    res[name] = function () {
+      return res;
+    };
+  });
+  try {
+    await realms.run(realms.DEFAULT_REALM, async function () {
+      const session = await authn.startSession(res, 'domain-reader', ['pwd'],
+        'urn:x', 'OAuth 2.0 / OIDC', { credential: { kind: 'password' } });
+      const first = session.events[0].at;
+      t.equal(through('Session', 'authn.sessionStartedAt()', function () {
+        return authn.sessionStartedAt(session);
+      }), first * 1000, 'a session began at its first event');
+      t.equal(through('Session', 'authn.lastAuthenticatedAt()', function () {
+        return authn.lastAuthenticatedAt(session);
+      }), first, 'and was last authenticated at its latest');
+      t.equal(through('Session', 'authn.signOnFactsFor()', function () {
+        return authn.signOnFactsFor(session);
+      }).acr, 'urn:x', 'the sign-on facts are the concept\'s');
+      const rows = through('Session', 'logout.liveSessions()', function () {
+        return logout.liveSessions([session]);
+      });
+      t.equal(rows.length && rows[0].username, 'domain-reader',
+        'the session list draws the concept');
+      through('Session', 'the console\'s sign-on session rows', function () {
+        return adminViews.signOnSessionRows([session]);
+      });
+      const stats = require('../common/admin_stats');
+      const now = Math.floor(Date.now() / 1000);
+      stats.recordJwt({ iss: 'i', sub: 's', aud: 'a', exp: now + 600,
+        iat: now, jti: 'model-domain-reader-jti', typ: 'Bearer', scope: 'x',
+        username: 'domain-reader', client_id: 'c' }, 'h.p.s',
+      { kind: 'access_token', client: 'c' });
+      const inventory = through('IssuedToken', 'the sign-out inventory',
+        function () {
+          return logout.inventoryFor(stats.identityKeyOf('domain-reader'));
+        });
+      t.check(JSON.stringify(inventory).indexOf('model-domain-reader-jti') >= 0,
+        'and lists the token');
+      audit.audit({ category: 'admin', action: 'admin.test', actor: 'a',
+        target: 'model-domain-reader', summary: 'model_domain' });
+      t.check(through('AuditEvent', 'the audit view\'s filter', function () {
+        return adminViews.auditView({ q: 'model-domain-reader' });
+      }).json.matched >= 1, 'and finds the row');
+    });
+    const row = { seq: 7, origin: 'proc-1', at: 1700000000000,
+      category: 'admin', action: 'admin.test', outcome: 'refused',
+      errorCode: 'STS-CORE-0001', actor: 'alice', actorForm: 'alice@R',
+      target: 't', protocol: 'SCIM 2.0', channel: 'http',
+      address: '10.0.0.1', summary: 'S', prev: '', mac: 'm',
+      detail: { client_id: 'c1', note: 'n' } };
+    const opts = { origin: '', realm: 'r', source: 'sts', names: new Set() };
+    const event = through('AuditEvent', 'the audit export', function () {
+      return AuditExport.canonical(row, opts);
+    });
+    t.equal(JSON.stringify(event), JSON.stringify({
+      id: 'proc-1:7', seq: 7, origin: 'proc-1',
+      timestamp: '2023-11-14T22:13:20.000Z', at: 1700000000000,
+      severity: AuditExport.severityName('refused'), category: 'admin',
+      action: 'admin.test', outcome: 'refused', errorCode: 'STS-CORE-0001',
+      source: 'sts', realm: 'r', subject: 'alice', subjectForm: 'alice@R',
+      client: 'c1', address: '10.0.0.1', target: 't', protocol: 'SCIM 2.0',
+      channel: 'http', message: 'S',
+      attributes: AuditExport.redact(row.detail, opts.names)
+    }), 'the audit export\'s event is what it was before the concept');
+  } finally {
+    DomainMap.fromRecord = original;
+  }
+  log.debug("Leaving readers().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   const lib = await import(url.pathToFileURL(path.join(ROOT, 'models', 'lib',
@@ -278,6 +376,7 @@ async function run(t) {
   declarations(t);
   mapping(t);
   await records(t);
+  await readers(t);
   log.debug("Leaving run().");
 }
 

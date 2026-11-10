@@ -5223,7 +5223,10 @@ class AdminViews {
     const all = auditLog.list();
     const needle = wantedText.toLowerCase();
     const actorNeedle = wantedActor.toLowerCase();
-    const filtered = all.filter(function (row) {
+    // EACH ROW IS DECIDED ON THROUGH THE `AuditEvent` CONCEPT (#1579); the
+    // rows answered are the log's own, whose shape the API publishes.
+    const filtered = all.filter(function (held) {
+      const row = DomainClasses.AuditEvent.fromRecord(held);
       if (wantedCategory && row.category !== wantedCategory) return false;
       if (wantedAction && row.action !== wantedAction) return false;
       if (wantedOutcome && row.outcome !== wantedOutcome) return false;
