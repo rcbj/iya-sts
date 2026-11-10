@@ -148,7 +148,7 @@ function childMain() {
       JSON.parse(JSON.stringify(adminViews.usersJson({ query: { user: NAME },
         headers: {}, cookies: {}, method: 'GET', path: '/admin/users',
         url: '/admin/users' }))), WebKit.context({ user: NAME }, true)) };
-    t.check(!/class="risk-badge"/.test(unread.inner),
+    t.check(!/class="risk-badge\b/.test(unread.inner),
             'C3. a caller that read no standing draws no badge');
     fs.writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);
