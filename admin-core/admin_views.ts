@@ -102,6 +102,7 @@ import helpers = require('../common/helpers');
 import configDump = require('./config_dump');
 // The policy references a group may make (#1235, rule 3cx): a leaf.
 import PolicySelection = require('../common/policy_selection');
+import DomainClasses = require('../common/domain_classes');
 import InstanceSlot = require('../common/instance_slot');
 // The credential store, for the ways-in list the new-person form offers.
 import credentials = require('../common/credentials');
@@ -5316,32 +5317,6 @@ class AdminViews {
     };
   }
 
-  // One attribute off an entry the directory reader handed back, canonically
-  // spelled or not. `objectFor()` returns them canonically spelled and a caller
-  // asking for `cn` should not have to know that.
-  /**
-   * Returns an entry's first value of an attribute, matched case-insensitively.
-   *
-   * @param entry - a directory entry with an `attributes` object
-   * @param name - the attribute name
-   * @returns the first value as a string, or an empty string
-   */
-  firstAttributeValue(entry, name) {
-    const { log } = this.deps;
-    log.debug("Entering AdminViews.firstAttributeValue().");
-    if (!entry || !entry.attributes) {
-      log.debug("Leaving AdminViews.firstAttributeValue().");
-      return '';
-    }
-    const wanted = String(name).toLowerCase();
-    const key = Object.keys(entry.attributes).filter(function (one) {
-      return String(one).toLowerCase() === wanted;
-    })[0];
-    const values = key ? entry.attributes[key] : null;
-    log.debug("Leaving AdminViews.firstAttributeValue().");
-    return (values && values.length) ? String(values[0]) : '';
-  }
-
   // WHAT A BOX IS, WHICH IS THE ONE QUESTION `delegation_map.js` DELIBERATELY
   // CANNOT ANSWER. It is handed this function and asks it once per node.
   //
@@ -5430,7 +5405,9 @@ class AdminViews {
                 // application because that is what a front-end service is.
                 : node.chiefRole === 'initial' ? 'person' : 'application';
 
-    const cn = entry ? this.firstAttributeValue(entry, 'cn') : '';
+    // cn is a person's list; the box is labelled with its first value.
+    const cn = entry ?
+      (DomainClasses.User.fromEntry(entry.attributes).cn || [])[0] || '' : '';
     const appName = application ? (application.name || application.dnLabel) :
                     '';
     const label = cn || appName || node.id;
@@ -9827,20 +9804,22 @@ class AdminViews {
       json: (function () {
       return {
           serviceProviders: paged.shown.map(function (row) {
+            const provider =
+              DomainClasses.SamlServiceProvider.fromEntry(row.fields);
             return Object.assign(self.saml2Facts(base, row.identifier), {
               name: row.name, authentications: row.authentications,
               sessions: row.sessions,
               users: row.users, firstSeen: row.firstSeen,
               lastSeen: row.lastSeen,
               assertionConsumerServices: self.valuesFor(
-                  row.fields.samlAssertionConsumerService),
+                  provider.assertionConsumerService),
               singleLogoutServices:
-                self.valuesFor(row.fields.samlSingleLogoutService),
-              nameIdFormats: self.valuesFor(row.fields.samlNameIdFormat),
-              responseBindings: self.valuesFor(row.fields.samlResponseBinding),
-              lastRequestSigned: row.fields.samlAuthnRequestSigned === 'TRUE',
+                self.valuesFor(provider.singleLogoutService),
+              nameIdFormats: self.valuesFor(provider.nameIdFormat),
+              responseBindings: self.valuesFor(provider.responseBinding),
+              lastRequestSigned: provider.authnRequestSigned === 'TRUE',
               lastRequestVerification:
-                String(row.fields.samlAuthnRequestVerification || '')
+                String(provider.authnRequestVerification || '')
                   .split(' ')[0]
             });
           }),
@@ -10310,15 +10289,17 @@ class AdminViews {
       json: (function () {
       return {
           relyingParties: paged.shown.map(function (row) {
+            const provider =
+              DomainClasses.SamlServiceProvider.fromEntry(row.fields);
             return Object.assign(self.saml11Facts(base, row.identifier), {
               name: row.name, authentications: row.authentications,
               sessions: row.sessions,
               users: row.users, firstSeen: row.firstSeen,
               lastSeen: row.lastSeen,
               assertionConsumerServices: self.valuesFor(
-                  row.fields.samlAssertionConsumerService),
-              nameIdFormats: self.valuesFor(row.fields.samlNameIdFormat),
-              profiles: self.valuesFor(row.fields.samlResponseBinding).filter(
+                  provider.assertionConsumerService),
+              nameIdFormats: self.valuesFor(provider.nameIdFormat),
+              profiles: self.valuesFor(provider.responseBinding).filter(
                   function (v) {
                 return v === saml11.PROFILE_POST || v ===
                        saml11.PROFILE_ARTIFACT;

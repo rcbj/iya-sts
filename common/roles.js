@@ -117,6 +117,7 @@
 // ---------------------------------------------------------------------------
 
 const ModelTables = require('./model_tables');
+const DomainClasses = require('./domain_classes');
 const { log } = require('./helpers');
 const config = require('./config');
 // The error-code registry. A LEAF that requires nothing here, so this file
@@ -838,19 +839,17 @@ function firstValue(attributes, name) {
   return Array.isArray(found) ? (found[0] || '') : (found || '');
 }
 
-function allValues(attributes, name) {
-  log.debug("Entering allValues().");
-  const found = attributes[name] || attributes[name.toLowerCase()];
-  if (!found) {
-    log.debug("Leaving allValues().");
-    return [];
-  }
-  log.debug("Leaving allValues().");
-  return (Array.isArray(found) ? found : [found]).map(function (one) {
+// A role's list as this module has always answered it: each value trimmed and
+// the empty ones gone, which a concept's list does not do for it (#1390).
+function trimmedValues(values) {
+  log.debug("Entering trimmedValues().");
+  const out = (values || []).map(function (one) {
     return String(one).trim();
   }).filter(function (one) {
     return one.length > 0;
   });
+  log.debug("Leaving trimmedValues().");
+  return out;
 }
 
 /**
@@ -872,12 +871,15 @@ function all() {
   }
   const rows = directory.allRoles().map(function (entry) {
     const at = entry.attributes || {};
+    // What the role says comes from its concept (#1390); the entryUUID below
+    // is the one read no field of the concept holds.
+    const role = DomainClasses.Role.fromEntry(at);
     const consoleRow = consoleRoleFor(entry.name);
     const nativeRow = nativeRoleFor(entry.name);
     // THE APPLICATION A ROLE BELONGS TO (#310), and its name inside it: the
     // part of `<role>@<application>` before the separator, which is what a
     // token for that application carries and its requirement names.
-    const application = firstValue(at, 'roleApplication');
+    const application = role.roleApplication || '';
     return {
       name: entry.name,
       application: application,
@@ -891,27 +893,26 @@ function all() {
       // across every rewrite of the entry and a delete and re-create does
       // not, so a caller holding it can tell the role from a namesake.
       id: firstValue(at, 'entryUUID').toLowerCase(),
-      displayName: firstValue(at, 'displayName'),
+      displayName: role.displayName || '',
       // WHO MAY HOLD IT (#93); empty is both kinds.
-      memberTypes: allValues(at, 'roleAllowedMemberType'),
-      description: firstValue(at, 'description'),
+      memberTypes: trimmedValues(role.roleAllowedMemberType),
+      description: role.description || '',
       // A console role's people and groups are the roster's, never stored:
       // see THE TWO CONSOLE ROLES.
-      users: consoleRow ? [] : allValues(at, 'roleMemberUser'),
+      users: consoleRow ? [] : trimmedValues(role.memberUsers),
       groups: consoleRow ? consoleRoleGroups(consoleRow)
-                         : allValues(at, 'roleMemberGroup'),
-      applications: allValues(at, 'roleMemberApplication'),
+                         : trimmedValues(role.memberGroups),
+      applications: trimmedValues(role.memberApplications),
       // THE CLIENTS THAT CONFER IT (#454) on every person signing in
       // through them.
-      conferredBy: allValues(at, 'roleConferredBy'),
+      conferredBy: trimmedValues(role.roleConferredBy),
       permissions: nativeRow ? [nativeRow.permission]
-                             : allValues(at, 'rolePermission'),
+                             : trimmedValues(role.permissions),
       // WHO ANSWERS FOR IT (#604): the `owner` DNs as stored.
-      owners: allValues(at, 'owner'),
+      owners: trimmedValues(role.owner),
       // CLOSED TO ITS OWNERS (#607, rcbj's decision 4): an administrator's
       // mark, which the access-control policy's owner rule reads.
-      ownerProtected: firstValue(at, 'stsOwnerProtected').toUpperCase() ===
-                      'TRUE',
+      ownerProtected: role.stsOwnerProtected === true,
       console: !!consoleRow,
       // Seeded in every realm, undeletable, its permission fixed (#309).
       native: !!nativeRow,

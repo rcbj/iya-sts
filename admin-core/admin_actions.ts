@@ -134,6 +134,7 @@
 // tests/protocol/sts_admin_api_operations.js did, on the first run after.
 import helpers = require('../common/helpers');
 import configDump = require('./config_dump');
+import DomainClasses = require('../common/domain_classes');
 import InstanceSlot = require('../common/instance_slot');
 // A policy save's or reset's message is filled from `policy_kinds.ts`'s
 // templates, so the server can translate it (#543).
@@ -5870,7 +5871,8 @@ class AdminActions {
         return change.attribute === 'oauthTokenEndpointAuthMethod';
       })[0];
       const projected = methodChange ? methodChange.values
-        : valuesOf(entry.fields.oauthTokenEndpointAuthMethod);
+        : valuesOf(DomainClasses.OAuthClient.fromEntry(entry.fields)
+          .tokenEndpointAuthMethods);
       const determination = applications.oauthConfidentialOf({
         registered: !!entry.registered,
         fields: { oauthTokenEndpointAuthMethod: projected }
@@ -5967,7 +5969,8 @@ class AdminActions {
     // has already been written, which is what lets the family's own check
     // see the new declaration.
     if (!errors.length && withProtocols) {
-      const previous = valuesOf(entry.fields.appAllowedProtocol);
+      const previous = valuesOf(DomainClasses.Application
+        .fromEntry(entry.fields).allowedProtocols);
       const posted = valuesOf(protocols && protocols.length
         ? protocols : body.protocols);
       const addedFamilies = posted.filter(function (id) {
@@ -8273,9 +8276,8 @@ class AdminActions {
         'Register the service provider first.'] });
     }
     const wanted = applications.samlCertificateBase64(value);
-    const before = row.fields ? row.fields.samlSigningCertificate : [];
-    const current = (Array.isArray(before) ? before : (before ? [before] : []))
-      .map(function (one) { return String(one); });
+    const current = row.fields ? DomainClasses.SamlServiceProvider
+      .fromEntry(row.fields).signingCertificate || [] : [];
     let last = null;
     let changed = false;
     if (wanted) {
