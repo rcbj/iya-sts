@@ -160,6 +160,29 @@ function modelledNames() {
 }
 
 /**
+ * The browser bundles an image build writes, as `build-typescript.sh`'s
+ * `bundle_surface` lines name them: built from the `web_*.ts` this does not
+ * walk, and no source.
+ *
+ * @returns the paths
+ */
+function bundles() {
+  log.debug("Entering bundles().");
+  const script = fs.readFileSync(path.join(ROOT, 'build-typescript.sh'),
+    'utf8').replace(/\\\n/g, ' ');
+  const out = new Set();
+  script.split('\n').filter(function (line) {
+    return /^bundle_surface /.test(line);
+  }).forEach(function (line) {
+    (line.match(/\S+\.js\b/g) || []).forEach(function (one) {
+      out.add(one);
+    });
+  });
+  log.debug("Leaving bundles(). " + out.size);
+  return out;
+}
+
+/**
  * Every service source to walk, relative to the root. A compiled `.js`
  * beside its `.ts` is the same file, and only the `.ts` is walked.
  *
@@ -167,6 +190,7 @@ function modelledNames() {
  */
 function sources() {
   log.debug("Entering sources().");
+  const built = bundles();
   const out = [];
   const walk = function (dir) {
     fs.readdirSync(path.join(ROOT, dir), { withFileTypes: true })
@@ -180,7 +204,8 @@ function sources() {
         }
         if (!/\.(ts|js)$/.test(one.name) || /\.d\.ts$/.test(one.name) ||
             /^web_/.test(one.name) || SKIP_FILES.indexOf(rel) >= 0 ||
-            /^persistence\//.test(rel) || /^ldap\/directory_/.test(rel)) {
+            /^persistence\//.test(rel) || /^ldap\/directory_/.test(rel) ||
+            built.has(rel)) {
           return;
         }
         if (/\.js$/.test(one.name) &&
