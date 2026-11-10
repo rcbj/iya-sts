@@ -65,9 +65,10 @@
 // The console gate is UNCONDITIONAL. Every page and every form under /admin
 // needs a session of the console's own — got through the OIDC code flow
 // against this service's authorization server (`common/oidc_rp.ts`, since
-// 2026-09-06) — and one of two roles — Admin Read and Admin Write — held as
-// two ordinary groups in the embedded directory of the realm the person
-// signed in through (per realm since 2026-09-14, #32; admin-ui/CLAUDE.md 8d).
+// 2026-09-06) — and one of three roles — Admin Read, Admin Write and
+// Security Administrator (#645) — held as ordinary groups in the embedded
+// directory of the realm the person signed in through (per realm since
+// 2026-09-14, #32; admin-ui/CLAUDE.md 8d).
 // The gate is one `app.use('/admin', ...)` further down this file and the
 // roles are `./admin_rbac.js`; both have headers of their own.
 //
@@ -2586,19 +2587,22 @@ const SECTIONS = [
                'new tab before anything is saved. The admin console keeps ' +
                'its own look.' },
       { path: '/admin/rbac', label: 'Admin roles',
-        blurb: 'Who holds the two roles that grant this console — Admin ' +
-               'Read and Admin Write — granted and revoked here. They are ' +
-               'ORDINARY GROUPS in the shared directory rather than a store ' +
-               'of the console\'s own, so this page, ' +
-               '<code>/admin-api</code>, an <code>ldapmodify</code> on 389 ' +
-               'or 636 and a SCIM PATCH are four doors onto one membership ' +
-               '— which is the point, since a role no test can grant is a ' +
-               'role no test can exercise. While NEITHER group has a member, ' +
-               'anybody who signs in holds both.' },
+        blurb: 'Who holds the roles that grant this console — Admin ' +
+               'Read, Admin Write and Security Administrator — granted ' +
+               'and revoked here. They are ORDINARY GROUPS in the shared ' +
+               'directory rather than a store of the console\'s own, so ' +
+               'this page, <code>/admin-api</code>, an ' +
+               '<code>ldapmodify</code> on 389 or 636 and a SCIM PATCH ' +
+               'are four doors onto one membership — which is the point, ' +
+               'since a role no test can grant is a role no test can ' +
+               'exercise. Until the realm\'s bootstrap administrator ' +
+               'first signs in, anybody who signs in holds the roles ' +
+               'that account holds: all three in the default realm, and ' +
+               'Admin Read and Admin Write in a trust realm.' },
       // THE EMBEDDED PROTOCOL DEBUGGER (2026-09-13), beside Admin roles and
       // for the reason it is in this section at all: the question it answers
       // is whether this service is set up to serve the debugger and to whom,
-      // and "to whom" is the two roles on the page above. `debugger/
+      // and "to whom" is the console roles on the page above. `debugger/
       // debugger_admin.js` draws it.
       { path: '/admin/debugger', label: 'Protocol debugger',
         blurb: 'The identity protocol debugger this service can serve on a ' +

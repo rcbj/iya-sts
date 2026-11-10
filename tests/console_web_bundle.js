@@ -2033,6 +2033,20 @@ function childMain() {
          'deliberately does not do, the bundle the same',
          JSON.stringify({ testDouble: (dashDrawn.development || {})
                           .testDouble }));
+    // The second pass (#753, 2026-11-10): three roles, a record-only mark,
+    // and a TCP caller this mode does not identify by source address.
+    const current = dashDrawn.development.here;
+    note(current.indexOf('Security Administrator') >= 0 &&
+         current.indexOf('acceptAssertedSelectors') >= 0 &&
+         current.indexOf('own record') >= 0 &&
+         current.indexOf('rows carry a dash') < 0 &&
+         current.indexOf('one of two roles') < 0 &&
+         current.indexOf('holds both') < 0 &&
+         current.indexOf('source address') < 0 &&
+         current.indexOf('two role groups') < 0,
+         'D-notdo-current. the development list names the third role, ' +
+         'the record-only mark and what a TCP caller is not',
+         '');
     // The entries #753 retired are gone from every catalog, overlays too.
     const dashLocales = pathC.join(ROOT_DIR, 'common', 'locales',
                                    'consoleDashboard');

@@ -1366,6 +1366,31 @@ front-channel logout*, with the two doors that do end a session beside it.
 **An entry added here must be true in development mode**; one that holds in
 both modes still belongs only if an operator would look for the control.
 
+**A second pass on 2026-11-10, still #753, brought the entries that had
+drifted since that day back to the code.** The password entry and the
+one-realm entry named two role groups. Since #645 there are three — Admin
+Read, Admin Write and Security Administrator — and the open window hands all
+three in the default realm and only the first two in a trust realm. A role
+held only because that window is open does not count where the directory,
+SCIM or the management API asks who may change security. The same page's
+Admin roles row says so. The invalidate entry said assertion and ticket rows
+carry a dash. Since 2026-09-05 those rows have a button that marks the
+artifact revoked in this service's own record, and nothing consults the mark
+when it is presented. Signing the principal out is the other act: this KDC
+refuses a TGS-REQ whose ticket authenticated before the sign-out, and that
+refusal does not reach a service ticket already in a cache. The delegation
+entry now names Kerberos constrained delegation and a GNAP act beside
+WS-Trust and RFC 8693. Two refusals hold in development as in product: a
+subject token whose may_act names somebody else, and a WS-Trust request
+carrying both elements. The attestation entry no longer says a
+development-mode TCP caller is known by its source address. That port is
+served to anybody who reaches it, an entry selecting only `transport:` or
+`endpoint:` is issued to every such caller, the Unix socket is served
+unattested without the native module, and `spiffe.acceptAssertedSelectors`
+lets a caller assert its own selectors. The session entry's bold claim is
+that this console does not draw front-channel logout. `/logout` renders the
+iframes, in the signed-out person's own browser.
+
 **The section below it, *Reading it from a test*, was stale too** and was
 fixed in the same change: it said every page answers `?format=json` and that
 `/admin-api` "is not gated at all". Every `/admin/*` path answers the

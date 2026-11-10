@@ -2086,16 +2086,23 @@ The console's own index draws a longer list, *What it deliberately does not
 do*, in development mode only: almost all of it is about what development
 mode does not check. A realm in product mode does not show it.
 
-* **It does not invalidate a SAML assertion, a Kerberos ticket, an SVID or a
-  verifiable credential.** None has a revocation mechanism a relying party
-  consults, so a button claiming to revoke one would change a number here and
-  nothing out there. (Credentials have status lists — see
-  [OpenID4VCI](oid4vci.md#status-lists).)
-* **It ends sign-on sessions** (`/admin/logout`, and `/admin/sessions` for the
-  service-wide view), through the same function every sign-out uses, with
-  back-channel logout to relying parties. What it cannot do is *deliver*
-  front-channel logout: that is an iframe in the signed-out person's own
-  browser, and the console is not that browser. See
+* **It marks a SAML assertion, a Kerberos ticket or an X509-SVID revoked
+  only in this service's own record.** The tokens page's button says that
+  mark is all it changes. Nothing consults the mark when the artifact is
+  presented, so it goes on working until it expires. Signing the principal
+  out is a different act: this KDC then refuses a TGS-REQ whose ticket
+  authenticated before the sign-out, and that refusal does not reach a
+  service ticket already in a cache. A verifiable credential is not on this
+  list: its status list is how one is revoked. See
+  [OpenID4VCI](oid4vci.md#status-lists).
+* **This console does not draw front-channel logout.** It does end sign-on
+  sessions (`/admin/logout`, and `/admin/sessions` for the service-wide
+  view), through the same function every sign-out uses. The iframes load in
+  the signed-out person's own browser, on `/logout`'s signed-out document.
+  Back-channel Logout Tokens need no browser and are sent whichever door
+  ended the session. A person's own global sign-out leaves verifiable
+  credentials, and the DIDs they are bound to, valid unless those rows were
+  ticked; an administrator's global sign-out here still disowns them. See
   [Signing out](signing-out.md).
 * **It adds no claims to refresh tokens.** A refresh token is presented back to
   this server and nothing else, so a claim in one reaches no relying party.
