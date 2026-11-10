@@ -54,6 +54,16 @@ const CASES = [
     anchor: 'const base = baseUrlOf(req);',
     edit: 'const base = baseUrlOf(req) + req.query.modelHasNoSuchName;',
     code: 'TS2339', word: 'modelHasNoSuchName' },
+  // THE REQUEST AND RESPONSE ARE EXPRESS'S, in every tree: a typed
+  // response's own methods are checked, which they are not if `express`
+  // reads as untyped — the condition under which a handler's request stops
+  // fitting a function typed for express on one host and not another.
+  { api: 'Management', file: 'mgmt-api/admin_api.ts',
+    what: 'an express method of a typed response, called wrongly',
+    anchor: 'log.debug("Entering the management API metadata endpoint.");',
+    edit: 'log.debug("Entering the management API metadata endpoint."); ' +
+          "res.status('200');",
+    code: 'TS2345', word: "parameter of type 'number'" },
   { api: 'Management', file: 'mgmt-api/admin_api.ts',
     what: 'a 2xx status the operation gives no JSON answer',
     anchor: 'log.debug("Entering the management API index.");',
