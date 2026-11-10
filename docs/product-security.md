@@ -6,7 +6,7 @@ title: Security in product mode
 
 Product mode (`global.mode=product`) turns on the controls described here. They
 line up with [OWASP ASVS 5.0.0](https://owasp.org/www-project-application-security-verification-standard/)
-Level 1. Development mode leaves most of them off so that clients can be
+Level 2, which includes Level 1. Development mode leaves most of them off so that clients can be
 exercised against behaviour a production service would refuse.
 
 `/admin/mode` shows what each mode does in the running service, and shows a row
@@ -28,7 +28,7 @@ state of your own deployment.
 ## Settings that weaken a default
 
 Each of these is off by default, and each one moves the deployment away from
-Level 1. Turn one on only for the clients that need it.
+Level 2. Turn one on only for the clients that need it.
 
 | Setting | What turning it on allows | Who needs it |
 |---|---|---|
@@ -43,6 +43,17 @@ Level 1. Turn one on only for the clients that need it.
 | `admin.logBootstrapPassword` | The generated first administrator password in the service log | Never outside a test stack |
 | `crypto.allowCbcJwe` | JWE's CBC-HMAC content encryption | A partner that cannot read AES-GCM |
 | `crypto.allowLegacyHashes` | OAEP over SHA-1 in XML encryption and JWE, the SHA-1 PKINIT key derivation, and S4U2Self's HMAC-MD5 checksum | Partners and Kerberos clients that support nothing newer |
+| `persistence.allowDefaultDatabasePassword` | Starting with a well-known database password, such as `sts`, `sts_app` or `postgres`, or one equal to the user name | Test stacks |
+| `audit.allowPlainSyslog` | A syslog audit destination over `tcp` or `udp` | A collector on a network you trust that cannot accept TLS |
+| `malwareScan.allowCleartext` | A plain `icap://` malware scanner | A scanner on a network you trust |
+
+Two settings are on by default in product mode, and turning one off weakens it
+in the same way:
+
+| Setting | Off means |
+|---|---|
+| `security.hstsIncludeSubDomains` | HSTS stops covering subdomains of the service's host name |
+| `security.requestsPerAddressPerMinute` | Set to `0`, no ceiling on requests from one address (6000 a minute by default) |
 
 Two switches exist to recover from a bad policy, and `/admin/mode` shows either
 one when it is off:
@@ -61,7 +72,20 @@ back on afterwards.
   not start. The plain-HTTP revocation and SCEP listener stays, because
   RFC 5280, RFC 5019 and RFC 8894 expect those services over HTTP.
 * **HSTS.** Every response over TLS carries
-  `Strict-Transport-Security: max-age=31536000`.
+  `Strict-Transport-Security: max-age=31536000; includeSubDomains`. Turn off
+  `security.hstsIncludeSubDomains` if a subdomain of the host name must still
+  answer over plain HTTP. See [TLS](tls.md#strict-transport-security).
+* **Forwarded addresses.** With `global.trustProxy` on, `X-Forwarded-For`,
+  `X-Forwarded-Proto` and `X-Forwarded-Host` are believed only from the proxies
+  listed in `global.trustedProxies`. With no list, they are believed from nobody,
+  so behind a proxy set both.
+* **Outbound requests.** A request a partner, client or caller can influence
+  never reaches a loopback, private, link-local or reserved address. Set
+  `security.outboundAllowedHosts` to limit it to named hosts as well. See
+  [Communications](communications.md#outbound-locations-a-caller-can-name).
+* **Requests per address.** One address may make 6000 requests a minute to one
+  process, `security.requestsPerAddressPerMinute`. More are answered `429`. See
+  [Availability](availability.md).
 * **Cookie names.** Over TLS, every cookie this service sets is prefixed: `__Host-`,
   or `__Secure-` when it carries a `Domain` (see `authn.cookieDomain`).
   `sts_session` arrives in a browser as `__Host-sts_session`, for example. An
@@ -149,17 +173,15 @@ A GNAP user assertion that has expired is refused unless an operator sets
   names an algorithm and no `enc`, unless `crypto.allowCbcJwe` is on. Kerberos
   (RFC 8009) and the TPM credential step use the only ciphers their
   specifications define.
-* **Malware scanning** of uploaded images and risk datasets is optional and off
-  by default. See [Malware scanning](malware-scanning.md).
-* **Administrators changing credentials** must have signed in within
-  `account.recentAuthMinutes`. The console asks them to sign in again and carries
-  on; a program using the API with its own credentials is not asked.
-* **Audit log.** Configure an [audit export](audit-export.md) destination, so that
-  a copy of the log leaves this service as it is written and a compromise here
-  cannot alter it.
-* **Software bill of materials.** The image holds a CycloneDX inventory of its npm
-  dependencies at `/usr/src/sts/sbom.cdx.json`, and its operating-system packages
-  are listed in `/usr/src/sts/os-packages.txt`.
+* **XML encryption** selects and accepts AES-GCM only. AES-CBC is refused when
+  decrypting, and cannot be chosen in `saml2.encryptionAlgorithm`.
+* **PBES2.** A JWE whose `p2c` is under 1000, RFC 7518's recommended minimum, is
+  refused, in either mode. A PKCS#12 export uses PBKDF2 with SHA-256 at 600,000
+  iterations.
+* **SCEP** answers 503 until `scep.allowInProduct` is on. See [SCEP](scep.md).
+
+## Signing in
+
 * **Second factor.** Required of everybody who signs in with a browser,
   administrators included, including with a certificate. A federation partner is
   the authentication, so federated sign-ins are not asked for one, and nor are
@@ -167,15 +189,58 @@ A GNAP user assertion that has expired is refused unless an operator sets
   password-only doors (LDAP, WS-Trust, SCIM, Shared Signals and EST Basic) cannot
   ask for one, so a person uses an app password there, with no second factor. This
   is intentional: see [Authentication](authentication.md).
-* **XML encryption** selects and accepts AES-GCM only. AES-CBC is refused when
-  decrypting, and cannot be chosen in `saml2.encryptionAlgorithm`.
-* **SCEP** answers 503 until `scep.allowInProduct` is on. See [SCEP](scep.md).
+* **Administrators changing credentials** must have signed in within
+  `account.recentAuthMinutes`. The console asks them to sign in again and carries
+  on; a program using the API with its own credentials is not asked.
+* **Stored passwords.** Where the password policy hashes with scrypt, the
+  parallelism is at least 3, whatever the policy names: the default is N=2^15,
+  r=8, p=3, one of OWASP's pairs. A stored hash with other parameters is hashed
+  again at the person's next successful sign-in. See
+  [How a password is stored](configure-ldap.md#how-a-password-is-stored).
+
+## Uploaded files
+
+Malware scanning of uploaded images and risk datasets is optional and off by
+default. When it is on, product mode reaches the scanner over TLS only. See
+[Malware scanning](malware-scanning.md) and [File uploads](file-uploads.md).
+
+## Errors and logs
+
+* **An internal error's text stays in the log.** A WS-Trust fault, the JWKS
+  endpoint, a `500` from `/admin-api` and the OpenID Connect logout error page
+  answer with a general message.
+* **Request logs leave credentials out.** At `debug` and `trace`, the logged
+  request and response headers lose `Authorization`, `Cookie`, `Set-Cookie`,
+  `DPoP` and `X-API-Key`, and bodies are withheld. Tokens and assertions are still
+  written before and after signing, so keep to `info` on a deployment with real
+  data. See [Logging inventory](logging-inventory.md#log-level).
+* **Audit log.** Configure an [audit export](audit-export.md) destination, so that
+  a copy of the log leaves this service as it is written and a compromise here
+  cannot alter it. Syslog destinations use TLS unless `audit.allowPlainSyslog` is
+  on. Each held row also carries a keyed checksum: `GET /admin-api/audit/integrity`
+  lists any row that no longer matches.
+* **Clocks.** With a database store, a node whose clock differs from the
+  database's by more than five seconds logs a warning (`STS-SCHED-0022`), and a
+  line when they agree again.
 
 ## Dependencies
 
 [`SECURITY.md`](https://github.com/rcbj/iya-sts/blob/main/SECURITY.md) sets how
 quickly a vulnerable dependency is fixed and how to report a vulnerability. Images
-install exactly what the lockfiles name.
+install exactly what the lockfiles name, and a daily check covers the published
+image as well as the lockfiles.
+
+The image holds a CycloneDX inventory of its npm dependencies at
+`/usr/src/sts/sbom.cdx.json`, one of the optional SDKs under `/opt/sts-sdk` at
+`/usr/src/sts/sbom-sdks.cdx.json`, and a list of its operating-system packages
+at `/usr/src/sts/os-packages.txt`. It holds no source control metadata.
+
+## Database
+
+Product mode does not start with a well-known database password (`sts`,
+`sts_app`, `postgres` and the like) or one equal to the user name, unless
+`persistence.allowDefaultDatabasePassword` is on. The compose stack generates its
+passwords at first start. See [The compose stack](docker-compose.md).
 
 ## Related
 
