@@ -273,6 +273,7 @@ class SpiffeModel {
       if (one === undefined || one === null) {
         return;
       }
+      // Inside the hot path above: no Entering/Leaving pair, for its reason.
       const check = function (item: unknown, at: string): void {
         if (field.type.kind === 'message') {
           SpiffeModel.undeclared(field.type.name, item, at)

@@ -459,7 +459,8 @@ class SpiffeId {
       return false;
     }
     log.debug("Leaving SpiffeId.isReservedPath().");
-    return parsed.segments.length > 0 && parsed.segments[0] === RESERVED_SEGMENT;
+    return parsed.segments.length > 0 &&
+           parsed.segments[0] === RESERVED_SEGMENT;
   }
 
   // This service's own identifier as a SPIFFE server. SPIRE uses exactly this
@@ -515,7 +516,8 @@ class SpiffeId {
     const parsed = this.parse(value);
     log.debug("Leaving SpiffeId.isAgentId().");
     return parsed.ok && parsed.segments.length >= 3 &&
-           parsed.segments[0] === RESERVED_SEGMENT && parsed.segments[1] === 'agent';
+           parsed.segments[0] === RESERVED_SEGMENT &&
+           parsed.segments[1] === 'agent';
   }
 
   /**
@@ -530,7 +532,8 @@ class SpiffeId {
     const parsed = this.parse(value);
     log.debug("Leaving SpiffeId.isServerId().");
     return parsed.ok && parsed.segments.length === 2 &&
-           parsed.segments[0] === RESERVED_SEGMENT && parsed.segments[1] === 'server';
+           parsed.segments[0] === RESERVED_SEGMENT &&
+           parsed.segments[1] === 'server';
   }
 
   // ---------------------------------------------------------------------------
