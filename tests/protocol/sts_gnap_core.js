@@ -46,7 +46,7 @@ const assert = require("assert");
 const https = require("https");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
-const { usernameFor } = require("./random_username.js");
+const { usernameFor, passwordFor } = require("./random_username.js");
 const gnap = require("./gnap_client.js");
 const testCa = require("./outbound_test_ca.js");
 const portalSignin = require("./portal_signin.js");
@@ -77,7 +77,9 @@ var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
 var base = String(process.env.OID4VCI_ISSUER_URL ||
                   stsUrl.replace(/\/sts\/?$/, "")).replace(/\/+$/, "");
 var REALM = usernameFor("gnapcore").replace(/[^a-z0-9-]/g, "").slice(0, 30);
-var PASSWORD = "gnap-core-Passw0rd!-" + String(Date.now()).slice(-6);
+// From nothing the realm "GNAP core" is known by: product refuses a password
+// holding its name (password_policy.ts, contextWords()), which this one did.
+var PASSWORD = passwordFor();
 
 // The resource owner, the browser and the harness are `gnap_flow.js`'s, shared
 // with sts_gnap_rs.js and sts_gnap_signals.js; the names below are the ones

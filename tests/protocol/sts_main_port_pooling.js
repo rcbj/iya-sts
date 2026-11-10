@@ -507,14 +507,24 @@ async function revocationOutlivesNoSession() {
   log.info("  paranoid PKI mode: " + trust.json.master.inForce + " (" +
            trust.json.master.decidedBy + "); tls-client row in force: " +
            row.inForce);
-  if (trust.json.master.product) {
-    check("in product, paranoid PKI mode and its tls-client row are in force",
-          function () {
-      assert.strictEqual(trust.json.master.inForce, true,
-                         trust.json.master.decidedBy);
-      assert.strictEqual(row.inForce, true, row.setting);
-    });
-  }
+  // THE MASTER AS THE API ANSWERS IT, not "product means in force"
+  // (2026-11-10): every appconfig file this repository packages forces
+  // `pki.paranoid` off (env/docker-tests.js), so a product stack answers
+  // `off` and a stack on another file may say `auto` or `on`. What is held is
+  // that the answer is consistent with the value, and the tls-client row with
+  // the master. The revocation below is refused either way: in force by the
+  // listener's hold on the kept session, out of force by /tls/sign-in's own
+  // revocation check of the presented chain.
+  const master = trust.json.master;
+  check("paranoid PKI mode is in force exactly as pki.paranoid=" +
+        master.value + " says, and the tls-client row follows it",
+        function () {
+    const expected = master.value === "on" ||
+      (master.value === "auto" && master.product === true);
+    assert.strictEqual(master.inForce, expected, master.decidedBy);
+    assert.strictEqual(row.inForce, master.inForce && row.on === true,
+                       row.setting);
+  });
   // A PERSON'S certificate, from this realm's TLS client authority, issued and
   // revoked at the portal's own door: only a person signs in at /tls/sign-in.
   const person = "pooling-revoked-" + STAMP;

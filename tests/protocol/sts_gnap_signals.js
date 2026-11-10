@@ -48,7 +48,7 @@
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
-const { usernameFor } = require("./random_username.js");
+const { usernameFor, passwordFor } = require("./random_username.js");
 const gnap = require("./gnap_client.js");
 const flowLib = require("./gnap_flow.js");
 const ssfRoles = require("./ssf_roles.js");
@@ -73,7 +73,9 @@ if (appconfigProblem) {
 var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
 var base = String(process.env.OID4VCI_ISSUER_URL ||
                   stsUrl.replace(/\/sts\/?$/, "")).replace(/\/+$/, "");
-const PASSWORD = "gnap-signals-Passw0rd!-" + String(Date.now()).slice(-6);
+// From nothing the realm "GNAP signals" is known by: product refuses a
+// password holding its name (password_policy.ts, contextWords()).
+const PASSWORD = passwordFor();
 const h = flowLib.harness({
   base: base,
   realm: usernameFor("gnapsig").replace(/[^a-z0-9-]/g, "").slice(0, 30),

@@ -210,8 +210,36 @@ function requireKnownOrCreatable(body, name) {
   return null;
 }
 
+// ---------------------------------------------------------------------------
+// A PASSWORD A JOB CHOOSES FOR A PERSON IT CREATES, which the product password
+// policy will take (2026-11-10).
+//
+// Product refuses a password containing a word the realm is known by —
+// `common/password_policy.ts`'s contextWords(): the service's own names, the
+// realm's id and name, its DNS domain's labels and
+// `security.passwordContextWords`, each four characters or more, compared
+// after folding case, look-alike digits and every non-alphanumeric away. So a
+// password built from the job's name ("gnap-core-…" in the realm "GNAP core")
+// or from the realm id is refused, the person has no password, and every
+// sign-in after it fails STS-AUTHN-0052 a long way from the cause. Development
+// checks no password, so only a product run ever showed it.
+//
+// The password is therefore made of nothing a job names: two letters, 144
+// random bits as base64url, and a fixed tail giving the four character
+// classes. A word of four letters or more turning up by chance in the random
+// part is the one way it could still be refused, and it is not worth guarding.
+// ---------------------------------------------------------------------------
+function passwordFor() {
+  log.debug("Entering passwordFor().");
+  var password = "Pw" + crypto.randomBytes(18).toString("base64url") +
+    "-9z!Q";
+  log.debug("Leaving passwordFor().");
+  return password;
+}
+
 module.exports = {
   usernameFor: usernameFor,
+  passwordFor: passwordFor,
   requireKnownOrCreatable: requireKnownOrCreatable,
   runStamp: runStamp
 };

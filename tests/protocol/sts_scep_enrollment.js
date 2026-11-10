@@ -579,7 +579,18 @@ async function test() {
           assert.ok(text.indexOf("PRIVATE KEY") < 0);
           assert.ok(text.indexOf(issued["tls-client"].made.challenge) < 0);
           assert.strictEqual(scepView.hierarchyBuilt, true);
-          assert.strictEqual(scepView.ra.keyAlgorithm, "rsa-2048");
+          // THE RA'S KEY SIZE IS THE ONE THE SERVICE ASKS FOR, not a literal
+          // (2026-11-10): `scep.raKeyAlgorithm` is rsa-2048 in development and
+          // product's RSA floor makes it rsa-3072 there. What is held is that
+          // the key held is the key wanted, and is the key of the RA
+          // certificate GetCACert handed out.
+          const raKey = new nodeCrypto.X509Certificate(chain.ra).publicKey;
+          assert.ok(/^rsa-(2048|3072|4096)$/.test(scepView.ra.keyAlgorithm),
+                    scepView.ra.keyAlgorithm);
+          assert.strictEqual(scepView.ra.keyAlgorithm,
+                             scepView.ra.wantedKeyAlgorithm);
+          assert.strictEqual(scepView.ra.keyAlgorithm,
+                             "rsa-" + raKey.asymmetricKeyDetails.modulusLength);
           assert.strictEqual(scepView.refusedProfiles.length, 5);
         });
 

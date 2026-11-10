@@ -324,6 +324,28 @@ async function test() {
     "--key=" + req.key, "--identity=" + file("fran.pem"),
     "--identity-key=" + req.key, "--out=" + file("renewed.pem")],
     "renewal (same key)");
+  // A RENEWAL'S ONE WARNING IS jscep PROBING ITS OWN IDENTITY (2026-11-10).
+  // Given an identity certificate, jscep asks whether it is self-signed by
+  // verifying its signature with its own key, and logs this WARN when the
+  // verifier THROWS rather than answering no. Java's RSA verifier throws when
+  // the signature's length is not the key's: in product the SCEP Issuing CA
+  // is RSA-3072 (pki.keyAlgorithm's product default, ASVS 11.2.3) and this
+  // job's key is RSA-2048, so the probe throws; in development both are 2048
+  // and it answers no in silence. Either way jscep concludes "not
+  // self-signed", which is right, and the renewal is what is asserted. The
+  // line is accepted for the two renewals only, where an identity is given.
+  const notSelfSigned = new RegExp("WARN org\\.jscep\\.client\\.Client - " +
+    "SignatureException detected so we consider that the certificate is " +
+    "not self signed$");
+  const withoutProbe = function (j) {
+    log.debug("Entering withoutProbe().");
+    j.problems = j.problems.filter(function (line) {
+      return !notSelfSigned.test(line);
+    });
+    log.debug("Leaving withoutProbe().");
+    return j;
+  };
+  withoutProbe(renewed);
   C.check("a renewal that keeps the key — the same transactionID — is a " +
           "new certificate (STS-SCEP-0037 before #250)", function () {
     succeeded(renewed);
@@ -337,6 +359,7 @@ async function test() {
     "--key=" + fresh.key, "--identity=" + file("renewed.pem"),
     "--identity-key=" + req.key, "--out=" + file("rekeyed.pem")],
     "renewal (new key)");
+  withoutProbe(rekeyed);
   C.check("a renewal with a new key, signed by the certificate it renews",
           function () {
     succeeded(rekeyed);
