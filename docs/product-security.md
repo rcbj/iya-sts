@@ -104,6 +104,11 @@ back on afterwards.
 * **A password is changed where the current one is proved.** A person cannot
   replace their own `userPassword` over LDAP unless an operator adds it to
   `ldap.selfWritableAttributes`, which would weaken this.
+* **Stored passwords.** Where the password policy hashes with scrypt, the
+  parallelism is at least 3, whatever the policy names: the default is N=2^15,
+  r=8, p=3, one of OWASP's pairs. A stored hash with other parameters is hashed
+  again at the person's next successful sign-in. See
+  [How a password is stored](configure-ldap.md#how-a-password-is-stored).
 * **Repeated guesses are slowed, and no account is locked.** See
   [Authentication](authentication.md#how-repeated-password-guesses-are-slowed).
 
@@ -173,15 +178,9 @@ A GNAP user assertion that has expired is refused unless an operator sets
   names an algorithm and no `enc`, unless `crypto.allowCbcJwe` is on. Kerberos
   (RFC 8009) and the TPM credential step use the only ciphers their
   specifications define.
-* **XML encryption** selects and accepts AES-GCM only. AES-CBC is refused when
-  decrypting, and cannot be chosen in `saml2.encryptionAlgorithm`.
-* **PBES2.** A JWE whose `p2c` is under 1000, RFC 7518's recommended minimum, is
-  refused, in either mode. A PKCS#12 export uses PBKDF2 with SHA-256 at 600,000
-  iterations.
-* **SCEP** answers 503 until `scep.allowInProduct` is on. See [SCEP](scep.md).
-
-## Signing in
-
+* **Administrators changing credentials** must have signed in within
+  `account.recentAuthMinutes`. The console asks them to sign in again and carries
+  on; a program using the API with its own credentials is not asked.
 * **Second factor.** Required of everybody who signs in with a browser,
   administrators included, including with a certificate. A federation partner is
   the authentication, so federated sign-ins are not asked for one, and nor are
@@ -189,14 +188,12 @@ A GNAP user assertion that has expired is refused unless an operator sets
   password-only doors (LDAP, WS-Trust, SCIM, Shared Signals and EST Basic) cannot
   ask for one, so a person uses an app password there, with no second factor. This
   is intentional: see [Authentication](authentication.md).
-* **Administrators changing credentials** must have signed in within
-  `account.recentAuthMinutes`. The console asks them to sign in again and carries
-  on; a program using the API with its own credentials is not asked.
-* **Stored passwords.** Where the password policy hashes with scrypt, the
-  parallelism is at least 3, whatever the policy names: the default is N=2^15,
-  r=8, p=3, one of OWASP's pairs. A stored hash with other parameters is hashed
-  again at the person's next successful sign-in. See
-  [How a password is stored](configure-ldap.md#how-a-password-is-stored).
+* **XML encryption** selects and accepts AES-GCM only. AES-CBC is refused when
+  decrypting, and cannot be chosen in `saml2.encryptionAlgorithm`.
+* **PBES2.** A JWE whose `p2c` is under 1000, RFC 7518's recommended minimum, is
+  refused, in either mode. A PKCS#12 export uses PBKDF2 with SHA-256 at 600,000
+  iterations.
+* **SCEP** answers 503 until `scep.allowInProduct` is on. See [SCEP](scep.md).
 
 ## Uploaded files
 
