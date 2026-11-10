@@ -141,10 +141,11 @@ ldapsearch ... -b "uid=ldaps-run1,ou=users,dc=example,dc=com" -s base '(objectCl
 
 ## Turn off the plain listener
 
-A verified bind on 389 would send a real password in the clear, so product
-mode refuses every bind there, answers only the root DSE, and logs a warning
-at startup while 389 is on. Turn it off. `ldap.plainListener` takes effect at
-the next restart.
+A verified bind on 389 would send a real password in the clear. Product mode
+therefore does not start the plain listener unless `ldap.plainListener` is set
+on. If it is set on, product mode refuses every bind there, answers only the
+root DSE, and logs a warning at startup. Development mode starts it unless the
+setting is off. `ldap.plainListener` takes effect at the next restart.
 
 **Console:** on **Protocols → LDAP / LDAPS**, set **Plain LDAP listener** to
 off, click **Save LDAP**, and restart the service.
