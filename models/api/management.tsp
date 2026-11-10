@@ -3642,7 +3642,7 @@ namespace IyaSts.Api.Management {
 @js(#{
     `description`:"One thing that happened, with the facts of it and no credential of any kind. Written out rather than left open because a caller filtering or alerting on this list needs a name for every field.",
     `additionalProperties`:true
-  }) @component model `AuditEvent` {
+  }) @projects("AuditEvent") @component model `AuditEvent` {
     @js(#{
       `description`:"Unique across every process of the service and NEVER REUSED, including across a drop and a restart; rising within each process, not one order across them (#465). The stable name for an event — a row number would silently mean a different event as soon as the cap discarded anything. Resume reading by `at`."
     }) `seq`?: integer;
@@ -3813,26 +3813,26 @@ namespace IyaSts.Api.Management {
 
 @js(#{
     `description`:"The effective value, coerced to its type: a number for int/port, a boolean for bool, an array of strings for csv."
-  }) @hoisted union SharedModel16_h1346 {string, numeric, boolean, null, (StringOrNumericOrBoolean)[]}
+  }) @hoisted union ValueValue_h1346 {string, numeric, boolean, null, (StringOrNumericOrBoolean)[]}
 
-@component union `SharedModel16` {SharedModel16_h1346}
+@component union `ValueValue` {ValueValue_h1346}
 
 @js(#{
     `description`:"Where the effective value came from, highest first: this trust realm's own value; a runtime override set through this API or the console; the setting's own environment variable; a legacy variable (no row has one since #523); the appconfig file CONFIG_FILE names; `env/defaults.js`, the DEFAULT appconfig file that one is unioned on top of. `default` is reachable only for the DERIVED settings, whose value is a function of a neighbouring setting: for every other setting, no value anywhere stops this service from STARTING."
-  }) @component union `SharedModel17` {
+  }) @component union `SourceValue` {
     "realm" | "override" | "env" | "env-legacy" | "appconfig" | "defaults" | "default"
   }
 
 @js(#{
     `description`:"Whether POST /config/set will take it from the realm this answer was read in. False means either the value was consumed at startup or `editRefusal` is set. It is refused rather than accepted, because an accepted change that does nothing reads as having worked."
-  }) @component scalar `SharedModel18` extends boolean;
+  }) @component scalar `EditableValue` extends boolean;
   
 
 @js(#{
     `description`:"The built-in default: the `dflt` column of `config.js`'s table, which `env/defaults.js` is GENERATED from. It is what the value WOULD be with nothing set anywhere."
-  }) @hoisted union SharedModel19_h1348 {string, numeric, boolean, null, (StringOrNumericOrBoolean)[]}
+  }) @hoisted union DefaultValue_h1348 {string, numeric, boolean, null, (StringOrNumericOrBoolean)[]}
 
-@component union `SharedModel19` {SharedModel19_h1348}
+@component union `DefaultValue` {DefaultValue_h1348}
 
 @js(#{
     `description`:"One setting: what it is, what it is set to, and where that came from."
@@ -3869,12 +3869,12 @@ namespace IyaSts.Api.Management {
     @js(#{
       `description`:"The value must be a MULTIPLE of this, counted from `min`. The four token lifetimes use 30."
     }) `step`?: numeric;
-    `value`?: `SharedModel16`;
+    `value`?: `ValueValue`;
     @js(#{
       `description`:"The same value on one line: what the console shows in its input and what the environment variable would carry."
     }) `text`?: string;
-    `source`?: `SharedModel17`;
-    `editable`?: `SharedModel18`;
+    `source`?: `SourceValue`;
+    `editable`?: `EditableValue`;
     @js(#{
       `description`:"Why it is not editable, when the value was consumed at startup."
     }) `restartReason`?: string;
@@ -3883,7 +3883,7 @@ namespace IyaSts.Api.Management {
     }) `editRefusal`?: string;
     @js(#{`description`:"Its environment variable."}) `env`?: string;
     `appconfigPath`?: string;
-    `default`?: `SharedModel19`;
+    `default`?: `DefaultValue`;
     @js(#{`description`:"Whether a trust realm may hold its own value for it."}) `realmSettable`?: boolean;
     @js(#{
       `description`:"Whether a runtime override is in force. Equal to `source === \"override\"`, and reported separately so a caller can filter without matching a string."
@@ -4046,9 +4046,9 @@ namespace IyaSts.Api.Management {
       `note`:#{`type`:#["string","null"]}
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel32_h1358 {}
+  }) @hoisted model ChoiceOf32_h1358 {}
 
-@component union `SharedModel32` {SharedModel32_h1358}
+@component union `ChoiceOf32` {ChoiceOf32_h1358}
 
 @component model `WithOkMessageErrors8` {
     `ok`: boolean;
@@ -4176,11 +4176,11 @@ namespace IyaSts.Api.Management {
       `beforeCompromise`:#{`type`:"string"}
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel41_h1383 {}
+  }) @hoisted model RiskChangeValue_h1383 {}
 
-@component union `SharedModel41` {SharedModel41_h1383}
+@component union `RiskChangeValue` {RiskChangeValue_h1383}
 
-@component model `WithIdDnOwner` {
+@projects("Device") @component model `DeviceView` {
     `id`?: string;
     `dn`?: string;
     `owner`?: string;
@@ -4195,7 +4195,7 @@ namespace IyaSts.Api.Management {
     `status`?: string;
     `statusChange`?: NullableObject116;
     `riskLevel`?: string;
-    `riskChange`?: `SharedModel41`;
+    `riskChange`?: `RiskChangeValue`;
     `platform`?: string;
     `model`?: string;
     `os`?: string;
@@ -4217,7 +4217,7 @@ namespace IyaSts.Api.Management {
     `error`?: string;
     `error_description`?: string;
     `id`?: string;
-    `device`?: `WithIdDnOwner`;
+    `device`?: `DeviceView`;
     @js(#{`description`:"The key's id."}) `key`?: string;
     `previous`?: string;
     `status`?: string;
@@ -4287,9 +4287,9 @@ namespace IyaSts.Api.Management {
       `policy`:#{`type`:"string"}
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel47_h1387 {}
+  }) @hoisted model ServiceAccountView_h1387 {}
 
-@component union `SharedModel47` {SharedModel47_h1387}
+@projects("ServiceAccount") @component union `ServiceAccountView` {ServiceAccountView_h1387}
 
 @component model `WithOkMessageErrors13` {
     `ok`: boolean;
@@ -4393,9 +4393,9 @@ namespace IyaSts.Api.Management {
       `stale`:#{`type`:"boolean"}
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel54_h1403 {}
+  }) @hoisted model LastRunValue_h1403 {}
 
-@component union `SharedModel54` {SharedModel54_h1403}
+@component union `LastRunValue` {LastRunValue_h1403}
 
 @component model `WithRunIdJobIdRealm2` {
     `runId`?: string;
@@ -4540,9 +4540,9 @@ namespace IyaSts.Api.Management {
       `throttledPercentOfPeriods`:#{`type`:#["number","null"]}
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel64_h1433 {}
+  }) @hoisted model ThrottlingValue_h1433 {}
 
-@component union `SharedModel64` {SharedModel64_h1433}
+@component union `ThrottlingValue` {ThrottlingValue_h1433}
 
 @component model `WithAvailableFromEcsCgroupVersion` {
     `available`?: boolean;
@@ -4562,7 +4562,7 @@ namespace IyaSts.Api.Management {
     `usageSeconds`?: NullableNumber;
     `userSeconds`?: NullableNumber;
     `systemSeconds`?: NullableNumber;
-    `throttling`?: `SharedModel64`;
+    `throttling`?: `ThrottlingValue`;
     `throttlingText`?: NullableString
   }
 
@@ -4660,9 +4660,9 @@ namespace IyaSts.Api.Management {
       }
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel73_h1484 {}
+  }) @hoisted model TaskLimitsValue_h1484 {}
 
-@component union `SharedModel73` {SharedModel73_h1484}
+@component union `TaskLimitsValue` {TaskLimitsValue_h1484}
 
 @js(#{
     `additionalProperties`:false,
@@ -4675,9 +4675,9 @@ namespace IyaSts.Api.Management {
       `cpuPercentOfTaskLimit`:#{`type`:#["number","null"]}
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel74_h1485 {}
+  }) @hoisted model StatsValue_h1485 {}
 
-@component union `SharedModel74` {SharedModel74_h1485}
+@component union `StatsValue` {StatsValue_h1485}
 
 @js(#{
     `additionalProperties`:#{
@@ -4697,8 +4697,8 @@ namespace IyaSts.Api.Management {
     `endpoint`?: string;
     `dockerId`?: NullableString;
     `containerLimits`?: SharedModel72_containerLimits_h1487;
-    `taskLimits`?: `SharedModel73`;
-    `stats`?: `SharedModel74`;
+    `taskLimits`?: `TaskLimitsValue`;
+    `stats`?: `StatsValue`;
     `unavailableText`?: NullableString;
     `text`?: string
   }
@@ -4788,9 +4788,9 @@ namespace IyaSts.Api.Management {
     },
     `description`:"Which page of how many, and the query parameter that moves it.",
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel83_h1499 {}
+  }) @hoisted model PagingValue_h1499 {}
 
-@component union `SharedModel83` {SharedModel83_h1499}
+@component union `PagingValue` {PagingValue_h1499}
 
 @component model `WithOkMessageErrors16` {
     `ok`: boolean;
@@ -4830,7 +4830,7 @@ namespace IyaSts.Api.Management {
 @component model `WithSubjectLabelEnrolledAt` is (`WithSha256SubjectIssuer`)[];
   
 
-@component union `SharedModel88` {NullableObject57}
+@component union `ComplianceChangeValue` {NullableObject57}
 
 @component model `WithSubjectLabelEnrolledAt2` {
     `subject`?: string;
@@ -5090,7 +5090,7 @@ namespace IyaSts.Api.Management {
     `reason`?: string;
     `problems`?: (StringOrRecordStringOrNumericOrBooleanEtc)[];
     `serviceAccount`?: boolean;
-    `account`?: `SharedModel47`;
+    `account`?: `ServiceAccountView`;
     `signedOut`?: SharedModel111_signedOut_h1541
   }
 
@@ -5101,7 +5101,7 @@ namespace IyaSts.Api.Management {
     `username`?: string;
     `reason`?: string;
     `problems`?: (StringOrRecordStringOrNumericOrBooleanEtc)[];
-    `account`?: `SharedModel47`;
+    `account`?: `ServiceAccountView`;
     `changed`?: boolean
   }
 
@@ -5360,9 +5360,9 @@ namespace IyaSts.Api.Management {
       `message`:#{`type`:"string"}
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel134_h1591 {}
+  }) @hoisted model EndedValue_h1591 {}
 
-@component union `SharedModel134` {SharedModel134_h1591}
+@component union `EndedValue` {EndedValue_h1591}
 
 @component model `WithOkMessageErrors45` {
     `ok`: boolean;
@@ -5373,7 +5373,7 @@ namespace IyaSts.Api.Management {
     `problems`?: (StringOrRecordStringOrNumericOrBooleanEtc)[];
     `disabled`?: boolean;
     `changed`?: boolean;
-    `ended`?: `SharedModel134`
+    `ended`?: `EndedValue`
   }
 
 @component model `WithOkMessageErrors46` {
@@ -5651,9 +5651,9 @@ namespace IyaSts.Api.Management {
       }
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel153_h1620 {}
+  }) @hoisted model SettingsValue_h1620 {}
 
-@component union `SharedModel153` {SharedModel153_h1620}
+@component union `SettingsValue` {SettingsValue_h1620}
 
 @component model `WithOkMessageErrors55` {
     `ok`: boolean;
@@ -6100,9 +6100,9 @@ namespace IyaSts.Api.Management {
       `confirmWord`:#{`type`:"string"}
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel193_h1640 {}
+  }) @hoisted model KrbtgtValue_h1640 {}
 
-@component union `SharedModel193` {SharedModel193_h1640}
+@component union `KrbtgtValue` {KrbtgtValue_h1640}
 
 @js(#{`description`:"The rules by kind: onlyWhileOn and aloneWhileOn."}) @component model `RulesKindOnlyWhileOnAloneWhileOn` is Record<({
     `setting`?: string;
@@ -6394,9 +6394,9 @@ namespace IyaSts.Api.Management {
       }
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel227_h1658 {}
+  }) @hoisted model SettingsValue2_h1658 {}
 
-@component union `SharedModel227` {SharedModel227_h1658}
+@component union `SettingsValue2` {SettingsValue2_h1658}
 
 @component model `WithNameKindRole` {
     `name`?: string;
@@ -6434,9 +6434,9 @@ namespace IyaSts.Api.Management {
       `delivery_methods_supported`:#{`$ref`:"#/components/schemas/WithAdditionalPropertiesPropertiesIssuer"}
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel230_h1660 {}
+  }) @hoisted model ConfigValue_h1660 {}
 
-@component union `SharedModel230` {SharedModel230_h1660}
+@component union `ConfigValue` {ConfigValue_h1660}
 
 @component model `WithMethodEndpointurlAdditionalProperties` {`method`?: `ValueDocumentPartnerPublishedAnswered`; `endpoint_url`?: `ValueDocumentPartnerPublishedAnswered`}
 
@@ -6451,9 +6451,9 @@ namespace IyaSts.Api.Management {
       `delivery`:#{`$ref`:"#/components/schemas/WithMethodEndpointurlAdditionalProperties"}
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel233_h1661 {}
+  }) @hoisted model StreamValue_h1661 {}
 
-@component union `SharedModel233` {SharedModel233_h1661}
+@component union `StreamValue` {StreamValue_h1661}
 
 @component model `WithRelationshipUsernameAt` is ({
     `relationship`?: string;
@@ -6528,9 +6528,9 @@ namespace IyaSts.Api.Management {
       `x5u`:#{`type`:"string"}
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel240_h1662 {}
+  }) @hoisted model JwkValue_h1662 {}
 
-@component union `SharedModel240` {SharedModel240_h1662}
+@component union `JwkValue` {JwkValue_h1662}
 
 @js(#{
     `additionalProperties`:false,
@@ -6628,15 +6628,15 @@ namespace IyaSts.Api.Management {
       }
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel242_h1663 {}
+  }) @hoisted model RelationshipValue_h1663 {}
 
-@component union `SharedModel242` {SharedModel242_h1663}
+@component union `RelationshipValue` {RelationshipValue_h1663}
 
 @component model `WithOkMessageErrors79` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `relationship`?: `SharedModel242`;
+    `relationship`?: `RelationshipValue`;
     `readiness`?: {`ready`?: boolean; `missing`?: (string)[]};
     `kid`?: string
   }
@@ -6677,11 +6677,11 @@ namespace IyaSts.Api.Management {
     };
     `ready`?: boolean;
     `missing`?: (string)[];
-    `config`?: `SharedModel230`;
+    `config`?: `ConfigValue`;
     `discoveryUrl`?: string;
     `discoveredAt`?: string;
     `streamId`?: string;
-    `stream`?: `SharedModel233`;
+    `stream`?: `StreamValue`;
     `streamDelivery`?: string;
     `streamAud`?: (string)[];
     `pollEndpoint`?: string;
@@ -6797,15 +6797,15 @@ namespace IyaSts.Api.Management {
       }
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel249_h1666 {}
+  }) @hoisted model ApplicationRow_h1666 {}
 
-@component union `SharedModel249` {SharedModel249_h1666}
+@projects("Application") @component union `ApplicationRow` {ApplicationRow_h1666}
 
 @component model `WithOkMessageErrors82` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `application`?: `SharedModel249`;
+    `application`?: `ApplicationRow`;
     `changed`?: boolean
   }
 
@@ -6862,21 +6862,21 @@ namespace IyaSts.Api.Management {
       }
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel252_h1669 {}
+  }) @hoisted model ProfileValue_h1669 {}
 
-@component union `SharedModel252` {SharedModel252_h1669}
+@component union `ProfileValue` {ProfileValue_h1669}
 
 @component model `WithOkMessageErrors84` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `profile`?: `SharedModel252`
+    `profile`?: `ProfileValue`
   }
 
 @js(#{`description`:"By attribute name."}) @component model `AttributeName` is Record<StringOrNumericOrBooleanEtc3>;
   
 
-@component model `WithIdentifierDnLabelDn` {
+@projects("Application") @component model `ApplicationSummary` {
     `identifier`?: string;
     `dnLabel`?: NullableString;
     `dn`?: NullableString;
@@ -6903,15 +6903,15 @@ namespace IyaSts.Api.Management {
     `fields`?: `AttributeName`
   }
 
-@hoisted union SharedModel255_h1679 {string, `WithIdentifierDnLabelDn`, null}
+@hoisted union ApplicationValue_h1679 {string, `ApplicationSummary`, null}
 
-@component union `SharedModel255` {SharedModel255_h1679}
+@component union `ApplicationValue` {ApplicationValue_h1679}
 
 @component model `WithOkMessageErrors85` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `application`?: `SharedModel255`;
+    `application`?: `ApplicationValue`;
     `changed`?: BooleanOrString2
   }
 
@@ -6919,7 +6919,7 @@ namespace IyaSts.Api.Management {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `application`?: `SharedModel255`;
+    `application`?: `ApplicationValue`;
     `changed`?: BooleanOrString2;
     `warnings`?: (WithAttributeValueReasonEtc5)[]
   }
@@ -6928,7 +6928,7 @@ namespace IyaSts.Api.Management {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `application`?: `SharedModel255`;
+    `application`?: `ApplicationValue`;
     `changed`?: BooleanOrString2;
     `owner`?: string;
     `owners`?: (WithDnKindNameEtc4)[]
@@ -6938,7 +6938,7 @@ namespace IyaSts.Api.Management {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `application`?: `SharedModel255`;
+    `application`?: `ApplicationValue`;
     `changed`?: BooleanOrString2;
     `clientSecret`?: string;
     `secretId`?: string;
@@ -6952,7 +6952,7 @@ namespace IyaSts.Api.Management {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `application`?: `SharedModel255`;
+    `application`?: `ApplicationValue`;
     `changed`?: BooleanOrString2;
     `secret`?: string;
     `value`?: string
@@ -6962,7 +6962,7 @@ namespace IyaSts.Api.Management {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `application`?: `SharedModel255`;
+    `application`?: `ApplicationValue`;
     `changed`?: BooleanOrString2;
     `did`?: NullableString;
     `kid`?: string;
@@ -6982,7 +6982,7 @@ namespace IyaSts.Api.Management {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `application`?: `SharedModel255`;
+    `application`?: `ApplicationValue`;
     `changed`?: BooleanOrString2;
     `why`?: string;
     `did`?: NullableString;
@@ -7010,7 +7010,7 @@ namespace IyaSts.Api.Management {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `application`?: `SharedModel255`;
+    `application`?: `ApplicationValue`;
     `changed`?: BooleanOrString2;
     `set`?: string;
     `claims`?: `WithOkMessageErrors92`
@@ -7020,7 +7020,7 @@ namespace IyaSts.Api.Management {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `application`?: `SharedModel255`;
+    `application`?: `ApplicationValue`;
     `changed`?: BooleanOrString2;
     `set`?: string;
     `inherited`?: boolean;
@@ -7031,7 +7031,7 @@ namespace IyaSts.Api.Management {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `application`?: `SharedModel255`;
+    `application`?: `ApplicationValue`;
     `changed`?: BooleanOrString2;
     `sets`?: ({
       `set`?: string;
@@ -7045,7 +7045,7 @@ namespace IyaSts.Api.Management {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `application`?: `SharedModel255`;
+    `application`?: `ApplicationValue`;
     `changed`?: BooleanOrString2;
     `permission`?: string;
     `attributes`?: NullableArray;
@@ -7061,7 +7061,7 @@ namespace IyaSts.Api.Management {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `application`?: `SharedModel255`;
+    `application`?: `ApplicationValue`;
     `changed`?: BooleanOrString2;
     `type`?: string;
     `definition`?: `JSONOperatorWroteIntoAccess`
@@ -7096,7 +7096,7 @@ namespace IyaSts.Api.Management {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `application`?: `SharedModel255`;
+    `application`?: `ApplicationValue`;
     `changed`?: BooleanOrString2;
     `policy`?: string;
     `enforced`?: boolean;
@@ -7122,7 +7122,7 @@ namespace IyaSts.Api.Management {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `application`?: `SharedModel255`;
+    `application`?: `ApplicationValue`;
     `changed`?: BooleanOrString2;
     `purpose`?: string;
     `certificate`?: `WithSerialHexSubjectKeyAlg2`;
@@ -7157,19 +7157,19 @@ namespace IyaSts.Api.Management {
       `note`:#{`type`:"string"}
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel281_h1718 {}
+  }) @hoisted model EntryValue_h1718 {}
 
-@component union `SharedModel281` {SharedModel281_h1718}
+@component union `EntryValue` {EntryValue_h1718}
 
 @component model `WithOkMessageErrors100` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `application`?: `SharedModel255`;
+    `application`?: `ApplicationValue`;
     `changed`?: BooleanOrString2;
     `certificate`?: `WithSerialHexLabelSubject2`;
     `reason`?: string;
-    `entry`?: `SharedModel281`;
+    `entry`?: `EntryValue`;
     `why`?: string;
     @js(#{`description`:"True when the certificate was already revoked. The earlier entry is kept and its date does not move."}) `already`?: boolean
   }
@@ -7178,7 +7178,7 @@ namespace IyaSts.Api.Management {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `application`?: `SharedModel255`;
+    `application`?: `ApplicationValue`;
     `changed`?: BooleanOrString2;
     `dn`?: NullableString;
     `certificates`?: `WithSubjectLabelEnrolledAt`;
@@ -7195,7 +7195,7 @@ namespace IyaSts.Api.Management {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `application`?: `SharedModel255`;
+    `application`?: `ApplicationValue`;
     `changed`?: BooleanOrString2;
     `softwareStatement`?: string;
     `claims`?: `SoftwareStatementSClaimsRFC`
@@ -7205,7 +7205,7 @@ namespace IyaSts.Api.Management {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `application`?: `SharedModel255`;
+    `application`?: `ApplicationValue`;
     `changed`?: BooleanOrString2;
     `how`?: string;
     `entityId`?: string;
@@ -7290,7 +7290,7 @@ namespace IyaSts.Api.Management {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `application`?: `SharedModel255`;
+    `application`?: `ApplicationValue`;
     `changed`?: BooleanOrString2;
     `source`?: string;
     `url`?: string;
@@ -7313,7 +7313,7 @@ namespace IyaSts.Api.Management {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `application`?: `SharedModel255`;
+    `application`?: `ApplicationValue`;
     `changed`?: BooleanOrString2;
     `credentials`?: boolean;
     `attributes`?: (string)[];
@@ -7382,9 +7382,9 @@ namespace IyaSts.Api.Management {
       }
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel297_h1748 {}
+  }) @hoisted model SettingsValue3_h1748 {}
 
-@component union `SharedModel297` {SharedModel297_h1748}
+@component union `SettingsValue3` {SettingsValue3_h1748}
 
 @component model `WithKeyLabelDecides` {
     `key`?: string;
@@ -7425,7 +7425,7 @@ namespace IyaSts.Api.Management {
     `variableId`?: string
   }
 
-@component union `SharedModel307` {NullableObject100}
+@component union `InteractionValue` {NullableObject100}
 
 @component model `WithIdStateAuthorizationServer` {
     `id`?: string;
@@ -7436,7 +7436,7 @@ namespace IyaSts.Api.Management {
     `proof`?: NullableString;
     `resourceOwner`?: NullableString;
     `decision`?: NullableString;
-    `interaction`?: `SharedModel307`;
+    `interaction`?: `InteractionValue`;
     `tokens`?: integer;
     `derivedFrom`?: NullableString;
     `createdAt`?: NullOrStringOrNumeric;
@@ -7486,7 +7486,7 @@ namespace IyaSts.Api.Management {
     `privateKeyPem`?: string
   }
 
-@component union `SharedModel310` {NullableObject103}
+@projects("IssuedToken") @component union `IssuedTokenView` {NullableObject103}
 
 @js(#{
     `x-free-form`:"A Security Event Token's claims. An event's members are each event type's, and the claims are what was signed, so a model of them here would be a second list of every event type.",
@@ -7508,15 +7508,15 @@ namespace IyaSts.Api.Management {
       `why`:#{`type`:#["string","null"]}
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel312_h1778 {}
+  }) @hoisted model ReportValue_h1778 {}
 
-@component union `SharedModel312` {SharedModel312_h1778}
+@component union `ReportValue` {ReportValue_h1778}
 
 @component model `WithOkMessageErrors109` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `report`?: `SharedModel312`
+    `report`?: `ReportValue`
   }
 
 @component model `WithOkDeliveredHeld` {
@@ -7583,9 +7583,9 @@ namespace IyaSts.Api.Management {
       }
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel319_h1786 {}
+  }) @hoisted model SettingsValue4_h1786 {}
 
-@component union `SharedModel319` {SharedModel319_h1786}
+@component union `SettingsValue4` {SettingsValue4_h1786}
 
 @js(#{
     `additionalProperties`:false,
@@ -7598,9 +7598,9 @@ namespace IyaSts.Api.Management {
       `notPushedHere`:#{`type`:"boolean"}
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel322_h1787 {}
+  }) @hoisted model LastReconcileValue_h1787 {}
 
-@component union `SharedModel322` {SharedModel322_h1787}
+@component union `LastReconcileValue` {LastReconcileValue_h1787}
 
 @component model `WithIdRealmClientId2` {
     `id`?: string;
@@ -7698,7 +7698,7 @@ namespace IyaSts.Api.Management {
     `pausedUntil`?: string;
     `failures`?: numeric;
     `lastReconcileAt`?: string;
-    `lastReconcile`?: `SharedModel322`;
+    `lastReconcile`?: `LastReconcileValue`;
     `byCell`?: `WithAdditionalPropertiesPropertiesSubject`
   }
 
@@ -7740,9 +7740,9 @@ namespace IyaSts.Api.Management {
       `at`:#{`type`:"string"}
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel330_h1796 {}
+  }) @hoisted model ChoiceOf330_h1796 {}
 
-@component union `SharedModel330` {SharedModel330_h1796}
+@component union `ChoiceOf330` {ChoiceOf330_h1796}
 
 @js(#{
     `additionalProperties`:false,
@@ -7802,16 +7802,16 @@ namespace IyaSts.Api.Management {
       `pausedUntil`:#{`type`:"string"},
       `failures`:#{`type`:"number"},
       `lastReconcileAt`:#{`type`:"string"},
-      `lastReconcile`:#{`$ref`:"#/components/schemas/SharedModel322"},
+      `lastReconcile`:#{`$ref`:"#/components/schemas/LastReconcileValue"},
       `byCell`:#{`$ref`:"#/components/schemas/WithAdditionalPropertiesPropertiesSubject"},
       `queues`:#{`$ref`:"#/components/schemas/WithQueuedRetryingDead"},
       `linked`:#{`type`:"number"},
-      `discovery`:#{`$ref`:"#/components/schemas/SharedModel330"}
+      `discovery`:#{`$ref`:"#/components/schemas/ChoiceOf330"}
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel328_h1797 {}
+  }) @hoisted model ClientValue_h1797 {}
 
-@component union `SharedModel328` {SharedModel328_h1797}
+@component union `ClientValue` {ClientValue_h1797}
 
 @component model `WithTierUseCaseLabel` {
     `tier`?: string;
@@ -7854,9 +7854,9 @@ namespace IyaSts.Api.Management {
       `tiers`:#{`$ref`:"#/components/schemas/WithAdditionalPropertiesPropertiesRealm"}
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel331_h1803 {}
+  }) @hoisted model ChainValue_h1803 {}
 
-@component union `SharedModel331` {SharedModel331_h1803}
+@component union `ChainValue` {ChainValue_h1803}
 
 @component model `WithIdLabelKind2` is ({
     `id`?: string;
@@ -7899,7 +7899,7 @@ namespace IyaSts.Api.Management {
     `certificatePem`?: string;
     `chainPem`?: string;
     `createdAt`?: NullOrStringOrNumeric;
-    `jwk`?: `SharedModel240`;
+    `jwk`?: `JwkValue`;
     `withdrawnAt`?: string;
     `withdrawnReason`?: string;
     `state`?: string;
@@ -7953,9 +7953,9 @@ namespace IyaSts.Api.Management {
       }
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel340_h1813 {}
+  }) @hoisted model RootValue_h1813 {}
 
-@component union `SharedModel340` {SharedModel340_h1813}
+@component union `RootValue` {RootValue_h1813}
 
 @component model `WithIdLabelCa` {
     `id`?: string;
@@ -8179,7 +8179,7 @@ namespace IyaSts.Api.Management {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `chain`?: `SharedModel331`;
+    `chain`?: `ChainValue`;
     `why`?: string;
     `draft`?: Record<NullOrStringOrBoolean>;
     `workbench`?: `WithFieldsProfilesPqModes2`
@@ -8212,9 +8212,9 @@ namespace IyaSts.Api.Management {
     `additionalProperties`:false,
     `properties`:#{`keys`:#{`$ref`:"#/components/schemas/WithAdditionalPropertiesPropertiesKeys"}},
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel364_h1837 {}
+  }) @hoisted model JwksValue_h1837 {}
 
-@component union `SharedModel364` {SharedModel364_h1837}
+@component union `JwksValue` {JwksValue_h1837}
 
 @component model `WithOkMessageErrors116` {
     `ok`: boolean;
@@ -8224,7 +8224,7 @@ namespace IyaSts.Api.Management {
     `declared`?: boolean;
     `certificatePem`?: string;
     `chainPem`?: string;
-    `jwks`?: `SharedModel364`;
+    `jwks`?: `JwksValue`;
     `privateKeyPem`?: string;
     `purpose`?: string;
     `attributes`?: (string)[];
@@ -8327,7 +8327,7 @@ namespace IyaSts.Api.Management {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `root`?: `SharedModel340`;
+    `root`?: `RootValue`;
     `why`?: string;
     `draft`?: Record<NullOrStringOrBoolean>;
     `workbench`?: `WithFieldsProfilesPqModes2`
@@ -8368,15 +8368,15 @@ namespace IyaSts.Api.Management {
       `note`:#{`type`:"string"}
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel376_h1862 {}
+  }) @hoisted model EntryValue2_h1862 {}
 
-@component union `SharedModel376` {SharedModel376_h1862}
+@component union `EntryValue2` {EntryValue2_h1862}
 
 @component model `WithOkMessageErrors125` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `entry`?: `SharedModel376`;
+    `entry`?: `EntryValue2`;
     `already`?: boolean;
     `why`?: string;
     `draft`?: Record<NullOrStringOrBoolean>;
@@ -8543,9 +8543,9 @@ namespace IyaSts.Api.Management {
       }
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel388_h1888 {}
+  }) @hoisted model ForestTrustInfoValue_h1888 {}
 
-@component union `SharedModel388` {SharedModel388_h1888}
+@component union `ForestTrustInfoValue` {ForestTrustInfoValue_h1888}
 
 @js(#{
     `additionalProperties`:false,
@@ -8591,7 +8591,7 @@ namespace IyaSts.Api.Management {
       `attributes`:#{`type`:"array",`items`:#{`type`:"string"}},
       `suffixes`:#{`type`:"array",`items`:#{`type`:"string"}},
       `enctypes`:#{`type`:"array",`items`:#{`type`:"integer"}},
-      `forestTrustInfo`:#{`$ref`:"#/components/schemas/SharedModel388"},
+      `forestTrustInfo`:#{`$ref`:"#/components/schemas/ForestTrustInfoValue"},
       `claimsTransformation`:#{`type`:"string"},
       `boundary`:#{`type`:"string"},
       `incoming`:#{`$ref`:"#/components/schemas/WithPreviousHeldKvno"},
@@ -8621,9 +8621,9 @@ namespace IyaSts.Api.Management {
       `health`:#{`$ref`:"#/components/schemas/WithAdditionalPropertiesPropertiesPartnerRealm"}
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel392_h1891 {}
+  }) @hoisted model TrustValue_h1891 {}
 
-@component union `SharedModel392` {SharedModel392_h1891}
+@component union `TrustValue` {TrustValue_h1891}
 
 @js(#{
     `additionalProperties`:false,
@@ -8640,9 +8640,9 @@ namespace IyaSts.Api.Management {
       }
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel394_h1892 {}
+  }) @hoisted model ShownValue_h1892 {}
 
-@component union `SharedModel394` {SharedModel394_h1892}
+@component union `ShownValue` {ShownValue_h1892}
 
 @component model `WithOkMessageErrors135` {
     `ok`: boolean;
@@ -8650,10 +8650,10 @@ namespace IyaSts.Api.Management {
     `errors`?: (string)[];
     `trustRealm`?: NullableString;
     `action`?: string;
-    `trust`?: `SharedModel392`;
-    `shown`?: `SharedModel394`;
-    `here`?: `SharedModel392`;
-    `there`?: `SharedModel392`;
+    `trust`?: `TrustValue`;
+    `shown`?: `ShownValue`;
+    `here`?: `TrustValue`;
+    `there`?: `TrustValue`;
     `created`?: boolean;
     `otherRealm`?: string;
     `rotated`?: (string)[]
@@ -8912,7 +8912,7 @@ namespace IyaSts.Api.Management {
 @component model `WithIdentifierDnLabelDn2` is Record<SharedModel419_ap_h1934>;
   
 
-@component model `WithIdentifierDnLabelDn3` {
+@projects("Application") @component model `ApplicationSummaryWithSeen` {
     `identifier`?: string;
     `dnLabel`?: NullableString;
     `dn`?: NullableString;
@@ -8944,7 +8944,7 @@ namespace IyaSts.Api.Management {
     `message`?: string;
     `errors`?: (string)[];
     `changed`?: boolean;
-    `application`?: `WithIdentifierDnLabelDn3`
+    `application`?: `ApplicationSummaryWithSeen`
   }
 
 @component model `WithOwnersNameLocalName` {
@@ -9022,7 +9022,7 @@ namespace IyaSts.Api.Management {
     `ownerProtected`?: boolean;
     `why`?: string;
     `reason`?: string;
-    `account`?: `SharedModel47`
+    `account`?: `ServiceAccountView`
   }
 
 @component model `WithNamePrecedenceStored` {
@@ -9109,7 +9109,7 @@ namespace IyaSts.Api.Management {
 @component model `WithNamePrecedenceStored2` is (`WithNameDnDescription`)[];
   
 
-@component model `WithNamePrecedenceStored3` {
+@projects("AuthenticationPolicy") @component model `AuthenticationPolicyRow` {
     `name`?: string;
     `precedence`?: integer;
     `stored`?: boolean;
@@ -9145,7 +9145,7 @@ namespace IyaSts.Api.Management {
     `federationPrimary`?: StringOrNumericOrBooleanEtc8
   }
 
-@component model `WithNamePrecedenceStored4` {
+@projects("ServiceAccountPolicy") @component model `ServiceAccountPolicyRow` {
     `name`?: string;
     `precedence`?: integer;
     `stored`?: boolean;
@@ -9173,7 +9173,7 @@ namespace IyaSts.Api.Management {
     `rotationAlarmFailures`?: StringOrNumericOrBooleanEtc8
   }
 
-@component model `WithNamePrecedenceStored5` {
+@projects("PasskeyPolicy") @component model `PasskeyPolicyRow` {
     `name`?: string;
     `precedence`?: integer;
     `stored`?: boolean;
@@ -9242,7 +9242,7 @@ namespace IyaSts.Api.Management {
     `requiredAttributes`?: StringOrNumericOrBooleanEtc8
   }
 
-@component model `WithNamePrecedenceStored8` {
+@projects("PostLoginPolicy") @component model `PostLoginPolicyRow` {
     `name`?: string;
     `precedence`?: integer;
     `stored`?: boolean;
@@ -9279,7 +9279,7 @@ namespace IyaSts.Api.Management {
     `message`?: string;
     `errors`?: (string)[];
     `kind`?: string;
-    `profile`?: `WithNamePrecedenceStored3`;
+    `profile`?: `AuthenticationPolicyRow`;
     `rules`?: (string)[];
     `enforced`?: boolean;
     `removed`?: boolean
@@ -9296,16 +9296,16 @@ namespace IyaSts.Api.Management {
       `secondFactors`:#{`type`:"array",`items`:#{`type`:"string"}}
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel444_h2124 {}
+  }) @hoisted model PolicyValue_h2124 {}
 
-@component union `SharedModel444` {SharedModel444_h2124}
+@component union `PolicyValue` {PolicyValue_h2124}
 
 @component model `WithOkMessageErrors144` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `kind`?: string;
-    `policy`?: `SharedModel444`;
+    `policy`?: `PolicyValue`;
     `dn`?: string;
     `removed`?: boolean;
     `name`?: string
@@ -9316,7 +9316,7 @@ namespace IyaSts.Api.Management {
     `message`?: string;
     `errors`?: (string)[];
     `kind`?: string;
-    `profile`?: `WithNamePrecedenceStored4`;
+    `profile`?: `ServiceAccountPolicyRow`;
     `rules`?: (string)[];
     `enforced`?: boolean;
     `removed`?: boolean
@@ -9327,7 +9327,7 @@ namespace IyaSts.Api.Management {
     `message`?: string;
     `errors`?: (string)[];
     `kind`?: string;
-    `profile`?: `WithNamePrecedenceStored5`;
+    `profile`?: `PasskeyPolicyRow`;
     `rules`?: (string)[];
     `enforced`?: boolean;
     `removed`?: boolean
@@ -9379,16 +9379,16 @@ namespace IyaSts.Api.Management {
       `dn`:#{`type`:"string"}
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel451_h2125 {}
+  }) @hoisted model CustomAttributeDefinition_h2125 {}
 
-@component union `SharedModel451` {SharedModel451_h2125}
+@projects("AttributePolicy") @component union `CustomAttributeDefinition` {CustomAttributeDefinition_h2125}
 
 @component model `WithOkMessageErrors150` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
     `kind`?: string;
-    `definition`?: `SharedModel451`;
+    `definition`?: `CustomAttributeDefinition`;
     `name`?: string;
     `dn`?: string;
     `removed`?: boolean;
@@ -9400,7 +9400,7 @@ namespace IyaSts.Api.Management {
     `message`?: string;
     `errors`?: (string)[];
     `kind`?: string;
-    `profile`?: `WithNamePrecedenceStored8`;
+    `profile`?: `PostLoginPolicyRow`;
     `rules`?: (string)[];
     `enforced`?: boolean;
     `removed`?: boolean
@@ -9411,7 +9411,7 @@ namespace IyaSts.Api.Management {
     `message`?: string;
     `errors`?: (string)[];
     `changed`?: boolean;
-    `application`?: `WithIdentifierDnLabelDn3`;
+    `application`?: `ApplicationSummaryWithSeen`;
     `revoked`?: integer;
     `withdrawnAt`?: NullableString;
     `removed`?: integer;
@@ -9453,7 +9453,7 @@ namespace IyaSts.Api.Management {
 @component model `WithIdDnSpiffeId` is (`WithTrustDomainTrustDomainIdX509Keys2`)[];
   
 
-@component model `WithIdDnSpiffeId2` {
+@projects("SpiffeRegistration") @component model `SpiffeRegistrationView` {
     `id`?: string;
     `dn`?: string;
     `spiffeId`?: string;
@@ -9484,7 +9484,7 @@ namespace IyaSts.Api.Management {
     `message`?: string;
     `errors`?: (string)[];
     `id`?: string;
-    `entry`?: `WithIdDnSpiffeId2`
+    `entry`?: `SpiffeRegistrationView`
   }
 
 @component model `WithOkMessageErrors154` {
@@ -9754,11 +9754,11 @@ namespace IyaSts.Api.Management {
       `problems`:#{`type`:"array",`items`:#{`type`:"string"}}
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel486_h2171 {}
+  }) @hoisted model CrawlValue_h2171 {}
 
-@component union `SharedModel486` {SharedModel486_h2171}
+@component union `CrawlValue` {CrawlValue_h2171}
 
-@component model `WithCrawlCrawlEverySJobOff` {`crawl`?: `SharedModel486`; `crawlEveryS`?: numeric; `jobOff`?: string}
+@component model `WithCrawlCrawlEverySJobOff` {`crawl`?: `CrawlValue`; `crawlEveryS`?: numeric; `jobOff`?: string}
 
 @component model `WithSubjectAnchorExpiresAt` {
     `subject`?: string;
@@ -9872,9 +9872,9 @@ namespace IyaSts.Api.Management {
     },
     `description`:"The row, by the operator's column names.",
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel500_h2180 {}
+  }) @hoisted model RowValue_h2180 {}
 
-@component union `SharedModel500` {SharedModel500_h2180}
+@component union `RowValue` {RowValue_h2180}
 
 @component model `WithOkMessageErrors176` {
     `ok`: boolean;
@@ -9884,7 +9884,7 @@ namespace IyaSts.Api.Management {
     `key`?: string;
     `found`?: boolean;
     `why`?: string;
-    `row`?: `SharedModel500`;
+    `row`?: `RowValue`;
     `runId`?: NumericOrString;
     `changed`?: (string)[];
     `failures`?: ({`source`?: string; `why`?: string})[]
@@ -9917,15 +9917,15 @@ namespace IyaSts.Api.Management {
       `credentialShape`:#{`type`:"string"}
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel503_h2182 {}
+  }) @hoisted model DestinationValue_h2182 {}
 
-@component union `SharedModel503` {SharedModel503_h2182}
+@component union `DestinationValue` {DestinationValue_h2182}
 
 @component model `WithOkMessageErrors177` {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `destination`?: `SharedModel503`;
+    `destination`?: `DestinationValue`;
     `version`?: NumericOrStringOrNull
   }
 
@@ -10071,7 +10071,7 @@ namespace IyaSts.Api.Management {
     `askMe`?: boolean
   }
 
-@component model `WithAuthenticatedCertificateSubjectCurrent` {
+@projects("XacmlPep") @component model `XacmlPepView` {
     `authenticated`?: boolean;
     `certificateSubject`?: string;
     `current`?: boolean;
@@ -10109,12 +10109,12 @@ namespace IyaSts.Api.Management {
       `lastAt`:#{`anyOf`:#[#{`type`:"string"},#{`type`:"number"},#{`type`:"null"}]},
       `lastDecision`:#{`type`:#["string","null"]},
       `lastAllowed`:#{`type`:#["boolean","null"]},
-      `remote`:#{`$ref`:"#/components/schemas/WithAuthenticatedCertificateSubjectCurrent"}
+      `remote`:#{`$ref`:"#/components/schemas/XacmlPepView"}
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel519_h2191 {}
+  }) @hoisted model MonitorValue_h2191 {}
 
-@component union `SharedModel519` {SharedModel519_h2191}
+@component union `MonitorValue` {MonitorValue_h2191}
 
 @component model `WithOkMessageErrors181` {
     `ok`: boolean;
@@ -10424,13 +10424,13 @@ namespace IyaSts.Api.Management {
       `pausedUntil`:#{`type`:"string"},
       `failures`:#{`type`:"number"},
       `lastReconcileAt`:#{`type`:"string"},
-      `lastReconcile`:#{`$ref`:"#/components/schemas/SharedModel322"},
+      `lastReconcile`:#{`$ref`:"#/components/schemas/LastReconcileValue"},
       `byCell`:#{`$ref`:"#/components/schemas/WithAdditionalPropertiesPropertiesId"}
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel540_h2215 {}
+  }) @hoisted model ClientValue2_h2215 {}
 
-@component union `SharedModel540` {SharedModel540_h2215}
+@component union `ClientValue2` {ClientValue2_h2215}
 
 @component model `WithOkPatchFilter` {
     `ok`?: boolean;
@@ -10445,7 +10445,7 @@ namespace IyaSts.Api.Management {
     `ok`: boolean;
     `message`?: string;
     `errors`?: (string)[];
-    `client`?: `SharedModel540`;
+    `client`?: `ClientValue2`;
     `certificate`?: {
       `subject`?: NullableString;
       `serial`?: NullableString;
@@ -11933,8 +11933,8 @@ op `publishStatusList`(@js(#{`examples`:#[#{`purpose`:"revocation"}]}) `requestB
     `properties`:#{
       `address`:#{`type`:"string"},
       `prefix`:#{`type`:#["string","null"]},
-      `geo`:#{`$ref`:"#/components/schemas/SharedModel32"},
-      `asn`:#{`$ref`:"#/components/schemas/SharedModel32"},
+      `geo`:#{`$ref`:"#/components/schemas/ChoiceOf32"},
+      `asn`:#{`$ref`:"#/components/schemas/ChoiceOf32"},
       `lists`:#{
         `type`:"array",
         `items`:#{
@@ -13429,7 +13429,7 @@ op `retryMailDeadLetter`(@js(#{`examples`:#[#{`message`:"no-such-message"}]}) `r
         }
       },
       `riskLevel`:#{`type`:"string"},
-      `riskChange`:#{`$ref`:"#/components/schemas/SharedModel41"},
+      `riskChange`:#{`$ref`:"#/components/schemas/RiskChangeValue"},
       `platform`:#{`type`:"string"},
       `model`:#{`type`:"string"},
       `os`:#{`type`:"string"},
@@ -13591,7 +13591,7 @@ op `getDevices`(`parameters/0/schema`: string,
     `total`?: integer;
     `matched`?: integer;
     @js(#{`description`:"What the list was narrowed by."}) `filter`?: Record<string>;
-    `devices`?: (`WithIdDnOwner`)[];
+    `devices`?: (`DeviceView`)[];
     `page`?: integer;
     `pages`?: integer;
     `perPage`?: integer;
@@ -14114,7 +14114,7 @@ op `getServiceAccounts`(`parameters/0/schema`: "true",
     })[];
     `paging`?: `WithPagePagesPerPage`;
     `found`?: boolean;
-    `account`?: `SharedModel47`
+    `account`?: `ServiceAccountView`
   },
   `responses/400/content/application~1json/schema`: `WithOkMessageErrors13`,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
@@ -14353,8 +14353,8 @@ op `getScheduler`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
       `onFront`?: NullableString;
       `nice`?: numeric;
       `processes`?: `WithAdditionalPropertiesPropertiesRunId`;
-      `lastRun`?: `SharedModel54`;
-      `running`?: `SharedModel54`;
+      `lastRun`?: `LastRunValue`;
+      `running`?: `LastRunValue`;
       `queued`?: `WithAdditionalPropertiesPropertiesRunId`;
       `nextRunAt`?: NullableString;
       `nextRunInMs`?: NullableNumber;
@@ -14384,7 +14384,7 @@ op `getScheduler`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
     `settings`?: `SettingsPageDrawsDescribedSame`;
     @js(#{`description`:"The run asked for by `?run=`."}) `run`?: string;
     `found`?: boolean;
-    `detail`?: `SharedModel54`
+    `detail`?: `LastRunValue`
   },
   `responses/400/content/application~1json/schema`: WithOkErrorsErrorEtc52,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
@@ -15245,7 +15245,7 @@ op `getKeyHistory`(`parameters/0/schema`: string,
     `total`?: integer;
     `found`?: boolean;
     `observed`?: boolean;
-    `paging`?: `SharedModel83`
+    `paging`?: `PagingValue`
   },
   `responses/400/content/application~1json/schema`: {
     `ok`?: boolean;
@@ -15826,11 +15826,11 @@ op `getUserDevices`(`parameters/0/schema`: string,
       `keyKinds`?: (string)[];
       `attestation`?: WithLevelFormatSummaryEtc4;
       `compliance`?: string;
-      `complianceChange`?: `SharedModel88`;
+      `complianceChange`?: `ComplianceChangeValue`;
       `status`?: string;
-      `statusChange`?: `SharedModel88`;
+      `statusChange`?: `ComplianceChangeValue`;
       `riskLevel`?: string;
-      `riskChange`?: `SharedModel88`;
+      `riskChange`?: `ComplianceChangeValue`;
       `platform`?: string;
       `model`?: string;
       `os`?: string;
@@ -18465,7 +18465,7 @@ op `getLiveSessions`(`parameters/0/schema`: string,
     `backchannelCounts`?: Record<numeric>;
     `deliveryState`?: string;
     `deliveryq`?: string;
-    `settings`?: `SharedModel153`;
+    `settings`?: `SettingsValue`;
     `hasReader`?: boolean;
     `kerberosRealm`?: string;
     `opensTestControls`?: boolean
@@ -19649,7 +19649,7 @@ op `getAdminRoles`(`parameters/0/schema`: string,
     `grantCount`?: numeric;
     `matched`?: numeric;
     `shown`?: numeric;
-    `settings`?: `SharedModel153`;
+    `settings`?: `SettingsValue`;
     `filter`?: {
       `q`?: NullableString;
       `role`?: NullableString
@@ -20810,7 +20810,7 @@ op `getRealms`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
     `count`?: integer;
     `currentName`?: string;
     `persistence`?: {`persistsRealms`?: boolean; `mode`?: string};
-    `paging`?: `SharedModel83`
+    `paging`?: `PagingValue`
   },
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
@@ -21291,7 +21291,7 @@ op `getTotpSettings`(`responses/200/content/application~1json/schema`: {
     `what`?: string;
     `notes`?: (string)[];
     `links`?: (WithHrefWhat2)[];
-    `settings`?: `SharedModel153`;
+    `settings`?: `SettingsValue`;
     `leadHtml`?: string;
     `alsoHtml`?: (string)[];
     `status`?: `WithOfferedDigitsSecretBits`;
@@ -21330,7 +21330,7 @@ op `getBackupCodesSettings`(`responses/200/content/application~1json/schema`: {
     `what`?: string;
     `notes`?: (string)[];
     `links`?: (WithHrefWhat2)[];
-    `settings`?: `SharedModel153`;
+    `settings`?: `SettingsValue`;
     `leadHtml`?: string;
     `alsoHtml`?: (string)[];
     `status`?: {
@@ -21381,7 +21381,7 @@ op `getWebauthnSettings`(`responses/200/content/application~1json/schema`: {
     `what`?: string;
     `notes`?: (string)[];
     `links`?: (WithHrefWhat2)[];
-    `settings`?: `SharedModel153`;
+    `settings`?: `SettingsValue`;
     `leadHtml`?: string;
     `alsoHtml`?: (string)[];
     `status`?: `WithOfferedRpNameRpId`;
@@ -21450,7 +21450,7 @@ op `getKerberosSettings`(`responses/200/content/application~1json/schema`: {
       `otpIndicator`?: string;
       `notImplemented`?: (string)[];
       `note`?: string;
-      `krbtgt`?: `SharedModel193`;
+      `krbtgt`?: `KrbtgtValue`;
       `pkinit`?: get_admin_api_kerberos_r200_application_json_status_pkinit_h2640
     };
     `page`?: string;
@@ -23869,11 +23869,11 @@ op `getCredentialNotification`(@js(#{`examples`:#["no-such-notification"]}) `par
       },
       `ready`:#{`type`:"boolean"},
       `missing`:#{`type`:"array",`items`:#{`type`:"string"}},
-      `config`:#{`$ref`:"#/components/schemas/SharedModel230"},
+      `config`:#{`$ref`:"#/components/schemas/ConfigValue"},
       `discoveryUrl`:#{`type`:"string"},
       `discoveredAt`:#{`type`:"string"},
       `streamId`:#{`type`:"string"},
-      `stream`:#{`$ref`:"#/components/schemas/SharedModel233"},
+      `stream`:#{`$ref`:"#/components/schemas/StreamValue"},
       `streamDelivery`:#{`type`:"string"},
       `streamAud`:#{`type`:"array",`items`:#{`type`:"string"}},
       `pollEndpoint`:#{`type`:"string"},
@@ -23918,7 +23918,7 @@ op `getCredentialNotification`(@js(#{`examples`:#["no-such-notification"]}) `par
       `graceS`:#{`type`:"number"},
       `current`:#{`type`:"string"},
       `certificatePem`:#{`type`:"string"},
-      `jwk`:#{`$ref`:"#/components/schemas/SharedModel240"},
+      `jwk`:#{`$ref`:"#/components/schemas/JwkValue"},
       `keys`:#{
         `type`:"array",
         `items`:#{
@@ -24040,7 +24040,7 @@ op `getFederationRelationships`(`parameters/0/schema`: string,
     `lastRow`?: integer;
     `container`?: NullableString;
     `max`?: numeric;
-    `settings`?: `SharedModel227`;
+    `settings`?: `SettingsValue2`;
     `roles`?: (WithRoleLabelShortEtc4)[];
     `protocols`?: (WithProtocolLabelFamilyEtc7)[];
     `paths`?: WithBaseLoginAcsEtc18;
@@ -27839,7 +27839,7 @@ op `getXacml`(`responses/200/content/application~1json/schema`: {
     `enabledPolicies`?: integer;
     `root`?: NullableString;
     `pipAvailable`?: boolean;
-    `settings`?: `SharedModel297`;
+    `settings`?: `SettingsValue3`;
     `protocolEndpoints`?: `WithParamsDescriptionParams`
   },
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
@@ -30245,7 +30245,7 @@ op `getSsf`(@js(#{`maxLength`:256}) `parameters/0/schema`: string,
         `jti`?: string;
         `queuedAt`?: NullOrStringOrNumeric2;
         `deliveredAt`?: NullOrStringOrNumeric2;
-        `summary`?: `SharedModel310`
+        `summary`?: `IssuedTokenView`
       })[];
       `dead`?: boolean;
       `deadSince`?: string;
@@ -30260,12 +30260,12 @@ op `getSsf`(@js(#{`maxLength`:256}) `parameters/0/schema`: string,
         `errorCode`?: NullableString;
         `status`?: NullableInteger;
         `signed`?: boolean;
-        `summary`?: `SharedModel310`
+        `summary`?: `IssuedTokenView`
       })[];
       `log`?: (WithAtKindText)[]
     })[];
     `deadLetters`?: WithRetentionSMaxPerStreamDeadStreamTimeoutSEtc4;
-    `settings`?: `SharedModel227`;
+    `settings`?: `SettingsValue2`;
     `statuses`?: (string)[];
     `streamTotals`?: WithStreamsEnabledDeliveredEtc7;
     `streamFilter`?: NullableString;
@@ -31070,7 +31070,7 @@ op `clearRiscAccounts`(@js(#{`examples`:#[#{}]}) `requestBody/content/applicatio
       `clients`:#{`$ref`:"#/components/schemas/WithAuthMethodsOauthClientAuthTlsSources"},
       `choices`:#{`$ref`:"#/components/schemas/WithAuthMethodsOauthClientAuthTlsSources2"},
       `httpAllowed`:#{`type`:"boolean"},
-      `client`:#{`$ref`:"#/components/schemas/SharedModel328"},
+      `client`:#{`$ref`:"#/components/schemas/ClientValue"},
       `missing`:#{`type`:"string"},
       `cellId`:#{`type`:#["string","null"]}
     },
@@ -31120,7 +31120,7 @@ op `getScim`(@js(#{`maxLength`:512,`examples`:#["no-such-client"]}) `parameters/
     `reachableNegatives`?: (WithWhatAnswer)[];
     `mapping`?: {`user`?: `WithAdditionalPropertiesPropertiesPage3`; `group`?: `WithAdditionalPropertiesPropertiesPage3`};
     `counters`?: WithTotalOkFailedEtc13;
-    `settings`?: `SharedModel319`;
+    `settings`?: `SettingsValue4`;
     `scimClients`?: get_admin_api_scim_r200_application_json_scimClients_h2828
   },
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
@@ -31201,7 +31201,7 @@ op `getPki`(@js(#{`minimum`:1,`maximum`:5}) `parameters/0/schema`: integer,
   @js(#{`maxLength`:200}) `parameters/5/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `realm`?: string;
-    `chain`?: `SharedModel331`;
+    `chain`?: `ChainValue`;
     `keyAlgorithms`?: `WithIdLabelKind2`;
     `signatureAlgorithms`?: (WithIdLabelWeakEtc4)[];
     `tiers`?: ({
@@ -31287,7 +31287,7 @@ op `getPki`(@js(#{`minimum`:1,`maximum`:5}) `parameters/0/schema`: integer,
         `certificatePem`?: string;
         `chainPem`?: (string)[];
         `publicKeyPem`?: string;
-        `publicJwk`?: `SharedModel240`;
+        `publicJwk`?: `JwkValue`;
         `expiringSoon`?: boolean
       })[]
     };
@@ -31326,7 +31326,7 @@ op `getPki`(@js(#{`minimum`:1,`maximum`:5}) `parameters/0/schema`: integer,
       `issuerAttribute`?: string
     })[];
     `tree`?: {
-      `root`?: `SharedModel340`;
+      `root`?: `RootValue`;
       `rootBuilt`?: boolean;
       `persisted`?: boolean;
       `organisation`?: string;
@@ -31341,13 +31341,13 @@ op `getPki`(@js(#{`minimum`:1,`maximum`:5}) `parameters/0/schema`: integer,
         `altKeyAlg`?: NullableString;
         `organisation`?: string;
         `country`?: string;
-        `intermediate`?: `SharedModel340`;
+        `intermediate`?: `RootValue`;
         `issuing`?: ({
           `id`?: string;
           `label`?: string;
           `what`?: string;
           `built`?: boolean;
-          `ca`?: `SharedModel340`;
+          `ca`?: `RootValue`;
           `certified`?: ({
             `slot`?: string;
             `useCase`?: string;
@@ -31371,7 +31371,7 @@ op `getPki`(@js(#{`minimum`:1,`maximum`:5}) `parameters/0/schema`: integer,
       })[]
     };
     `workbench`?: `WithFieldsProfilesPqModes2`;
-    `settings`?: `SharedModel227`;
+    `settings`?: `SettingsValue2`;
     `issuedPaging`?: `WithPagePagesPerPage`;
     `personsPaging`?: `WithPagePagesPerPage`;
     `issuedSearch`?: NullableString;
@@ -33080,7 +33080,7 @@ op `getKerberosPrincipals`(@js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `p
       `neverCreated`?: (string)[];
       `serviceHosts`?: (string)[]
     };
-    `krbtgt`?: `SharedModel193`;
+    `krbtgt`?: `KrbtgtValue`;
     `actions`?: (string)[];
     `people`?: ({
       `retained`?: `WithAdditionalPropertiesPropertiesPrincipal`;
@@ -33488,7 +33488,7 @@ op `getKerberosTrusts`(@js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `param
       `attributes`?: (string)[];
       `suffixes`?: (string)[];
       `enctypes`?: (integer)[];
-      `forestTrustInfo`?: `SharedModel388`;
+      `forestTrustInfo`?: `ForestTrustInfoValue`;
       `claimsTransformation`?: string;
       `boundary`?: string;
       `incoming`?: `WithPreviousHeldKvno`;
@@ -33508,7 +33508,7 @@ op `getKerberosTrusts`(@js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `param
     })[];
     `total`?: integer;
     `trustsPaging`?: `WithPagePagesPerPage2`;
-    `trust`?: `SharedModel392`;
+    `trust`?: `TrustValue`;
     `unknownTrust`?: string;
     `product`?: boolean;
     `form`?: {
@@ -35546,7 +35546,7 @@ op `getRoles`(`parameters/0/schema`: string,
     `memberKinds`?: ({`kind`?: string; `label`?: string; `field`?: string; `what`?: string})[];
     `issuanceKinds`?: (string)[];
     `actions`?: (string)[];
-    `settings`?: `SharedModel153`;
+    `settings`?: `SettingsValue`;
     `shownRoles`?: `WithDescriptionOkMessage`;
     `applicationChoices`?: (WithIdentifierName)[];
     `role`?: {
@@ -36337,7 +36337,7 @@ op `getPolicies`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: inte
       `notDoors`?: string
     };
     `authn`?: {
-      `profile`?: `WithNamePrecedenceStored3`;
+      `profile`?: `AuthenticationPolicyRow`;
       `rules`?: (string)[];
       `defaults`?: Record<StringOrNumericOrBooleanEtc8>;
       `fields`?: `WithContainerDefinitionContainerObjectClasses`;
@@ -36361,7 +36361,7 @@ op `getPolicies`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: inte
       `vocabulary`?: {`mechanisms`?: (string)[]; `secondFactors`?: (string)[]}
     };
     `serviceAccount`?: {
-      `profile`?: `WithNamePrecedenceStored4`;
+      `profile`?: `ServiceAccountPolicyRow`;
       `rules`?: (string)[];
       `defaults`?: Record<StringOrNumericOrBooleanEtc8>;
       `fields`?: `WithContainerDefinitionContainerObjectClasses`;
@@ -36371,7 +36371,7 @@ op `getPolicies`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: inte
       `named`?: `WithNamePrecedenceStored2`
     };
     `passkey`?: {
-      `profile`?: `WithNamePrecedenceStored5`;
+      `profile`?: `PasskeyPolicyRow`;
       `rules`?: (string)[];
       `defaults`?: Record<StringOrNumericOrBooleanEtc8>;
       `fields`?: `WithContainerDefinitionContainerObjectClasses`;
@@ -36446,7 +36446,7 @@ op `getPolicies`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: inte
       `actions`?: {`define`?: string; `update`?: string; `remove`?: string}
     };
     `postLogin`?: {
-      `profile`?: `WithNamePrecedenceStored8`;
+      `profile`?: `PostLoginPolicyRow`;
       `rules`?: (string)[];
       `defaults`?: Record<StringOrNumericOrBooleanEtc8>;
       `fields`?: `WithContainerDefinitionContainerObjectClasses`;
@@ -38284,7 +38284,7 @@ op `forgetUserConsent`(@js(#{`examples`:#[#{`username`:"alice"}]}) `requestBody/
           `active`?: boolean;
           `keyType`?: string;
           `alg`?: NullableString;
-          `jwk`?: `SharedModel240`;
+          `jwk`?: `JwkValue`;
           `createdAt`?: NullOrStringOrNumeric2
         })[];
         `trustAnchors`?: ({
@@ -38357,7 +38357,7 @@ op `forgetUserConsent`(@js(#{`examples`:#[#{`username`:"alice"}]}) `requestBody/
         `federated`?: `WithIdDnSpiffeId`
       };
       `serverApiAuthenticated`?: boolean;
-      `settingsForms`?: `SharedModel227`;
+      `settingsForms`?: `SettingsValue2`;
       `protocolEndpoints`?: `WithParamsDescriptionParams`
     }
   }
@@ -38513,11 +38513,11 @@ op `removeSpiffeFederatedBundle`(@js(#{`examples`:#[#{`trustDomain`:"other.examp
       `container`?: string;
       `serverApiAuthenticated`?: boolean;
       `trustDomain`?: string;
-      `entries`?: (`WithIdDnSpiffeId2`)[];
+      `entries`?: (`SpiffeRegistrationView`)[];
       `found`?: boolean;
       `id`?: string;
       `error`?: string;
-      `entry`?: `WithIdDnSpiffeId2`;
+      `entry`?: `SpiffeRegistrationView`;
       `editable`?: (string)[];
       `defaults`?: {
         `x509SvidTtl`?: NullableString;
@@ -39145,7 +39145,7 @@ op `createSpiffeJoinToken`(@js(#{`examples`:#[#{`ttl`:600}]}) `requestBody/conte
       `hostNames`?: {`paging`?: `WithPagePagesPerPage`; `rows`?: `WithAtOperationOutcome`};
       `revocationReasons`?: (string)[];
       `actions`?: (string)[];
-      `settings`?: `SharedModel227`;
+      `settings`?: `SettingsValue2`;
       `protocolEndpoints`?: `WithParamsDescriptionParams`
     }
   }
@@ -39596,7 +39596,7 @@ op `removeAcmeHostName`(@js(#{
         `where`?: string
       };
       `actions`?: (string)[];
-      `settings`?: `SharedModel227`;
+      `settings`?: `SettingsValue2`;
       `monitor`?: string;
       `protocolEndpoints`?: `WithParamsDescriptionParams`
     }
@@ -40005,7 +40005,7 @@ op `removeEstHostName`(@js(#{
       };
       `revokeReasons`?: (string)[];
       `actions`?: (string)[];
-      `settings`?: `SharedModel227`;
+      `settings`?: `SettingsValue2`;
       `protocolEndpoints`?: `WithParamsDescriptionParams`
     }
   }
@@ -40531,7 +40531,7 @@ op `getOidfed`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: intege
     }) `entityConfiguration`?: unknown;
     `entityConfigurationProblem`?: NullableString;
     `statementLifetimeS`?: numeric;
-    `settings`?: `SharedModel227`;
+    `settings`?: `SettingsValue2`;
     `counts`?: {
       `keys`?: integer;
       `subordinates`?: integer;
@@ -41934,7 +41934,7 @@ op `getAttributeSources`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schem
     `hostPatterns`?: string;
     `refused`?: {`names`?: (string)[]; `prefixes`?: (string)[]};
     `job`?: string;
-    `settings`?: `SharedModel319`
+    `settings`?: `SettingsValue4`
   },
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
   
@@ -42615,7 +42615,7 @@ op `getXacmlAuthzen`(`parameters/0/schema`: string,
     `role`?: string;
     `scope`?: string;
     `group`?: string;
-    `settings`?: `SharedModel297`;
+    `settings`?: `SettingsValue3`;
     `catalogue`?: {
       `rows`?: (`WithKeyObjectProperty`)[];
       `problems`?: (string)[];
@@ -43206,9 +43206,9 @@ op `getUma`(`parameters/0/schema`: string,
     };
     `owner`?: get_admin_api_uma_r200_application_json_owner_h3177;
     `whatIf`?: get_admin_api_uma_r200_application_json_whatIf_h3178;
-    `monitor`?: `SharedModel519`;
+    `monitor`?: `MonitorValue`;
     `actions`?: (string)[];
-    `settings`?: `SharedModel297`;
+    `settings`?: `SettingsValue3`;
     `protocolEndpoints`?: (WithNameMethodsUrlEtc7)[]
   },
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
@@ -43234,7 +43234,7 @@ op `getUma`(`parameters/0/schema`: string,
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getUmaMonitor`(`responses/200/content/application~1json/schema`: {
-    `pep`?: `SharedModel519`;
+    `pep`?: `MonitorValue`;
     `resourceServers`?: `WithIdNameType`;
     `totals`?: {
       `resources`?: integer;
@@ -44861,7 +44861,7 @@ op `getScimClients`(@js(#{`maxLength`:512,`examples`:#["no-such-client"]}) `para
     `clients`?: `WithAuthMethodsOauthClientAuthTlsSources`;
     `choices`?: `WithAuthMethodsOauthClientAuthTlsSources2`;
     `httpAllowed`?: boolean;
-    `client`?: `SharedModel328`;
+    `client`?: `ClientValue`;
     `missing`?: string;
     `cellId`?: NullableString;
     `protocolEndpoints`?: `WithParamsDescriptionParams`

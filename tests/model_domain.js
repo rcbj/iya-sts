@@ -122,6 +122,25 @@ function declarations(t) {
   log.debug("Leaving declarations().");
 }
 
+function projectionsAreReal(t) {
+  log.debug("Entering projectionsAreReal().");
+  const concepts = DomainMap.catalogue();
+  const rows = ModelTables.file('api.projections.json');
+  t.check(rows.length >= 15, 'published shapes are tied to concepts (' +
+    rows.length + ')');
+  rows.forEach(function (row) {
+    const fields = concepts.get(row.concept).fields.map(function (one) {
+      return one.name;
+    });
+    const shared = row.fields.filter(function (one) {
+      return fields.indexOf(one) >= 0;
+    });
+    t.check(shared.length >= 3, row.name + ' shares fields with ' +
+      row.concept, shared.join(','));
+  });
+  log.debug("Leaving projectionsAreReal().");
+}
+
 function catalogue(t) {
   log.debug("Entering catalogue().");
   const concepts = ModelTables.file('domain.json').concepts;
@@ -255,6 +274,7 @@ async function run(t) {
     'domain_lib.mjs')).href);
   refusals(t, lib.checkDomains);
   catalogue(t);
+  projectionsAreReal(t);
   declarations(t);
   mapping(t);
   await records(t);

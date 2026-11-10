@@ -18,7 +18,7 @@ import fs from 'fs';
 import path from 'path';
 import url from 'url';
 import bunyan from 'bunyan';
-import { documents, everyOperation, renderApiTypes }
+import { documents, everyOperation, projections, renderApiTypes }
   from '../lib/api_lib.mjs';
 import { checkDomains, readDomains, renderClasses, renderTypes }
   from '../lib/domain_lib.mjs';
@@ -96,6 +96,31 @@ async function generate() {
       JSON.stringify(served[name]));
   });
   fs.writeFileSync(path.join(out, 'api.d.ts'), renderApiTypes(served));
+  const projected = projections(program);
+  const conceptNames = new Set(concepts.map(function (one) {
+    return one.name;
+  }));
+  const strays = projected.filter(function (one) {
+    return !conceptNames.has(one.concept);
+  });
+  if (strays.length > 0) {
+    log.debug("Leaving generate(). A projection names no concept.");
+    throw new Error('No such concept: ' + strays.map(function (one) {
+      return one.name + ' projects ' + one.concept;
+    }).join('; '));
+  }
+  // What a shape holds is read from its published schema: a shape written as
+  // raw JSON Schema has no TypeSpec properties to count.
+  projected.forEach(function (one) {
+    Object.keys(served).forEach(function (name) {
+      const schemas = (served[name].components || {}).schemas || {};
+      if (schemas[one.name] && schemas[one.name].properties) {
+        one.fields = Object.keys(schemas[one.name].properties);
+      }
+    });
+  });
+  fs.writeFileSync(path.join(out, 'api.projections.json'),
+    JSON.stringify(projected));
   fs.writeFileSync(path.join(out, 'openapi.every.json'),
     JSON.stringify(everyOperation(program)));
   const mariadb = readPersistence(program, 'mariadb');

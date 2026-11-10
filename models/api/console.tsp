@@ -1871,7 +1871,7 @@ namespace IyaSts.Api.Console {
 @js(#{
     `description`:"One thing that happened, with the facts of it and no credential of any kind. Written out rather than left open because a caller filtering or alerting on this list needs a name for every field.",
     `additionalProperties`:true
-  }) @component model `AuditEvent` {
+  }) @projects("AuditEvent") @component model `AuditEvent` {
     @js(#{
       `description`:"Unique across every process of the service and NEVER REUSED, including across a drop and a restart; rising within each process, not one order across them (#465). The stable name for an event — a row number would silently mean a different event as soon as the cap discarded anything. Resume reading by `at`."
     }) `seq`?: integer;
@@ -2190,9 +2190,9 @@ namespace IyaSts.Api.Console {
       `lastSeen`:#{`type`:"string"}
     },
     `$types`:#["object","null"]
-  }) @hoisted model SharedModel25_h1349 {}
+  }) @hoisted model BrokeredUseValue_h1349 {}
 
-@component union `SharedModel25` {SharedModel25_h1349}
+@component union `BrokeredUseValue` {BrokeredUseValue_h1349}
 
 @component model `WithApplicationsGrantsLines3` {
     `applications`?: integer;
@@ -3076,7 +3076,7 @@ op `getFederationMap`(`parameters/0/schema`: string,
       `brokersTo`?: string;
       `brokerUsable`?: boolean;
       `brokerProblem`?: string;
-      `brokeredUse`?: `SharedModel25`;
+      `brokeredUse`?: `BrokeredUseValue`;
       `releases`?: (string)[];
       `dn`?: string;
       `applications`?: ({
@@ -3106,7 +3106,7 @@ op `getFederationMap`(`parameters/0/schema`: string,
       `relation`?: string;
       `relationship`?: string;
       `brokeredTo`?: string;
-      `use`?: `SharedModel25`
+      `use`?: `BrokeredUseValue`
     })[];
     `drawing`?: WithWidthHeightFailed;
     `label`?: string;

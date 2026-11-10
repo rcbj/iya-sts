@@ -27,6 +27,7 @@ const ENDPOINT = Symbol.for('iya.api.endpoint');
 const JS = Symbol.for('iya.api.js');
 const HOISTED = Symbol.for('iya.api.hoisted');
 const COMPONENT = Symbol.for('iya.api.component');
+const PROJECTS = Symbol.for('iya.api.projects');
 
 const PRIMITIVES = { string: 'string', integer: 'integer', numeric: 'number',
   boolean: 'boolean' };
@@ -45,6 +46,9 @@ export const $decorators = {
     },
     hoisted: function (context, target) {
       context.program.stateSet(HOISTED).add(target);
+    },
+    projects: function (context, target, concept) {
+      context.program.stateMap(PROJECTS).set(target, concept);
     },
     component: function (context, target) {
       context.program.stateSet(COMPONENT).add(target);
@@ -457,4 +461,22 @@ export function renderApiTypes(served) {
   });
   log.debug("Leaving renderApiTypes().");
   return lines.join('\n');
+}
+
+/**
+ * Which published shapes project which concept: the API's reusable models and
+ * the domain they are views of.
+ *
+ * @param program - the compiled program
+ * @returns one row per projection
+ */
+export function projections(program) {
+  log.debug("Entering projections().");
+  const out = [];
+  program.stateMap(PROJECTS).forEach(function (concept, model) {
+    const fields = model.properties ? Array.from(model.properties.keys()) : [];
+    out.push({ name: model.name, concept: concept, fields: fields });
+  });
+  log.debug("Leaving projections().");
+  return out;
 }

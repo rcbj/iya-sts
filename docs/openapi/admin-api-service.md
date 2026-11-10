@@ -2294,7 +2294,8 @@ Scope: `admin:write`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `value` | string, or array | yes | The listeners: a JSON array, as text or as the array. |
+| `value` | list, or string | yes |  |
+| `value[]` | any JSON |  |  |
 
 **200**: That it is set.
 
