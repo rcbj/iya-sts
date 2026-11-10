@@ -12208,6 +12208,13 @@ const CODES = [
       'the consent screen, to sign in to the application (ASVS 5.0.0 ' +
       '7.6.2).',
     spec: 'RequestDenied (SAML 2.0); a page (SAML 1.1)' },
+  { code: 'STS-SAML-0121',
+    summary: 'A SAML message or metadata document this service built does ' +
+      'not match its model in models/saml/ (#1579): its root, an ' +
+      'attribute, a fixed value, or a child element or its order. The ' +
+      'document is sent as it was built: the model describes the wire and ' +
+      'does not reshape it, so this is a model gap to close.',
+    spec: 'none (recorded only; the document is unchanged)' },
   { code: 'STS-WSTRUST-0001',
     summary: 'The RequestSecurityToken body is not well-formed XML (or is ' +
       'empty), so no operation could be read from it.',

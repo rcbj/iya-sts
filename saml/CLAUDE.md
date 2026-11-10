@@ -16,6 +16,7 @@ provider for each of them**.
 | `return_address.ts` | **Where a response may be delivered**: anything in development, a registered address in product (2026-09-12). Shared with WS-Federation. Registers nothing. |
 | `person_attributes.ts` | **The persona facts an assertion carries**, invented in development and read off the directory entry (or omitted) in product (2026-09-12). Registers nothing. |
 | `saml_cells.ts` | **Where a SAML back-channel request is answered in a service deployed as cells** (#98 D10, 2026-09-28): the cell tag inside an artifact's handle, and the peer holding the session a query names (the `saml-session-holder` inter-cell operation). Registers no route. See *IN A SERVICE DEPLOYED AS CELLS*, at the end. |
+| `saml_model.ts` | **The SAML model, as both identity providers read it (#1579).** Every vocabulary term, the AuthnRequest's and LogoutRequest's attributes as they are read, the order every builder writes its attributes and children in, SAML 1.1's browser parameters, and the holding of every built message to its model. A leaf. See *THE MESSAGES ARE THE MODEL'S*, at the end. |
 | `listener_keys.ts` | **The certificate the back channel presents, as a metadata key** (#248): every leaf the main port presents — every live cluster node's — as a `use="signing"` KeyDescriptor for both profiles' metadata. Registers nothing; reaches `tls/tls_server.js` lazily. See *THE BACK CHANNEL'S TLS CERTIFICATE IS IN THE METADATA*, at the end. |
 
 ## THE TWO PROFILES ARE SEPARATE IMPLEMENTATIONS, NOT ONE WITH A VERSION FLAG — rule 4b
@@ -1822,3 +1823,87 @@ import it lets through is an administrator's act like any other. Nothing else
 can write these attributes: no OAuth registration door names them, and a sighting
 goes to the observed attribute, never to the registered one.
 `tests/saml_metadata_lifecycle.js` F1c holds it, against nine mutants.
+
+## THE MESSAGES ARE THE MODEL'S (#1579, 2026-11-10)
+
+**`models/saml/saml2.tsp` and `saml11.tsp` are the source of both
+profiles' vocabularies, of what is read off a request, and of the order
+every message and metadata document is written in.** SAML is XML, so
+nothing there is a JSON Schema: the model states the protocol as FACTS,
+`models/lib/saml_lib.mjs` writes them into `models/generated/saml.json`,
+and `saml_model.ts` reads that file.
+
+* **A vocabulary (`@vocabulary`)** is a closed list of values, a property
+  per term: the namespaces, the bindings (what each carries, which a
+  request may ARRIVE on — never HTTP-Artifact, #191 — and which a Response
+  is DELIVERED on), SAML 2.0's top- and second-level status codes
+  (saml-core-2.0-os section 3.2.2.2) and SAML 1.1's QNames, the NameID
+  formats (`advertised` is the metadata's list, in order), the attribute
+  name formats, the confirmation methods, the authentication context
+  classes (`mfaDemand` is what `AC_MFA_DEMANDS` was) and SAML 1.1's methods
+  (`equivalent` is what `authn_context.ts`'s two translation tables were),
+  SAML 1.1's profiles, protocols and request types (`answered: false` is
+  the AuthorizationDecisionQuery refused by name). **Every constant in this
+  directory is `SamlModel.term(vocabulary, name)`**, so a URI is written
+  once. A term no code writes is `readOnly` and stated for a reader (every
+  second-level code, holder-of-key, PAOS).
+* **A message (`@message`)** is one element: its attributes (`@attribute`)
+  and children (`@element`) **in the schema's sequence**. Reading:
+  `SamlModel.read(id, element)` answers the attributes the model marks
+  `read` — an xs:boolean true only for `"true"`, anything else its text, ''
+  when absent — and `readAuthnRequest()`, the LogoutRequest's envelope and
+  the NameIDPolicy are read through it, and so are a service provider's
+  `md:SPSSODescriptor` flags and endpoints where `sp_metadata.ts` consumes
+  them (`md.SPSSODescriptor`, `md.Endpoint`); `accepts()` is the Version
+  `envelopeProblem()` holds a request to. Writing: every builder —
+  `buildSamlAssertion()`, `buildSaml11Assertion()`, both `buildResponse()`s,
+  the ArtifactResponse, both logout messages, the Status, and the metadata's
+  `md:EntityDescriptor`, `md:IDPSSODescriptor` and
+  `md:AttributeAuthorityDescriptor` — passes its start tag's values to
+  `SamlModel.attributes()` (the model's order, a `fixed` value always,
+  anything empty omitted, escaped as `helpers.xmlEscape()` escapes) and
+  its children's text to `SamlModel.children()` (joined in the model's
+  order). **A part the model does not name, or one it says the builder
+  never writes, throws**: ds:Signature is `signer: true, written: false`,
+  because `common/crypto.js` inserts it at that place.
+* **Holding**: `SamlModel.hold(id, xml, where)` parses what was built —
+  after signing — and checks the root, its attributes and fixed values,
+  its children and their order and repetition, recursively where a child is
+  a declared message; a gap is logged under **STS-SAML-0121** and the
+  document is sent unchanged. Every Response, ArtifactResponse,
+  LogoutRequest, LogoutResponse and metadata document is held.
+* **SAML 1.1's browser profiles have no request message (rule 4b)**, so
+  what a relying party sends is a parameter set, `saml11.browser` (`@params`):
+  the non-spec `profile` parameter's values are its `accepts`.
+
+**Byte for byte**: `tests/saml_model_wire.js` recorded both identity
+providers before the switch — every metadata document, sign-in on each
+binding, artifact resolution, each AuthnRequest refusal, the attribute
+authority, single logout both ways, SAML 1.1's profiles and every request
+the responder answers, in a development and a product realm with
+`saml2.signResponse`, `signAssertion`, `requireSignedAuthnRequests` and
+`nameIdFormat` turned — three runs, identical, and the switched tree answers
+the same record. `tests/model_saml.js` holds the build's refusals, no SAML
+URI, QName or advertised list written in `saml/` outside the model, the
+readers and writers, and every recorded message held with nothing to say.
+
+**What stays in code, and why.** XML parsing (`common/xml_parser.js`),
+canonicalisation, signing and encryption (`common/crypto.js`, so the
+`Id="_0"` story above cannot recur: no builder hands the signer anything but
+the document). Every check that needs state: whose signature a request
+carries (`request_signature.ts`), whether an address or a provider is
+registered, whether a session meets a context, freshness and replay, the
+artifact's one spending. The element-level text of a NameID, an
+AudienceRestriction, an Attribute and an endpoint element is still written
+where its values are, inside a part the model orders. **The console's browser
+bundle (`web_saml.ts`) keeps the two profile URIs it labels**: a `web_*.ts` may require only other `web_*.ts` (root `CLAUDE.md`,
+*Pages with a script*), so the model's reader cannot reach them. **The
+federation module reads a partner's SAML with its own reader**
+(`federation/federation_sp.ts`) and shares only `request_signature.ts` and
+`document_settings.ts`, which the switch did not change.
+
+**One reading the model records and does not change**: xs:boolean allows
+`1` for true, and `ForceAuthn="1"` / `IsPassive="1"` are read as false, as
+they always were here. The model says so (`reading: "boolean"`, true only
+for `"true"`); changing it is a behaviour change owed rcbj's decision.
+

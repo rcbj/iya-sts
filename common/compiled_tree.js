@@ -68,7 +68,8 @@ const GENERATED = ['application', 'role', 'device', 'serviceAccount', 'spiffe',
     'models/generated/authzen.json',
     'models/generated/ssf.json',
     'models/generated/enrollment.json',
-    'models/generated/spiffe.json']);
+    'models/generated/spiffe.json',
+    'models/generated/saml.json']);
 
 /**
  * The top-level directories that are not the service's own sources, as the

@@ -32,6 +32,7 @@ import { checkEnrollment, readEnrollment }
 import { checkSpiffe, describeProtos, readSpiffe }
   from '../lib/spiffe_lib.mjs';
 import { createRequire } from 'module';
+import { checkSaml, readSaml } from '../lib/saml_lib.mjs';
 import { checkFacts, factsOf, fieldsOf, linksIn, readDirectory, readPersistence,
   readSpellings, renderScript, schemaOf } from '../lib/model_lib.mjs';
 
@@ -177,6 +178,13 @@ async function generate() {
                     spiffeProblems.join('; '));
   }
   fs.writeFileSync(path.join(out, 'spiffe.json'), JSON.stringify(spiffe));
+  const saml = readSaml(program);
+  const samlProblems = checkSaml(saml);
+  if (samlProblems.length > 0) {
+    log.debug("Leaving generate(). The SAML model is wrong.");
+    throw new Error('The SAML model is wrong: ' + samlProblems.join('; '));
+  }
+  fs.writeFileSync(path.join(out, 'saml.json'), JSON.stringify(saml));
   const persistence = readPersistence(program);
   fs.writeFileSync(path.join(out, 'persistence.postgres.json'),
     JSON.stringify({ objects: persistence.objects,

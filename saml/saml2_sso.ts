@@ -225,6 +225,10 @@ import authnContext = require('./authn_context');
 import PhishingResistance = require('../common/phishing_resistance');
 import SsoConsent = require('../common/sso_consent');
 import documentSettings = require('./document_settings');
+// SAML 2.0's vocabularies, the AuthnRequest's attributes and the order of
+// every element this file writes are the model's (#1579): see
+// `saml/saml_model.ts`. A leaf.
+import SamlModel = require('./saml_model');
 // The certificate the back channel presents, as a metadata key (#248).
 import listenerKeys = require('./listener_keys');
 import returnAddress = require('./return_address');
@@ -251,32 +255,34 @@ import capabilities = require('../cluster/cluster_capabilities');
 import cacheRegistry = require('../common/cache_registry');
 
 // --- the vocabulary --------------------------------------------------------
-const NS_SAMLP = 'urn:oasis:names:tc:SAML:2.0:protocol';
+// EVERY URI BELOW IS A TERM OF `models/saml/saml2.tsp` (#1579), asked for by
+// name, so a value is written once and the model is its source.
+const NS_SAMLP = SamlModel.term('saml2.namespace', 'protocol');
 
-const NS_SAML = 'urn:oasis:names:tc:SAML:2.0:assertion';
+const NS_SAML = SamlModel.term('saml2.namespace', 'assertion');
 
 // SAML V2.0 Metadata Profile for Algorithm Support Version 1.0 (#1368).
-const NS_ALG = 'urn:oasis:names:tc:SAML:metadata:algsupport';
-const NS_MD = 'urn:oasis:names:tc:SAML:2.0:metadata';
+const NS_ALG = SamlModel.term('saml2.namespace', 'algorithmSupport');
+const NS_MD = SamlModel.term('saml2.namespace', 'metadata');
 
-const NS_DS = 'http://www.w3.org/2000/09/xmldsig#';
+const NS_DS = SamlModel.term('saml2.namespace', 'xmlSignature');
 
-const NS_SOAP = 'http://schemas.xmlsoap.org/soap/envelope/';
+const NS_SOAP = SamlModel.term('saml2.namespace', 'soap');
 
 /**
  * The SAML 2.0 HTTP-Redirect binding's URI.
  */
-const BINDING_REDIRECT = 'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect';
+const BINDING_REDIRECT = SamlModel.term('saml2.binding', 'redirect');
 
 /**
  * The SAML 2.0 HTTP-POST binding's URI.
  */
-const BINDING_POST = 'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST';
+const BINDING_POST = SamlModel.term('saml2.binding', 'post');
 
 /**
  * The SAML 2.0 HTTP-Artifact binding's URI.
  */
-const BINDING_ARTIFACT = 'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Artifact';
+const BINDING_ARTIFACT = SamlModel.term('saml2.binding', 'artifact');
 
 // THE HTTP-POST-SimpleSign BINDING (#37 follow-up; OASIS "SAML V2.0 HTTP POST
 // 'SimpleSign' Binding"): the POST binding's form, with the message NOT
@@ -287,27 +293,44 @@ const BINDING_ARTIFACT = 'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Artifact';
 /**
  * The SAML 2.0 HTTP-POST-SimpleSign binding's URI.
  */
-const BINDING_SIMPLESIGN =
-  'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST-SimpleSign';
+const BINDING_SIMPLESIGN = SamlModel.term('saml2.binding', 'simpleSign');
 
 /**
  * The SAML 2.0 SOAP binding's URI.
  */
-const BINDING_SOAP = 'urn:oasis:names:tc:SAML:2.0:bindings:SOAP';
+const BINDING_SOAP = SamlModel.term('saml2.binding', 'soap');
 
-const STATUS_SUCCESS = 'urn:oasis:names:tc:SAML:2.0:status:Success';
+// The bindings a Response may be delivered on: the model's `response` ones.
+const RESPONSE_BINDINGS = SamlModel.terms('saml2.binding', 'response');
 
-const STATUS_REQUESTER = 'urn:oasis:names:tc:SAML:2.0:status:Requester';
+const STATUS_SUCCESS = SamlModel.term('saml2.status', 'Success');
 
-const STATUS_RESPONDER = 'urn:oasis:names:tc:SAML:2.0:status:Responder';
+const STATUS_REQUESTER = SamlModel.term('saml2.status', 'Requester');
 
-const STATUS_NO_PASSIVE = 'urn:oasis:names:tc:SAML:2.0:status:NoPassive';
+const STATUS_RESPONDER = SamlModel.term('saml2.status', 'Responder');
 
-const STATUS_PARTIAL_LOGOUT =
-    'urn:oasis:names:tc:SAML:2.0:status:PartialLogout';
+const STATUS_NO_PASSIVE = SamlModel.term('saml2.status', 'NoPassive');
+
+const STATUS_PARTIAL_LOGOUT = SamlModel.term('saml2.status', 'PartialLogout');
 
 const STATUS_UNKNOWN_PRINCIPAL =
-    'urn:oasis:names:tc:SAML:2.0:status:UnknownPrincipal';
+    SamlModel.term('saml2.status', 'UnknownPrincipal');
+
+const STATUS_REQUEST_DENIED = SamlModel.term('saml2.status', 'RequestDenied');
+
+const STATUS_INVALID_NAMEID_POLICY =
+    SamlModel.term('saml2.status', 'InvalidNameIDPolicy');
+
+const STATUS_AUTHN_FAILED = SamlModel.term('saml2.status', 'AuthnFailed');
+
+const STATUS_NO_AUTHN_CONTEXT =
+    SamlModel.term('saml2.status', 'NoAuthnContext');
+
+const NAMEID_UNSPECIFIED = SamlModel.term('saml2.nameIdFormat', 'unspecified');
+
+const NAMEID_TRANSIENT = SamlModel.term('saml2.nameIdFormat', 'transient');
+
+const NAMEID_EMAIL = SamlModel.term('saml2.nameIdFormat', 'emailAddress');
 
 // `SigAlg` is a QUERY PARAMETER of the HTTP Redirect binding
 // (saml-bindings-2.0-os section 3.4.4.1), sent so the far end knows what to
@@ -329,14 +352,7 @@ const STATUS_UNKNOWN_PRINCIPAL =
 /**
  * The NameID formats this identity provider advertises in its metadata.
  */
-const NAMEID_FORMATS = [
-  'urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified',
-  'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress',
-  'urn:oasis:names:tc:SAML:2.0:nameid-format:persistent',
-  'urn:oasis:names:tc:SAML:2.0:nameid-format:transient',
-  'urn:oasis:names:tc:SAML:1.1:nameid-format:X509SubjectName',
-  'urn:oasis:names:tc:SAML:2.0:nameid-format:entity'
-];
+const NAMEID_FORMATS = SamlModel.terms('saml2.nameIdFormat', 'advertised');
 
 // How the End-User authenticated, in SAML 2.0's vocabulary. **SINCE 2026-09-12
 // THIS IS `saml/authn_context.ts` AND NOT A COPY HERE.** This file used to say
@@ -355,13 +371,8 @@ const AC_MULTIFACTOR = authnContext.AC_MULTIFACTOR;
 // since 2026-09-17 (#36) — it used to refuse, on the argument that its own
 // screen could not run the ceremony, which stopped being true when that
 // profile moved onto this screen.
-const AC_MFA_DEMANDS = [
-  AC_MULTIFACTOR,
-  'urn:oasis:names:tc:SAML:2.0:ac:classes:MobileTwoFactorContract',
-  'urn:oasis:names:tc:SAML:2.0:ac:classes:TimeSyncToken',
-  'urn:oasis:names:tc:SAML:2.0:ac:classes:SmartcardPKI',
-  'http://schemas.microsoft.com/claims/multipleauthn'
-];
+// The model's `mfaDemand` classes (#1579); AC_MULTIFACTOR is among them.
+const AC_MFA_DEMANDS = SamlModel.terms('saml2.authnContext', 'mfaDemand');
 
 // A RequestedAuthnContext naming the EAP phishing-resistant class URIs is
 // read by common/phishing_resistance.ts (#736), not by a second list here.
@@ -512,10 +523,9 @@ const SAFE_SEGMENT = /^[A-Za-z0-9._~-]{1,64}$/;
 // here as well would put every one of them in twice.
 const CLAIM_NS = 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims';
 
-const ATTRNAME_FORMAT_URI = 'urn:oasis:names:tc:SAML:2.0:attrname-format:uri';
+const ATTRNAME_FORMAT_URI = SamlModel.term('saml2.attrNameFormat', 'uri');
 
-const ATTRNAME_FORMAT_BASIC =
-    'urn:oasis:names:tc:SAML:2.0:attrname-format:basic';
+const ATTRNAME_FORMAT_BASIC = SamlModel.term('saml2.attrNameFormat', 'basic');
 
 // --- delivering it ----------------------------------------------------------
 // Written with no regular expressions and nothing to escape, for the reason
@@ -1392,7 +1402,7 @@ class Saml2Sso {
     const asked = String(request.nameIdFormat || '');
     const declared = this.declaredNameIdFormats(fields);
     if (!asked || !declared.length || declared.indexOf(asked) >= 0 ||
-        asked === 'urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified') {
+        asked === NAMEID_UNSPECIFIED) {
       log.debug("Leaving Saml2Sso.nameIdPolicyProblem(). Acceptable.");
       return '';
     }
@@ -1798,29 +1808,25 @@ class Saml2Sso {
     }
     const policy = firstByLocal(root, 'NameIDPolicy');
     const requested = firstByLocal(root, 'RequestedAuthnContext');
-    const out = {
-      ok: true,
-      xml: xml,
-      id: root.getAttribute('ID') || '',
-      version: root.getAttribute('Version') || '',
-      issueInstant: root.getAttribute('IssueInstant') || '',
-      destination: root.getAttribute('Destination') || '',
-      protocolBinding: root.getAttribute('ProtocolBinding') || '',
-      acsUrl: root.getAttribute('AssertionConsumerServiceURL') || '',
-      acsIndex: root.getAttribute('AssertionConsumerServiceIndex') || '',
-      forceAuthn: String(root.getAttribute('ForceAuthn') || '') === 'true',
-      isPassive: String(root.getAttribute('IsPassive') || '') === 'true',
+    // THE ATTRIBUTES ARE READ AS THE MODEL SAYS (#1579): the ones
+    // `models/saml/saml2.tsp` marks `read`, an xs:boolean true only for
+    // "true", anything else its text — `id`, `version`, `issueInstant`,
+    // `destination`, `forceAuthn`, `isPassive`, `protocolBinding`, `acsIndex`
+    // and `acsUrl`, and the NameIDPolicy's `nameIdFormat` and `allowCreate`.
+    const asRead = SamlModel.read('saml2.AuthnRequest', root);
+    const policyRead = policy
+      ? SamlModel.read('saml2.NameIDPolicy', policy)
+      : { nameIdFormat: '', allowCreate: false };
+    const out = Object.assign({ ok: true, xml: xml }, asRead, {
       issuer: textByLocal(root, 'Issuer'),
-      nameIdFormat: policy ? (policy.getAttribute('Format') || '') : '',
-      allowCreate: policy ?
-                   String(policy.getAttribute('AllowCreate') || '') === 'true' :
-                   false,
+      nameIdFormat: policyRead.nameIdFormat,
+      allowCreate: policyRead.allowCreate,
       subjectHint: '',
       subjectHintFormat: '',
       requestedAuthnContexts: [],
       signed: !!firstByLocal(root, 'Signature'),
       signingCertificate: ''
-    };
+    });
     // A <saml:Subject> on an AuthnRequest is the service provider saying WHO it
     // expects — section 3.4.1 allows it and most identity providers ignore it.
     // This one reads it as a hint to pre-fill the sign-in screen with, which is
@@ -1872,8 +1878,7 @@ class Saml2Sso {
                 "default.");
       return { binding: BINDING_POST, stated: false };
     }
-    if (asked === BINDING_POST || asked === BINDING_REDIRECT ||
-        asked === BINDING_ARTIFACT || asked === BINDING_SIMPLESIGN) {
+    if (RESPONSE_BINDINGS.indexOf(asked) >= 0) {
       log.debug("Leaving Saml2Sso.responseBindingFor(). " + asked);
       return { binding: asked, stated: true };
     }
@@ -2118,7 +2123,7 @@ class Saml2Sso {
     log.debug("Entering Saml2Sso.accountHintOf().");
     const value = String((request && request.subjectHint) || '');
     if (!value || String(request.subjectHintFormat || '') ===
-        'urn:oasis:names:tc:SAML:2.0:nameid-format:transient') {
+        NAMEID_TRANSIENT) {
       log.debug("Leaving Saml2Sso.accountHintOf(). None.");
       return {};
     }
@@ -2136,7 +2141,7 @@ class Saml2Sso {
     }
     const configured = String(
       this.settingFor(spEntityId, 'saml2.nameIdFormat') ||
-      'urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified');
+      NAMEID_UNSPECIFIED);
     // A SERVICE PROVIDER THAT DECLARED ITS FORMATS (#37) is answered in one
     // of them: the configured default where it is declared, otherwise the
     // first declared format this identity provider publishes, otherwise the
@@ -2166,7 +2171,7 @@ class Saml2Sso {
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.nameIdValueFor(). format=" + format);
     const username = (session.user && session.user.username) || '';
-    if (format === 'urn:oasis:names:tc:SAML:2.0:nameid-format:transient') {
+    if (format === NAMEID_TRANSIENT) {
       // Derived from the session so that two requests inside one browser
       // session get the SAME transient id, which is what a service provider
       // correlating two logins in one session expects, and a new one after
@@ -2176,7 +2181,7 @@ class Saml2Sso {
       log.debug("Leaving Saml2Sso.nameIdValueFor(). A transient identifier.");
       return '_' + handle;
     }
-    if (format === 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress') {
+    if (format === NAMEID_EMAIL) {
       // The PERSON's mail address — invented in development, off the directory
       // entry in product (see person_attributes.ts). With neither, the
       // username, which is what this always fell back to.
@@ -2252,13 +2257,22 @@ class Saml2Sso {
     const { log, xmlEscape } = this.deps.helpers;
     log.debug("Entering Saml2Sso.statusElement().");
     log.debug("Leaving Saml2Sso.statusElement().");
-    return '<samlp:Status><samlp:StatusCode Value="' + xmlEscape(code) + '">' +
-      (subCode ? '<samlp:StatusCode Value="' + xmlEscape(subCode) +
-       '"/>' : '') +
-      '</samlp:StatusCode>' +
-      (message ?
-       '<samlp:StatusMessage>' + xmlEscape(message) + '</samlp:StatusMessage>' :
-       '') +
+    // In the model's order (#1579): the code, the second level inside it,
+    // then the message.
+    return '<samlp:Status>' + SamlModel.children('saml2.Status', {
+      statusCode: '<samlp:StatusCode' +
+        SamlModel.attributes('saml2.StatusCode', { value: code }) + '>' +
+        SamlModel.children('saml2.StatusCode', {
+          statusCode: subCode
+            ? '<samlp:StatusCode' +
+              SamlModel.attributes('saml2.StatusCode', { value: subCode }) +
+              '/>'
+            : '' }) +
+        '</samlp:StatusCode>',
+      statusMessage: message
+        ? '<samlp:StatusMessage>' + xmlEscape(message) +
+          '</samlp:StatusMessage>'
+        : '' }) +
       '</samlp:Status>';
   }
 
@@ -2276,30 +2290,34 @@ class Saml2Sso {
     const { genId, iso, log, logArtifact, xmlEscape } = this.deps.helpers;
     log.debug("Entering Saml2Sso.buildResponse(). status=" + opts.status);
     const id = genId();
+    // The attributes and children in the model's order (#1579).
     const xml =
       '<samlp:Response xmlns:samlp="' + NS_SAMLP + '" xmlns:saml="' + NS_SAML +
-        '" ' +
-        'ID="' + id + '" Version="2.0" IssueInstant="' + iso(0) + '"' +
-        (opts.destination ? ' Destination="' + xmlEscape(opts.destination) +
-         '"' :
-         '') +
-        (opts.inResponseTo ?
-         ' InResponseTo="' + xmlEscape(opts.inResponseTo) + '"' : '') +
-        '><saml:Issuer>' + xmlEscape(opts.issuer) + '</saml:Issuer>' +
-        this.statusElement(opts.status, opts.subStatus, opts.statusMessage) +
-        (opts.assertion || '') +
+        '"' +
+        SamlModel.attributes('saml2.Response', {
+          id: id, issueInstant: iso(0), destination: opts.destination,
+          inResponseTo: opts.inResponseTo }) + '>' +
+        SamlModel.children('saml2.Response', {
+          issuer: '<saml:Issuer>' + xmlEscape(opts.issuer) + '</saml:Issuer>',
+          status: this.statusElement(opts.status, opts.subStatus,
+                                     opts.statusMessage),
+          assertion: opts.assertion || '' }) +
       '</samlp:Response>';
     logArtifact('SAML 2.0 Response', 'before signing', xml);
     if (!this.settingFor(opts.sp || '', 'saml2.signResponse')) {
       log.debug("Leaving Saml2Sso.buildResponse(). Unsigned: " +
                 "saml2.signResponse is off.");
-      return { xml: xml, id: id, signed: false };
+      return { xml: SamlModel.hold('saml2.Response', xml,
+                                   'SAML 2.0 Response'),
+               id: id, signed: false };
     }
     try {
       const signed = this.signDocument(xml, 'Response', id, 'after-issuer');
       logArtifact('SAML 2.0 Response', 'after signing', signed);
       log.debug("Leaving Saml2Sso.buildResponse(). Signed.");
-      return { xml: signed, id: id, signed: true };
+      return { xml: SamlModel.hold('saml2.Response', signed,
+                                   'SAML 2.0 Response'),
+               id: id, signed: true };
     } catch (e) {
       log.debug("Caught in Saml2Sso.buildResponse(): " +
                 ((e && e.message) || e));
@@ -2313,7 +2331,9 @@ class Saml2Sso {
                                                     e.message);
       log.debug("Leaving Saml2Sso.buildResponse(). Unsigned after a signing " +
                 "failure.");
-      return { xml: xml, id: id, signed: false };
+      return { xml: SamlModel.hold('saml2.Response', xml,
+                                   'SAML 2.0 Response'),
+               id: id, signed: false };
     }
   }
 
@@ -2848,7 +2868,8 @@ class Saml2Sso {
   private envelopeProblem(req, base, spec): any {
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.envelopeProblem(). " + spec.what);
-    if (spec.version !== '2.0') {
+    if (SamlModel.accepts(spec.message || 'saml2.AuthnRequest', 'version')
+          .indexOf(spec.version) < 0) {
       log.debug("Leaving Saml2Sso.envelopeProblem(). Version.");
       return { errorCode: 'STS-SAML-0087',
                title: 'That ' + spec.what + ' is not SAML 2.0',
@@ -3295,7 +3316,7 @@ class Saml2Sso {
         issuer: idpEntityId, sp: spEntityId,
         destination: acsUrl, inResponseTo: request.id,
         status: STATUS_RESPONDER,
-        subStatus: 'urn:oasis:names:tc:SAML:2.0:status:RequestDenied',
+        subStatus: STATUS_REQUEST_DENIED,
         statusMessage: 'This identity provider does not answer a sign-in ' +
                        'this service provider starts (saml2.spInitiatedSso ' +
                        'is off for it).'
@@ -3328,7 +3349,7 @@ class Saml2Sso {
         issuer: idpEntityId, sp: spEntityId,
         destination: acsUrl, inResponseTo: request.id,
         status: STATUS_REQUESTER,
-        subStatus: 'urn:oasis:names:tc:SAML:2.0:status:InvalidNameIDPolicy',
+        subStatus: STATUS_INVALID_NAMEID_POLICY,
         statusMessage: policyProblem
       });
       this.deliver(res, {
@@ -3364,7 +3385,7 @@ class Saml2Sso {
         issuer: idpEntityId, sp: spEntityId,
         destination: acsUrl, inResponseTo: request.id,
         status: STATUS_RESPONDER,
-        subStatus: 'urn:oasis:names:tc:SAML:2.0:status:AuthnFailed',
+        subStatus: STATUS_AUTHN_FAILED,
         statusMessage: String(params.authn_error_description ||
                                    params.authn_error)
       });
@@ -3615,8 +3636,8 @@ class Saml2Sso {
                  'screen a second time.');
         pendingRequests.delete(String(params.rid || ''));
         const subStatus = unmet === 'authn'
-          ? 'urn:oasis:names:tc:SAML:2.0:status:AuthnFailed'
-          : 'urn:oasis:names:tc:SAML:2.0:status:NoAuthnContext';
+          ? STATUS_AUTHN_FAILED
+          : STATUS_NO_AUTHN_CONTEXT;
         errorCodes.mark(res, unmet === 'authn' ? 'STS-SAML-0055'
           : (unmet === 'eap' ? 'STS-SAML-0116' : 'STS-SAML-0056'));
         const refusal = this.buildResponse({
@@ -3761,7 +3782,7 @@ class Saml2Sso {
         issuer: idpEntityId, sp: spEntityId,
         destination: acsUrl, inResponseTo: request.id,
         status: STATUS_RESPONDER,
-        subStatus: 'urn:oasis:names:tc:SAML:2.0:status:RequestDenied',
+        subStatus: STATUS_REQUEST_DENIED,
         statusMessage: roleAnswer.why
       });
       this.deliver(res, {
@@ -3824,7 +3845,7 @@ class Saml2Sso {
         destination: acsUrl, inResponseTo: request.id,
         status: STATUS_RESPONDER,
         subStatus: consentStep.passive ? STATUS_NO_PASSIVE
-          : 'urn:oasis:names:tc:SAML:2.0:status:RequestDenied',
+          : STATUS_REQUEST_DENIED,
         statusMessage: consentStep.why
       });
       this.deliver(res, {
@@ -4131,7 +4152,7 @@ class Saml2Sso {
       const denied = this.buildResponse({
         issuer: idpEntityId, sp: spEntityId, destination: acsUrl,
         inResponseTo: '', status: STATUS_RESPONDER,
-        subStatus: 'urn:oasis:names:tc:SAML:2.0:status:RequestDenied',
+        subStatus: STATUS_REQUEST_DENIED,
         statusMessage: roleAnswer.why
       });
       this.deliver(res, {
@@ -4176,7 +4197,7 @@ class Saml2Sso {
       const declined = this.buildResponse({
         issuer: idpEntityId, sp: spEntityId, destination: acsUrl,
         inResponseTo: '', status: STATUS_RESPONDER,
-        subStatus: 'urn:oasis:names:tc:SAML:2.0:status:RequestDenied',
+        subStatus: STATUS_REQUEST_DENIED,
         statusMessage: consentStep.why
       });
       this.deliver(res, {
@@ -4308,7 +4329,7 @@ class Saml2Sso {
         !this.isRegisteredServiceProvider(spEntityId)) {
       log.debug("Leaving Saml2Sso.attributeQuery(). Unregistered.");
       return answer('STS-SAML-0082', STATUS_REQUESTER,
-                    'urn:oasis:names:tc:SAML:2.0:status:RequestDenied',
+                    STATUS_REQUEST_DENIED,
                     'no SAML 2.0 service provider is registered here as "' +
                     spEntityId + '".', '');
     }
@@ -4368,14 +4389,14 @@ class Saml2Sso {
     if (caller.refuse) {
       log.debug("Leaving Saml2Sso.answerAttributeQuery(). The caller.");
       return answer(caller.errorCode || 'STS-SAML-0077', STATUS_REQUESTER,
-                    'urn:oasis:names:tc:SAML:2.0:status:RequestDenied',
+                    STATUS_REQUEST_DENIED,
                     caller.why, '');
     }
     const nameIdEl = firstByLocal(query, 'NameID');
     const nameId = nameIdEl ? String(nameIdEl.textContent || '').trim() : '';
     const nameIdFormat = nameIdEl
       ? (nameIdEl.getAttribute('Format') ||
-         'urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified') : '';
+         NAMEID_UNSPECIFIED) : '';
     const authnApi = this.deps.authn;
     const live = nameId ? authnApi.sessionsMatching(function (session) {
       const there = (session.saml2ServiceProviders || {})[spEntityId];
@@ -4424,7 +4445,7 @@ class Saml2Sso {
       return answer(roleAnswer.retiring ? 'STS-CORE-0121'
                                         : 'STS-SAML-0010',
                     STATUS_RESPONDER,
-                    'urn:oasis:names:tc:SAML:2.0:status:RequestDenied',
+                    STATUS_REQUEST_DENIED,
                     roleAnswer.why, '');
     }
     // NARROWED TO WHAT WAS ASKED FOR (saml-core-2.0-os section 3.3.2.3): an
@@ -4686,17 +4707,22 @@ class Saml2Sso {
                                  payload) {
     const { genId, iso, log, xmlEscape } = this.deps.helpers;
     log.debug("Entering Saml2Sso.buildArtifactResponse(). status=" + status);
+    // The attributes and children in the model's order (#1579), and held to
+    // it: the message inside is held where it was built.
     const xml =
       '<samlp:ArtifactResponse xmlns:samlp="' + NS_SAMLP + '" xmlns:saml="' +
-        NS_SAML + '" ' +
-        'ID="' + genId() + '" Version="2.0" IssueInstant="' + iso(0) + '"' +
-        (inResponseTo ? ' InResponseTo="' + xmlEscape(inResponseTo) + '"' :
-         '') + '><saml:Issuer>' + xmlEscape(idpEntityId) + '</saml:Issuer>' +
-        this.statusElement(status, '', statusMessage) +
-        (payload || '') +
+        NS_SAML + '"' +
+        SamlModel.attributes('saml2.ArtifactResponse', {
+          id: genId(), issueInstant: iso(0), inResponseTo: inResponseTo }) +
+        '>' +
+        SamlModel.children('saml2.ArtifactResponse', {
+          issuer: '<saml:Issuer>' + xmlEscape(idpEntityId) + '</saml:Issuer>',
+          status: this.statusElement(status, '', statusMessage),
+          message: payload || '' }) +
       '</samlp:ArtifactResponse>';
     log.debug("Leaving Saml2Sso.buildArtifactResponse().");
-    return xml;
+    return SamlModel.hold('saml2.ArtifactResponse', xml,
+                          'SAML 2.0 ArtifactResponse');
   }
 
   // The ArtifactResponse is DELIBERATELY NOT SIGNED, and it is worth saying why
@@ -5131,27 +5157,31 @@ class Saml2Sso {
     const id = genId();
     const xml =
       '<samlp:LogoutResponse xmlns:samlp="' + NS_SAMLP + '" xmlns:saml="' +
-        NS_SAML + '" ' +
-        'ID="' + id + '" Version="2.0" IssueInstant="' + iso(0) + '"' +
-        (destination ? ' Destination="' + xmlEscape(destination) + '"' : '') +
-        (inResponseTo ? ' InResponseTo="' + xmlEscape(inResponseTo) + '"' :
-         '') + '><saml:Issuer>' + xmlEscape(idpEntityId) + '</saml:Issuer>' +
-        // THE SECOND-LEVEL CODE (#192): PartialLogout, or UnknownPrincipal.
-        // It was computed by singleLogout() and never passed here, so every
-        // LogoutResponse said a bare Success whatever it had meant to say.
-        this.statusElement(status, subStatus || '', message) +
+        NS_SAML + '"' +
+        SamlModel.attributes('saml2.LogoutResponse', {
+          id: id, issueInstant: iso(0), destination: destination,
+          inResponseTo: inResponseTo }) + '>' +
+        SamlModel.children('saml2.LogoutResponse', {
+          issuer: '<saml:Issuer>' + xmlEscape(idpEntityId) + '</saml:Issuer>',
+          // THE SECOND-LEVEL CODE (#192): PartialLogout, or
+          // UnknownPrincipal. It was computed by singleLogout() and never
+          // passed here, so every LogoutResponse said a bare Success
+          // whatever it had meant to say.
+          status: this.statusElement(status, subStatus || '', message) }) +
       '</samlp:LogoutResponse>';
     logArtifact('SAML 2.0 LogoutResponse', 'before signing', xml);
     if (!this.settingFor(sp || '', 'saml2.signResponse')) {
       log.debug("Leaving Saml2Sso.buildLogoutResponse(). Unsigned.");
-      return xml;
+      return SamlModel.hold('saml2.LogoutResponse', xml,
+                            'SAML 2.0 LogoutResponse');
     }
     try {
       const signed = this.signDocument(xml, 'LogoutResponse', id,
                                        'after-issuer');
       logArtifact('SAML 2.0 LogoutResponse', 'after signing', signed);
       log.debug("Leaving Saml2Sso.buildLogoutResponse(). Signed.");
-      return signed;
+      return SamlModel.hold('saml2.LogoutResponse', signed,
+                            'SAML 2.0 LogoutResponse');
     } catch (e) {
       log.debug("Caught in Saml2Sso.buildLogoutResponse(): " +
                 ((e && e.message) || e));
@@ -5160,7 +5190,8 @@ class Saml2Sso {
                                                   'unsigned: ' + e.message);
       log.debug("Leaving Saml2Sso.buildLogoutResponse(). Unsigned after a " +
                 "signing failure.");
-      return xml;
+      return SamlModel.hold('saml2.LogoutResponse', xml,
+                            'SAML 2.0 LogoutResponse');
     }
   }
 
@@ -5203,30 +5234,35 @@ class Saml2Sso {
     const id = genId();
     const xml =
       '<samlp:LogoutRequest xmlns:samlp="' + NS_SAMLP + '" xmlns:saml="' +
-        NS_SAML + '" ' +
-        'ID="' + id + '" Version="2.0" IssueInstant="' + iso(0) + '"' +
-        (destination ? ' Destination="' + xmlEscape(destination) + '"' :
-         '') + '><saml:Issuer>' + xmlEscape(idpEntityId) + '</saml:Issuer>' +
-        // THE ONLY THING IN A SAML 2.0 REQUEST THAT CAN BE ENCRYPTED. There is
-        // no EncryptedAuthnRequest in the specification — a request is signed,
-        // not sealed — so <saml:EncryptedID> in a LogoutRequest is the whole of
-        // what "request encryption" means in this protocol. saml-core-2.0-os
-        // section 3.7.1 allows it exactly where the NameID would be.
-        this.subjectFor(sp, nameId, nameIdFormat) +
-        (sessionIndex ?
-         '<samlp:SessionIndex>' + xmlEscape(sessionIndex) +
-         '</samlp:SessionIndex>' : '') +
+        NS_SAML + '"' +
+        SamlModel.attributes('saml2.LogoutRequest', {
+          id: id, issueInstant: iso(0), destination: destination }) + '>' +
+        SamlModel.children('saml2.LogoutRequest', {
+          issuer: '<saml:Issuer>' + xmlEscape(idpEntityId) + '</saml:Issuer>',
+          // THE ONLY THING IN A SAML 2.0 REQUEST THAT CAN BE ENCRYPTED. There
+          // is no EncryptedAuthnRequest in the specification — a request is
+          // signed, not sealed — so <saml:EncryptedID> in a LogoutRequest is
+          // the whole of what "request encryption" means in this protocol.
+          // saml-core-2.0-os section 3.7.1 allows it exactly where the
+          // NameID would be.
+          nameId: this.subjectFor(sp, nameId, nameIdFormat),
+          sessionIndex: sessionIndex
+            ? '<samlp:SessionIndex>' + xmlEscape(sessionIndex) +
+              '</samlp:SessionIndex>'
+            : '' }) +
       '</samlp:LogoutRequest>';
     logArtifact('SAML 2.0 LogoutRequest', 'before signing', xml);
     if (!this.settingFor(sp || '', 'saml2.signResponse')) {
       log.debug("Leaving Saml2Sso.buildLogoutRequest(). Unsigned.");
-      return xml;
+      return SamlModel.hold('saml2.LogoutRequest', xml,
+                            'SAML 2.0 LogoutRequest');
     }
     try {
       const signed = this.signDocument(xml, 'LogoutRequest', id,
                                        'after-issuer');
       log.debug("Leaving Saml2Sso.buildLogoutRequest(). Signed.");
-      return signed;
+      return SamlModel.hold('saml2.LogoutRequest', signed,
+                            'SAML 2.0 LogoutRequest');
     } catch (e) {
       log.debug("Caught in Saml2Sso.buildLogoutRequest(): " +
                 ((e && e.message) || e));
@@ -5235,7 +5271,8 @@ class Saml2Sso {
                                                   'unsigned: ' + e.message);
       log.debug("Leaving Saml2Sso.buildLogoutRequest(). Unsigned after a " +
                 "signing failure.");
-      return xml;
+      return SamlModel.hold('saml2.LogoutRequest', xml,
+                            'SAML 2.0 LogoutRequest');
     }
   }
 
@@ -5343,7 +5380,7 @@ class Saml2Sso {
         'This endpoint reads <samlp:LogoutRequest> (saml-core-2.0-os section ' +
         '3.7.1). An <samlp:AuthnRequest> goes to ' + SSO_PATH + '.');
     }
-    const requestId = root.getAttribute('ID') || '';
+    const requestId = SamlModel.read('saml2.LogoutRequest.read', root).id;
     const spEntityId = textByLocal(root, 'Issuer') || scoped.entityId;
     // A SERVICE PROVIDER NOBODY REGISTERED ENDS NOTHING, IN PRODUCT (#496):
     // asked before the signature check (its audit row, its metadata lookup)
@@ -5388,10 +5425,13 @@ class Saml2Sso {
     // ITS ENVELOPE (#190): Version, IssueInstant and Destination, as an
     // AuthnRequest's — a LogoutRequest ending somebody's session is at least
     // as worth being sure of.
+    // Read as the model says (#1579), as the AuthnRequest's are.
+    const logoutRead = SamlModel.read('saml2.LogoutRequest.read', root);
     const logoutEnvelope = this.envelopeProblem(req, base, {
-      what: 'LogoutRequest', version: root.getAttribute('Version') || '',
-      issueInstant: root.getAttribute('IssueInstant') || '',
-      destination: root.getAttribute('Destination') || '',
+      what: 'LogoutRequest', message: 'saml2.LogoutRequest.read',
+      version: logoutRead.version,
+      issueInstant: logoutRead.issueInstant,
+      destination: logoutRead.destination,
       signed: !!checkedLogout.assessment.signed
     });
     if (logoutEnvelope) {
@@ -5911,118 +5951,139 @@ class Saml2Sso {
       log.debug("Leaving alsoAt().");
       return out;
     };
+    // EVERY DESCRIPTOR IS WRITTEN IN THE MODEL'S ORDER (#1579):
+    // `models/saml/saml2.tsp`'s md.EntityDescriptor, md.IDPSSODescriptor and
+    // md.AttributeAuthorityDescriptor state saml-metadata-2.0-os's sequence,
+    // and `SamlModel.children()` joins the parts below in it.
+    const nameIdFormatEls = nameIdFormats.map(function (format) {
+      return '<md:NameIDFormat>' + format + '</md:NameIDFormat>';
+    }).join('');
+    const idpDescriptor =
+        '<md:IDPSSODescriptor' +
+          SamlModel.attributes('md.IDPSSODescriptor', {
+            // WantAuthnRequestsSigned FOLLOWS WHAT IS ENFORCED (#37). It was
+            // the literal "false" while nothing verified a request
+            // signature, and that was the honest value then. Now it is true
+            // exactly when an unsigned request would be refused:
+            // saml2.requireSignedAuthnRequests (on in product by default),
+            // or — in a document minted for one service provider — that
+            // service provider's own metadata saying
+            // AuthnRequestsSigned="true".
+            wantAuthnRequestsSigned:
+              requestSignature.wantsSignedRequests(
+                spEntityId ? this.fieldsOf(spEntityId) : {}) ? 'true'
+                                                            : 'false',
+            protocolSupportEnumeration:
+              [NS_SAMLP].concat(v11.ssoProtocols).join(' ') }) + '>' +
+          SamlModel.children('md.IDPSSODescriptor', {
+            // AN ENCRYPTION KEY after the signing ones, published since
+            // 2026-08-27, and it is the SAME certificate as the signing one
+            // because this service has one key. A real deployment separates
+            // them; a mock that minted a second key pair per start to look
+            // tidy would give a reader two certificates to keep straight
+            // for no behaviour. What matters is that the descriptor is HERE
+            // at all: without it a service provider has nowhere to learn the
+            // key it must encrypt an <saml:EncryptedID> to, and the inbound
+            // half of this feature would be unreachable.
+            //
+            // IT CHANGES ON EVERY START, like everything else this key
+            // signs, so a service provider that cached this document
+            // encrypts to a key that no longer exists — which
+            // decryptElement() names as the usual cause when an unwrap
+            // fails. Then the back channel's TLS keys (#248).
+            keyDescriptor: keyDescriptor('signing') +
+              keyDescriptor('encryption') + backChannelKeys,
+            // Index 0, the default, is SAML 2.0's — the EndpointIndex every
+            // artifact `mintArtifact()` makes carries; SAML 1.1's is index 1
+            // on its own SOAP binding (#523).
+            artifactResolutionService:
+              service('ArtifactResolutionService', BINDING_SOAP, where.ars,
+                      ' index="0" isDefault="true"') +
+              v11.artifactResolution,
+            singleLogoutService:
+              service('SingleLogoutService', BINDING_REDIRECT, where.slo) +
+              service('SingleLogoutService', BINDING_POST, where.slo) +
+              service('SingleLogoutService', BINDING_SIMPLESIGN, where.slo) +
+              alsoAt('SingleLogoutService', where.slo),
+            nameIdFormat: nameIdFormatEls,
+            // NO HTTP-Artifact SingleSignOnService (#191). A
+            // SingleSignOnService names a binding an AuthnRequest may ARRIVE
+            // on, and HTTP-Artifact as a request binding means an artifact
+            // this service would resolve at the service provider's own
+            // ArtifactResolutionService — which it does not do (the model's
+            // `request` bindings). The ARTIFACT PROFILE everybody means is a
+            // request over Redirect or POST carrying
+            // ProtocolBinding=HTTP-Artifact, and that needs no endpoint
+            // here. It was advertised anyway until #191, so a service
+            // provider building a binding menu from this document offered
+            // the artifact choice — and SimpleSAMLphp, which reads it
+            // literally, sent its AuthnRequest AS an artifact nothing
+            // resolved.
+            singleSignOnService:
+              service('SingleSignOnService', BINDING_REDIRECT, where.sso) +
+              service('SingleSignOnService', BINDING_POST, where.sso) +
+              service('SingleSignOnService', BINDING_SIMPLESIGN, where.sso) +
+              alsoAt('SingleSignOnService', where.sso) +
+              v11.singleSignOn }) +
+        '</md:IDPSSODescriptor>';
+    // THE ATTRIBUTE AUTHORITY (#189): its own role, after the IdP's, as
+    // saml-metadata-2.0-os section 2.4.7 has it — a service provider looks
+    // for an AttributeService here and nowhere else. The signing keys are
+    // the same generations; the NameID formats the ones it can be asked
+    // about (whatever a sign-in here gave).
+    const aaDescriptor =
+        '<md:AttributeAuthorityDescriptor' +
+          SamlModel.attributes('md.AttributeAuthorityDescriptor', {
+            protocolSupportEnumeration:
+              [NS_SAMLP].concat(v11.aaProtocols).join(' ') }) + '>' +
+          SamlModel.children('md.AttributeAuthorityDescriptor', {
+            keyDescriptor: keyDescriptor('signing') + backChannelKeys,
+            attributeService:
+              service('AttributeService', BINDING_SOAP, where.aa) +
+              v11.attributeService,
+            nameIdFormat: nameIdFormatEls }) +
+        '</md:AttributeAuthorityDescriptor>';
     const xml =
       '<?xml version="1.0" encoding="UTF-8"?>' +
-      '<md:EntityDescriptor xmlns:md="' + NS_MD + '" ID="' + id + '"' +
-        ' entityID="' + xmlEscape(idpEntityId) + '">' +
-        // WHERE EVERY SIGNER GENERATION IS DESCRIBED (#42, D8), in an
-        // md:Extensions of this document's own namespace, which SAML
-        // metadata section 2.3.1 lets any consumer ignore. After the
-        // prepended ds:Signature and before the role, as the schema orders.
-        '<md:Extensions><cm:CryptoMetadataLocation xmlns:cm="' +
-          'urn:iya:sts:crypto-metadata:1">' +
-          xmlEscape(helpers.rebaseTo(base, 'pki') + '/crypto/metadata.xml') +
-          '</cm:CryptoMetadataLocation>' +
-          // IN EVERY VIEW (#1368, rcbj): the WS-Federation paths serve this
-          // same md:EntityDescriptor, and no specification keeps the elements
-          // out of its md:Extensions. They describe the entity, not a protocol.
-          this.algorithmSupport() +
-          '</md:Extensions>' +
-        // The role descriptors are a choice the schema lets come in any
-        // order; WS-Federation's first, where a WS-Federation relying party
-        // looks for it.
-        wsfedRole +
-        '<md:IDPSSODescriptor' +
-          // WantAuthnRequestsSigned FOLLOWS WHAT IS ENFORCED (#37). It was the
-          // literal "false" while nothing verified a request signature, and
-          // that was the honest value then. Now it is true exactly when an
-          // unsigned request would be refused: saml2.requireSignedAuthnRequests
-          // (on in product by default), or — in a document minted for one
-          // service provider — that service provider's own metadata saying
-          // AuthnRequestsSigned="true".
-          ' WantAuthnRequestsSigned="' +
-            (requestSignature.wantsSignedRequests(
-              spEntityId ? this.fieldsOf(spEntityId) : {}) ? 'true'
-                                                          : 'false') + '"' +
-          ' protocolSupportEnumeration="' +
-            [NS_SAMLP].concat(v11.ssoProtocols).join(' ') + '">' +
-          keyDescriptor('signing') +
-          // AN ENCRYPTION KEY, published since 2026-08-27, and it is the SAME
-          // certificate as the signing one because this service has one key. A
-          // real deployment separates them; a mock that minted a second key
-          // pair per start to look tidy would give a reader two certificates to
-          // keep straight for no behaviour. What matters is that the descriptor
-          // is HERE at all: without it a service provider has nowhere to learn
-          // the key it must encrypt an <saml:EncryptedID> to, and the inbound
-          // half of this feature would be unreachable.
-          //
-          // IT CHANGES ON EVERY START, like everything else this key signs, so
-          // a service provider that cached this document encrypts to a key that
-          // no longer exists — which decryptElement() names as the usual cause
-          // when an unwrap fails.
-          keyDescriptor('encryption') +
-          backChannelKeys +
-          // The artifact resolution service comes FIRST inside the descriptor,
-          // because the metadata schema's sequence puts
-          // ArtifactResolutionService before SingleLogoutService before
-          // NameIDFormat before SingleSignOnService. A document in any other
-          // order is one a generated parser rejects, and hand-written parsers
-          // were written against this.
-          // Index 0, the default, is SAML 2.0's — the EndpointIndex every
-          // artifact `mintArtifact()` makes carries; SAML 1.1's is index 1 on
-          // its own SOAP binding (#523).
-          service('ArtifactResolutionService', BINDING_SOAP, where.ars, ' ' +
-              'index="0" isDefault="true"') +
-          v11.artifactResolution +
-          service('SingleLogoutService', BINDING_REDIRECT, where.slo) +
-          service('SingleLogoutService', BINDING_POST, where.slo) +
-          service('SingleLogoutService', BINDING_SIMPLESIGN, where.slo) +
-          alsoAt('SingleLogoutService', where.slo) +
-          nameIdFormats.map(function (format) {
-            return '<md:NameIDFormat>' + format + '</md:NameIDFormat>';
-          }).join('') +
-          service('SingleSignOnService', BINDING_REDIRECT, where.sso) +
-          service('SingleSignOnService', BINDING_POST, where.sso) +
-          service('SingleSignOnService', BINDING_SIMPLESIGN, where.sso) +
-          alsoAt('SingleSignOnService', where.sso) +
-          v11.singleSignOn +
-          // NO HTTP-Artifact SingleSignOnService (#191). A SingleSignOnService
-          // names a binding an AuthnRequest may ARRIVE on, and HTTP-Artifact
-          // as a request binding means an artifact this service would resolve
-          // at the service provider's own ArtifactResolutionService — which
-          // it does not do. The ARTIFACT PROFILE everybody means is a request
-          // over Redirect or POST carrying ProtocolBinding=HTTP-Artifact, and
-          // that needs no endpoint here. It was advertised anyway until #191,
-          // so a service provider building a binding menu from this document
-          // offered the artifact choice — and SimpleSAMLphp, which reads it
-          // literally, sent its AuthnRequest AS an artifact nothing resolved.
-        '</md:IDPSSODescriptor>' +
-        // THE ATTRIBUTE AUTHORITY (#189): its own role, after the IdP's, as
-        // saml-metadata-2.0-os section 2.4.7 has it — a service provider
-        // looks for an AttributeService here and nowhere else. The signing
-        // keys are the same generations; the NameID formats the ones it can
-        // be asked about (whatever a sign-in here gave).
-        '<md:AttributeAuthorityDescriptor protocolSupportEnumeration="' +
-          [NS_SAMLP].concat(v11.aaProtocols).join(' ') + '">' +
-          keyDescriptor('signing') +
-          backChannelKeys +
-          service('AttributeService', BINDING_SOAP, where.aa) +
-          v11.attributeService +
-          nameIdFormats.map(function (format) {
-            return '<md:NameIDFormat>' + format + '</md:NameIDFormat>';
-          }).join('') +
-        '</md:AttributeAuthorityDescriptor>' +
-        // `saml.organizationName` and its two siblings since 2026-09-12 — the
-        // literal "iya-sts" / "Mock security token service" until then — and
-        // omitted entirely when the name is emptied. See document_settings.ts.
-        documentSettings.organizationElement(base) +
+      '<md:EntityDescriptor xmlns:md="' + NS_MD + '"' +
+        SamlModel.attributes('md.EntityDescriptor', {
+          id: id, entityId: idpEntityId }) + '>' +
+        SamlModel.children('md.EntityDescriptor', {
+          // WHERE EVERY SIGNER GENERATION IS DESCRIBED (#42, D8), in an
+          // md:Extensions of this document's own namespace, which SAML
+          // metadata section 2.3.1 lets any consumer ignore. After the
+          // prepended ds:Signature and before the role, as the schema
+          // orders.
+          extensions: '<md:Extensions><cm:CryptoMetadataLocation ' +
+            'xmlns:cm="urn:iya:sts:crypto-metadata:1">' +
+            xmlEscape(helpers.rebaseTo(base, 'pki') +
+                      '/crypto/metadata.xml') +
+            '</cm:CryptoMetadataLocation>' +
+            // IN EVERY VIEW (#1368, rcbj): the WS-Federation paths serve
+            // this same md:EntityDescriptor, and no specification keeps the
+            // elements out of its md:Extensions. They describe the entity,
+            // not a protocol.
+            this.algorithmSupport() +
+            '</md:Extensions>',
+          // The role descriptors are a choice the schema lets come in any
+          // order; WS-Federation's first, where a WS-Federation relying
+          // party looks for it.
+          roleDescriptor: wsfedRole,
+          idpSsoDescriptor: idpDescriptor,
+          attributeAuthorityDescriptor: aaDescriptor,
+          // `saml.organizationName` and its two siblings since 2026-09-12 —
+          // the literal "iya-sts" / "Mock security token service" until
+          // then — and omitted entirely when the name is emptied. See
+          // document_settings.ts.
+          organization: documentSettings.organizationElement(base) }) +
       '</md:EntityDescriptor>';
     logArtifact('SAML IdP metadata', 'before signing', xml);
     try {
       const signed = this.signDocument(xml, 'EntityDescriptor', id, 'prepend');
       logArtifact('SAML IdP metadata', 'after signing', signed);
       log.debug("Leaving Saml2Sso.metadataFor(). Signed.");
-      return signed;
+      return SamlModel.hold('md.EntityDescriptor', signed,
+                            'SAML identity provider metadata');
     } catch (e) {
       log.debug("Caught in Saml2Sso.metadataFor(): " +
                 ((e && e.message) || e));
@@ -6031,7 +6092,8 @@ class Saml2Sso {
                                                   'serving it unsigned: ' +
                                                     e.message);
       log.debug("Leaving Saml2Sso.metadataFor(). Unsigned.");
-      return xml;
+      return SamlModel.hold('md.EntityDescriptor', xml,
+                            'SAML identity provider metadata');
     }
   }
 

@@ -97,10 +97,13 @@ import documentSettings = require('./document_settings');
 import authnContext = require('./authn_context');
 // THE AssertionID NAMES ITS CELL (#98 D10): see buildSaml11Assertion().
 import cellLocator = require('../common/cell_locator');
+// SAML 1.1's vocabularies and the assertion's order are the model's (#1579):
+// `models/saml/saml11.tsp`. A leaf.
+import SamlModel = require('./saml_model');
 /**
  * The SAML 1.1 assertion namespace.
  */
-const SAML11_NS = 'urn:oasis:names:tc:SAML:1.0:assertion';
+const SAML11_NS = SamlModel.term('saml11.namespace', 'assertion');
 // The one every relying party here can read, and the only one this service
 // could honestly claim: nothing about the NameIdentifier it writes is a
 // persistent identifier or an email address, because the username is whatever
@@ -109,11 +112,11 @@ const SAML11_NS = 'urn:oasis:names:tc:SAML:1.0:assertion';
  * The `unspecified` NameIdentifier format, the one this service writes.
  */
 const NAMEID_FORMAT_UNSPECIFIED =
-    'urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified';
+    SamlModel.term('saml11.nameIdFormat', 'unspecified');
 /**
  * The bearer confirmation method, which the Browser/POST profile requires.
  */
-const CONFIRMATION_BEARER = 'urn:oasis:names:tc:SAML:1.0:cm:bearer';
+const CONFIRMATION_BEARER = SamlModel.term('saml11.confirmation', 'bearer');
 // The Browser/Artifact profile's, and NOT interchangeable with the one above —
 // see the `confirmationMethod` option. It says the assertion was pulled back
 // through a SOAP channel rather than carried by the browser, which is the whole
@@ -122,7 +125,8 @@ const CONFIRMATION_BEARER = 'urn:oasis:names:tc:SAML:1.0:cm:bearer';
  * The artifact confirmation method, which the Browser/Artifact profile
  * requires.
  */
-const CONFIRMATION_ARTIFACT = 'urn:oasis:names:tc:SAML:1.0:cm:artifact';
+const CONFIRMATION_ARTIFACT =
+    SamlModel.term('saml11.confirmation', 'artifact');
 
 interface Saml11AssertionsDeps {
   stsCrypto: typeof stsCrypto;
@@ -416,13 +420,14 @@ class Saml11Assertions {
     // Repeated in both statements, which is not redundancy in SAML 1.1 but the
     // schema: a statement is about a subject, and the assertion itself is not.
     const subjectEl =
-      '<saml:Subject>' +
-        '<saml:NameIdentifier' + qualifier + ' Format="' +
-        xmlEscape(nameIdFormat) + '">' +
-          xmlEscape(nameIdValue) + '</saml:NameIdentifier>' +
-        '<saml:SubjectConfirmation><saml:ConfirmationMethod>' +
-        xmlEscape(confirmation) +
-        '</saml:ConfirmationMethod></saml:SubjectConfirmation>' +
+      '<saml:Subject>' + SamlModel.children('saml11.Subject', {
+        nameIdentifier: '<saml:NameIdentifier' + qualifier + ' Format="' +
+          xmlEscape(nameIdFormat) + '">' +
+          xmlEscape(nameIdValue) + '</saml:NameIdentifier>',
+        subjectConfirmation:
+          '<saml:SubjectConfirmation><saml:ConfirmationMethod>' +
+          xmlEscape(confirmation) +
+          '</saml:ConfirmationMethod></saml:SubjectConfirmation>' }) +
       '</saml:Subject>';
     const audienceEl = opts.audience
       ? '<saml:AudienceRestrictionCondition><saml:Audience>' +
@@ -496,26 +501,39 @@ class Saml11Assertions {
     }).join('');
     // Conditions, then the statements, then (added by the signer) ds:Signature.
     // The order is the schema's sequence and not a preference.
+    //
+    // IN THE MODEL'S ORDER (#1579): every start tag's attributes and every
+    // element's children from `models/saml/saml11.tsp`, where the schema's
+    // sequence is stated once.
     const xml =
       '<saml:Assertion xmlns:saml="' + SAML11_NS + '"' +
-        ' MajorVersion="1" MinorVersion="1"' +
-        ' AssertionID="' + id + '"' +
-        ' Issuer="' + xmlEscape(opts.issuer || IssuerNames.issuer()) +
-        '" ' +
-        'IssueInstant="' + now + '">' +
-        '<saml:Conditions NotBefore="' + notBefore + '" NotOnOrAfter="' + exp +
-        '">' + audienceEl +
-        doNotCacheEl + '</saml:Conditions>' +
-        (opts.authenticationStatement === false ? '' :
-          '<saml:AuthenticationStatement AuthenticationMethod="' +
-            xmlEscape(authnMethod) + '" ' +
-            'AuthenticationInstant="' + authnInstant + '">' + subjectEl +
-            localityEl +
-          '</saml:AuthenticationStatement>') +
-        (attributeEls
-          ? '<saml:AttributeStatement>' + subjectEl + attributeEls +
-            '</saml:AttributeStatement>'
-          : '') +
+        SamlModel.attributes('saml11.Assertion', {
+          assertionId: id,
+          issuer: opts.issuer || IssuerNames.issuer(),
+          issueInstant: now }) + '>' +
+        SamlModel.children('saml11.Assertion', {
+          conditions: '<saml:Conditions' +
+            SamlModel.attributes('saml11.Conditions', {
+              notBefore: notBefore, notOnOrAfter: exp }) + '>' +
+            SamlModel.children('saml11.Conditions', {
+              audienceRestrictionCondition: audienceEl,
+              doNotCacheCondition: doNotCacheEl }) +
+            '</saml:Conditions>',
+          authenticationStatement: opts.authenticationStatement === false
+            ? ''
+            : '<saml:AuthenticationStatement' +
+              SamlModel.attributes('saml11.AuthenticationStatement', {
+                authenticationMethod: authnMethod,
+                authenticationInstant: authnInstant }) + '>' +
+              SamlModel.children('saml11.AuthenticationStatement', {
+                subject: subjectEl, subjectLocality: localityEl }) +
+              '</saml:AuthenticationStatement>',
+          attributeStatement: attributeEls
+            ? '<saml:AttributeStatement>' +
+              SamlModel.children('saml11.AttributeStatement', {
+                subject: subjectEl, attribute: attributeEls }) +
+              '</saml:AttributeStatement>'
+            : '' }) +
       '</saml:Assertion>';
     // Counted before the signing attempt, not after: an assertion that failed
     // to sign was still built and still went out (unsigned — see the catch), so

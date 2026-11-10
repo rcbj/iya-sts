@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5423** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5424** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -65,7 +65,7 @@ is an ordinary outcome.
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 434
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 754
-* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 120
+* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 70
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 31
 * [Federation (`STS-FED`)](#sts-fed) — 217
@@ -2653,6 +2653,7 @@ Raised from: saml/.
 | `STS-SAML-0118` | A service provider's metadata reaches no trust anchor, so it was not consumed, under paranoid PKI mode (#1360). | the caller's refusal, or the refresh's recorded failure |
 | `STS-SAML-0119` | A passive SAML 2.0 request was answered NoPassive: the person has not agreed to sign in to the service provider, and a passive request cannot ask (ASVS 5.0.0 7.6.2). | NoPassive |
 | `STS-SAML-0120` | A SAML sign-in was refused because the person declined, on the consent screen, to sign in to the application (ASVS 5.0.0 7.6.2). | RequestDenied (SAML 2.0); a page (SAML 1.1) |
+| `STS-SAML-0121` | A SAML message or metadata document this service built does not match its model in models/saml/ (#1579): its root, an attribute, a fixed value, or a child element or its order. The document is sent as it was built: the model describes the wire and does not reshape it, so this is a model gap to close. | none (recorded only; the document is unchanged) |
 
 ## STS-WSTRUST
 
