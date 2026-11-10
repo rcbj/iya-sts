@@ -18655,6 +18655,13 @@ const CODES = [
       'not be fetched from that cell over the inter-cell channel (#1291).',
     spec: 'HTTP 503 {error: temporarily_unavailable} at ' +
       '/users/{rid}/did.json' },
+  { code: 'STS-VC-0178',
+    summary: 'A key a wallet proved for a person\'s published DID was ' +
+      'refused because it is already enrolled for that person as a ' +
+      'sign-in key (#775). The document would have been a public copy ' +
+      'of a sign-in key. A published DID takes a key that is not ' +
+      'enrolled for sign-in.',
+    spec: 'HTTP 400 refusal at /authn-api/wallet' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',

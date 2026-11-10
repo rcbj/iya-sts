@@ -209,7 +209,8 @@ class SelfIssuedPages {
     return SelfIssuedPages.freshPane(view, t) +
       '<div class="card" id="did-published"><h2>' +
       t.html('portalSelfIssued.pubHeading') + '</h2><p class="sub">' +
-      t.html('portalSelfIssued.pubSub') + '</p>' +
+      t.html('portalSelfIssued.pubSub') + '</p><p class="sub" ' +
+      'id="did-public">' + t.html('portalSelfIssued.pubPublic') + '</p>' +
       (pub.enabled
         ? '<p class="sub" id="did-custody">' +
           (pub.custody === 'realm'

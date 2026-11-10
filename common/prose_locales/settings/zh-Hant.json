@@ -6788,8 +6788,8 @@
     "text": "為個人發布 did:web"
   },
   "did.personPublishing|description": {
-    "en": "841dc751d16e1137",
-    "text": "允許個人在其入口網站的 Self-issued IDs 頁面上建立一個由本領域為其發布的 did:web（#1291）：did:web:<host>[:realm:<id>]:users:<rid>，其中 <rid> 為 128 位元隨機數，因此沒有人能藉由探測位址來列舉帳戶，同一個人的兩個 DID 也無法被連結。其文件在 /users/<rid>/did.json 提供，所有版本均保留，並且可以作為當事人的偏好 DID。開啟後，繫結到 DID 的憑證設定（oid4vci.didHolderBinding）也會為本領域託管且當事人已用錢包證明的 DID 提供 did:web。關閉：不發布任何新的 DID；已發布的 DID 無論是否停用仍繼續提供，因為其位址會永久保留。在產品模式下，只有在固定的 global.publicBaseUrl 上才會發布 DID。"
+    "en": "291c209edc596dc6",
+    "text": "允許個人在其入口網站的 Self-issued IDs 頁面上建立一個由本領域為其發布的 did:web（#1291）：did:web:<host>[:realm:<id>]:users:<rid>，其中 <rid> 為 128 位元隨機數，因此沒有人能藉由探測位址來列舉帳戶，同一個人的兩個 DID 也無法被連結。其文件在 /users/<rid>/did.json 提供，所有版本均保留，並且可以作為當事人的偏好 DID。開啟後，繫結到 DID 的憑證設定（oid4vci.didHolderBinding）也會為本領域託管且當事人已用錢包證明的 DID 提供 did:web。關閉：不發布任何新的 DID；已發布的 DID 無論是否停用仍繼續提供，因為其位址會永久保留。在產品模式下，只有在固定的 global.publicBaseUrl 上才會發布 DID。已登記用於登入的金鑰不會被發布（#775）：錢包證明的是此人登入主體之外的金鑰，因此該文件不是登入金鑰的公開複本。變更 global.publicBaseUrl 或領域路徑不會改寫已發布的 DID；它保留建立時的主機與路徑，若該位址不再指向本領域，則無法再被解析。"
   },
   "did.personCustody|label": {
     "en": "057d429ef011ffab",

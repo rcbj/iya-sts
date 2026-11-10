@@ -13323,7 +13323,15 @@ const SETTINGS = [
                  'with a wallet. Off: nothing new is published; a DID ' +
                  'already published is still served, deactivated or not, ' +
                  'because its address is kept for good. In product mode a ' +
-                 'DID is published only on a pinned global.publicBaseUrl.' },
+                 'DID is published only on a pinned global.publicBaseUrl. ' +
+                 'A key already enrolled for sign-in is not published ' +
+                 '(#775): the wallet proves a key that is not one of the ' +
+                 'person\'s sign-in subjects, so the document is not a ' +
+                 'public copy of a sign-in key. Changing ' +
+                 'global.publicBaseUrl, or the realm\'s path, does not ' +
+                 'rewrite a DID already published; it keeps the host and ' +
+                 'path it was minted on, and stops resolving if that ' +
+                 'address no longer reaches this realm.' },
   { key: 'did.personCustody', group: 'Person DIDs',
     label: 'Who holds the private key of a person\'s DID',
     env: 'STS_DID_PERSON_CUSTODY', type: 'enum',

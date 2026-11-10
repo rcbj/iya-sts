@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5407** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5408** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -78,7 +78,7 @@ is an ordinary outcome.
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 85
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 153
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 60
-* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 164
+* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 165
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 137
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 54
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
@@ -4099,6 +4099,7 @@ Raised from: oid4vc/.
 | `STS-VC-0175` | The private key of a realm-custody DID could not be sealed under the key-encryption key, so nothing was published or changed (#1291). | HTTP 400 refusal at /account-api |
 | `STS-VC-0176` | A person's published DID already has the most versions one DID keeps (50), so it takes no more key changes (#1291). | HTTP 400 refusal at /account-api or /authn-api/wallet |
 | `STS-VC-0177` | The DID document of a person re-homed to another cell could not be fetched from that cell over the inter-cell channel (#1291). | HTTP 503 {error: temporarily_unavailable} at /users/{rid}/did.json |
+| `STS-VC-0178` | A key a wallet proved for a person's published DID was refused because it is already enrolled for that person as a sign-in key (#775). The document would have been a public copy of a sign-in key. A published DID takes a key that is not enrolled for sign-in. | HTTP 400 refusal at /authn-api/wallet |
 
 ## STS-SSF
 

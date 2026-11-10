@@ -30,6 +30,11 @@
 //   4. **A PROVED DID**: it may be preferred, released in the `did` claim,
 //      and — `wallet` custody only — bind an OpenID4VCI credential.
 //
+// #775's one rule that #1291 left open: the key the document names is not
+// a key already enrolled for sign-in. The published DID is its own
+// subject and can sign in; publishing an existing sign-in key would make
+// that key public. `newKeyProblem()` refuses it (`STS-VC-0178`).
+//
 // THE DESIGN, in the order a reader meets it:
 //
 //   * **THE DID IS FIXED AT CREATION** from the realm's public base URL and
@@ -1314,10 +1319,60 @@ class PersonDid {
                    alg: String(outcome.alg || '') } : null;
   }
 
+  // The thumbprints of every key already enrolled for this person: a
+  // did:jwk or did:key spells its key, a did:web pins it, and a thumbprint
+  // subject is the thumbprint. What #775 refuses to publish.
+  private signInThumbprints(username: string): string[] {
+    const { log, siop, stsCrypto, vcDataIntegrity } = this.deps;
+    log.debug("Entering PersonDid.signInThumbprints().");
+    const seen: string[] = [];
+    const add = function (one: unknown): void {
+      log.debug("Entering add().");
+      const text = String(one || '');
+      if (/^[A-Za-z0-9_-]{43}$/.test(text) && seen.indexOf(text) < 0) {
+        seen.push(text);
+      }
+      log.debug("Leaving add().");
+    };
+    const thumbUri = new RegExp('^urn:ietf:params:oauth:jwk-thumbprint:' +
+                                 'sha-256:([A-Za-z0-9_-]{43})$');
+    (siop.list(username) || []).forEach(function (row: Json) {
+      const subject = String((row && row.subject) || '');
+      if (/^did:(jwk|key):/.test(subject)) {
+        try {
+          add(stsCrypto.jwkThumbprint(
+            vcDataIntegrity.resolveVerificationMethod(subject).jwk));
+        } catch (e) {
+          // An unreadable enrolled subject names no key this check can
+          // compare. Proving that subject is still refused below, by
+          // ownerOf().
+          log.debug("Caught in PersonDid.signInThumbprints(): " +
+                    ((e && e.message) || e));
+        }
+      }
+      const uri = thumbUri.exec(subject);
+      if (uri) {
+        add(uri[1]);
+      } else if (/^[A-Za-z0-9_-]{43}$/.test(subject)) {
+        add(subject);
+      }
+      ((row && row.pinnedKeys) || []).forEach(function (pin: unknown) {
+        add(pin);
+      });
+    });
+    log.debug("Leaving PersonDid.signInThumbprints(). " + seen.length);
+    return seen;
+  }
+
   // A new key a wallet proves must be ITS OWN: a did:jwk, a did:key or a
   // thumbprint subject — never a did:web, whose key would be whatever a
-  // host says — and not one enrolled for somebody else.
-  private newKeyProblem(username: string, proved: Json): Json {
+  // host says — and not one enrolled for somebody else. Nor one already
+  // enrolled for THIS person as a sign-in key (#775): the published DID
+  // gets its own key, so the document is not a public copy of a sign-in
+  // key. `except` is the DID this act is changing, whose current keys are
+  // refused on their own (STS-VC-0170) rather than as sign-in keys.
+  private newKeyProblem(username: string, proved: Json,
+                        except?: string[]): Json {
     const { log, siop } = this.deps;
     log.debug("Entering PersonDid.newKeyProblem().");
     if (!proved) {
@@ -1335,6 +1390,19 @@ class PersonDid {
       log.debug("Leaving PersonDid.newKeyProblem(). Somebody else's.");
       return refusal('STS-VC-0170', 'that key is enrolled for another ' +
                      'person in this realm; one key signs in one person.');
+    }
+    const skip = except || [];
+    const alreadyTheirs = !!(owner &&
+      owner.toLowerCase() === username.toLowerCase());
+    const sameKey = this.signInThumbprints(username).some(function (one) {
+      return skip.indexOf(one) < 0 && one === proved.thumbprint;
+    });
+    if (alreadyTheirs || sameKey) {
+      log.debug("Leaving PersonDid.newKeyProblem(). A sign-in key.");
+      return refusal('STS-VC-0178', 'that key is already enrolled for ' +
+                     'you as a sign-in key. A DID this realm publishes ' +
+                     'takes a key that is not enrolled for sign-in, so ' +
+                     'the document is not a public copy of one.');
     }
     log.debug("Leaving PersonDid.newKeyProblem(). None.");
     return null;
@@ -1717,12 +1785,13 @@ class PersonDid {
     // THE NEW KEY, the second of the two proofs: the wallet's own key, not
     // one the current version names already.
     const pending = this.livePending(record);
-    const bad = this.newKeyProblem(username, proved);
+    const current = this.current(record);
+    const bad = this.newKeyProblem(username, proved,
+                                   this.thumbprintsOf(current));
     if (bad) {
       log.debug("Leaving PersonDid.finishWalletAct(). " + bad.code);
       return deny(bad.code, bad.error);
     }
-    const current = this.current(record);
     if (this.thumbprintsOf(current).indexOf(proved.thumbprint) >= 0) {
       log.debug("Leaving PersonDid.finishWalletAct(). Already named.");
       return deny('STS-VC-0170', 'that key is already in the current ' +
