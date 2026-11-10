@@ -2398,7 +2398,7 @@ on [OAuth security](oauth-security.md#configuration).
 |---|---|---|---|---|
 | `oauth2.refreshTokenEncryptionAlg` | `STS_OAUTH2_REFRESH_TOKEN_ENCRYPTION_ALG` | `A256KW` (`RSA-OAEP-256` until 2026-10-21; a token sealed under it still opens) | yes | The JWE key management algorithm every refresh token is sealed under, to this realm's own keys. |
 | `oauth2.refreshTokenEncryptionEnc` | `STS_OAUTH2_REFRESH_TOKEN_ENCRYPTION_ENC` | `A256GCM` | yes | The JWE content encryption algorithm for refresh tokens. |
-| `oauth2.refreshTokenEncryptionKeyBits` | `STS_OAUTH2_REFRESH_TOKEN_ENCRYPTION_KEY_BITS` | `2048` | yes | The size of each realm's RSA refresh-token encryption key; reaches keys made after the change. |
+| `oauth2.refreshTokenEncryptionKeyBits` | `STS_OAUTH2_REFRESH_TOKEN_ENCRYPTION_KEY_BITS` | `2048` (`3072` in product) | yes | The size of each realm's RSA refresh-token encryption key; reaches keys made after the change. |
 | `oauth2.refreshTokenEncryptionCurve` | `STS_OAUTH2_REFRESH_TOKEN_ENCRYPTION_CURVE` | `P-256` | yes | The curve of each realm's EC refresh-token encryption key; reaches keys made after the change. |
 
 ### Consent, permissions and claims
@@ -2455,7 +2455,7 @@ on [OAuth security](oauth-security.md#configuration).
 | `oauth2.clientJwksCacheS` | `STS_OAUTH2_CLIENT_JWKS_CACHE_S` | `300` | yes | How long a key set fetched from a client's `jwks_uri` is reused. |
 | `oauth2.clientJwksRefetchS` | `STS_OAUTH2_CLIENT_JWKS_REFETCH_S` | `30` | yes | The least time between two fetches of one `jwks_uri` for a `kid` the cached set lacks. |
 | `oauth2.requestUriCacheS` | `STS_OAUTH2_REQUEST_URI_CACHE_S` | `0` | yes | How long a fetched `request_uri` answer is reused; 0 fetches every time. |
-| `oauth2.requestObjectEncryptionKeyBits` | `STS_OAUTH2_REQUEST_OBJECT_ENCRYPTION_KEY_BITS` | `2048` | yes | The size of the RSA key each realm publishes (`use: enc`) for encrypted request objects. |
+| `oauth2.requestObjectEncryptionKeyBits` | `STS_OAUTH2_REQUEST_OBJECT_ENCRYPTION_KEY_BITS` | `2048` (`3072` in product) | yes | The size of the RSA key each realm publishes (`use: enc`) for encrypted request objects. |
 | `oauth2.requestObjectEncryptionCurve` | `STS_OAUTH2_REQUEST_OBJECT_ENCRYPTION_CURVE` | `P-256` | yes | The curve of the EC key each realm publishes for ECDH-ES request object encryption. |
 
 ### Client attestation

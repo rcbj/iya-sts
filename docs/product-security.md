@@ -20,8 +20,10 @@ state of your own deployment.
    and then refuse an untrusted certificate with no way to click through. See
    [TLS](tls.md).
 2. **Find the administrator's name and password at first start.** Unless you
-   set `admin.bootstrapUsername`, the name is generated. Both are printed once
-   in the log. See [The admin console](admin-console.md).
+   set `admin.bootstrapUsername` to a name of your own, the name is generated.
+   Both are written to `bootstrap-admin-password` in `persistence.dataDir`,
+   readable only by the service, and the log says where. See
+   [The admin console](admin-console.md#the-bootstrap-administrator).
 3. **Check that your clients can use the defaults.** The settings below turn
    older behaviour back on where a client cannot manage without it.
 
@@ -63,7 +65,8 @@ back on afterwards.
 * **HSTS.** Every response over TLS carries
   `Strict-Transport-Security: max-age=31536000`.
 * **Cookie names.** Over TLS, every cookie this service sets is prefixed: `__Host-`,
-  or `__Secure-` when it carries a `Domain` (see `authn.cookieDomain`).
+  or `__Secure-` when it carries a `Domain` (see `authn.cookieDomain`) or a path
+  narrower than `/`.
   `sts_session` arrives in a browser as `__Host-sts_session`, for example. An
   unprefixed cookie of the same name is ignored, so a client that reads or
   sends a cookie by name must use the prefixed one.
@@ -73,6 +76,9 @@ back on afterwards.
 
 * **Any composition is accepted.** A policy can set a minimum length and a
   history, but it cannot require symbols, upper-case letters or numbers.
+* **Words that identify you are refused**: the service's names, the realm's name
+  and domain, and `security.passwordContextWords`. See
+  [Words a password may not contain](password-words.md).
 * **A generated password is temporary.** One made by `reset-password`, by
   `set-password` with `generate: true`, or when a person is created, must be
   changed at the next sign-in, and Kerberos gives no ticket for it until it is. One
@@ -83,12 +89,46 @@ back on afterwards.
 * **Repeated guesses are slowed, and no account is locked.** See
   [Authentication](authentication.md#how-repeated-password-guesses-are-slowed).
 
+## Signing in
+
+* **Second factor.** Required of everybody who signs in with a browser,
+  administrators included, including with a certificate: `GET /tls/sign-in`
+  starts no session for a person who owes one, and the sign-in screen's
+  certificate button asks for it. A federation partner is
+  the authentication, so federated sign-ins are not asked for one, and nor are
+  programs that present a client certificate. The
+  password-only doors (LDAP, WS-Trust, SCIM, Shared Signals and EST Basic) cannot
+  ask for one, so a person uses an app password there, with no second factor. This
+  is intentional: see [Authentication](authentication.md) and
+  [Authentication pathways](authentication-pathways.md).
+* **A TOTP code is good for one time step.** `totp.window` defaults to 0.
+* **Changing how somebody signs in needs a recent sign-in**, within
+  `account.recentAuthMinutes` (15 minutes). On the portal that covers the second
+  factors, recovery codes, passkeys, app passwords, certificates, signing keys,
+  self-issued IDs, the email address and a wallet credential offer; the person
+  is sent to sign in again and returned to the page. An administrator changing a
+  person's password, second factor, passkey, recovery codes, email address or
+  app passwords through the console or `/admin-api` must have signed in within
+  the same time: the console asks them to sign in again and carries on, and the
+  API answers RFC 9470's `insufficient_user_authentication`. A program using the
+  API with its own credentials is not asked.
+* **Clearing a lost factor needs a reason.** An administrator removing a
+  person's authenticator app, passkeys, recovery codes or emailed factor must say
+  how the person's identity was verified. It is kept on the audit row.
+
 ## Sessions
 
-Ending a session revokes the access tokens and refresh tokens issued on it, and
-tells the browser to clear this site's storage when no other account remains in
-it. [Sessions](sessions.md#what-ending-a-session-stops) says what cannot be
-recalled.
+* **An unused session ends after 30 minutes** (`authn.sessionIdleTimeoutS`), and
+  every session after one hour (`authn.sessionLifetimeS`).
+* **Ending a session revokes the access tokens issued on it**, and its refresh
+  tokens other than `offline_access` ones, and tells the browser to clear this
+  site's storage when no other account remains in it.
+  [Sessions](sessions.md#what-ending-a-session-stops) says what cannot be
+  recalled.
+* **Ending your other sessions needs a recent sign-in**; signing yourself out
+  never does. See [Signing out](signing-out.md#post-logout).
+* **An administrator can end every session in a realm** at once, on
+  `/admin/sessions`. See [Sessions](sessions.md#how-one-ends).
 
 ## Browser pages
 
@@ -107,8 +147,10 @@ page's Content Security Policy.
 * A sign-in, password-change or consent step's id travels in the URL fragment
   and an `X-Step-Id` header, not in anything a server logs. Only the browser that
   first asked about a step can use it.
-* Two hops still carry a step id in the query, because no script runs on them:
-  the SPNEGO exchange (RFC 4559) and the start of a federated sign-in.
+* Two hops have no script to read a fragment: the SPNEGO exchange (RFC 4559)
+  and the start of a federated sign-in. Their step id travels in a short-lived
+  `HttpOnly` cookie instead, and the wallet's return and wait addresses carry
+  it in the fragment.
 
 ## Access decisions
 
@@ -137,6 +179,10 @@ A GNAP user assertion that has expired is refused unless an operator sets
 ## Algorithms
 
 * **Kerberos** uses enctypes 19 and 20 (RFC 8009).
+* **RSA keys** this service generates are 3072 bits by default: RSA signing
+  keys, certificate authorities, the self-signed listener certificate and the
+  realms' encryption keys. A setting that names a size still decides, and keys
+  that already exist stay until they are rotated.
 * **Hashes.** SHA-1 and MD5 are off for key transport, PKINIT key derivation and
   S4U2Self unless `crypto.allowLegacyHashes` is on. Two uses remain. TOTP
   defaults to HMAC-SHA-1 for compatibility with authenticator apps, many of which
@@ -151,22 +197,12 @@ A GNAP user assertion that has expired is refused unless an operator sets
   specifications define.
 * **Malware scanning** of uploaded images and risk datasets is optional and off
   by default. See [Malware scanning](malware-scanning.md).
-* **Administrators changing credentials** must have signed in within
-  `account.recentAuthMinutes`. The console asks them to sign in again and carries
-  on; a program using the API with its own credentials is not asked.
 * **Audit log.** Configure an [audit export](audit-export.md) destination, so that
   a copy of the log leaves this service as it is written and a compromise here
   cannot alter it.
 * **Software bill of materials.** The image holds a CycloneDX inventory of its npm
   dependencies at `/usr/src/sts/sbom.cdx.json`, and its operating-system packages
   are listed in `/usr/src/sts/os-packages.txt`.
-* **Second factor.** Required of everybody who signs in with a browser,
-  administrators included, including with a certificate. A federation partner is
-  the authentication, so federated sign-ins are not asked for one, and nor are
-  programs that present a client certificate. The
-  password-only doors (LDAP, WS-Trust, SCIM, Shared Signals and EST Basic) cannot
-  ask for one, so a person uses an app password there, with no second factor. This
-  is intentional: see [Authentication](authentication.md).
 * **XML encryption** selects and accepts AES-GCM only. AES-CBC is refused when
   decrypting, and cannot be chosen in `saml2.encryptionAlgorithm`.
 * **SCEP** answers 503 until `scep.allowInProduct` is on. See [SCEP](scep.md).

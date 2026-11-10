@@ -546,7 +546,13 @@ is signed in to every surface on the port. In order:
    for one from an anchor somebody installed, the realm of the request
    (`/realm/<id>/tls/sign-in`, else the default realm) and the person whose
    entry stores it — refused, with `session.refusedAsStored`, when no entry or
-   several do (above).
+   several do (above);
+5. **in product mode, a person who owes a second factor is not signed in here**
+   (`STS-TLS-0060`), because this address cannot ask for one. The answer says
+   to sign in on the sign-in screen and choose the certificate there, which
+   asks for the second factor. A program presenting a certificate elsewhere
+   (WS-Trust, token exchange, RFC 8705, LDAP SASL EXTERNAL, PKINIT) is not
+   affected.
 
 The answer is **JSON**: `signedIn`, the session, whether a certificate was
 presented and verified, the `x5t#S256` thumbprint the token endpoint would bind
@@ -647,7 +653,7 @@ refusal of an application's certificate — is the same in both modes. See
 | `tls.signatureAlgorithms` | `STS_TLS_SIGALGS` | OpenSSL's list without DSA and SHA-224, brainpool omitted by policy | no | The signature schemes signed with, accepted, and asked for in a CertificateRequest; empty means OpenSSL's. |
 | `tls.trustAnchorsFile` | `STS_TLS_TRUST_ANCHORS_FILE` | *(empty)* | no | A PEM file of CA certificates client certificates are verified against, loaded at startup; unreadable or empty is fatal. |
 | `tls.trustIssuedClientCertificates` | `STS_TLS_TRUST_ISSUED_CLIENT_CERTIFICATES` | `true` | no | Add this service's Root to the client truststore, so a certificate a person issued on the portal signs them in. |
-| `tls.selfSignedKeyBits` | `STS_TLS_SELF_SIGNED_KEY_BITS` | `2048` | no | The RSA key size of the listener certificate made at startup. |
+| `tls.selfSignedKeyBits` | `STS_TLS_SELF_SIGNED_KEY_BITS` | `2048` (`3072` in product) | no | The RSA key size of the listener certificate made at startup. |
 | `tls.selfSignedValidityYears` | `STS_TLS_SELF_SIGNED_YEARS` | `2` | no | How long that certificate is valid. |
 | `tls.selfSignedOrganization` | `STS_TLS_SELF_SIGNED_ORGANIZATION` | `iya-sts` | no | The O= of its subject. |
 | `tls.sessionTicketRotationS` | `STS_TLS_SESSION_TICKET_ROTATION_S` | `3600` | yes | In an active-active cluster, how often the session-ticket key every node's LDAPS listener and main port share is replaced (the old key is deleted); `0` shares nothing. Outside active-active nothing is shared. |

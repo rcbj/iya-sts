@@ -1822,6 +1822,13 @@ Both are withheld where the person has no password and passkeys may be a
 first factor in the realm, and the API refuses them there
 (`STS-AUTHN-0161`), so neither can lock anybody out.
 
+In product mode these two, and removing one passkey, ask the administrator how
+the person's identity was verified (`evidence`, at least 8 characters). It is
+kept on the audit row, and the change is refused without it
+(`STS-ADMIN-0916`). Removing one passkey also needs the administrator to
+have signed in within `account.recentAuthMinutes`, or the console asks them
+to sign in again.
+
 Until #1135 the first removed only the passkeys enrolled to sign in on their
 own and the second only those enrolled as a second step; a passkey has no
 role now, so both take every passkey.

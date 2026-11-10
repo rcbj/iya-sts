@@ -238,6 +238,7 @@ demand, and a WS-Federation `wfresh` too old all end at the screen.
 | `GET\|POST /saml2/slo` | SAML 2.0 Single Logout |
 | `GET\|POST /logout` | the protocol-independent sign-out — everything, across every family |
 | `/admin/logout`, `/admin/sessions` | an operator ending somebody else's |
+| **End every session in this realm** on `/admin/sessions` (`POST /admin-api/sessions/end-all`) | every sign-on session in the realm started before that moment, the administrator's own included, each ended the next time it is read |
 | the lifetime running out | the sweep, or the next lookup |
 
 All of them go through **one function**, which is what stops four protocols'
@@ -246,13 +247,20 @@ words for one act from drifting apart. That function is also where the RFC 9700
 written, so a sign-out that revoked nothing and logged nothing is not reachable.
 [Signing out](signing-out.md) has the rest.
 
-**Ending a session does not recall what it produced.** Access tokens, ID Tokens,
-SAML assertions and Kerberos tickets issued on it stay valid — that is what
-`/admin/tokens` lists, and it is the state an OIDC client is in when its ID Token
-still verifies and the browser would be asked to sign in again. Refresh tokens
-issued on the session without `offline_access` are the exception, in every
-mode: a sign-out revokes them (OpenID Connect Back-Channel Logout section 2.7,
-`oauth2.revokeRefreshOnLogout`, on by default and settable per client).
+**In development mode, ending a session does not recall what it produced.**
+Access tokens, ID Tokens, SAML assertions and Kerberos tickets issued on it stay
+valid — that is what `/admin/tokens` lists, and it is the state an OIDC client is
+in when its ID Token still verifies and the browser would be asked to sign in
+again. Refresh tokens issued on the session without `offline_access` are the
+exception, in every mode: a sign-out revokes them (OpenID Connect Back-Channel
+Logout section 2.7, `oauth2.revokeRefreshOnLogout`, on by default and settable
+per client). **In product mode the access tokens are revoked as well**; see
+[What ending a session stops](#what-ending-a-session-stops).
+
+**End every session in this realm** is the exception to both: it records one
+instant, so its cost does not grow with the number of sessions, and it revokes
+no token. Use **Revoke all** on the Tokens page
+(`POST /admin-api/tokens/revoke-all`) as well.
 
 ### One session per sign-in, several per person
 
@@ -400,7 +408,9 @@ and **how that expiry is worked out** — and a Revoke button on each row that g
 through the same termination `/logout` performs.
 
 `GET /admin-api/sessions` is the same list without a browser;
-`POST /admin-api/sessions/revoke` is the button. Every row carries the two fields
+`POST /admin-api/sessions/revoke` is the button. Below the list, an administrator
+holding Admin Write has **End every session in this realm**
+(`POST /admin-api/sessions/end-all`); see [How one ends](#how-one-ends). Every row carries the two fields
 that write needs, and — for a browser session — the `sessionId` that
 `GET /admin-api/tokens?session=` takes.
 

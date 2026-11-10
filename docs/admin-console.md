@@ -123,15 +123,22 @@ administrators cannot reach anything about the process as a whole.
 ### The bootstrap administrator
 
 In product mode a default name (`admin`, `root`, `sa`, `administrator`, or none)
-is replaced by an unpredictable generated name, printed once with the generated
-password at first start. Set `admin.bootstrapUsername` to choose your own.
+is replaced by an unpredictable generated name. Set `admin.bootstrapUsername` to
+choose your own (`admin.allowDefaultUsername` keeps a default name, for a test
+stack).
 
-At startup the service makes **`admin`** (`admin.bootstrapUsername`) in the
+At startup the service makes the bootstrap administrator (`admin.bootstrapUsername`,
+**`admin`** in development) in the
 default realm if it is absent, puts it in both role groups, and marks a newly
 created account `pwdReset: TRUE`, so its first sign-in asks for a new password
 before anything else. In development any password gets it to that screen; in
-product mode its password is `admin.bootstrapPassword`, or one generated and
-written to the log once. It cannot be deleted or renamed through the console,
+product mode its password is `admin.bootstrapPassword`, or one generated at the
+first start. A generated one is written, with the name, to the file
+`bootstrap-admin-password` in `persistence.dataDir` as `name:password`, readable
+only by the service, and the log names the account and says where. `admin.logBootstrapPassword` writes
+it to the log instead, which only a test stack should do. In product mode it
+must also set up a second factor at that first sign-in (see
+[Authentication](authentication.md#requiring-a-second-factor-of-everybody)). It cannot be deleted or renamed through the console,
 `/admin-api`, SCIM or LDAP. Taking `admin` out of the role groups is still
 possible, and is on you.
 
