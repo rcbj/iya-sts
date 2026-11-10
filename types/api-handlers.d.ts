@@ -48,10 +48,21 @@ declare namespace IyaApi {
   // For a handler serving several operations, a name any of them declares.
   type RawQuery<Q> = { [K in (Q extends unknown ? keyof Q : never)]?: any };
 
+  // THE REQUEST AND RESPONSE ARE EXPRESS'S (#1579), so a handler hands them
+  // to any function typed for express. `tsconfig.json` maps `express` to its
+  // declarations, so this holds the same on every host and in the image:
+  // without the mapping, a tree with the JavaScript package at its root read
+  // `express` as untyped and a tree without one read the declarations, and
+  // the second refused what the first passed.
+  type ExpressRequest = import('express').Request;
+  type ExpressResponse = import('express').Response;
+
   // A request to one operation (or to any of several, for a handler that
   // serves several): its body and query as the model declares them. Every
-  // other member is the request's, untyped as it was.
-  interface RequestTo<O extends Operation> {
+  // other member is the request's, and a member express does not declare is
+  // still untyped, as it was.
+  interface RequestTo<O extends Operation>
+    extends Omit<ExpressRequest, 'body' | 'query'> {
     body: O['body'];
     query: RawQuery<O['query']>;
     [member: string]: any;
@@ -60,8 +71,8 @@ declare namespace IyaApi {
 
   // A response to one operation: it carries, as a type only, what the
   // operation may answer, for `AnswerOf` to read. Every other member is the
-  // response's, untyped as it was.
-  interface Answering<O extends Operation> {
+  // response's.
+  interface Answering<O extends Operation> extends ExpressResponse {
     readonly __iyaAnswers?: O['answers'];
     [member: string]: any;
     [member: symbol]: any;

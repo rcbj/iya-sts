@@ -26,5 +26,8 @@ declare module 'http' {
     // `oauth-oidc/oauth2.ts`'s token endpoint: whether the client's
     // credential verified on this Token Request (RFC 9449 section 5, #176).
     stsClientAuthenticated?: boolean;
+    // `common/cell_channel.ts`: a request another cell relayed here, with
+    // the cell it came from, the client and why it was relayed.
+    stsCellRelay?: { from: string; client?: string; reason?: string };
   }
 }
