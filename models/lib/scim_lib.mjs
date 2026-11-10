@@ -38,6 +38,10 @@ const SCALARS = { string: 'string', boolean: 'boolean', int32: 'integer',
   float64: 'decimal', decimal: 'decimal', utcDateTime: 'dateTime',
   ScimReference: 'reference', ScimBinary: 'binary' };
 
+// The schemas scimmy ships a class for, by name: a `resource` or `shipped`
+// schema replaces one of these classes' attributes, so it must name one.
+const SHIPPED = ['User', 'Group', 'EnterpriseUser'];
+
 // The directory objects each mapping table's attributes are found on.
 const STORED_ON = { user: ['person', 'operational'],
                     group: ['group', 'operational'] };
@@ -382,6 +386,11 @@ export function checkScim(scim, objects) {
   scim.schemas.forEach(function (schema) {
     if (!/^urn:ietf:params:scim:schemas:/.test(schema.id)) {
       problems.push(schema.id + ' is not a SCIM schema URN');
+    }
+    if ((schema.resource || schema.shipped) &&
+        SHIPPED.indexOf(schema.name) < 0) {
+      problems.push(schema.id + ' replaces a schema scimmy ships, and ' +
+        schema.name + ' is not one (' + SHIPPED.join(', ') + ')');
     }
     if (schema.realmDefined && schema.attributes.length > 0) {
       problems.push(schema.id + ' is the realm\'s and declares attributes');

@@ -206,8 +206,8 @@ function childMain() {
       { userName: 'u', active: 'true' },
       { uid: ['u'], pwdAccountLockedTime: ['000001010000Z'] });
     const group = { dn: 'cn=g,ou=groups,dc=example,dc=com',
-      attributes: { cn: ['g'], entryUUID: ['00000000-0000-4000-8000-0000000000' +
-                                           '02'],
+      attributes: { cn: ['g'],
+                    entryUUID: ['00000000-0000-4000-8000-000000000002'],
                     scimExternalId: ['gx'], member: ['uid=a,ou=users'],
                     memberUid: ['b'], objectClass: ['groupOfNames'],
                     createTimestamp: ['20260101000000Z'] } };

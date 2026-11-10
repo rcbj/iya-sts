@@ -98,12 +98,17 @@ interface RealmSchemaDeps {
   scimMap: { USER_ATTRIBUTES: any[]; USER_SCHEMA: string };
 }
 
-// The URN. This service's own namespace, as the iya-sts User extension's is;
-// one URN for every realm, because a realm is a service provider of its own
-// at its own base URL and RFC 7643 section 7 makes /Schemas the schemas THAT
-// service provider supports.
-const CUSTOM_SCHEMA =
-  'urn:ietf:params:scim:schemas:extension:iya-sts:2.0:CustomAttributes';
+// THE SCHEMA, as the model states it (#1579): the one schema of
+// `models/scim/scim.tsp` whose members are the realm's. Its URN is this
+// service's own namespace, as the iya-sts User extension's is; one URN for
+// every realm, because a realm is a service provider of its own at its own
+// base URL and RFC 7643 section 7 makes /Schemas the schemas THAT service
+// provider supports.
+const CUSTOM: { id: string; name: string; description: string } =
+  scimMap.SCHEMAS.filter(function (one: any) {
+    return one.realmDefined === true;
+  })[0];
+const CUSTOM_SCHEMA = CUSTOM.id;
 
 // A custom attribute's syntax as a SCIM type (RFC 7643 section 2.3). Only
 // `integer` and `boolean` have a type of their own; a date is stored
@@ -269,11 +274,8 @@ class ScimRealmSchema {
       log.debug("Leaving ScimRealmSchema.extension(). Built already.");
       return this.extensionDefinition;
     }
-    const definition = new SCIMMY.Types.SchemaDefinition('CustomAttributes',
-      CUSTOM_SCHEMA,
-      'This realm\'s custom attributes, as its administrators define them ' +
-      'on Directory → Policies → Attribute policy. Each realm has its own; ' +
-      'not sent on a PUT, they are left as they are.');
+    const definition = new SCIMMY.Types.SchemaDefinition(CUSTOM.name,
+      CUSTOM.id, CUSTOM.description);
     // The common members every scimmy definition carries (`schemas`, `id`,
     // `externalId`, `meta`, all shadowed), kept, and the realm's after them.
     const common = definition.attributes.slice(0);

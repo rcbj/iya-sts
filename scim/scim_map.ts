@@ -23,7 +23,8 @@
 // to tick: SCIM defines its own schema (RFC 7643), so what a User carries is
 // decided by that document rather than by this service, and the only question
 // left is which LDAP attribute each member is stored in. That is a mapping and
-// a mapping is a table.
+// a mapping is a table — since #1579 a table of the model
+// (`models/scim/scim.tsp`), which this file reads.
 //
 // **THE ATTRIBUTE SPELLINGS ARE NOT A FIFTH LIST.** Every row that names an
 // attribute vc_claims.ts already knows is checked against that catalogue at
@@ -142,7 +143,8 @@
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `ScimMap` takes the logger and the credential claim catalogue
 // (`vc_claims.ts`'s CANONICAL_NAMES) through its constructor, and the two
-// mapping tables, the schema URNs and OWN_NAMES are its static members. The
+// mapping tables, the schema URNs and OWN_NAMES — each read from the model
+// (#1579) — are its static members. The
 // module still exports every old name, the functions as FACADES forwarding
 // to the instance the composition root builds and installs (#50, R2),
 // because `scim.ts`, `admin-ui/admin.ts`, `admin-core/admin_views.ts` and
@@ -151,32 +153,41 @@
 // instance is installed — or, in a process without the root, when the
 // default is built at the end of loading this module.
 //
-// The two row functions on `addresses.formatted` (`toScim`, `fromScim`) are
-// DATA in a module-scope table built before any instance exists, so they log
-// through `helpers.log` directly; that is the one reach outside the class,
-// and it goes when the tables do.
+// The tables are read from the model when this module loads, before any
+// instance exists, and the two functions of the one `transform` are data in
+// a module-scope table, so all of that logs through `helpers.log` directly;
+// that is the one reach outside the class.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
+import ModelTables = require('../common/model_tables');
 import vcClaims = require('../oid4vc/vc_claims');
 
-// The logger the two row functions in USER_ATTRIBUTES use — see above.
+// The logger the module-scope readers of the model and the two transform
+// functions use — see above.
 const log = helpers.log;
 
-// One row of either mapping table. See "THE USER MAPPING" below for what each
-// member means.
+// One row of either mapping table, as `models/generated/scim.json` holds it.
+// See "A ROW" below for what each member means.
 interface MapRow {
+  table: string;
+  row: number;
   scim: string;
   ldap: string;
   kind: string;
   schema?: string;
   note?: string;
-  type?: string;
-  parent?: string;
+  type?: string | null;
+  parent?: string | null;
   required?: boolean;
   readOnly?: boolean;
   extension?: boolean;
+  own?: string;
+  transform?: string;
+  introduced?: boolean;
+  alsoClears?: string[];
+  section?: string;
   toScim?(value: unknown): string;
   fromScim?(value: unknown): string;
 }
@@ -218,60 +229,20 @@ interface ScimMapDeps {
   canonicalNames: Record<string, string>;
 }
 
-// The schema URNs, written once. RFC 7643 sections 4.1, 4.2 and 4.3.
-const USER_SCHEMA = 'urn:ietf:params:scim:schemas:core:2.0:User';
-const GROUP_SCHEMA = 'urn:ietf:params:scim:schemas:core:2.0:Group';
-const ENTERPRISE_SCHEMA =
-    'urn:ietf:params:scim:schemas:extension:enterprise:2.0:User';
-// THIS SERVICE'S OWN USER EXTENSION (#109, 2026-09-22), carrying the one
-// member no standard schema has: which federation partners' subjects are
-// linked to the person. RFC 7643 section 3.3 is how a service provider adds
-// attributes of its own, under a URN it names.
-const IYA_STS_USER_SCHEMA =
-    'urn:ietf:params:scim:schemas:extension:iya-sts:2.0:User';
-
 // ---------------------------------------------------------------------------
-// THE ATTRIBUTES THIS SERVICE INVENTED FOR SCIM.
+// THE SCHEMAS AND THE TWO MAPPING TABLES ARE THE MODEL'S (#1579).
 //
-// Merged into ldap_server.js's canonical-name table through learnName(), which
-// is the ONE door into it, so that /admin/users and /admin/ldap/directory show
-// `scimExternalId` rather than the `scimexternalid` the store lower-cases it
-// to. It is an `stsApplication`-style invention: nothing standard carries it,
-// and saying so beside it is cheaper than leaving a reader to search RFC 4519
-// for an attribute that is not in it. (`scimActive` was the second until
-// 2026-09-17; `active` is `pwdAccountLockedTime` now, which the directory
-// learns from its own list.)
-// ---------------------------------------------------------------------------
-const OWN_NAMES = [
-  'scimExternalId'
-];
-
-// ---------------------------------------------------------------------------
-// A `schema` THAT IS PROSE RATHER THAN A CITATION (#543 phase 2c): the three
-// ways a row says its LDAP type is this service's own, named once so that the
-// scimmap namespace can carry them and `common/server_prose.ts` refill an
-// answer to `GET /admin-api/scim` in a console reader's language. Every other
-// `schema` is a document and section ("RFC 4519 2.39"), which is a citation
-// and stays as written.
-// ---------------------------------------------------------------------------
-const OWN_TYPE = Object.freeze({
-  plain: "this service's own (no standard type)",
-  claims: "this service's own (#128; no standard type)",
-  federation: "this service's own (#109; no standard type)"
-});
-
-// The routes whose answers carry the scimmap namespace's prose (#543): the
-// console's SCIM page carries the mapping (`admin_views.ts`'s
-// `scimJson()`, through `describeRow()`).
-const PROSE_ROUTES = ['/admin-api/scim'];
-
-// ---------------------------------------------------------------------------
-// THE USER MAPPING.
+// `models/scim/scim.tsp` states every schema /Schemas lists and every row of
+// both tables; the image build writes `models/generated/scim.json` from it,
+// and this reads that file once, when it loads. Until #1579 the rows were
+// written here and scimmy's definitions were truncated to match them in
+// `scim.ts`: two writings of one fact, held together by nobody.
 //
-// `scim` is the SCIM attribute path as RFC 7643 spells it — dotted for a
-// sub-attribute of a complex type. `ldap` is the attribute type in the
-// directory. `kind` says how the two shapes differ, which is the only thing a
-// converter has to branch on:
+// A ROW, as the model writes it. `scim` is the SCIM attribute path as RFC
+// 7643 spells it — dotted for a sub-attribute of a complex type, and the
+// schema URN, a colon and the path for an extension member. `ldap` is the
+// attribute type in the directory. `kind` says how the two shapes differ,
+// which is the only thing a converter has to branch on:
 //
 //   'single'   one SCIM value, one LDAP value
 //   'bool'     as above, stored as the LDAP boolean strings TRUE / FALSE
@@ -283,73 +254,48 @@ const PROSE_ROUTES = ['/admin-api/scim'];
 //   'links'    the person's federation links (#109): converted in `scim.ts`,
 //              which has to ask the federation register whether each link is
 //              one this realm can hold, so every converter here steps over it
+//   'members'  a group's membership, resolved by the directory
 //
 // `schema` names the document that defines the LDAP attribute, the way
 // vc_claims.ts's rows do, so that a reader can tell an RFC 4519 type from one
-// of this service's own without leaving the page.
+// of this service's own without leaving the page. THE ROW ORDER IS NOT
+// ARBITRARY: an untyped value of a multi-valued member goes to that member's
+// first row, so an untyped phone number is a `telephoneNumber` because that
+// row comes before `mobile`.
 // ---------------------------------------------------------------------------
-const USER_ATTRIBUTES: MapRow[] = [
-  { scim: 'userName', ldap: 'uid', kind: 'single', required: true,
-    schema: 'RFC 4519 2.39',
-    note: 'The SCIM uniqueness constraint. It is the RDN of an auto-created ' +
-          'entry, so for anybody this service authenticated it is also their ' +
-          'sign-in name — but it is NOT the SCIM id, which is the entry\'s ' +
-          'entryUUID.' },
-  { scim: 'externalId', ldap: 'scimExternalId', kind: 'single',
-    schema: OWN_TYPE.plain,
-    note: 'The provisioning client\'s own identifier for this person. Stored ' +
-          'verbatim and read by nothing here.' },
-  { scim: 'name.formatted', ldap: 'cn', kind: 'single',
-    schema: 'RFC 4519 2.3' },
-  { scim: 'name.familyName', ldap: 'sn', kind: 'single',
-    schema: 'RFC 4519 2.32' },
-  { scim: 'name.givenName', ldap: 'givenName', kind: 'single', schema: 'RFC ' +
-      '4519 2.6' },
-  { scim: 'displayName', ldap: 'displayName', kind: 'single', schema: 'RFC ' +
-      '2798 2.3' },
-  { scim: 'title', ldap: 'title', kind: 'single', schema: 'RFC 4519 2.38' },
-  // RFC 7643's honorific prefix — "title in most Western languages" — is the
-  // Claims Registration's `title` (#128). SCIM's own `title` above stays the
-  // JOB title, which is what RFC 7643 section 4.1.1 means by it.
-  { scim: 'name.honorificPrefix', ldap: 'schacPersonalTitle', kind: 'single',
-    schema: 'SCHAC 1.5.0' },
-  // RFC 2798 2.7 is `preferredLanguage`; `employeeType` is 2.5. Corrected
-  // 2026-09-11 against the RFC text.
-  { scim: 'userType', ldap: 'employeeType', kind: 'single', schema: 'RFC ' +
-      '2798 2.5' },
-  { scim: 'preferredLanguage', ldap: 'preferredLanguage', kind: 'single',
-    schema: 'RFC 2798 2.10' },
-  { scim: 'profileUrl', ldap: 'labeledURI', kind: 'single',
-    schema: 'RFC 2079 2' },
-  { scim: 'active', ldap: 'pwdAccountLockedTime', kind: 'lock',
-    schema: 'draft-behera-ldap-password-policy 5.3.3 (inverted)',
-    note: 'DISABLES THE ACCOUNT. false writes the administrative lock ' +
-          '000001010000Z and ends everything the person holds; every door ' +
-          'then refuses them. true removes it. Not sent: unchanged.' },
+const MODEL = ModelTables.file('scim.json');
 
-  { scim: 'emails', ldap: 'mail', kind: 'multi', type: 'work',
-    schema: 'RFC 4524 2.16' },
-  { scim: 'phoneNumbers', ldap: 'telephoneNumber', kind: 'multi', type: 'work',
-    schema: 'RFC 4519 2.35' },
-  { scim: 'phoneNumbers', ldap: 'mobile', kind: 'multi', type: 'mobile',
-    schema: 'RFC 4524 2.18' },
+// A schema of the model, by its name.
+function schemaNamed(name: string): any {
+  log.debug("Entering schemaNamed(). " + name);
+  const found = MODEL.schemas.filter(function (one: any) {
+    return one.name === name;
+  })[0];
+  log.debug("Leaving schemaNamed().");
+  return found;
+}
 
-  { scim: 'addresses.streetAddress', ldap: 'street', kind: 'complex',
-    parent: 'addresses', schema: 'RFC 4519 2.34' },
-  { scim: 'addresses.locality', ldap: 'l', kind: 'complex',
-    parent: 'addresses', schema: 'RFC 4519 2.16' },
-  { scim: 'addresses.region', ldap: 'st', kind: 'complex',
-    parent: 'addresses', schema: 'RFC 4519 2.33' },
-  { scim: 'addresses.postalCode', ldap: 'postalCode', kind: 'complex',
-    parent: 'addresses', schema: 'RFC 4519 2.24' },
-  { scim: 'addresses.country', ldap: 'c', kind: 'complex',
-    parent: 'addresses', schema: 'RFC 4519 2.2' },
-  { scim: 'addresses.formatted', ldap: 'postalAddress', kind: 'complex',
-    parent: 'addresses', schema: 'RFC 4519 2.23',
-    // RFC 4517 3.3.28 separates the lines of a postal address with '$'; SCIM's
-    // `formatted` is a display string with newlines. The same conversion
-    // vc_claims.ts does for the OIDC `formatted` member, for the same reason:
-    // two documents spelling one address differently.
+// The schema URNs. RFC 7643 sections 4.1, 4.2 and 4.3, and this service's
+// own User extension (#109, 2026-09-22), carrying what no standard schema
+// has: which federation partners' subjects are linked to the person, and
+// the Identity Assurance claims (#128). RFC 7643 section 3.3 is how a
+// service provider adds attributes of its own, under a URN it names.
+const USER_SCHEMA: string = schemaNamed('User').id;
+const GROUP_SCHEMA: string = schemaNamed('Group').id;
+const ENTERPRISE_SCHEMA: string = schemaNamed('EnterpriseUser').id;
+const IYA_STS_USER_SCHEMA: string = schemaNamed('IyaStsUser').id;
+
+// ---------------------------------------------------------------------------
+// A CONVERSION BETWEEN TWO SPELLINGS OF ONE VALUE, which a row names as its
+// `transform`. RFC 4517 3.3.28 separates the lines of a postal address with
+// '$'; SCIM's `formatted` is a display string with newlines. The same
+// conversion vc_claims.ts does for the OIDC `formatted` member, for the same
+// reason: two documents spelling one address differently. A function is not
+// a value the model can hold, so the model names it and this holds it.
+// ---------------------------------------------------------------------------
+const TRANSFORMS: Record<string, { toScim(value: unknown): string;
+                                   fromScim(value: unknown): string }> = {
+  postalAddress: {
     toScim: function toScim(value) {
       log.debug("Entering toScim().");
       log.debug("Leaving toScim().");
@@ -359,109 +305,116 @@ const USER_ATTRIBUTES: MapRow[] = [
       log.debug("Entering fromScim().");
       log.debug("Leaving fromScim().");
       return String(value).split('\n').join('$');
-    } },
+    }
+  }
+};
 
-  { scim: ENTERPRISE_SCHEMA + ':employeeNumber', ldap: 'employeeNumber',
-    kind: 'single', extension: true, schema: 'RFC 2798 2.6' },
-  { scim: ENTERPRISE_SCHEMA + ':department', ldap: 'departmentNumber',
-    kind: 'single', extension: true, schema: 'RFC 2798 2.4' },
-  { scim: ENTERPRISE_SCHEMA + ':organization', ldap: 'o',
-    kind: 'single', extension: true, schema: 'RFC 4519 2.19' },
-  { scim: ENTERPRISE_SCHEMA + ':division', ldap: 'ou',
-    kind: 'single', extension: true, schema: 'RFC 4519 2.20' },
-  { scim: ENTERPRISE_SCHEMA + ':manager.value', ldap: 'manager',
-    kind: 'single', extension: true, schema: 'RFC 2798 2.9',
-    note: 'A DN in the directory and an id in SCIM, translated both ways by ' +
-          'the SCIM handlers since the id became the entryUUID ' +
-          '(2026-09-14). A value naming no entry is kept as it was sent.' },
-
-  // THE IDENTITY ASSURANCE CLAIMS (#128): this service's own attribute types,
-  // so this service's own extension.
-  { scim: IYA_STS_USER_SCHEMA + ':salutation', ldap: 'salutation',
-    kind: 'single', extension: true,
-    schema: OWN_TYPE.claims },
-  { scim: IYA_STS_USER_SCHEMA + ':birthFamilyName', ldap: 'birthFamilyName',
-    kind: 'single', extension: true,
-    schema: OWN_TYPE.claims },
-  { scim: IYA_STS_USER_SCHEMA + ':birthGivenName', ldap: 'birthGivenName',
-    kind: 'single', extension: true,
-    schema: OWN_TYPE.claims },
-  { scim: IYA_STS_USER_SCHEMA + ':birthMiddleName', ldap: 'birthMiddleName',
-    kind: 'single', extension: true,
-    schema: OWN_TYPE.claims },
-  { scim: IYA_STS_USER_SCHEMA + ':alsoKnownAs', ldap: 'alsoKnownAs',
-    kind: 'single', extension: true,
-    schema: OWN_TYPE.claims },
-  { scim: IYA_STS_USER_SCHEMA + ':placeOfBirthCountry',
-    ldap: 'placeOfBirthCountry', kind: 'single', extension: true,
-    schema: OWN_TYPE.claims },
-  { scim: IYA_STS_USER_SCHEMA + ':placeOfBirthRegion',
-    ldap: 'placeOfBirthRegion', kind: 'single', extension: true,
-    schema: OWN_TYPE.claims },
-  { scim: IYA_STS_USER_SCHEMA + ':placeOfBirthLocality',
-    ldap: 'placeOfBirthLocality', kind: 'single', extension: true,
-    schema: OWN_TYPE.claims },
-
-  { scim: IYA_STS_USER_SCHEMA + ':federationLinks', ldap: 'federationLink',
-    kind: 'links', extension: true,
-    schema: OWN_TYPE.federation,
-    note: 'Which federation partners\' subjects sign this person in, each ' +
-          '{ relationship, issuer, subject } — issuer optional on the way ' +
-          'in, the relationship\'s fedPeer. NOT SENT: unchanged, so a ' +
-          'provisioning client that knows nothing of this extension cannot ' +
-          'unlink anybody by leaving it out. Sent, even empty: replaced, and ' +
-          'every link removed ends the sessions that partner signed the ' +
-          'person in to. A link another person carries is refused 409.' },
-
-  { scim: 'groups', ldap: '(member, uniqueMember, memberUid on the group)',
-    kind: 'derived', readOnly: true,
-    schema: 'RFC 4519 2.17, 2.40; RFC 2307 2.3',
-    note: 'READ-ONLY, as RFC 7643 section 4.1.2 requires. Membership is a ' +
-          'fact about the GROUP\'s entry, so it is changed through a Group ' +
-          'resource and never through a User one. Resolved by ' +
-          'ldap_server.js\'s groupsOfUser(), which is the same function the ' +
-          'groups claim reads — so a token and a SCIM resource cannot ' +
-          'disagree about who is in what.' },
-  { scim: 'meta.created', ldap: 'createTimestamp', kind: 'derived',
-    readOnly: true,
-    schema: 'RFC 4512 3.4' },
-  { scim: 'meta.lastModified', ldap: 'modifyTimestamp', kind: 'derived',
-    readOnly: true,
-    schema: 'RFC 4512 3.4' }
-];
+// One generated row as this module uses it: the row, and its transform's
+// two functions where it names one.
+function rowFrom(generated: any): MapRow {
+  log.debug("Entering rowFrom().");
+  const row: MapRow = Object.assign({}, generated);
+  if (generated.transform) {
+    row.toScim = TRANSFORMS[generated.transform].toScim;
+    row.fromScim = TRANSFORMS[generated.transform].fromScim;
+  }
+  log.debug("Leaving rowFrom().");
+  return row;
+}
 
 // ---------------------------------------------------------------------------
-// THE GROUP MAPPING, which is smaller and has one hard part.
+// THE ATTRIBUTES THIS SERVICE INVENTED FOR SCIM: each row the model marks
+// `introduced`.
 //
-// `members` is not a mapping of one attribute: ldap_server.js resolves THREE
-// (`member` and `uniqueMember` hold a DN, `memberUid` holds a bare name) and
-// treating them alike is how every posixGroup membership silently disappears.
-// So the read side is handed the already-resolved list that module produces and
-// this file only reshapes it; the WRITE side puts every value in `member`,
-// because a SCIM client sends an id, scim.ts turns each id into the DN it names
-// before this file sees it (2026-09-14), and `member` is the attribute that
-// holds one. A group that already used `memberUid` keeps it — see
-// `fromScimGroup()`, which is the window rule again.
+// Merged into ldap_server.js's canonical-name table through learnName(), which
+// is the ONE door into it, so that /admin/users and /admin/ldap/directory show
+// `scimExternalId` rather than the `scimexternalid` the store lower-cases it
+// to. It is an `stsApplication`-style invention: nothing standard carries it,
+// and saying so beside it is cheaper than leaving a reader to search RFC 4519
+// for an attribute that is not in it. (`scimActive` was the second until
+// 2026-09-17; `active` is `pwdAccountLockedTime` now, which the directory
+// learns from its own list.)
 // ---------------------------------------------------------------------------
-const GROUP_ATTRIBUTES: MapRow[] = [
-  { scim: 'displayName', ldap: 'cn', kind: 'single', required: true,
-    schema: 'RFC 4519 2.3' },
-  { scim: 'externalId', ldap: 'scimExternalId', kind: 'single',
-    schema: OWN_TYPE.plain },
-  { scim: 'members', ldap: 'member', kind: 'members',
-    schema: 'RFC 4519 2.17',
-    note: 'READ resolves member, uniqueMember and memberUid alike; WRITE ' +
-          'puts a new value in `member`, since a SCIM member id is a DN. A ' +
-          'dangling member — a DN nothing is stored at — is returned as a ' +
-          'member, because the group saying so is the fact, and this ' +
-          'directory does no referential integrity on purpose.' },
-  { scim: 'meta.created', ldap: 'createTimestamp', kind: 'derived',
-    readOnly: true,
-    schema: 'RFC 4512 3.4' },
-  { scim: 'meta.lastModified', ldap: 'modifyTimestamp', kind: 'derived',
-    readOnly: true,
-    schema: 'RFC 4512 3.4' }
-];
+const OWN_NAMES: string[] = MODEL.mapping.user.concat(MODEL.mapping.group)
+  .filter(function (row: any) {
+    return row.introduced === true;
+  })
+  .map(function (row: any) {
+    return row.ldap;
+  })
+  .filter(function (name: string, index: number, all: string[]) {
+    return all.indexOf(name) === index;
+  });
+
+// ---------------------------------------------------------------------------
+// A `schema` THAT IS PROSE RATHER THAN A CITATION (#543 phase 2c): the three
+// ways a row says its LDAP type is this service's own, named once in the
+// model (`@scimOwnTypes`) so that the scimmap namespace can carry them and
+// `common/server_prose.ts` refill an answer to `GET /admin-api/scim` in a
+// console reader's language. Every other `schema` is a document and section
+// ("RFC 4519 2.39"), which is a citation and stays as written.
+// ---------------------------------------------------------------------------
+const OWN_TYPE: Readonly<Record<string, string>> =
+  Object.freeze(Object.assign({}, MODEL.ownTypes));
+
+// The routes whose answers carry the scimmap namespace's prose (#543): the
+// console's SCIM page carries the mapping (`admin_views.ts`'s
+// `scimJson()`, through `describeRow()`).
+const PROSE_ROUTES = ['/admin-api/scim'];
+
+// THE USER MAPPING and THE GROUP MAPPING, in the model's row order. The
+// Group's has one hard part: `members` is not a mapping of one attribute.
+// ldap_server.js resolves THREE (`member` and `uniqueMember` hold a DN,
+// `memberUid` holds a bare name) and treating them alike is how every
+// posixGroup membership silently disappears. So the read side is handed the
+// already-resolved list that module produces and this file only reshapes
+// it; the WRITE side puts every value in `member`, because a SCIM client
+// sends an id, scim.ts turns each id into the DN it names before this file
+// sees it (2026-09-14), and `member` is the attribute that holds one — and it
+// clears the row's `alsoClears`, so a membership written in the other two is
+// not left half in place.
+const USER_ATTRIBUTES: MapRow[] = MODEL.mapping.user.map(rowFrom);
+const GROUP_ATTRIBUTES: MapRow[] = MODEL.mapping.group.map(rowFrom);
+
+// The core schema's complex attributes, in the model's order: the members
+// toScimUser() and toScimGroup() pad (see toScimUser()).
+function paddingOf(name: string): Record<string, any> {
+  log.debug("Entering paddingOf(). " + name);
+  const out: Record<string, any> = {};
+  schemaNamed(name).attributes.forEach(function (attribute: any) {
+    if (attribute.type === 'complex') {
+      out[attribute.name] = attribute.multiValued ? [] : {};
+    }
+  });
+  log.debug("Leaving paddingOf().");
+  return out;
+}
+
+// The one type a complex value is given on the way out: the only canonical
+// value its `type` offers, which the model holds to exactly one (`work` for
+// `addresses`).
+function onlyTypeOf(schemaName: string, member: string): string {
+  log.debug("Entering onlyTypeOf(). " + member);
+  const attribute = schemaNamed(schemaName).attributes.filter(
+    function (one: any) {
+      return one.name === member;
+    })[0];
+  const type = (attribute.subAttributes || []).filter(function (one: any) {
+    return one.name === 'type';
+  })[0];
+  log.debug("Leaving onlyTypeOf().");
+  return type.canonicalValues[0];
+}
+
+// A Group row by its SCIM member.
+function groupRow(scim: string): MapRow {
+  log.debug("Entering groupRow(). " + scim);
+  const row = GROUP_ATTRIBUTES.filter(function (one) {
+    return one.scim === scim;
+  })[0];
+  log.debug("Leaving groupRow().");
+  return row;
+}
 
 // ---------------------------------------------------------------------------
 // EVERYTHING OUTSIDE THE MAPPING'S WINDOW, CARRIED THROUGH — EXCEPT THREE
@@ -535,6 +488,14 @@ class ScimMap {
    * back.
    */
   static readonly NOT_STORED = NOT_STORED;
+  /**
+   * Every SCIM schema of the model, its attributes in RFC 7643's terms.
+   */
+  static readonly SCHEMAS: any[] = MODEL.schemas;
+  /**
+   * The common attributes (RFC 7643 section 3.1) of the model.
+   */
+  static readonly COMMON: any[] = MODEL.common;
 
   /**
    * Builds the mapping from the modules it reads.
@@ -877,19 +838,16 @@ class ScimMap {
     const self = this;
     const ctx = context || {};
     const attributes = (entry && entry.attributes) || {};
-    const resource: any = {
+    const resource: any = Object.assign({
       schemas: [USER_SCHEMA],
       // THE ENTRY'S `entryUUID` (2026-09-14), which a rename does not change —
       // RFC 7643 section 3.1's id "MUST NOT be reassigned", and the DN it was
       // until then was reassigned by every rename. An entry without one (a
       // process with no directory behind it) keeps the DN.
-      id: this.scimIdOf(entry),
-      // Padded for the matcher; pruned before it goes out.
-      name: {},
-      emails: [],
-      phoneNumbers: [],
-      addresses: [],
-      groups: [],
+      id: this.scimIdOf(entry)
+    // Padded for the matcher — every complex member of the schema, empty —
+    // and pruned before it goes out.
+    }, paddingOf('User'), {
       meta: {
         resourceType: 'User',
         created: this.isoFromGeneralizedTime(
@@ -899,7 +857,7 @@ class ScimMap {
         location: (ctx.location || '') +
           encodeURIComponent(this.scimIdOf(entry))
       }
-    };
+    });
 
     // The extension members this mapping writes into, padded like the members
     // above and for the same reason: `manager.value` is a sub-attribute, so a
@@ -1005,7 +963,7 @@ class ScimMap {
     // schema no longer offers the sub-attribute (scim.ts, narrowSchemas()).
 
     if (Object.keys(address).length) {
-      address.type = 'work';
+      address.type = onlyTypeOf('User', 'addresses');
       resource.addresses.push(address);
     }
 
@@ -1169,11 +1127,17 @@ class ScimMap {
       }
     });
 
-    const userName = String(this.getPath(resource, 'userName') || '').trim();
-    if (!userName) {
-      errors.push('userName is required (RFC 7643 section 4.1.1) and was ' +
-                  'not sent.');
-    }
+    // EVERY REQUIRED ROW, read as the model's section requires it.
+    USER_ATTRIBUTES.forEach(function (row) {
+      if (!row.required) {
+        return;
+      }
+      const said = String(self.getPath(resource, row.scim) || '').trim();
+      if (!said) {
+        errors.push(row.scim + ' is required (' + row.section + ') and was ' +
+                    'not sent.');
+      }
+    });
 
     log.debug("Leaving ScimMap.fromScimUser(). " + Object.keys(out).length +
               " attribute(s), " + errors.length + " error(s).");
@@ -1216,11 +1180,12 @@ class ScimMap {
     log.debug("Entering ScimMap.toScimGroup(). dn=" + (entry && entry.dn));
     const ctx = context || {};
     const attributes = (entry && entry.attributes) || {};
-    const resource: any = {
+    const resource: any = Object.assign({
       schemas: [GROUP_SCHEMA],
       id: this.scimIdOf(entry),
-      displayName: this.firstOf(attributes, 'cn') || entry.dn,
-      members: [],
+      displayName: this.firstOf(attributes, groupRow('displayName').ldap) ||
+        entry.dn
+    }, paddingOf('Group'), {
       meta: {
         resourceType: 'Group',
         created: this.isoFromGeneralizedTime(
@@ -1230,8 +1195,9 @@ class ScimMap {
         location: (ctx.location || '') +
           encodeURIComponent(this.scimIdOf(entry))
       }
-    };
-    const externalId = this.firstOf(attributes, 'scimExternalId');
+    });
+    const externalId = this.firstOf(attributes,
+                                    groupRow('externalId').ldap);
     if (externalId) {
       resource.externalId = externalId;
     }
@@ -1292,35 +1258,52 @@ class ScimMap {
     const errors: string[] = [];
     const out = this.carryThrough(existing);
 
-    ['cn', 'scimExternalId', 'member', 'uniqueMember', 'memberUid'].forEach(
-        function (name) {
-      Object.keys(out).forEach(function (key) {
-        if (key.toLowerCase() === name.toLowerCase()) {
-          delete out[key];
-        }
+    // The window: every stored row's attribute, and what a `members` row
+    // also clears.
+    GROUP_ATTRIBUTES.forEach(function (row) {
+      if (row.kind === 'derived') {
+        return;
+      }
+      [row.ldap].concat(row.alsoClears || []).forEach(function (name) {
+        Object.keys(out).forEach(function (key) {
+          if (key.toLowerCase() === name.toLowerCase()) {
+            delete out[key];
+          }
+        });
       });
     });
 
-    const displayName = String(resource.displayName || '').trim();
-    if (!displayName) {
-      errors.push('displayName is required (RFC 7643 section 4.2) and was ' +
-                  'not sent.');
-    } else {
-      out.cn = [displayName];
-    }
-    if (resource.externalId) {
-      out.scimExternalId = [String(resource.externalId)];
-    }
-    const members = (Array.isArray(resource.members) ? resource.members : [])
-      .map(function (item) {
-        return String((item && item.value) || '').trim();
-      })
-      .filter(function (value) {
-        return value !== '';
-      });
-    if (members.length) {
-      out.member = members;
-    }
+    GROUP_ATTRIBUTES.forEach(function (row) {
+      if (row.kind === 'single' && row.required) {
+        const said = String(resource[row.scim] || '').trim();
+        if (!said) {
+          errors.push(row.scim + ' is required (' + row.section + ') and ' +
+                      'was not sent.');
+        } else {
+          out[row.ldap] = [said];
+        }
+        return;
+      }
+      if (row.kind === 'single') {
+        if (resource[row.scim]) {
+          out[row.ldap] = [String(resource[row.scim])];
+        }
+        return;
+      }
+      if (row.kind === 'members') {
+        const members = (Array.isArray(resource[row.scim]) ?
+          resource[row.scim] : [])
+          .map(function (item) {
+            return String((item && item.value) || '').trim();
+          })
+          .filter(function (value) {
+            return value !== '';
+          });
+        if (members.length) {
+          out[row.ldap] = members;
+        }
+      }
+    });
     // An objectClass so that the entry is a group by BOTH of ldap_server.js's
     // rules rather than only by where it sits — a client that moves it out of
     // ou=groups should not stop it being one, and `groupOfNames` is what
@@ -1535,6 +1518,10 @@ export = {
   IYA_STS_USER_SCHEMA: ScimMap.IYA_STS_USER_SCHEMA,
   USER_ATTRIBUTES: ScimMap.USER_ATTRIBUTES,
   GROUP_ATTRIBUTES: ScimMap.GROUP_ATTRIBUTES,
+  // Every schema /Schemas lists and the common attributes, as the model
+  // states them (#1579); `scim.ts` builds scimmy's definitions from them.
+  SCHEMAS: ScimMap.SCHEMAS,
+  COMMON: ScimMap.COMMON,
   OWN_NAMES: ScimMap.OWN_NAMES,
   toScimUser: slot.forward('toScimUser'),
   fromScimUser: slot.forward('fromScimUser'),

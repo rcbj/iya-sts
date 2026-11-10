@@ -464,6 +464,12 @@ model IyaStsUser {
   })
   `placeOfBirthLocality`?: string;
 
+  // WHERE A NEW PERSON IS HOMED (#98 D1), in a service deployed as cells:
+  // the cell id, on a create only. Write-only and never returned — a cell is
+  // a routing fact nothing a client reads may name — and never stored on the
+  // entry: the entry existing in that cell IS the home, so it has no row. An
+  // update naming another cell is refused (re-homing is an administrator's
+  // act); a single-cell service ignores it. `scim/scim_cells.ts` reads it.
   @scimAttribute(#{
     description: "On a create in a service deployed as several regions: the region the person is homed in, whose data stays there. The realm's default when not sent. Never returned, and not changed by a later write.",
     mutability: "writeOnly",
@@ -595,6 +601,9 @@ model UserName {
   @scimAttribute(#{
     description: "The honorific prefix(es) of the User, or title in most Western languages (e.g. 'Ms.' given the full name 'Ms. Barbara J Jensen, III')."
   })
+  // RFC 7643's honorific prefix — "title in most Western languages" — is the
+  // Claims Registration's `title` (#128). SCIM's own `title` stays the JOB
+  // title, which is what RFC 7643 section 4.1.1 means by it.
   @maps(#{
     table: "user",
     row: 8,
