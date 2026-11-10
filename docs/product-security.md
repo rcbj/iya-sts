@@ -77,10 +77,12 @@ back on afterwards.
   needs a path to an anchor it was told about, validity now, revocation where a
   source is named, and the key usages its use case asks. See
   [Paranoid PKI mode](pki.md#paranoid-pki-mode).
-* **A partner's CA goes in the signer truststore.** A third party's certificate
-  that is not registered on the application or relationship it is used for must
-  chain to an anchor in the realm's [signer truststore](signer-truststore.md).
-  A server this service dials that presents a self-signed certificate is
+* **A partner's CA goes in a truststore.** A third party's certificate that is
+  not registered on the application or relationship it is used for must chain
+  to an anchor this service holds: the
+  [client-certificate truststore](tls.md#the-client-truststore) at a TLS
+  handshake, and the realm's [signer truststore](signer-truststore.md) for
+  everything else. A server this service dials that presents a self-signed certificate is
   refused until it is
   [accepted by name](signer-truststore.md#accepting-one-certificate-by-name).
 * **One row per use case.** If one kind of certificate cannot meet the checks,
