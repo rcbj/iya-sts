@@ -780,6 +780,17 @@ through the pool once rather than failing (STS-STORE-0070). A write's own
 fence checks stay inside its transaction. Each process now holds up to
 `poolMax() + 2` connections; `POOL_FLOOR` stays 4, argued above it.
 
+**Key-row writes never hold the whole pool (#1590, 2026-11-10).**
+`mergeKeys()` holds its `sts_keys` row FOR UPDATE while the caller's merge
+runs, and in a certificate-authority rebuild storm several queued on one hot
+row's lock, each keeping its pooled connection, until a flush timed out
+acquiring one (STS-STORE-0002) and its requests were answered 503. The
+driver now runs at most `pool size - 2` key-row transactions at once in a
+process, never fewer than one (`withKeyWriteSlot()`); the rest wait in
+memory holding no connection, so two are always left for the flushes and
+the change-log pull. Whether a request's writes should share one
+transaction instead is #1590. `tests/postgres_key_write_slots.js`.
+
 **A lapsed origin claim is not purged with the other claims** (for a day):
 `purgeClaims()` deleted every expired claim, so a claim that lapsed during a
 stall was deleted at the next purge, the owner's renewal matched no row, and it
