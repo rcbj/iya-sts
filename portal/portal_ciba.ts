@@ -64,6 +64,8 @@ import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
+type AccountAnswering<K extends keyof IyaApi.Account.Operations> =
+  import('../types/account-api').AccountAnswering<K>;
 type AccountContext = import('../types/account-api').AccountContext;
 type AccountCaller = import('../types/account-api').AccountCaller;
 
@@ -279,7 +281,8 @@ class PortalCiba {
    * @param query - the checked query
    * @returns nothing
    */
-  getView(ctx: AccountContext, res: Json, caller: AccountCaller,
+  getView(ctx: AccountContext, res: AccountAnswering<'getSignInRequests'>,
+          caller: AccountCaller,
           query: Json): unknown {
     const { log, ciba } = this.deps;
     log.debug("Entering PortalCiba.getView().");
@@ -327,7 +330,8 @@ class PortalCiba {
    * @param caller - the signed-in person
    * @returns nothing
    */
-  async answer(ctx: AccountContext, req: Json, res: Json,
+  async answer(ctx: AccountContext, req: Json,
+               res: AccountAnswering<'answerSignInRequest'>,
                caller: AccountCaller): Promise<unknown> {
     const { log, ciba, authn, stepUp } = this.deps;
     log.debug("Entering PortalCiba.answer().");
@@ -482,13 +486,13 @@ class PortalCiba {
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/ciba',
         operationId: 'getSignInRequests', access: 'person', query: QUERY,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.getView(ctx, res, caller, input.query);
         } },
       { method: 'POST', path: ctx.BASE + '/ciba',
-        operationId: 'answerSignInRequest', access: 'person', handler: function (req: Json, res: Json,
-                           caller: AccountCaller): unknown {
+        operationId: 'answerSignInRequest', access: 'person',
+        handler: function (req, res, caller: AccountCaller): unknown {
           return self.answer(ctx, req, res, caller);
         } }
     ];

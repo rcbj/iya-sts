@@ -52,6 +52,8 @@ import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
+type AccountAnswering<K extends keyof IyaApi.Account.Operations> =
+  import('../types/account-api').AccountAnswering<K>;
 type AccountContext = import('../types/account-api').AccountContext;
 type AccountCaller = import('../types/account-api').AccountCaller;
 
@@ -239,7 +241,8 @@ class PortalMail {
    * @param body - the checked body
    * @returns nothing
    */
-  async postEmail(ctx: AccountContext, req: Json, res: Json,
+  async postEmail(ctx: AccountContext, req: Json,
+                  res: AccountAnswering<'postEmail'>,
                   caller: AccountCaller, body: Json): Promise<unknown> {
     const { log, mail, mailUses } = this.deps;
     const { errorCodes, websecurity } = ctx;
@@ -296,7 +299,9 @@ class PortalMail {
    * @param spend - true for the POST
    * @returns nothing
    */
-  async verify(ctx: AccountContext, req: Json, res: Json, link: Json,
+  async verify(ctx: AccountContext, req: Json,
+               res: AccountAnswering<'getEmailVerification' | 'verifyEmail'>,
+               link: Json,
                spend: boolean): Promise<unknown> {
     const { log, mailUses } = this.deps;
     const { errorCodes, websecurity } = ctx;
@@ -356,7 +361,9 @@ class PortalMail {
    * @param res - the response
    * @returns nothing
    */
-  notOffered(ctx: AccountContext, res: Json): unknown {
+  notOffered(ctx: AccountContext,
+             res: AccountAnswering<'getForgotPassword' |
+               'requestPasswordReset'>): unknown {
     const { log } = this.deps;
     log.debug("Entering PortalMail.notOffered().");
     log.debug("Leaving PortalMail.notOffered().");
@@ -373,7 +380,8 @@ class PortalMail {
    * @param body - the checked body
    * @returns nothing
    */
-  async postForgot(ctx: AccountContext, req: Json, res: Json,
+  async postForgot(ctx: AccountContext, req: Json,
+                   res: AccountAnswering<'requestPasswordReset'>,
                    body: Json): Promise<unknown> {
     const { log, mailUses, realms } = this.deps;
     const { errorCodes, websecurity } = ctx;
@@ -428,35 +436,35 @@ class PortalMail {
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/email', operationId: 'getEmail',
         access: 'person', query: EMAIL_QUERY,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return ctx.json(res, 200,
             self.emailView(caller.username, input.query.sentPage || 1));
         } },
       { method: 'POST', path: ctx.BASE + '/email', operationId: 'postEmail',
         access: 'person', recentAuth: true, body: EMAIL_FORM,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.postEmail(ctx, req, res, caller, input.body);
         } },
       { method: 'GET', path: ctx.BASE + '/verify-email',
         operationId: 'getEmailVerification', access: 'link',
         query: LINK_QUERY,
-        handler: function (req: Json, res: Json, caller: Json,
-                           input: Json): unknown {
+        handler: function (req, res, caller,
+                           input): unknown {
           return self.verify(ctx, req, res, Object.assign({}, input.query,
             { token: String(req.headers['x-link-token'] || '') }), false);
         } },
       { method: 'POST', path: ctx.BASE + '/verify-email',
         operationId: 'verifyEmail', access: 'link',
         body: LINK,
-        handler: function (req: Json, res: Json, caller: Json,
-                           input: Json): unknown {
+        handler: function (req, res, caller,
+                           input): unknown {
           return self.verify(ctx, req, res, input.body, true);
         } },
       { method: 'GET', path: ctx.BASE + '/forgot-password',
         operationId: 'getForgotPassword', access: 'public', query: ModelZod.query('account', 'getForgotPassword'),
-        handler: function (req: Json, res: Json): unknown {
+        handler: function (req, res): unknown {
           if (!mailUses.resetOffered()) {
             return self.notOffered(ctx, res);
           }
@@ -464,8 +472,8 @@ class PortalMail {
         } },
       { method: 'POST', path: ctx.BASE + '/forgot-password',
         operationId: 'requestPasswordReset', access: 'public', body: FORGOT_FORM,
-        handler: function (req: Json, res: Json, caller: Json,
-                           input: Json): unknown {
+        handler: function (req, res, caller,
+                           input): unknown {
           return self.postForgot(ctx, req, res, input.body);
         } }
     ];

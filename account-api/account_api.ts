@@ -423,6 +423,10 @@ class AccountApi {
       (at > 0 && Date.now() / 1000 - at <= limit);
   }
 
+  // TYPED BY THE OPERATION (#1579): through a handler's response the answer
+  // is held to the model's at a literal 2xx status.
+  json<R, S extends number>(res: R, status: S,
+                            body: IyaApi.AnswerOf<R, S>): unknown;
   json(res: Json, status: number, body: Json): unknown {
     const { log } = this.deps;
     log.debug("Entering AccountApi.json(). " + status);
@@ -550,7 +554,7 @@ class AccountApi {
     const z = validation.z;
     const rows: AccountOperation[] = [
       { method: 'GET', path: BASE, operationId: 'getIndex', access: 'public',
-        handler: function (req: Json, res: Json): unknown {
+        handler: function (req, res): unknown {
           return self.json(res, 200, {
             api: 'IYA STS Account API', document: BASE + '/openapi.json',
             operations: self.operations().map(function (op) {
@@ -566,13 +570,13 @@ class AccountApi {
         } },
       { method: 'GET', path: BASE + '/openapi.json',
         operationId: 'getOpenApi', access: 'public',
-        handler: function (req: Json, res: Json): unknown {
+        handler: function (req, res): unknown {
           return self.json(res, 200, self.document(req));
         } },
       // NOT A PAGE'S DOOR, so it mirrors nothing: the Overview's is
       // `/account-api/overview`, and a lookup by `mirrors` must find one.
       { method: 'GET', path: BASE + '/me', operationId: 'getMe', access: 'person',
-        handler: function (req: Json, res: Json,
+        handler: function (req, res,
                            caller: AccountCaller | null): unknown {
           const who = caller as AccountCaller;
           return self.json(res, 200, {
@@ -592,8 +596,8 @@ class AccountApi {
       { method: 'GET', path: BASE + '/announcements',
         operationId: 'getAnnouncements', access: 'person',
         query: ModelZod.query('account', 'getAnnouncements'),
-        handler: function (req: Json, res: Json, caller: AccountCaller | null,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller | null,
+                           input): unknown {
           const since = Number((input && input.query &&
                                 input.query.since) || 0) || 0;
           return self.json(res, 200, require('../ssf/ssf_receivers')
@@ -602,7 +606,7 @@ class AccountApi {
       { method: 'GET', path: BASE + '/locale', operationId: 'getLocale',
         access: 'public',
         query: ModelZod.query('account', 'getLocale'),
-        handler: function (req: Json, res: Json): unknown {
+        handler: function (req, res): unknown {
           return self.json(res, 200, { locale: self.localeData(''),
                                        version: self.versionData() });
         } }
@@ -1054,7 +1058,9 @@ class AccountApi {
       return this.refuse(res, 400, SHAPE_CODES[String(shape.problem)],
                          String(shape.sentence));
     }
-    const input = { query: req.query || {}, body: {} };
+    // Untyped here: the handler it is handed to is any operation's, and is
+    // typed by its own (#1579).
+    const input: Json = { query: req.query || {}, body: {} };
     if (op.query) {
       const asked = validation.check(req, 'query', op.query);
       if (!asked.ok) {

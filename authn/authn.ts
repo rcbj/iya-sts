@@ -11955,7 +11955,12 @@ class Authn {
    * @param body - the answer
    * @returns nothing
    */
-  answerJson(res, status: number, body: any): void {
+  // TYPED BY THE OPERATION (#1579): through an `/authn-api` handler's
+  // response the answer is held to the model's at a literal 2xx status
+  // (`types/api-handlers.d.ts`).
+  answerJson<R, S extends number>(res: R, status: S,
+                                  body: IyaApi.AnswerOf<R, S>): void;
+  answerJson(res: any, status: number, body: any): void {
     const { log } = this.deps;
     log.debug("Entering Authn.answerJson(). " + status);
     res.status(status).type('application/json')

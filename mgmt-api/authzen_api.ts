@@ -17,6 +17,8 @@
 // table, as it does the secret destinations' operations.
 // ---------------------------------------------------------------------------
 
+// Types a row of actions by its own actions' operations (#1579).
+import ApiRows = require('../common/api_rows');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
@@ -121,7 +123,12 @@ class AuthzenApi {
    * @param status - the HTTP status
    * @param body - the body, serialised with indentation
    */
-  sendJson(res: Res, status: number, body: Json): void {
+  // TYPED BY THE OPERATION (#1579): through a handler's response, the
+  // answer is held to the model's at a literal 2xx status
+  // (`types/api-handlers.d.ts`).
+  sendJson<R, S extends number>(res: R, status: S,
+           body: IyaApi.AnswerOf<R, S>): void;
+  sendJson(res: any, status: number, body: any): void {
     const { log } = this.deps;
     log.debug("Entering AuthzenApi.sendJson(). status=" + status);
     res.status(status).type('application/json')
@@ -140,7 +147,7 @@ class AuthzenApi {
     const self = this;
     const { log, parseBody, loadAdmin } = this.deps;
     log.debug("Entering AuthzenApi.buildRoutes().");
-    const ROUTES = [
+    const ROUTES: IyaApi.AdminRow[] = [
       { method: 'GET', path: BASE + '/xacml/authzen', tag: 'XACML',
         operationId: 'getXacmlAuthzen',
         mirrors: 'GET /admin/xacml',
@@ -150,14 +157,15 @@ class AuthzenApi {
             description: 'Looks one caller up by name or DN, in the group ' +
                          'or not.' }
         ],
-        handler: function (req: Req, res: Res): void {
+        handler: function (req, res): void {
           log.debug("Entering the management API AuthZEN endpoint.");
           self.sendJson(res, 200, loadAdmin().view(req.query || {}));
           log.debug("Leaving the management API AuthZEN endpoint.");
         } },
-      { method: 'POST', route: BASE + '/xacml/authzen/:action', tag: 'XACML',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/xacml/authzen/:action', tag: 'XACML',
         mirrors: 'POST /admin/xacml#xacml-tab-authzen',
-        handler: function (req: Req, res: Res): void {
+        handler: function (req, res): void {
           log.debug("Entering the management API AuthZEN action.");
           const body = Object.assign({}, parseBody(req),
                                      { action: String(req.params.action ||
@@ -204,7 +212,7 @@ class AuthzenApi {
             operationId: 'revokeAuthzenAccessRequest' },
           { action: 'cancel-access-request',
             operationId: 'cancelAuthzenAccessRequest' }
-        ] }
+        ] })
     ];
     log.debug("Leaving AuthzenApi.buildRoutes().");
     return ROUTES;

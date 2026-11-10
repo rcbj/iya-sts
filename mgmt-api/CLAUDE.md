@@ -7,6 +7,13 @@ handler, what it mirrors and its parameters; `AdminApiSpec.named()` gives it the
 summary and the request-body schema from the model when the table is built. To change
 an operation or a schema, edit the `.tsp`.
 
+**A row's handler is typed by its operation in the model (#1579).** The table
+and every table it spreads are `IyaApi.AdminRow[]`; a new row of actions goes
+through `ApiRows.actions()` (`common/api_rows.ts`), so its handler is typed by
+its actions' operations, and a handler names no parameter type of its own,
+which would opt it out. `models/CLAUDE.md` (*The API types type the handlers*)
+argues it and `tests/model_api_handlers.js` holds it.
+
 The management API at `/admin-api`, its generated OpenAPI document, and the
 browser-side explorer.
 

@@ -44,6 +44,8 @@ import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
+type AccountAnswering<K extends keyof IyaApi.Account.Operations> =
+  import('../types/account-api').AccountAnswering<K>;
 type AccountContext = import('../types/account-api').AccountContext;
 type AccountCaller = import('../types/account-api').AccountCaller;
 
@@ -184,7 +186,8 @@ class PortalAppPasswords {
    * @param body - the checked body
    * @returns nothing
    */
-  async act(ctx: AccountContext, req: Json, res: Json, caller: AccountCaller,
+  async act(ctx: AccountContext, req: Json,
+            res: AccountAnswering<'changeAppPasswords'>, caller: AccountCaller,
             body: Json): Promise<unknown> {
     const { log, credentials, accountSignals } = this.deps;
     const self = this;
@@ -305,14 +308,14 @@ class PortalAppPasswords {
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/app-passwords',
         operationId: 'getAppPasswords', access: 'person', query: ModelZod.query('account', 'getAppPasswords'),
-        handler: function (req: Json, res: Json,
+        handler: function (req, res,
                            caller: AccountCaller): unknown {
           return ctx.json(res, 200, self.view(caller.username, null));
         } },
       { method: 'POST', path: ctx.BASE + '/app-passwords',
         operationId: 'changeAppPasswords', access: 'person', recentAuth: true, body: ModelZod.body('account', 'changeAppPasswords'),
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.act(ctx, req, res, caller, input.body);
         } }
     ];

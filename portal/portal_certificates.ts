@@ -46,6 +46,8 @@ import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
+type AccountAnswering<K extends keyof IyaApi.Account.Operations> =
+  import('../types/account-api').AccountAnswering<K>;
 type AccountContext = import('../types/account-api').AccountContext;
 type AccountCaller = import('../types/account-api').AccountCaller;
 
@@ -253,7 +255,8 @@ class PortalCertificates {
    * @param body - the checked body
    * @returns nothing
    */
-  async act(ctx: AccountContext, req: Json, res: Json, caller: AccountCaller,
+  async act(ctx: AccountContext, req: Json,
+            res: AccountAnswering<'changeCertificates'>, caller: AccountCaller,
             body: Json): Promise<unknown> {
     const { log, core, monitor, stsCrypto } = this.deps;
     const self = this;
@@ -392,15 +395,15 @@ class PortalCertificates {
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/certificates',
         operationId: 'getCertificates', access: 'person', query: ModelZod.query('account', 'getCertificates'),
-        handler: function (req: Json, res: Json,
+        handler: function (req, res,
                            caller: AccountCaller): unknown {
           return ctx.json(res, 200, self.view(ctx, caller,
                                               ctx.baseUrlOf(req), null));
         } },
       { method: 'POST', path: ctx.BASE + '/certificates',
         operationId: 'changeCertificates', access: 'person', recentAuth: true, body: ModelZod.body('account', 'changeCertificates'),
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.act(ctx, req, res, caller, input.body);
         } }
     ];

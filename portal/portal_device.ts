@@ -53,6 +53,8 @@ import DomainClasses = require('../common/domain_classes');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
+type AccountAnswering<K extends keyof IyaApi.Account.Operations> =
+  import('../types/account-api').AccountAnswering<K>;
 type AccountContext = import('../types/account-api').AccountContext;
 type AccountCaller = import('../types/account-api').AccountCaller;
 
@@ -207,7 +209,8 @@ class PortalDevice {
    * @param query - the checked query
    * @returns nothing
    */
-  getView(ctx: AccountContext, res: Json, caller: AccountCaller,
+  getView(ctx: AccountContext, res: AccountAnswering<'getDeviceRequest'>,
+          caller: AccountCaller,
           query: Json): unknown {
     const { log, deviceAuthorization } = this.deps;
     log.debug("Entering PortalDevice.getView().");
@@ -245,7 +248,8 @@ class PortalDevice {
    * @param body - the checked body
    * @returns nothing
    */
-  answer(ctx: AccountContext, res: Json, caller: AccountCaller,
+  answer(ctx: AccountContext, res: AccountAnswering<'answerDeviceRequest'>,
+         caller: AccountCaller,
          body: Json): unknown {
     const { log, deviceAuthorization } = this.deps;
     log.debug("Entering PortalDevice.answer().");
@@ -306,14 +310,14 @@ class PortalDevice {
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/device',
         operationId: 'getDeviceRequest', access: 'person', query: QUERY,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.getView(ctx, res, caller, input.query);
         } },
       { method: 'POST', path: ctx.BASE + '/device',
         operationId: 'answerDeviceRequest', access: 'person', body: FORM,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.answer(ctx, res, caller, input.body);
         } }
     ];
