@@ -69,6 +69,7 @@
 
 const assert = require("assert");
 const childProcess = require("child_process");
+const crypto = require("crypto");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
@@ -109,6 +110,20 @@ const KREALM = DOMAIN.toUpperCase();
 const realmApi = base + "/realm/" + RID + "/admin-api";
 const HOST = "sambahost." + DOMAIN;
 const ACCOUNT = "sambasrv$";
+
+// THE REALM'S THREE KERBEROS PASSWORDS ARE THIS JOB'S, SET ON THE REALM IT
+// CREATES (2026-11-10). They were read back off `GET /admin-api/config`, which
+// masks them since #1478 (`service_facts.js` substitutes the development
+// fixtures). A development realm inside a PRODUCT process inherits the
+// process's `krb5.krbtgtPassword`, which the launcher pins to a fresh secret
+// per product mode (run-tests.sh), so the fixture derived the wrong krbtgt key
+// and every Samba test that opens a ticket failed `InvalidChecksum` (427 in
+// the single-node run on 5f41a85be) while the KDC issued every TGT. Chosen
+// here, they are known without being read.
+const KRBTGT_PASSWORD = "krbtgt-" + crypto.randomBytes(18).toString("hex");
+const USER_PASSWORD = "user-" + crypto.randomBytes(18).toString("hex");
+const AUTO_SERVICE_PASSWORD = "service-" +
+  crypto.randomBytes(18).toString("hex");
 
 // Where Samba is. tests/Dockerfile builds it and sets this.
 const SAMBA_DIR = process.env.STS_SAMBA_DIR || "/opt/samba";
@@ -312,14 +327,15 @@ async function setUp(k) {
       // and sts_kerberos_pkinit.js.
       overrides: { "krb5.enabled": true, "krb5.realm": KREALM,
                    "global.mode": "development",
+                   "krb5.krbtgtPassword": KRBTGT_PASSWORD,
+                   "krb5.userPassword": USER_PASSWORD,
+                   "krb5.autoServicePassword": AUTO_SERVICE_PASSWORD,
                    "krb5.pkinitRequireFreshness": false } });
   assert.strictEqual(made.status, 200, "realm: " + made.text.slice(0, 300));
-  k.password = String(await facts.setting(realmApi, "krb5.userPassword"));
+  k.password = USER_PASSWORD;
   k.kvno = Number(await facts.setting(realmApi, "krb5.kvno"));
-  k.krbtgtPassword = String(await facts.setting(realmApi,
-                                                "krb5.krbtgtPassword"));
-  k.servicePassword = String(await facts.setting(realmApi,
-                                                 "krb5.autoServicePassword"));
+  k.krbtgtPassword = KRBTGT_PASSWORD;
+  k.servicePassword = AUTO_SERVICE_PASSWORD;
   // The two principals the profiles name are made on first sight: an AS
   // exchange for the account, a TGS exchange for the host.
   const tcp = wire.tcpTransport(k.kdcHost, k.kdcPort);
