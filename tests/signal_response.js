@@ -442,6 +442,35 @@ function childMain() {
     } catch (e) {
       log.debug("Caught in run(): " + ((e && e.message) || e));
     }
+    // G9, G10 (2026-11-10): an event with NO event_timestamp is bounded by
+    // its SET's `iat`. RISC's account-credential-change-required carries
+    // none (an activation link, a reset link), and it revoked every portal
+    // token the person held when the poll collected it — one issued on a
+    // sign-in made after the act included (`sts_portal_directory_attributes`,
+    // product single-node). A SET issued ten seconds before the token leaves
+    // it; one issued in the token's second still revokes it.
+    const pushUndated = function (short, subject, iatOffset) {
+      const claims = events.buildSet({ uri: events.RISC_PREFIX + short,
+        issuer: record.iss, audience: 'sts-user-portal',
+        subject: subject, payload: {} });
+      claims.iat = Math.floor(Date.now() / 1000) + iatOffset;
+      return receivers.acceptPolled('user-portal',
+                                    events.signSetSync(claims));
+    };
+    const g9Token = token('sr-erin', 'sts-user-portal');
+    const g9 = pushUndated('account-credential-change-required',
+      { format: 'iss_sub', iss: record.iss, sub: erin }, -10);
+    note(g9.status === 202 && g9.entry.verified &&
+         revokedOf(g9) === 0 && !stats.isRevoked(g9Token),
+         'G9. an account-credential-change-required with no ' +
+         'event_timestamp, in a SET issued BEFORE the token, leaves the ' +
+         'token: the SET\'s iat bounds what it is about',
+         JSON.stringify([g9.status, g9.entry.reactions]));
+    const g10 = pushUndated('account-credential-change-required',
+      { format: 'iss_sub', iss: record.iss, sub: erin }, 0);
+    note(revokedOf(g10) >= 1 && stats.isRevoked(g9Token),
+         'G10. and the same event in a SET issued in the token\'s second ' +
+         'revokes it', JSON.stringify(g10.entry.reactions));
 
     // --- H. a RISC event reporting the person's OWN act (2026-11-03) ------
     // A person revoking their own key pair for keyCompromise on the portal

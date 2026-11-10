@@ -629,7 +629,11 @@ rules read for a token:
   directory's mail index gives a name), fail-closed as the portal's page is;
 * a `session-revoked` naming a session reaches only tokens issued on it
   (`record.sessionId`);
-* a token issued after the event's second is left alone;
+* a token issued after the event's second is left alone — the event's
+  `event_timestamp`, else the SET's `toe`, else its `iat` (2026-11-10: RISC
+  gives `event_timestamp` to one type of fourteen, so an activation or reset
+  link's `account-credential-change-required` narrowed nothing and revoked a
+  portal token issued on a sign-in made after the link; G9, G10);
 * and a `credential-change` whose `change_type` is `create` reaches no
   token and no session (2026-10-27, run #4 of the suite): a credential
   ADDED takes nothing away, and the suite's own habit — create a person
