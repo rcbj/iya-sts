@@ -432,6 +432,31 @@ async function partI(t) {
   }) && view.datasets.length === Object.keys(riskDatasets.CATALOGUE).length,
           'I2. an import through the page\'s action loads, and the view ' +
           'draws every dataset and the lookup', JSON.stringify(imported));
+  // The fuzz run on d96b74093: a reload naming a realm with a NUL in it
+  // reached PostgreSQL and was answered 500. Each of the four non-import
+  // actions refuses an unknown realm or dataset before the store is asked,
+  // and repeats neither value back.
+  const odd = '\u009d\u0000';
+  const refusals = [];
+  for (const action of ['activate', 'delete', 'reload', 'rollback']) {
+    refusals.push(await riskAdmin.riskAction({
+      action: action, dataset: 'iplist.reputation', realm: odd,
+      version: 'v1' }, 'a test'));
+    refusals.push(await riskAdmin.riskAction({
+      action: action, dataset: 'no-such' + odd, realm: '',
+      version: 'v1' }, 'a test'));
+  }
+  t.check(refusals.every(function (r) {
+    return r && r.ok === false &&
+           require('../common/error_codes').codeOf(r) === 'STS-RISK-0011' &&
+           JSON.stringify(r).indexOf('\\u0000') < 0;
+  }) && /no realm by that name/.test(refusals[0].errors[0]) &&
+     /no dataset by that name/.test(refusals[1].errors[0]),
+  'I3. activate, delete, reload and rollback refuse a realm or dataset that ' +
+  'does not exist before the store is asked, naming neither value',
+  JSON.stringify(refusals.map(function (r) {
+    return r && r.errors;
+  })));
   log.debug("Leaving partI().");
 }
 
