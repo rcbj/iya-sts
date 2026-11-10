@@ -24,6 +24,8 @@ import { checkDomains, readDomains, renderClasses, renderTypes }
   from '../lib/domain_lib.mjs';
 import { checkScim, readScim } from '../lib/scim_lib.mjs';
 import { checkOAuth, readOAuth } from '../lib/oauth_lib.mjs';
+import { checkEnrollment, readEnrollment }
+  from '../lib/enrollment_lib.mjs';
 import { checkFacts, factsOf, fieldsOf, linksIn, readDirectory, readPersistence,
   readSpellings, renderScript, schemaOf } from '../lib/model_lib.mjs';
 
@@ -104,6 +106,15 @@ async function generate() {
     throw new Error('The OAuth model is wrong: ' + oauthProblems.join('; '));
   }
   fs.writeFileSync(path.join(out, 'oauth.json'), JSON.stringify(oauth));
+  const enrollment = readEnrollment(program);
+  const enrollmentProblems = checkEnrollment(enrollment);
+  if (enrollmentProblems.length > 0) {
+    log.debug("Leaving generate(). The enrollment model is wrong.");
+    throw new Error('The enrollment model is wrong: ' +
+      enrollmentProblems.join('; '));
+  }
+  fs.writeFileSync(path.join(out, 'enrollment.json'),
+    JSON.stringify(enrollment));
   const persistence = readPersistence(program);
   fs.writeFileSync(path.join(out, 'persistence.postgres.json'),
     JSON.stringify({ objects: persistence.objects,
