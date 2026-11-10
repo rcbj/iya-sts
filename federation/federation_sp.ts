@@ -5950,9 +5950,19 @@ class FederationSp {
       everyMs: function (): number {
         return 15000;
       },
-      off: function (): string {
-        return config.value('federation.enabled') ? ''
-          : 'federation.enabled is off';
+      // OFF IN A REALM THAT HOLDS NO PARTNER TOKEN, which is nearly every
+      // realm. The scheduler starts at most scheduler.maxConcurrentRuns at
+      // once, oldest due first, so a fifteen-second job in every realm
+      // queued behind every other realm's jobs: at the end of a full run,
+      // with hundreds of realms, a held token went unrefreshed for 17
+      // minutes and the RP conformance plan's refresh module timed out.
+      off: function (realmId: string): string {
+        if (!config.value('federation.enabled')) {
+          return 'federation.enabled is off';
+        }
+        return partnerRefresh.realmMap(String(realmId ||
+          realms.DEFAULT_ID)).size > 0 ? ''
+          : 'no session in this realm holds a partner\'s refresh token';
       },
       run: function (ctx: any): Promise<any> {
         return slot.get().refreshDue(ctx.nowMs());
