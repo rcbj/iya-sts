@@ -13,8 +13,20 @@
 //
 // In `@js`, a key that starts with `$` says how a schema differs from what its
 // type implies. Every other key is written as it stands.
+//
+// TWO OF THEM READ A LIST THE SERVICE OWNS AS DATA (#1579): `$enumFrom`
+// writes a string's `enum`, and `$membersFrom` writes one member of an
+// object per entry, from an export of a module under the repository root that
+// requires nothing — `common/enrollment_profiles.js`'s profiles, and
+// `common/app_password_doors.js`'s doors. The list is the code's because
+// four protocols and five password doors decide on it; the document a caller
+// reads, the validator a request meets and the API types are generated from
+// it, so a profile or a door is added in one place.
 // ---------------------------------------------------------------------------
 
+import { createRequire } from 'module';
+import path from 'path';
+import url from 'url';
 import bunyan from 'bunyan';
 
 const log = bunyan.createLogger({
@@ -28,6 +40,32 @@ const JS = Symbol.for('iya.api.js');
 const HOISTED = Symbol.for('iya.api.hoisted');
 const COMPONENT = Symbol.for('iya.api.component');
 const PROJECTS = Symbol.for('iya.api.projects');
+
+// The repository root, which a `$enumFrom` or `$membersFrom` module is under.
+const ROOT = path.join(path.dirname(url.fileURLToPath(import.meta.url)),
+  '..', '..');
+
+const requireData = createRequire(import.meta.url);
+
+/**
+ * The list a `$enumFrom` or `$membersFrom` names.
+ *
+ * @param from - `{ module, export }`, the module relative to the root
+ * @returns a copy of the list
+ */
+function listFrom(from) {
+  log.debug("Entering listFrom().");
+  const list = requireData(path.join(ROOT, from.module))[from.export];
+  if (!Array.isArray(list) || !list.every(function (one) {
+    return typeof one === 'string';
+  })) {
+    log.debug("Leaving listFrom(). Not a list.");
+    throw new Error(from.module + ' exports no list of strings as ' +
+      from.export + '.');
+  }
+  log.debug("Leaving listFrom().");
+  return list.slice();
+}
 
 const PRIMITIVES = { string: 'string', integer: 'integer', numeric: 'number',
   boolean: 'boolean' };
@@ -85,6 +123,15 @@ function applied(schema, extras) {
       out.additionalProperties = true;
     } else if (key === '$types') {
       out.type = extras[key];
+    } else if (key === '$enumFrom') {
+      out.enum = listFrom(extras[key]);
+    } else if (key === '$membersFrom') {
+      const from = extras[key];
+      out.properties = Object.assign({}, out.properties);
+      listFrom(from).forEach(function (id) {
+        out.properties[from.prefix + id] = Object.assign({}, from.member,
+          { description: from.describe.split('{id}').join(id) });
+      });
     } else if (key === '$comb') {
       if (out.anyOf) {
         out[extras[key]] = out.anyOf;
