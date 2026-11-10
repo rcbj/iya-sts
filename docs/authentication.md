@@ -118,8 +118,9 @@ the service has not seen before has to wait until the flood stops.
 The doors programs use (WS-Trust UsernameToken, SCIM and SSF Basic, and Kerberos
 pre-authentication) count failed attempts only, under the same limits.
 
-A password made by `reset-password`, or by `set-password` with `generate: true`,
-must be changed at the next sign-in.
+A password made by `reset-password`, by `set-password` with `generate: true`,
+or, in product mode, when a person is created, must be changed at the next
+sign-in.
 
 ### Other ways to establish a session
 
@@ -192,6 +193,10 @@ cluster (`security.rateLimit*`).
   password the service generates. See
   [Different password rules for different applications or
   groups](#different-password-rules-for-different-applications-or-groups).
+* **Words that identify you.** In product mode a new password may not contain
+  the service's names, the realm's name or domain, or a word in
+  `security.passwordContextWords`. See
+  [Words a password may not contain](password-words.md).
 * **Forced change.** `pwdReset: TRUE` on an entry (from
   [draft-behera-ldap-password-policy](https://datatracker.ietf.org/doc/html/draft-behera-ldap-password-policy))
   means the password must be changed before it is used. The sign-in screen
@@ -1011,7 +1016,12 @@ so it works from a phone, a script or a test job (`POST
   no self-service reset** for a lost phone: the shared secret lives on a device
   this service cannot reach, and a second factor anybody can remove is no
   second factor, so an operator clearing the enrolment is the only way back.
-  Clearing drops an account to one factor, never to none.
+  Clearing drops an account to one factor, never to none. In product mode the
+  operator must also say how the person's identity was verified (`evidence`, at
+  least 8 characters), which goes on the audit row; without it the clear is
+  refused (`STS-ADMIN-0916`). The same applies to clearing a passkey, recovery
+  codes or the emailed factor, and to **Remove every passkey** and **Disable
+  all MFA**.
 
 ### Recovery codes
 
@@ -1216,6 +1226,12 @@ a security key, and no session is started until they do. A passwordless sign-in
 is refused (`STS-AUTHN-0171`). If both mechanisms are switched off, the sign-in
 is refused and the settings are named (`STS-AUTHN-0172`).
 
+**In product mode this is the rule for everybody**, administrators included,
+whatever the policy's `requireSecondFactor` or
+`requireSecondFactorForAdministrators` says. An exempt service account stays
+exempt. `authn.allowOptionalSecondFactor` gives the decision back to the policy,
+and `/admin/mode` then shows the requirement as not met.
+
 ### A second factor for administrators
 
 Whether the people who can change everything must use a second factor depends
@@ -1235,9 +1251,11 @@ its own.
 > who signs in with a password alone can be impersonated by anyone who has the
 > password.
 
-**The default realm's built-in administrator (`admin.bootstrapUsername`, `admin`
-by default) is only ever offered a second factor, even under `always`.** It is
-the account you recover a service through when it has no other administrator.
+**The default realm's built-in administrator (`admin.bootstrapUsername`) is
+only ever offered a second factor, even under `always`.** It is the account you
+recover a service through when it has no other administrator. In product mode,
+unless `authn.allowOptionalSecondFactor` is on, it must set one up like
+everybody else (above).
 
 An administrator who holds a factor is always asked for it, whatever this field
 says. The offer is made at a sign-in of elevated risk too, because the console
@@ -1248,7 +1266,10 @@ is never locked out on risk (#226), and that offer is recorded under
 
 **This screen is the only door that can ask for the second factor.** A
 federated assertion, a SPNEGO ticket or a Kerberos AS-REQ, and a TLS client
-certificate do not reach it, and an existing session is not ended.
+certificate do not reach it, and an existing session is not ended. In product
+mode `GET /tls/sign-in` starts no session for a person who owes a second factor
+(`STS-TLS-0060`); they choose their certificate on the sign-in screen instead,
+which then asks for it. See [Authentication pathways](authentication-pathways.md).
 
 ### The password-only doors, and app passwords
 
@@ -1315,9 +1336,16 @@ lock and ends nothing.
 | A `webauthn.rpId` that does not fit the host | The host is used, and the log says why | The ceremony is refused, naming the problem |
 | The TOTP secret on the entry | Stored as base32 | Sealed under the key-encryption key |
 | TOTP codes, recovery codes, WebAuthn ceremonies, disabled accounts | Verified | Verified |
+| A second factor | Asked as the authentication policy says | Required of everybody, administrators included, unless `authn.allowOptionalSecondFactor` is on |
+| A TOTP code | Accepted one step either side of now (`totp.window` 1) | Accepted in the current time step only (`totp.window` 0) |
+| An unused session | Lasts its lifetime | Ends after 30 idle minutes (`authn.sessionIdleTimeoutS`) |
+| Changing a factor on the portal, ending another session, an administrator changing a person's credentials | Not asked | Needs a sign-in within `account.recentAuthMinutes` (15) |
+| An administrator clearing a person's second factor or passkeys | No reason asked | Must say how the person was verified (`evidence`) |
 
-A second factor is still asked for only at the sign-in screen in product mode.
-See [What is not checked](what-is-not-checked.md).
+A second factor is asked for only at the sign-in screen. `GET /tls/sign-in`
+refuses, rather than asks, in product mode, and a federation partner is not
+asked at all. See [What is not checked](what-is-not-checked.md) and
+[Authentication pathways](authentication-pathways.md).
 
 ## Configuration
 
@@ -1334,6 +1362,10 @@ See [What is not checked](what-is-not-checked.md).
 | `authn.pendingTtlS` | `STS_AUTHN_PENDING_TTL_S` | `600` | yes | How long an interrupted request waits at the sign-in screen. |
 | `authn.mfaStepTtlS` | `STS_AUTHN_MFA_STEP_TTL_S` | `300` | yes | How long a person who passed the password step has to present a second factor. |
 | `authn.unauthenticatedSessions` | `STS_AUTHN_UNAUTHENTICATED_SESSIONS` | `false` | yes | Show *Continue without signing in*, which starts an unauthenticated session. |
+| `authn.allowOptionalSecondFactor` | `STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR` | `false` | yes | Product mode only. On, the authentication policy decides who needs a second factor; off, everybody does. On, ASVS 5.0.0 requirement 6.3.3 is not met unless the policy requires one. |
+| `authn.sessionsEndedBefore` | `STS_AUTHN_SESSIONS_ENDED_BEFORE` | `0` | yes | Set by **End every session in this realm** on `/admin/sessions`. A sign-on session started before this instant, in milliseconds since 1970, has ended. |
+| `account.recentAuthMinutes` | `STS_ACCOUNT_RECENT_AUTH_MINUTES` | `15` in product mode, `0` in development mode | yes | How recent a sign-in must be to change a factor on the portal, end another session, or have an administrator change a person's credentials; `0` means it is not asked. |
+| `security.passwordContextWords` | `STS_SECURITY_PASSWORD_CONTEXT_WORDS` | *(empty)* | yes | Extra words a new password may not contain ([Words a password may not contain](password-words.md)). |
 | `security.rateLimitWindowS` | `STS_SECURITY_RATE_WINDOW_S` | `60` | yes | The length of a fixed rate-limit window. |
 | `security.rateLimitPerIdentity` | `STS_SECURITY_RATE_PER_IDENTITY` | `5` | yes | Credential attempts one identity may make in a window, from any address. |
 | `security.rateLimitPerAddress` | `STS_SECURITY_RATE_PER_ADDRESS` | `20` | yes | Credential attempts one address may make in a window, for any identity. |
@@ -1341,7 +1373,7 @@ See [What is not checked](what-is-not-checked.md).
 | `security.passwordResetTtlMinutes` | `STS_SECURITY_PASSWORD_RESET_TTL_MINUTES` | `60` | yes | How long an administrator's password reset link stays valid. |
 | `security.passwordHashLogN` | `STS_SECURITY_PASSWORD_HASH_LOG_N` | `15` | yes | scrypt cost (as a power of two) for newly stored secrets, tokens and recovery codes; floor 14. A person's password is hashed as the password policy says (scrypt at 2^15, r=8, p=1 by default). |
 | `security.passwordHashR` | `STS_SECURITY_PASSWORD_HASH_R` | `8` | yes | scrypt block size for a newly stored hash. |
-| `security.passwordHashP` | `STS_SECURITY_PASSWORD_HASH_P` | `1` | yes | scrypt parallelism for a newly stored hash. |
+| `security.passwordHashP` | `STS_SECURITY_PASSWORD_HASH_P` | `3` in product mode, `1` in development mode | yes | scrypt parallelism for a newly stored hash. |
 | `credentials.factorScanLimit` | `STS_CREDENTIALS_FACTOR_SCAN_LIMIT` | `5000` | yes | How many entries the second-factor columns on `/admin/users` and `GET /admin-api/mfa` read before they stop. |
 
 ### WebAuthn settings
@@ -1389,7 +1421,7 @@ See [What is not checked](what-is-not-checked.md).
 | `totp.algorithm` | `STS_TOTP_ALGORITHM` | `SHA1` | yes | The HMAC digest, for new enrolments. |
 | `totp.digits` | `STS_TOTP_DIGITS` | `6` | yes | Digits per code, for new enrolments. |
 | `totp.period` | `STS_TOTP_PERIOD` | `30` | yes | Seconds per time step, for new enrolments. |
-| `totp.window` | `STS_TOTP_WINDOW` | `1` | yes | Steps of clock skew accepted either side; applies to everybody. |
+| `totp.window` | `STS_TOTP_WINDOW` | `0` in product mode, `1` in development mode | yes | Steps of clock skew accepted either side; applies to everybody. |
 | `totp.secretBytes` | `STS_TOTP_SECRET_BYTES` | `20` | yes | Length of a new shared secret. |
 | `totp.enrolmentTtlMinutes` | `STS_TOTP_ENROLMENT_TTL_MINUTES` | `10` | yes | How long a shown but unconfirmed secret stays available. |
 

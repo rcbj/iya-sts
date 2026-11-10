@@ -110,6 +110,7 @@ of the following:
 | `{ "ok": true, "go": "/portal/…" }` | Done; the portal moves to that page. |
 | `{ "ok": false, "errors": ["…"] }` | Refused, with a 4xx status. A `view` may come with it. |
 | `{ "ok": false, "stepUp": { "acrValues": "…" } }` | Sign in again, more strongly, then retry (CIBA and GNAP approvals). |
+| `{ "ok": false, "stepUp": { "prompt": "login", "maxAge": … } }` | Sign in again, then retry. Changing how a person signs in needs a sign-in within `account.recentAuthMinutes` (15 by default in product mode, not asked in development): a second factor, recovery codes, a passkey, an app password, a certificate, a signing key, a self-issued ID or published DID, the email address, or a wallet credential offer. |
 | `{ "ok": true, "location": "https://…" }` | Continue at another site (linking a claim source). |
 
 Request bodies are JSON (`Content-Type: application/json`) and are checked

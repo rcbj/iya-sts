@@ -103,6 +103,16 @@ but not for this:
 7. the access policy, as the portal's pages asked it: `user-portal`, `read` for
    a GET and `manage-own` otherwise, the owner the subject (`0015`).
 
+**A RECENT SIGN-IN IS ASKED AFTER THE GATE, NOT AS PART OF IT (#1515, #1564,
+ASVS 5.0.0 7.5.1).** An operation that changes how the person signs in
+declares `recentAuth: true` in its provider's table, and `run()` answers it
+`200 { ok: false, stepUp: { prompt: 'login', maxAge } }` when the latest event
+of the sign-on session is older than `account.recentAuthMinutes` (0, never, in
+development; 15 in product). It is not a 401: the token is still a credential,
+and a 401 would have the runtime renew a token that is not what is stale. The
+runtime draws it as any `stepUp` (below). The flag, not a list here, is the
+record of which operations need it, so a new provider declares its own.
+
 The caller carries `session`, in the server-rendered portal's session shape,
 so a handler moved from a page reads the members it read there. **Its `id` is
 the SIGN-ON session's** — the session the token was issued on, from the token
@@ -162,7 +172,7 @@ POST's answer by these members, and every provider keeps to them:
 | `view` | The page drawn from it, in place — a secret, codes, a key, download links shown ONCE, never on a URL or in the history. A view that draws its own refusal says so (`refused`, `notOffered`, `tooMany`) and the refusal is not drawn twice. |
 | `go` | Another portal page, with the message. |
 | `errors` (with `ok: false`) | The page asked again, with the refusal. |
-| `stepUp` | A sign-in again with `prompt=login` and the `acr_values` it names, back to the page (CIBA, GNAP). A GET's view may answer it too. |
+| `stepUp` | A sign-in again with `prompt=login` and the `acr_values` or `maxAge` it names, back to the page (CIBA, GNAP, and the recent sign-in above). A GET's view may answer it too. |
 | `location` | Another site (a Claims Provider's sign-in). |
 | `files` | Each saved, `{ name, mime, base64 }`. |
 

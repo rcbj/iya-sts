@@ -147,6 +147,14 @@ one process keeps in memory.
 portal's tokens. A person signed in to the admin console is signed in to the
 portal through single sign-on, with no screen.
 
+**Changing how you sign in needs a recent sign-in** in product mode: one within
+`account.recentAuthMinutes`, 15 minutes by default. That covers the second
+factors, recovery codes, passkeys, app passwords, certificates, signing keys,
+self-issued IDs, a published DID, the email address and a wallet credential
+offer. An older sign-in sends you to sign in again, and the portal returns to
+the page. After a password or a second factor, passkey or recovery codes
+change, the portal says that your other sessions can be ended at `/logout`.
+
 **The navigation column works as the admin console's.** Each section is
 collapsed until you open it, by clicking (or pressing Enter or Space on) its
 heading, and opening one closes whichever was open. Loading a page opens the
