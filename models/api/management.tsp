@@ -1654,7 +1654,7 @@
 // the per-protocol identifiers multi-valued moved six names from
 // this sentence to that one — and neither sentence noticed, which
 // is the whole argument: a hand-written list of what an operation
-// accepts is a second definition of the EDITABLE table, and it goes
+// accepts is a second definition of the `editable` rows, and it goes
 // wrong silently in the document a caller trusts most.
 // Not `oauthTokenEndpointAuthMethod` since 2026-10-01: it is
 // a list now, written with `add` and `remove`.

@@ -1412,7 +1412,7 @@ class ApplicationsPage {
             carryBack) },
         // AFTER the generic attribute editor in the page this was. The editor
         // can already write `oauthDelegatedPermission` by hand — it is an
-        // ordinary multi-valued attribute in the EDITABLE table — so this
+        // ordinary multi-valued attribute in the `editable` rows — so this
         // section is a second DOOR onto it and not a second place it lives,
         // which is the one-store rule /admin/token-lifetimes' header argues.
         { id: 'tab-permissions',
@@ -5470,9 +5470,10 @@ class ApplicationsPage {
       '</table>';
   }
 
-  // The two selects the edit forms offer, built from applications.js's EDITABLE
-  // table so that a form cannot offer a field the action would refuse — the
-  // same reason the audit page's filters are built from the audit vocabulary.
+  // The two selects the edit forms offer, built from the application table's
+  // `editable` rows so that a form cannot offer a field the action would
+  // refuse — the same reason the audit page's filters are built from the audit
+  // vocabulary.
   //
   // `row` IS THE ENTRY BEING EDITED, and it is here because that rule acquired
   // a second half on 2026-09-01. An attribute whose SCHEMA row carries
@@ -5489,7 +5490,7 @@ class ApplicationsPage {
   // should get.
   /**
    * Draws the options of an edit form's attribute select from the
-   * registry's EDITABLE table, leaving out family-scoped attributes the
+   * registry's `editable` rows, leaving out family-scoped attributes the
    * entry is not declared for.
    *
    * @param attributes - the attributes offered, from the answer's

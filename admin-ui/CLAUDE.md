@@ -1159,7 +1159,7 @@ PAGE.** It sat beside the family checkboxes and asked the same question in a
 vocabulary that did not line up with theirs: eight kinds against the fourteen
 families there were then, five of those families having no kind at all, and a reader made to
 choose in both. Worse, the two are on opposite sides of the line
-`applications.js`'s `EDITABLE` header draws and this file repeats everywhere — a
+application.tsp's editability header draws and this file repeats everywhere — a
 family is DECLARED and a kind is DERIVED, written by `seen()` when a protocol
 recognises the identifier — so the select was a console form asserting a
 sighting that had not happened, which is exactly what every other form here is

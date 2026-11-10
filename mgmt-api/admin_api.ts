@@ -7044,10 +7044,10 @@ class AdminApi {
       //
       // What may be changed is DECLARED and not DERIVED — configuration, which
       // is what RFC 9700 mode reads, but never the counters or the sightings,
-      // which are what happened. The line is drawn by applications.js's
-      // EDITABLE table, so this file offers no opinion about it and the
-      // console's selects are built from the same rows these actions validate
-      // against.
+      // which are what happened. The line is drawn by each application
+      // row's `editable` in the model, so this file offers no opinion about it
+      // and the console's selects are built from the same rows these actions
+      // validate against.
       { method: 'GET', path: BASE + '/applications', tag: 'Applications',
         operationId: 'getApplications',
         mirrors: 'GET /admin/applications',
