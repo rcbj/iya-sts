@@ -1543,7 +1543,11 @@ module's: `REAUTHENTICATED_ACTIONS` in `admin_api.ts`, answered 401
 `insufficient_user_authentication` with `max_age` as RFC 9470 says
 (`STS-API-0145`), so the console re-signs in in its popup and resends. It is
 asked only of a token with a person behind it; a `client_credentials` caller
-has nobody to ask.
+has nobody to ask. **The same six acts are on that list since #1577**:
+`disable-mfa` and `disable-primary-keys` had the statement and not the
+recency, so the two widest removals were the two a stale sign-in could make.
+The console needs nothing per action — `web_runtime.ts` reads the challenge
+off any 401.
 
 
 ## `GET /admin-api/tls-connection` — MONITORING → TLS CONNECTION (#597, 2026-10-12)

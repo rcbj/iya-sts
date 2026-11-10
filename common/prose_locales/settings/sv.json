@@ -120,8 +120,8 @@
     "text": "Betrodda proxyadresser"
   },
   "global.trustedProxies|description": {
-    "en": "1f176030f2e4d953",
-    "text": "De adresser eller CIDR-intervall som driftsättningens egna proxyservrar och lastbalanserare ansluter från, kommaseparerade (10.0.0.0/8, fd00::/8). Läses bara när global.trustProxy är på. TOMT, standardvärdet, behåller den gamla regeln: vidarebefordrade huvuden trotts från vilken anropare som helst, och hastighetsbegränsaren tar den vänstraste posten i X-Forwarded-For, som klienten själv skriver. SATT trotts X-Forwarded-For, X-Forwarded-Proto och X-Forwarded-Host bara från en anslutning vars motpart ligger i något av dessa intervall, och klienten är den högraste posten i X-Forwarded-For som inte gör det — så en anropare som når en nod direkt kan varken välja sin egen adress för hastighetsbegränsningen eller tjänstens uppfattning om sin egen URL. Ett värde som inte är en adress eller ett intervall ignoreras och loggas, och vidgas aldrig. Med global.proxyProtocol på är det OCKSÅ listan som ett PROXY protocol-huvud trotts från, oavsett vad global.trustProxy säger — och där litar en tom lista på ingen, så tjänsten vägrar att starta."
+    "en": "0af5f57bfac2e8d3",
+    "text": "De adresser eller CIDR-intervall som driftsättningens egna proxyservrar och lastbalanserare ansluter från, kommaseparerade (10.0.0.0/8, fd00::/8). Läses bara när global.trustProxy är på. TOMT, standardvärdet, behåller den gamla regeln i utvecklingsläge: vidarebefordrade huvuden trotts från vilken anropare som helst, och hastighetsbegränsaren tar den vänstraste posten i X-Forwarded-For, som klienten själv skriver. I produktläge trotts de vid TOMT från ingen, så klienten är anslutningens motpart. SATT trotts X-Forwarded-For, X-Forwarded-Proto och X-Forwarded-Host bara från en anslutning vars motpart ligger i något av dessa intervall, och klienten är den högraste posten i X-Forwarded-For som inte gör det — så en anropare som når en nod direkt kan varken välja sin egen adress för hastighetsbegränsningen eller tjänstens uppfattning om sin egen URL. Ett värde som inte är en adress eller ett intervall ignoreras och loggas, och vidgas aldrig. Med global.proxyProtocol på är det OCKSÅ listan som ett PROXY protocol-huvud trotts från, oavsett vad global.trustProxy säger — och där litar en tom lista på ingen, så tjänsten vägrar att starta."
   },
   "http.keepAliveTimeoutS|label": {
     "en": "d9f06661ccb4fd07",
@@ -268,12 +268,12 @@
     "text": "Av, standardvärdet, accepterar produktläget en partners utloggningstoken bara om typen är logout+jwt. På accepteras även en token med typen jwt eller utan typ, för en partner som inte skickar typen. OpenID-specifikationen rekommenderar den bara."
   },
   "account.recentAuthMinutes|label": {
-    "en": "dfa5936497901458",
-    "text": "Hur nyligen inloggningen måste ha skett för att ändra en andra faktor (min)"
+    "en": "7a29e5cd3a5ff016",
+    "text": "Hur nyligen inloggningen måste ha skett för en känslig ändring (min)"
   },
   "account.recentAuthMinutes|description": {
-    "en": "50ed3d8089739a00",
-    "text": "En person som ändrar sina andra faktorer, återställningskoder, nycklar eller e-postadress på portalen måste ha loggat in inom så många minuter, annars skickas personen till inloggning först. 0 betyder att det inte krävs, standardvärdet i utveckling. Produktläget använder 15 som standard."
+    "en": "4bfb2112a9f37a5d",
+    "text": "Hur nyligen, i minuter, någon måste ha loggat in för att ändra hur en person loggar in. På portalen: personens andra faktorer, återställningskoder, nycklar, applösenord, certifikat, signeringsnycklar, självutfärdade ID:n, e-postadress eller ett erbjudande om en plånboksbehörighet, samt att avsluta personens övriga sessioner; personen skickas till inloggning först. För en administratör: att ändra en persons lösenord, andra faktor, nyckel, återställningskoder, e-postadress eller applösenord via konsolen eller /admin-api, som svarar med insufficient_user_authentication enligt RFC 9470. 0 betyder att det inte krävs, standardvärdet i utveckling. Produktläget använder 15 som standard."
   },
   "persistence.allowDefaultDatabasePassword|label": {
     "en": "24634837693652d6",
@@ -424,8 +424,8 @@
     "text": "Tillåt ett administratörsnamn som är standard i produktläge"
   },
   "admin.allowDefaultUsername|description": {
-    "en": "261e7a2bb89b22e2",
-    "text": "Endast produktläge. Av, standardvärdet, får en startadministratör som heter admin, root, sa eller administrator, eller saknar namn, ett oförutsägbart genererat namn som visas med lösenordet vid första start. På används det konfigurerade namnet som det är. VARNING: krav 6.3.2 i ASVS 5.0.0 förbjuder ett kontonamn som är standard, så låt detta vara av utanför en testmiljö."
+    "en": "53da4f7ba4ff5dcc",
+    "text": "Endast produktläge. Av, standardvärdet, får en startadministratör som heter admin, root, sa eller administrator, eller saknar namn, ett oförutsägbart genererat namn som skrivs med lösenordet till filen bootstrap-admin-password i persistence.dataDir vid första start (se admin.logBootstrapPassword). På används det konfigurerade namnet som det är. VARNING: krav 6.3.2 i ASVS 5.0.0 förbjuder ett kontonamn som är standard, så låt detta vara av utanför en testmiljö."
   },
   "admin.allowDefaultUsername|restartReason": {
     "en": "0191948468332113",
@@ -436,8 +436,8 @@
     "text": "Konto för initial administratör"
   },
   "admin.bootstrapUsername|description": {
-    "en": "b174944b711d5987",
-    "text": "Den initiala administratörens användarnamn (2026-09-13), i STANDARDSFÄREN och, sedan 2026-09-14, i varje förtroendesfär, där kontot administrerar enbart den sfären: skapas vid start om det saknas, är medlem i båda konsolrollerna, tvingas byta lösenord vid sin första inloggning och kan inte tas bort eller byta namn. Tills det första gången loggar in i /admin får varje inloggad person använda konsolen (admin.openWhenEmpty). I utvecklingsläge loggar vilket lösenord som helst in det, som för alla. I PRODUKTIONSLÄGE är det också kontot som får ett genererat lösenord när tjänsten startar och INGEN i sfären har några inloggningsuppgifter; det lösenordet loggas en gång och aldrig igen, och är den enda vägen in i en ny produktionsdriftsättning. Det genererade lösenordet skrivs aldrig där någon redan har inloggningsuppgifter, så det kan inte skriva över ett lösenord. Det tvingade bytet gäller bara ett konto som detta steg SKAPADE — ett befintligt konto med det här namnet behåller sitt lösenord och får bara de två rollerna."
+    "en": "9b6fe650632ee79d",
+    "text": "Den initiala administratörens användarnamn (2026-09-13), i STANDARDSFÄREN och, sedan 2026-09-14, i varje förtroendesfär, där kontot administrerar enbart den sfären: skapas vid start om det saknas, är medlem i båda konsolrollerna, tvingas byta lösenord vid sin första inloggning och kan inte tas bort eller byta namn. Tills det första gången loggar in i /admin får varje inloggad person använda konsolen (admin.openWhenEmpty). I utvecklingsläge loggar vilket lösenord som helst in det, som för alla. I PRODUKTIONSLÄGE är det också kontot som får ett genererat lösenord när tjänsten startar och INGEN i sfären har några inloggningsuppgifter; namnet och det lösenordet skrivs en gång till filen bootstrap-admin-password i persistence.dataDir, läsbar bara för tjänsten (loggen säger var, och innehåller dem själv bara med admin.logBootstrapPassword på), och är den enda vägen in i en ny produktionsdriftsättning. Det genererade lösenordet skrivs aldrig där någon redan har inloggningsuppgifter, så det kan inte skriva över ett lösenord. Det tvingade bytet gäller bara ett konto som detta steg SKAPADE — ett befintligt konto med det här namnet behåller sitt lösenord och får bara de två rollerna."
   },
   "admin.bootstrapUsername|restartReason": {
     "en": "0191948468332113",
@@ -924,8 +924,8 @@
     "text": "Sessionens vilotidsgräns (sekunder, 0 = ingen)"
   },
   "authn.sessionIdleTimeoutS|description": {
-    "en": "8c722efc24fd3b60",
-    "text": "Hur länge en session får vara OANVÄND innan den avslutas, utöver den absoluta livslängden ovan. **Noll, standardvärdet, betyder ingen vilotidsgräns**, vilket är vad tjänsten alltid har gjort. När den är satt avslutas en session som någon slutar använda så många sekunder efter sin senaste begäran, beroende på vilken av de två gränserna som kommer först — och en begäran till administratörskonsolen eller användarportalen räknas som användning av inloggningssessionen bakom den, så att en operatör som arbetar i konsolen inte loggas ut ur den av en viloklocka på en session hen inte visar upp. Den gäller direkt: den tillämpas på sessioner som redan finns, eftersom den kontrolleras där en session läses i stället för att stämplas där en skapas. I produktläge, om detta inte anges, är standardvärdet 1800."
+    "en": "a5806c4c1917a3f7",
+    "text": "Hur länge en session får vara OANVÄND innan den avslutas, utöver den absoluta livslängden ovan. **Noll betyder ingen vilotidsgräns**, standardvärdet i utveckling och vad tjänsten alltid har gjort där. När den är satt avslutas en session som någon slutar använda så många sekunder efter sin senaste begäran, beroende på vilken av de två gränserna som kommer först — och en begäran till administratörskonsolen eller användarportalen räknas som användning av inloggningssessionen bakom den, så att en operatör som arbetar i konsolen inte loggas ut ur den av en viloklocka på en session hen inte visar upp. Den gäller direkt: den tillämpas på sessioner som redan finns, eftersom den kontrolleras där en session läses i stället för att stämplas där en skapas. Produktläget använder 1800 som standard."
   },
   "authn.deviceBoundSessions|label": {
     "en": "454fe488dcb65a89",
@@ -3000,8 +3000,8 @@
     "text": "Låt en klient utan lista använda valfri behörighetstyp"
   },
   "oauth2.allowUndeclaredGrants|description": {
-    "en": "22bb986fa3711e13",
-    "text": "Endast produktläge. Av, standardvärdet, får en klient som inte deklarerar några behörighetstyper bara använda authorization_code och refresh_token. På får den använda alla behörighetstyper tjänsten erbjuder. VARNING: krav 10.4.4 i ASVS 5.0.0 begränsar en klient till de behörighetstyper den behöver, så låt detta vara av utanför en testmiljö."
+    "en": "dad6e01199413088",
+    "text": "Endast produktläge. Av, standardvärdet, får en klient som inte deklarerar några behörighetstyper bara använda authorization_code och refresh_token, och en som inte deklarerar några svarstyper (och inte den implicita behörighetstypen) bara response_type=code. På får den använda alla behörighetstyper och svarstyper tjänsten erbjuder. VARNING: krav 10.4.4 i ASVS 5.0.0 begränsar en klient till de behörighetstyper den behöver, så låt detta vara av utanför en testmiljö."
   },
   "oauth2.signedMetadataAlgorithm|label": {
     "en": "71fb31f9a62ec657",
@@ -3672,8 +3672,8 @@
     "text": "Standardnyckelalgoritm för CA"
   },
   "pki.keyAlgorithm|description": {
-    "en": "00e61f4da7498a62",
-    "text": "Vilken nyckelalgoritm en ny certifikatutfärdare byggs med när formuläret inte anger någon: rsa-2048, rsa-3072, rsa-4096, ec-p256, ec-p384, ec-p521 eller ed25519, eller ett av postkvant-id:na (ML-DSA, SLH-DSA, kompositerna och ML-KEM — som inte kan signera, så den är en subjektnyckel och aldrig en utfärdares). RSA 2048 är standard eftersom det LÖV som hierarkin finns till för att utfärda signerar ett klientintyg som någon annans OAuth-bibliotek måste verifiera, och RS256 är den enda algoritm som varje sådant bibliotek har. Listan läses från common/crypto_impl/key_material.js — modulen som genererar nyckeln — så ett värde den inte känner till avvisas vid bygget med listan bredvid."
+    "en": "d0667a437e4fd5f6",
+    "text": "Vilken nyckelalgoritm en ny certifikatutfärdare byggs med när formuläret inte anger någon: rsa-2048, rsa-3072, rsa-4096, ec-p256, ec-p384, ec-p521 eller ed25519, eller ett av postkvant-id:na (ML-DSA, SLH-DSA, kompositerna och ML-KEM — som inte kan signera, så den är en subjektnyckel och aldrig en utfärdares). RSA är standard eftersom det LÖV som hierarkin finns till för att utfärda signerar ett klientintyg som någon annans OAuth-bibliotek måste verifiera, och RS256 är den enda algoritm som varje sådant bibliotek har: rsa-2048 i utvecklingsläge, rsa-3072 i produktläge (ASVS 5.0.0 11.2.3). Listan läses från common/crypto_impl/key_material.js — modulen som genererar nyckeln — så ett värde den inte känner till avvisas vid bygget med listan bredvid."
   },
   "pki.signatureAlgorithm|label": {
     "en": "43cdf39e69d6fdd4",
@@ -7332,8 +7332,8 @@
     "text": "Okrypterad LDAP-lyssnare"
   },
   "ldap.plainListener|description": {
-    "en": "e0685a195274dbbb",
-    "text": "Om den okrypterade lyssnaren på ldap.port startas över huvud taget. På som standard, vilket är vad den här tjänsten alltid gjorde. Av lämnar LDAPS på ldap.tlsPort som enda väg in — vilket är vad en driftsättning vars bindningar VERIFIERAS (produktläge) vill ha, eftersom en enkel bindning på 389 skickar lösenordet i klartext. Produktläge med den påslagen loggar en varning vid start som säger just det. I produktläge, om detta inte anges, är det av."
+    "en": "64c4523fa982995b",
+    "text": "Om den okrypterade lyssnaren på ldap.port startas över huvud taget. På som standard i utvecklingsläge, vilket är vad den här tjänsten alltid gjorde, och av som standard i produktläge. Av lämnar LDAPS på ldap.tlsPort som enda väg in — vilket är vad en driftsättning vars bindningar VERIFIERAS (produktläge) vill ha, eftersom en enkel bindning på 389 skickar lösenordet i klartext. Produktläge med den påslagen loggar en varning vid start som säger just det."
   },
   "ldap.plainListener|restartReason": {
     "en": "e92026b5264f72ad",

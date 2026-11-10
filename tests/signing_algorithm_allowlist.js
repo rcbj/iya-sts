@@ -24,6 +24,11 @@
 //      accepted in the default realm.
 //   E. `keys.jwksCertificateUrl` (#1351): off, `x5c`; on, `x5u` at an address
 //      that answers the same chain, and the default realm untouched.
+//   F. ES256K in product (#1533, #1577): with no list, product mode neither
+//      offers ES256K, publishes its secp256k1 key nor signs with it, through
+//      the same helpers the JWK Set and discovery use and over HTTP in a realm
+//      in product mode; development is unchanged, and a list naming ES256K
+//      admits it in product.
 //
 // **IN A CHILD** for `tests/jose_kid.js`'s reason: loading the whole protocol
 // stack into `run.js`'s one process changes what later files see.
@@ -397,6 +402,127 @@ function childMain() {
       config.clearOverride(URL_KEY);
       config.clearOverride(KEY);
     });
+
+    // ==== F. ES256K in product, unless listed (#1533, #1577) ==============
+    const k1Keys = [{ kty: 'RSA', use: 'sig', kid: 'r' },
+      { kty: 'EC', use: 'sig', kid: 'k', crv: 'secp256k1', alg: 'ES256K' },
+      { kty: 'EC', use: 'sig', kid: 'kn', crv: 'secp256k1' },
+      { kty: 'EC', use: 'sig', kid: 'e', crv: 'P-256', alg: 'ES256' }];
+    const k1Doc = function () {
+      return { id_token_signing_alg_values_supported: ['RS256', 'ES256',
+        'ES256K'],
+      token_endpoint_auth_signing_alg_values_supported: ['RS256', 'ES256K'] };
+    };
+    const asProduct = async function (fn) {
+      config.setOverride('global.mode', 'product');
+      try {
+        return await fn();
+      } finally {
+        config.clearOverride('global.mode');
+      }
+    };
+    const signsK1 = function () {
+      try {
+        helpers.signJwtAs({ sub: 'saa' }, 'ES256K', null, {});
+        return 'signed';
+      } catch (e) {
+        return errorCodes.codeOf(e) || e.message;
+      }
+    };
+    note(signsK1() === 'signed' &&
+         helpers.signableJwsAlgs().indexOf('ES256K') >= 0 &&
+         helpers.withoutUnlistedSigningKeys(k1Keys) === k1Keys &&
+         JSON.stringify(helpers.withoutUnlistedSigningAlgs(k1Doc())) ===
+         JSON.stringify(k1Doc()),
+         'F1. development with no list: ES256K is offered, published and ' +
+         'signed with, as before');
+    const product = await asProduct(async function () {
+      let asyncK1 = '';
+      try {
+        await helpers.signJwtAsAsync({ sub: 'saa' }, 'ES256K', null, {});
+        asyncK1 = 'signed';
+      } catch (e) {
+        asyncK1 = errorCodes.codeOf(e) || e.message;
+      }
+      return {
+        listed: helpers.signingAlgListed('ES256K'),
+        sync: signsK1(),
+        async: asyncK1,
+        es256: /^eyJ/.test(String(helpers.signJwtAs({ sub: 'saa' }, 'ES256',
+                                                   null, {}))),
+        signable: helpers.signableJwsAlgs(),
+        keys: helpers.withoutUnlistedSigningKeys(k1Keys).map(function (k) {
+          return k.kid;
+        }),
+        doc: helpers.narrowSigningAlgs(k1Doc()),
+        usable: helpers.usableSigningAlg('ES256K')
+      };
+    });
+    note(product.listed === false && product.sync === 'STS-KEYS-0166' &&
+         product.async === 'STS-KEYS-0166' && product.es256,
+         'F2. product with no list refuses an ES256K signature, ' +
+         'synchronously and asynchronously, STS-KEYS-0166, and still signs ' +
+         'ES256', JSON.stringify([product.sync, product.async]));
+    note(product.signable.indexOf('ES256K') < 0 &&
+         product.signable.indexOf('ES256') >= 0,
+         'F3. ES256K is not a choice a client may register for',
+         JSON.stringify(product.signable));
+    note(JSON.stringify(product.keys) === '["r","e"]',
+         'F4. the JWK Set loses the secp256k1 key, named by alg or by curve',
+         JSON.stringify(product.keys));
+    note(JSON.stringify(product.doc.id_token_signing_alg_values_supported) ===
+         '["RS256","ES256"]' &&
+         product.doc.token_endpoint_auth_signing_alg_values_supported
+           .indexOf('ES256K') >= 0,
+         'F5. what it signs loses ES256K and what it accepts keeps it',
+         JSON.stringify(product.doc));
+    note(product.usable !== 'ES256K',
+         'F6. a setting naming ES256K signs with the default instead',
+         product.usable);
+    const listedK1 = await asProduct(async function () {
+      config.setOverride(KEY, 'RS256,ES256K');
+      try {
+        return { sync: signsK1(),
+                 keys: helpers.withoutUnlistedSigningKeys(k1Keys).length };
+      } finally {
+        config.clearOverride(KEY);
+      }
+    });
+    note(listedK1.sync === 'signed' && listedK1.keys === 3,
+         'F7. product with a list naming ES256K signs with it and publishes ' +
+         'its keys', JSON.stringify(listedK1));
+    const K1REALM = 'saak1';
+    realms.create({ id: K1REALM });
+    realms.run(realms.get(K1REALM), function () {
+      config.setOverride('global.mode', 'product');
+    });
+    const k1Prefix = '/realm/' + K1REALM;
+    const k1Jwks = await get(port, k1Prefix + '/oauth2/jwks');
+    const k1Disc = await get(port, k1Prefix +
+                             '/.well-known/openid-configuration');
+    const devJwks = await get(port, '/oauth2/jwks');
+    const hasK1 = function (body) {
+      return ((body && body.keys) || []).some(function (k) {
+        return k.use !== 'enc' && (k.alg === 'ES256K' || k.crv === 'secp256k1');
+      });
+    };
+    note(k1Jwks.status === 200 && !hasK1(k1Jwks.json) && hasK1(devJwks.json),
+         'F8. over HTTP, a realm in product mode publishes no secp256k1 ' +
+         'signing key and the default realm still does',
+         k1Jwks.status + ' ' + hasK1(k1Jwks.json) + ' ' +
+         hasK1(devJwks.json));
+    note(k1Disc.status === 200 &&
+         ['id_token', 'userinfo', 'introspection', 'authorization']
+           .every(function (what) {
+             const list = k1Disc.json[what + '_signing_alg_values_supported'];
+             return Array.isArray(list) && list.indexOf('ES256K') < 0;
+           }),
+         'F9. and its discovery names ES256K for nothing it signs',
+         k1Disc.status + ' ' + JSON.stringify(
+           (k1Disc.json || {}).id_token_signing_alg_values_supported));
+    realms.run(realms.get(K1REALM), function () {
+      config.clearOverride('global.mode');
+    });
     server.close();
   })().catch(function (e) {
     note(false, 'the child ran to the end', e && e.stack);
@@ -456,6 +582,6 @@ module.exports = {
             'signing algorithms publishes, advertises and signs only those, ' +
             'accepts what it always did from clients, and empty changes ' +
             'nothing; keys.jwksCertificateUrl (#1351) names a key\'s chain by ' +
-            'x5u',
+            'x5u; product leaves ES256K out unless listed (#1533)',
   run: run
 };

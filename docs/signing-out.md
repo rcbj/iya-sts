@@ -75,8 +75,11 @@ sends no `Origin` or `Sec-Fetch-Site` header is not affected.
 `account.recentAuthMinutes` (15 minutes by default in product, not asked in
 development). A request that names another session of yours is otherwise refused
 with `403` and `"error": "reauthentication_required"`; sign in again at
-`/authn/login` and send it again. Signing yourself out never needs one, and nor
-does a Global logout, which ends everything, this browser's session included.
+`/authn/login` and send it again. The sign-out page (`POST /authn-api/logout`)
+asks the same: it says that ending your other sessions needs a recent sign-in,
+with a link that signs you in again and brings you back to the page, where you
+tick them again. Signing yourself out never needs one, and nor does a Global
+logout, which ends everything, this browser's session included.
 
 ```bash
 # global logout for whoever holds this cookie

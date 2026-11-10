@@ -368,8 +368,8 @@
     "text": "saml.signatureAlgorithm rsa-sha1 會以 SHA-1 簽署每個 XML 簽章，saml2.keyTransportAlgorithm rsa-1_5（或應用程式的 saml2KeyTransportAlgorithm）會以 RSAES-PKCS1-v1_5 包裝加密斷言的金鑰，開啟 saml.allowSha1Signatures 會在本服務驗證的簽章中接受 SHA-1，pki.signatureAlgorithm sha1-rsa 或 sha1-ecdsa（或指名其中之一的建置表單）會讓憑證授權單位以 SHA-1 簽署，以 rsa-1_5 加密給本服務的 XML 元素會被解開，而開啟 scim.digestMd5 會在 SCIM 的 HTTP Digest 中提供並接受 MD5。除非設定，否則每一項都是關閉的。"
   },
   "mode.requirements.broken-algorithms.product": {
-    "en": "8e22d816464c845c",
-    "text": "每個弱值在讀取時都會被「忽略」（記錄一次，STS-CORE-0106），並在寫入時被拒絕（STS-CORE-0103，應用程式上為 STS-REG-0193）：XML 以預設的 rsa-sha256 簽署，金鑰以 rsa-oaep-mgf1p 包裝，SHA-1 簽章會被拒絕，指名 SHA-1 的 CA 建置或金鑰對會被拒絕（STS-PKI-0191），而從在開發模式下建置之分支繼承的 SHA-1 會被替換為該金鑰的預設值，rsa-1_5 EncryptedKey 則會在解開之前被拒絕（STS-KEYS-0070）——XML Encryption 1.1 第 6.1.2 節。scim.digestMd5 無關緊要，因為產品模式完全不提供 Digest（STS-SCIM-0056）。每項設定中較強的值仍可使用。JOSE RSA1_5 在兩種模式下都會被拒絕。"
+    "en": "173ed3ea10d31cc3",
+    "text": "每個弱值在讀取時都會被「忽略」（記錄一次，STS-CORE-0106），並在寫入時被拒絕（STS-CORE-0103，應用程式上為 STS-REG-0193）：XML 以預設的 rsa-sha256 簽署，金鑰以 rsa-oaep 包裝（只有在 crypto.allowLegacyHashes 開啟時才以 rsa-oaep-mgf1p 包裝），SHA-1 簽章會被拒絕，指名 SHA-1 的 CA 建置或金鑰對會被拒絕（STS-PKI-0191），而從在開發模式下建置之分支繼承的 SHA-1 會被替換為該金鑰的預設值，rsa-1_5 EncryptedKey 則會在解開之前被拒絕（STS-KEYS-0070）——XML Encryption 1.1 第 6.1.2 節。scim.digestMd5 無關緊要，因為產品模式完全不提供 Digest（STS-SCIM-0056）。每項設定中較強的值仍可使用。JOSE RSA1_5 在兩種模式下都會被拒絕。"
   },
   "mode.requirements.jose-key-sizes.what": {
     "en": "73495c403f54e4f5",

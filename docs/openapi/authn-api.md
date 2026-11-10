@@ -659,11 +659,12 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.preselected` | string |  |  |
 | `view.remaining` | number |  |  |
 | `view.scope` | one of `global`, `selected` |  |  |
+| `view.signIn` | string |  | With `state` reauthenticate: where to sign in again before ending another session, a path on this service that comes back to the sign-out page. |
 | `view.skipped` | list |  |  |
 | `view.skipped[].id` | string |  |  |
 | `view.skipped[].label` | string |  |  |
 | `view.skipped[].message` | string |  |  |
-| `view.state` | one of `result`, `refused`, `nobody`, `accounts` |  |  |
+| `view.state` | one of `result`, `refused`, `nobody`, `accounts`, `reauthenticate` |  |  |
 | `view.terminated` | list |  |  |
 | `view.terminated[].id` | string |  |  |
 | `view.terminated[].label` | string |  |  |
@@ -702,11 +703,12 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.preselected` | string |  |  |
 | `view.remaining` | number |  |  |
 | `view.scope` | one of `global`, `selected` |  |  |
+| `view.signIn` | string |  | With `state` reauthenticate: where to sign in again before ending another session, a path on this service that comes back to the sign-out page. |
 | `view.skipped` | list |  |  |
 | `view.skipped[].id` | string |  |  |
 | `view.skipped[].label` | string |  |  |
 | `view.skipped[].message` | string |  |  |
-| `view.state` | one of `result`, `refused`, `nobody`, `accounts` |  |  |
+| `view.state` | one of `result`, `refused`, `nobody`, `accounts`, `reauthenticate` |  |  |
 | `view.terminated` | list |  |  |
 | `view.terminated[].id` | string |  |  |
 | `view.terminated[].label` | string |  |  |
@@ -745,18 +747,19 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.preselected` | string |  |  |
 | `view.remaining` | number |  |  |
 | `view.scope` | one of `global`, `selected` |  |  |
+| `view.signIn` | string |  | With `state` reauthenticate: where to sign in again before ending another session, a path on this service that comes back to the sign-out page. |
 | `view.skipped` | list |  |  |
 | `view.skipped[].id` | string |  |  |
 | `view.skipped[].label` | string |  |  |
 | `view.skipped[].message` | string |  |  |
-| `view.state` | one of `result`, `refused`, `nobody`, `accounts` |  |  |
+| `view.state` | one of `result`, `refused`, `nobody`, `accounts`, `reauthenticate` |  |  |
 | `view.terminated` | list |  |  |
 | `view.terminated[].id` | string |  |  |
 | `view.terminated[].label` | string |  |  |
 | `view.terminated[].message` | string |  |  |
 | `view.verifiesCredentials` | boolean |  |  |
 
-**403**: No Origin of this service, or no CSRF token bound to this browser's session.
+**403**: No Origin of this service, or no CSRF token bound to this browser's session; or ending another session needs a recent sign-in (`account.recentAuthMinutes`), when the answer's view is `reauthenticate` and names where to sign in again.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
@@ -788,11 +791,12 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.preselected` | string |  |  |
 | `view.remaining` | number |  |  |
 | `view.scope` | one of `global`, `selected` |  |  |
+| `view.signIn` | string |  | With `state` reauthenticate: where to sign in again before ending another session, a path on this service that comes back to the sign-out page. |
 | `view.skipped` | list |  |  |
 | `view.skipped[].id` | string |  |  |
 | `view.skipped[].label` | string |  |  |
 | `view.skipped[].message` | string |  |  |
-| `view.state` | one of `result`, `refused`, `nobody`, `accounts` |  |  |
+| `view.state` | one of `result`, `refused`, `nobody`, `accounts`, `reauthenticate` |  |  |
 | `view.terminated` | list |  |  |
 | `view.terminated[].id` | string |  |  |
 | `view.terminated[].label` | string |  |  |
@@ -831,11 +835,12 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.preselected` | string |  |  |
 | `view.remaining` | number |  |  |
 | `view.scope` | one of `global`, `selected` |  |  |
+| `view.signIn` | string |  | With `state` reauthenticate: where to sign in again before ending another session, a path on this service that comes back to the sign-out page. |
 | `view.skipped` | list |  |  |
 | `view.skipped[].id` | string |  |  |
 | `view.skipped[].label` | string |  |  |
 | `view.skipped[].message` | string |  |  |
-| `view.state` | one of `result`, `refused`, `nobody`, `accounts` |  |  |
+| `view.state` | one of `result`, `refused`, `nobody`, `accounts`, `reauthenticate` |  |  |
 | `view.terminated` | list |  |  |
 | `view.terminated[].id` | string |  |  |
 | `view.terminated[].label` | string |  |  |
@@ -874,11 +879,12 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.preselected` | string |  |  |
 | `view.remaining` | number |  |  |
 | `view.scope` | one of `global`, `selected` |  |  |
+| `view.signIn` | string |  | With `state` reauthenticate: where to sign in again before ending another session, a path on this service that comes back to the sign-out page. |
 | `view.skipped` | list |  |  |
 | `view.skipped[].id` | string |  |  |
 | `view.skipped[].label` | string |  |  |
 | `view.skipped[].message` | string |  |  |
-| `view.state` | one of `result`, `refused`, `nobody`, `accounts` |  |  |
+| `view.state` | one of `result`, `refused`, `nobody`, `accounts`, `reauthenticate` |  |  |
 | `view.terminated` | list |  |  |
 | `view.terminated[].id` | string |  |  |
 | `view.terminated[].label` | string |  |  |
@@ -917,11 +923,12 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.preselected` | string |  |  |
 | `view.remaining` | number |  |  |
 | `view.scope` | one of `global`, `selected` |  |  |
+| `view.signIn` | string |  | With `state` reauthenticate: where to sign in again before ending another session, a path on this service that comes back to the sign-out page. |
 | `view.skipped` | list |  |  |
 | `view.skipped[].id` | string |  |  |
 | `view.skipped[].label` | string |  |  |
 | `view.skipped[].message` | string |  |  |
-| `view.state` | one of `result`, `refused`, `nobody`, `accounts` |  |  |
+| `view.state` | one of `result`, `refused`, `nobody`, `accounts`, `reauthenticate` |  |  |
 | `view.terminated` | list |  |  |
 | `view.terminated[].id` | string |  |  |
 | `view.terminated[].label` | string |  |  |
@@ -1052,11 +1059,12 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.preselected` | string |  |  |
 | `view.remaining` | number |  |  |
 | `view.scope` | one of `global`, `selected` |  |  |
+| `view.signIn` | string |  | With `state` reauthenticate: where to sign in again before ending another session, a path on this service that comes back to the sign-out page. |
 | `view.skipped` | list |  |  |
 | `view.skipped[].id` | string |  |  |
 | `view.skipped[].label` | string |  |  |
 | `view.skipped[].message` | string |  |  |
-| `view.state` | one of `result`, `refused`, `nobody`, `accounts` |  |  |
+| `view.state` | one of `result`, `refused`, `nobody`, `accounts`, `reauthenticate` |  |  |
 | `view.terminated` | list |  |  |
 | `view.terminated[].id` | string |  |  |
 | `view.terminated[].label` | string |  |  |
@@ -1095,11 +1103,12 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.preselected` | string |  |  |
 | `view.remaining` | number |  |  |
 | `view.scope` | one of `global`, `selected` |  |  |
+| `view.signIn` | string |  | With `state` reauthenticate: where to sign in again before ending another session, a path on this service that comes back to the sign-out page. |
 | `view.skipped` | list |  |  |
 | `view.skipped[].id` | string |  |  |
 | `view.skipped[].label` | string |  |  |
 | `view.skipped[].message` | string |  |  |
-| `view.state` | one of `result`, `refused`, `nobody`, `accounts` |  |  |
+| `view.state` | one of `result`, `refused`, `nobody`, `accounts`, `reauthenticate` |  |  |
 | `view.terminated` | list |  |  |
 | `view.terminated[].id` | string |  |  |
 | `view.terminated[].label` | string |  |  |
@@ -1138,11 +1147,12 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.preselected` | string |  |  |
 | `view.remaining` | number |  |  |
 | `view.scope` | one of `global`, `selected` |  |  |
+| `view.signIn` | string |  | With `state` reauthenticate: where to sign in again before ending another session, a path on this service that comes back to the sign-out page. |
 | `view.skipped` | list |  |  |
 | `view.skipped[].id` | string |  |  |
 | `view.skipped[].label` | string |  |  |
 | `view.skipped[].message` | string |  |  |
-| `view.state` | one of `result`, `refused`, `nobody`, `accounts` |  |  |
+| `view.state` | one of `result`, `refused`, `nobody`, `accounts`, `reauthenticate` |  |  |
 | `view.terminated` | list |  |  |
 | `view.terminated[].id` | string |  |  |
 | `view.terminated[].label` | string |  |  |
@@ -1181,11 +1191,12 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.preselected` | string |  |  |
 | `view.remaining` | number |  |  |
 | `view.scope` | one of `global`, `selected` |  |  |
+| `view.signIn` | string |  | With `state` reauthenticate: where to sign in again before ending another session, a path on this service that comes back to the sign-out page. |
 | `view.skipped` | list |  |  |
 | `view.skipped[].id` | string |  |  |
 | `view.skipped[].label` | string |  |  |
 | `view.skipped[].message` | string |  |  |
-| `view.state` | one of `result`, `refused`, `nobody`, `accounts` |  |  |
+| `view.state` | one of `result`, `refused`, `nobody`, `accounts`, `reauthenticate` |  |  |
 | `view.terminated` | list |  |  |
 | `view.terminated[].id` | string |  |  |
 | `view.terminated[].label` | string |  |  |
@@ -1224,11 +1235,12 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.preselected` | string |  |  |
 | `view.remaining` | number |  |  |
 | `view.scope` | one of `global`, `selected` |  |  |
+| `view.signIn` | string |  | With `state` reauthenticate: where to sign in again before ending another session, a path on this service that comes back to the sign-out page. |
 | `view.skipped` | list |  |  |
 | `view.skipped[].id` | string |  |  |
 | `view.skipped[].label` | string |  |  |
 | `view.skipped[].message` | string |  |  |
-| `view.state` | one of `result`, `refused`, `nobody`, `accounts` |  |  |
+| `view.state` | one of `result`, `refused`, `nobody`, `accounts`, `reauthenticate` |  |  |
 | `view.terminated` | list |  |  |
 | `view.terminated[].id` | string |  |  |
 | `view.terminated[].label` | string |  |  |
@@ -1267,11 +1279,12 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.preselected` | string |  |  |
 | `view.remaining` | number |  |  |
 | `view.scope` | one of `global`, `selected` |  |  |
+| `view.signIn` | string |  | With `state` reauthenticate: where to sign in again before ending another session, a path on this service that comes back to the sign-out page. |
 | `view.skipped` | list |  |  |
 | `view.skipped[].id` | string |  |  |
 | `view.skipped[].label` | string |  |  |
 | `view.skipped[].message` | string |  |  |
-| `view.state` | one of `result`, `refused`, `nobody`, `accounts` |  |  |
+| `view.state` | one of `result`, `refused`, `nobody`, `accounts`, `reauthenticate` |  |  |
 | `view.terminated` | list |  |  |
 | `view.terminated[].id` | string |  |  |
 | `view.terminated[].label` | string |  |  |
@@ -1310,11 +1323,12 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `view.preselected` | string |  |  |
 | `view.remaining` | number |  |  |
 | `view.scope` | one of `global`, `selected` |  |  |
+| `view.signIn` | string |  | With `state` reauthenticate: where to sign in again before ending another session, a path on this service that comes back to the sign-out page. |
 | `view.skipped` | list |  |  |
 | `view.skipped[].id` | string |  |  |
 | `view.skipped[].label` | string |  |  |
 | `view.skipped[].message` | string |  |  |
-| `view.state` | one of `result`, `refused`, `nobody`, `accounts` |  |  |
+| `view.state` | one of `result`, `refused`, `nobody`, `accounts`, `reauthenticate` |  |  |
 | `view.terminated` | list |  |  |
 | `view.terminated[].id` | string |  |  |
 | `view.terminated[].label` | string |  |  |

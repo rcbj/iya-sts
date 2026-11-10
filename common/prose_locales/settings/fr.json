@@ -120,8 +120,8 @@
     "text": "Adresses des proxys de confiance"
   },
   "global.trustedProxies|description": {
-    "en": "1f176030f2e4d953",
-    "text": "Les adresses ou plages CIDR depuis lesquelles se connectent les proxys et répartiteurs de charge propres à ce déploiement, séparées par des virgules (10.0.0.0/8, fd00::/8). Lu uniquement lorsque global.trustProxy est activé. VIDE, la valeur par défaut, conserve l’ancienne règle : les en-têtes transmis sont crus quel que soit l’appelant, et le limiteur de débit prend l’entrée X-Forwarded-For la plus à gauche, que le client écrit lui-même. DÉFINI, X-Forwarded-For, X-Forwarded-Proto et X-Forwarded-Host ne sont crus que d’une connexion dont le pair se trouve dans l’une de ces plages, et le client est l’entrée X-Forwarded-For la plus à droite qui n’y est pas — si bien qu’un appelant qui atteint directement un nœud ne peut choisir ni sa propre adresse de limitation de débit, ni l’idée que ce service se fait de sa propre URL. Une valeur qui n’est ni une adresse ni une plage est ignorée et journalisée, jamais élargie. Lorsque global.proxyProtocol est activé, c’est AUSSI la liste des adresses dont un en-tête PROXY protocol est cru, quoi qu’indique global.trustProxy — et là, une liste vide ne fait confiance à personne, si bien que le service refuse de démarrer."
+    "en": "0af5f57bfac2e8d3",
+    "text": "Les adresses ou plages CIDR depuis lesquelles se connectent les proxys et répartiteurs de charge propres à ce déploiement, séparées par des virgules (10.0.0.0/8, fd00::/8). Lu uniquement lorsque global.trustProxy est activé. VIDE, la valeur par défaut, conserve l’ancienne règle en mode développement : les en-têtes transmis sont crus quel que soit l’appelant, et le limiteur de débit prend l’entrée X-Forwarded-For la plus à gauche, que le client écrit lui-même. En mode produit, VIDE ne les croit de personne, si bien que le client est le pair de la connexion. DÉFINI, X-Forwarded-For, X-Forwarded-Proto et X-Forwarded-Host ne sont crus que d’une connexion dont le pair se trouve dans l’une de ces plages, et le client est l’entrée X-Forwarded-For la plus à droite qui n’y est pas — si bien qu’un appelant qui atteint directement un nœud ne peut choisir ni sa propre adresse de limitation de débit, ni l’idée que ce service se fait de sa propre URL. Une valeur qui n’est ni une adresse ni une plage est ignorée et journalisée, jamais élargie. Lorsque global.proxyProtocol est activé, c’est AUSSI la liste des adresses dont un en-tête PROXY protocol est cru, quoi qu’indique global.trustProxy — et là, une liste vide ne fait confiance à personne, si bien que le service refuse de démarrer."
   },
   "http.keepAliveTimeoutS|label": {
     "en": "d9f06661ccb4fd07",
@@ -268,12 +268,12 @@
     "text": "Désactivé, par défaut, le mode produit n’accepte le jeton de déconnexion d’un partenaire que s’il est de type logout+jwt. Activé, un jeton de type jwt ou sans type est aussi accepté, pour un partenaire qui n’envoie pas le type. La spécification OpenID ne fait que le recommander."
   },
   "account.recentAuthMinutes|label": {
-    "en": "dfa5936497901458",
-    "text": "Ancienneté maximale de la connexion pour changer un second facteur (min)"
+    "en": "7a29e5cd3a5ff016",
+    "text": "Ancienneté maximale de la connexion pour une modification sensible (min)"
   },
   "account.recentAuthMinutes|description": {
-    "en": "50ed3d8089739a00",
-    "text": "Une personne qui modifie ses seconds facteurs, codes de récupération, clés d’accès ou adresse e-mail sur le portail doit s’être connectée depuis moins de ce nombre de minutes, sinon elle doit d’abord se reconnecter. 0 signifie que ce n’est pas demandé, valeur par défaut en développement. Le mode produit utilise 15 par défaut."
+    "en": "4bfb2112a9f37a5d",
+    "text": "Depuis combien de minutes, au plus, quelqu’un doit s’être connecté pour modifier la façon dont une personne se connecte. Sur le portail : ses seconds facteurs, codes de récupération, clés d’accès, mots de passe d’application, certificats, clés de signature, identifiants auto-émis, adresse e-mail ou une offre de justificatif pour le portefeuille, ainsi que la fermeture de ses autres sessions ; elle doit d’abord se reconnecter. Pour un administrateur : modifier le mot de passe, le second facteur, la clé d’accès, les codes de récupération, l’adresse e-mail ou les mots de passe d’application d’une personne via la console ou /admin-api, qui répond par insufficient_user_authentication de la RFC 9470. 0 signifie que ce n’est pas demandé, valeur par défaut en développement. Le mode produit utilise 15 par défaut."
   },
   "persistence.allowDefaultDatabasePassword|label": {
     "en": "24634837693652d6",
@@ -424,8 +424,8 @@
     "text": "Autoriser un nom d’administrateur par défaut en production"
   },
   "admin.allowDefaultUsername|description": {
-    "en": "261e7a2bb89b22e2",
-    "text": "Mode produit uniquement. Désactivé, par défaut, un administrateur d’amorçage nommé admin, root, sa ou administrator, ou sans nom, reçoit un nom généré imprévisible, affiché avec son mot de passe au premier démarrage. Activé, le nom configuré est utilisé tel quel. AVERTISSEMENT : l’exigence 6.3.2 d’ASVS 5.0.0 interdit un nom de compte par défaut ; laissez ce réglage désactivé hors d’une pile de test."
+    "en": "53da4f7ba4ff5dcc",
+    "text": "Mode produit uniquement. Désactivé, par défaut, un administrateur d’amorçage nommé admin, root, sa ou administrator, ou sans nom, reçoit un nom généré imprévisible, écrit avec son mot de passe dans le fichier bootstrap-admin-password de persistence.dataDir au premier démarrage (voir admin.logBootstrapPassword). Activé, le nom configuré est utilisé tel quel. AVERTISSEMENT : l’exigence 6.3.2 d’ASVS 5.0.0 interdit un nom de compte par défaut ; laissez ce réglage désactivé hors d’une pile de test."
   },
   "admin.allowDefaultUsername|restartReason": {
     "en": "0191948468332113",
@@ -436,8 +436,8 @@
     "text": "Compte administrateur d’amorçage"
   },
   "admin.bootstrapUsername|description": {
-    "en": "b174944b711d5987",
-    "text": "Le nom d’utilisateur de l’administrateur d’amorçage (2026-09-13), dans le domaine PAR DÉFAUT et, depuis le 2026-09-14, dans chaque domaine de confiance, où il n’administre que ce domaine : créé au démarrage s’il est absent, membre des deux rôles de la console, obligé de changer son mot de passe à sa première connexion, et impossible à supprimer ou à renommer. Tant qu’il ne s’est pas connecté une première fois à /admin, toute personne connectée peut utiliser la console (admin.openWhenEmpty). En développement, n’importe quel mot de passe le connecte, comme pour tout le monde. EN MODE PRODUIT, c’est aussi lui qui reçoit un mot de passe généré lorsque ce service démarre et que PERSONNE dans le domaine ne détient d’identifiant ; ce mot de passe est journalisé une fois et plus jamais, et c’est le seul moyen d’entrer dans un déploiement produit neuf. Le mot de passe généré n’est jamais écrit là où quelqu’un détient déjà un identifiant ; il ne peut donc écraser aucun mot de passe. Le changement obligatoire ne s’applique qu’à un compte que cette étape a CRÉÉ — un compte existant portant ce nom conserve son mot de passe et reçoit seulement les deux rôles."
+    "en": "9b6fe650632ee79d",
+    "text": "Le nom d’utilisateur de l’administrateur d’amorçage (2026-09-13), dans le domaine PAR DÉFAUT et, depuis le 2026-09-14, dans chaque domaine de confiance, où il n’administre que ce domaine : créé au démarrage s’il est absent, membre des deux rôles de la console, obligé de changer son mot de passe à sa première connexion, et impossible à supprimer ou à renommer. Tant qu’il ne s’est pas connecté une première fois à /admin, toute personne connectée peut utiliser la console (admin.openWhenEmpty). En développement, n’importe quel mot de passe le connecte, comme pour tout le monde. EN MODE PRODUIT, c’est aussi lui qui reçoit un mot de passe généré lorsque ce service démarre et que PERSONNE dans le domaine ne détient d’identifiant ; le nom et ce mot de passe sont écrits une seule fois dans le fichier bootstrap-admin-password de persistence.dataDir, lisible uniquement par ce service (le journal indique où, et ne les contient lui-même qu’avec admin.logBootstrapPassword activé), et sont le seul moyen d’entrer dans un déploiement produit neuf. Le mot de passe généré n’est jamais écrit là où quelqu’un détient déjà un identifiant ; il ne peut donc écraser aucun mot de passe. Le changement obligatoire ne s’applique qu’à un compte que cette étape a CRÉÉ — un compte existant portant ce nom conserve son mot de passe et reçoit seulement les deux rôles."
   },
   "admin.bootstrapUsername|restartReason": {
     "en": "0191948468332113",
@@ -924,8 +924,8 @@
     "text": "Délai d’inactivité d’une session (secondes, 0 = aucun)"
   },
   "authn.sessionIdleTimeoutS|description": {
-    "en": "8c722efc24fd3b60",
-    "text": "Combien de temps une session peut rester INUTILISÉE avant de se terminer, en plus de la durée de vie absolue ci-dessus. **Zéro, la valeur par défaut, signifie aucun délai d’inactivité**, ce que ce service a toujours fait. Défini, une session que quelqu’un cesse d’utiliser se termine ce nombre de secondes après sa dernière requête, selon la première des deux limites atteinte — et une requête à la console d’administration ou au portail utilisateur compte comme une utilisation de la session d’authentification unique sous-jacente, si bien qu’un opérateur qui travaille dans la console n’en est pas déconnecté par une horloge d’inactivité sur une session qu’il ne présente pas. Il s’applique en direct : il vaut pour les sessions qui existent déjà, car il est vérifié là où une session est lue plutôt qu’apposé là où elle est créée. En mode produit, si ce paramètre n’est pas défini, la valeur par défaut est 1800."
+    "en": "a5806c4c1917a3f7",
+    "text": "Combien de temps une session peut rester INUTILISÉE avant de se terminer, en plus de la durée de vie absolue ci-dessus. **Zéro signifie aucun délai d’inactivité**, la valeur par défaut en développement et ce que ce service y a toujours fait. Défini, une session que quelqu’un cesse d’utiliser se termine ce nombre de secondes après sa dernière requête, selon la première des deux limites atteinte — et une requête à la console d’administration ou au portail utilisateur compte comme une utilisation de la session d’authentification unique sous-jacente, si bien qu’un opérateur qui travaille dans la console n’en est pas déconnecté par une horloge d’inactivité sur une session qu’il ne présente pas. Il s’applique en direct : il vaut pour les sessions qui existent déjà, car il est vérifié là où une session est lue plutôt qu’apposé là où elle est créée. Le mode produit utilise 1800 par défaut."
   },
   "authn.deviceBoundSessions|label": {
     "en": "454fe488dcb65a89",
@@ -3000,8 +3000,8 @@
     "text": "Laisser un client sans liste utiliser tout type d’autorisation"
   },
   "oauth2.allowUndeclaredGrants|description": {
-    "en": "22bb986fa3711e13",
-    "text": "Mode produit uniquement. Désactivé, par défaut, un client qui ne déclare aucun type d’autorisation ne peut utiliser que authorization_code et refresh_token. Activé, il peut utiliser tout type proposé par ce service. AVERTISSEMENT : l’exigence 10.4.4 d’ASVS 5.0.0 limite un client aux types dont il a besoin ; laissez ce réglage désactivé hors d’une pile de test."
+    "en": "dad6e01199413088",
+    "text": "Mode produit uniquement. Désactivé, par défaut, un client qui ne déclare aucun type d’autorisation ne peut utiliser que authorization_code et refresh_token, et un client qui ne déclare aucun type de réponse (ni l’autorisation implicite) ne peut utiliser que response_type=code. Activé, il peut utiliser tout type d’autorisation et de réponse proposé par ce service. AVERTISSEMENT : l’exigence 10.4.4 d’ASVS 5.0.0 limite un client aux types dont il a besoin ; laissez ce réglage désactivé hors d’une pile de test."
   },
   "oauth2.signedMetadataAlgorithm|label": {
     "en": "71fb31f9a62ec657",
@@ -3672,8 +3672,8 @@
     "text": "Algorithme de clé par défaut de l’autorité de certification"
   },
   "pki.keyAlgorithm|description": {
-    "en": "00e61f4da7498a62",
-    "text": "L’algorithme de clé avec lequel une nouvelle autorité de certification est construite lorsque le formulaire n’en indique aucun : rsa-2048, rsa-3072, rsa-4096, ec-p256, ec-p384, ec-p521 ou ed25519, ou l’un des identifiants post-quantiques (ML-DSA, SLH-DSA, les composites et ML-KEM — qui ne peut pas signer, et n’est donc qu’une clé de sujet, jamais celle d’une autorité). RSA 2048 est la valeur par défaut parce que la FEUILLE que cette hiérarchie a pour raison d’émettre signe une assertion client que la bibliothèque OAuth de quelqu’un d’autre doit vérifier, et RS256 est le seul algorithme que possède chacune de ces bibliothèques. La liste est lue depuis common/crypto_impl/key_material.js — le module qui génère la clé — de sorte qu’une valeur qu’il ne connaît pas est refusée à la construction, avec la liste à côté."
+    "en": "d0667a437e4fd5f6",
+    "text": "L’algorithme de clé avec lequel une nouvelle autorité de certification est construite lorsque le formulaire n’en indique aucun : rsa-2048, rsa-3072, rsa-4096, ec-p256, ec-p384, ec-p521 ou ed25519, ou l’un des identifiants post-quantiques (ML-DSA, SLH-DSA, les composites et ML-KEM — qui ne peut pas signer, et n’est donc qu’une clé de sujet, jamais celle d’une autorité). RSA est la valeur par défaut parce que la FEUILLE que cette hiérarchie a pour raison d’émettre signe une assertion client que la bibliothèque OAuth de quelqu’un d’autre doit vérifier, et RS256 est le seul algorithme que possède chacune de ces bibliothèques : rsa-2048 en mode développement, rsa-3072 en mode produit (ASVS 5.0.0 11.2.3). La liste est lue depuis common/crypto_impl/key_material.js — le module qui génère la clé — de sorte qu’une valeur qu’il ne connaît pas est refusée à la construction, avec la liste à côté."
   },
   "pki.signatureAlgorithm|label": {
     "en": "43cdf39e69d6fdd4",
@@ -7332,8 +7332,8 @@
     "text": "Écouteur LDAP en clair"
   },
   "ldap.plainListener|description": {
-    "en": "e0685a195274dbbb",
-    "text": "Indique si l’écouteur non chiffré sur ldap.port est démarré ou non. Activé par défaut, comme ce service l’a toujours fait. Désactivé, LDAPS sur ldap.tlsPort reste le seul accès — ce que souhaite un déploiement dont les binds sont VÉRIFIÉS (mode produit), puisqu’un bind simple sur 389 envoie le mot de passe en clair. En mode produit avec ce paramètre activé, un avertissement disant exactement cela est journalisé au démarrage. En mode produit, si ce paramètre n’est pas défini, il est désactivé."
+    "en": "64c4523fa982995b",
+    "text": "Indique si l’écouteur non chiffré sur ldap.port est démarré ou non. Activé par défaut en mode développement, comme ce service l’a toujours fait, et désactivé par défaut en mode produit. Désactivé, LDAPS sur ldap.tlsPort reste le seul accès — ce que souhaite un déploiement dont les binds sont VÉRIFIÉS (mode produit), puisqu’un bind simple sur 389 envoie le mot de passe en clair. En mode produit avec ce paramètre activé, un avertissement disant exactement cela est journalisé au démarrage."
   },
   "ldap.plainListener|restartReason": {
     "en": "e92026b5264f72ad",

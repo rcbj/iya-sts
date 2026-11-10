@@ -120,8 +120,8 @@
     "text": "Direcciones de proxy de confianza"
   },
   "global.trustedProxies|description": {
-    "en": "1f176030f2e4d953",
-    "text": "Las direcciones o los rangos CIDR desde los que se conectan los propios proxies y balanceadores de carga de este despliegue, separados por comas (10.0.0.0/8, fd00::/8). Solo se lee cuando global.trustProxy está activado. VACÍO, el valor predeterminado, mantiene la regla anterior: los encabezados reenviados se creen de cualquier llamante, y el limitador de tasa toma la entrada X-Forwarded-For de más a la izquierda, que escribe el propio cliente. DEFINIDO, X-Forwarded-For, X-Forwarded-Proto y X-Forwarded-Host solo se creen de una conexión cuyo par esté en uno de estos rangos, y el cliente es la entrada X-Forwarded-For de más a la derecha que no lo esté — así, un llamante que llega directamente a un nodo no puede elegir ni su propia dirección para el limitador de tasa ni la idea que este servicio tiene de su propia URL. Un valor que no es una dirección ni un rango se ignora y se registra, nunca se amplía. Con global.proxyProtocol activado es TAMBIÉN la lista de la que se cree un encabezado del protocolo PROXY, diga lo que diga global.trustProxy — y allí una lista vacía no confía en nadie, así que el servicio se niega a arrancar."
+    "en": "0af5f57bfac2e8d3",
+    "text": "Las direcciones o los rangos CIDR desde los que se conectan los propios proxies y balanceadores de carga de este despliegue, separados por comas (10.0.0.0/8, fd00::/8). Solo se lee cuando global.trustProxy está activado. VACÍO, el valor predeterminado, mantiene la regla anterior en modo desarrollo: los encabezados reenviados se creen de cualquier llamante, y el limitador de tasa toma la entrada X-Forwarded-For de más a la izquierda, que escribe el propio cliente. En modo producto, VACÍO no los cree de nadie, así que el cliente es el par de la conexión. DEFINIDO, X-Forwarded-For, X-Forwarded-Proto y X-Forwarded-Host solo se creen de una conexión cuyo par esté en uno de estos rangos, y el cliente es la entrada X-Forwarded-For de más a la derecha que no lo esté — así, un llamante que llega directamente a un nodo no puede elegir ni su propia dirección para el limitador de tasa ni la idea que este servicio tiene de su propia URL. Un valor que no es una dirección ni un rango se ignora y se registra, nunca se amplía. Con global.proxyProtocol activado es TAMBIÉN la lista de la que se cree un encabezado del protocolo PROXY, diga lo que diga global.trustProxy — y allí una lista vacía no confía en nadie, así que el servicio se niega a arrancar."
   },
   "http.keepAliveTimeoutS|label": {
     "en": "d9f06661ccb4fd07",
@@ -268,12 +268,12 @@
     "text": "Desactivado, el valor predeterminado, el modo producto solo acepta el token de cierre de sesión de un socio si tiene el tipo logout+jwt. Activado, también se acepta un token de tipo jwt o sin tipo, para un socio que no envía el tipo. La especificación OpenID solo lo recomienda."
   },
   "account.recentAuthMinutes|label": {
-    "en": "dfa5936497901458",
-    "text": "Antigüedad máxima del inicio de sesión para cambiar un segundo factor (min)"
+    "en": "7a29e5cd3a5ff016",
+    "text": "Antigüedad máxima del inicio de sesión para un cambio sensible (min)"
   },
   "account.recentAuthMinutes|description": {
-    "en": "50ed3d8089739a00",
-    "text": "Una persona que cambie sus segundos factores, códigos de recuperación, llaves de acceso o dirección de correo en el portal debe haber iniciado sesión en estos minutos; de lo contrario, se la envía a iniciar sesión de nuevo. 0 significa que no se pide, el valor predeterminado en desarrollo. El modo producto usa 15 por defecto."
+    "en": "4bfb2112a9f37a5d",
+    "text": "Hace cuánto, como máximo, en minutos, debe haber iniciado sesión alguien para cambiar cómo inicia sesión una persona. En el portal: sus segundos factores, códigos de recuperación, llaves de acceso, contraseñas de aplicación, certificados, claves de firma, identificadores autoemitidos, dirección de correo o una oferta de credencial para la cartera, y cerrar sus otras sesiones; primero se la envía a iniciar sesión de nuevo. Para un administrador: cambiar la contraseña, el segundo factor, la llave de acceso, los códigos de recuperación, la dirección de correo o las contraseñas de aplicación de una persona a través de la consola o de /admin-api, que responde con insufficient_user_authentication de RFC 9470. 0 significa que no se pide, el valor predeterminado en desarrollo. El modo producto usa 15 por defecto."
   },
   "persistence.allowDefaultDatabasePassword|label": {
     "en": "24634837693652d6",
@@ -424,8 +424,8 @@
     "text": "Permitir un nombre de administrador predeterminado en producción"
   },
   "admin.allowDefaultUsername|description": {
-    "en": "261e7a2bb89b22e2",
-    "text": "Solo en modo producto. Desactivado, el valor predeterminado, un administrador de arranque llamado admin, root, sa o administrator, o sin nombre, recibe un nombre generado impredecible, mostrado con su contraseña en el primer inicio. Activado, se usa el nombre configurado tal cual. ADVERTENCIA: el requisito 6.3.2 de ASVS 5.0.0 prohíbe un nombre de cuenta predeterminado, así que déjelo desactivado fuera de un entorno de pruebas."
+    "en": "53da4f7ba4ff5dcc",
+    "text": "Solo en modo producto. Desactivado, el valor predeterminado, un administrador de arranque llamado admin, root, sa o administrator, o sin nombre, recibe un nombre generado impredecible, escrito con su contraseña en el archivo bootstrap-admin-password de persistence.dataDir en el primer inicio (véase admin.logBootstrapPassword). Activado, se usa el nombre configurado tal cual. ADVERTENCIA: el requisito 6.3.2 de ASVS 5.0.0 prohíbe un nombre de cuenta predeterminado, así que déjelo desactivado fuera de un entorno de pruebas."
   },
   "admin.allowDefaultUsername|restartReason": {
     "en": "0191948468332113",
@@ -436,8 +436,8 @@
     "text": "Cuenta del administrador inicial"
   },
   "admin.bootstrapUsername|description": {
-    "en": "b174944b711d5987",
-    "text": "El nombre de usuario del administrador inicial (2026-09-13), en el dominio PREDETERMINADO y, desde el 2026-09-14, en cada dominio de confianza, donde administra solo ese dominio: se crea al arrancar si no existe, es miembro de ambos roles de consola, se le obliga a cambiar su contraseña en su primer inicio de sesión y no se puede eliminar ni renombrar. Hasta que inicie sesión por primera vez en /admin, cualquier persona que haya iniciado sesión puede usar la consola (admin.openWhenEmpty). En desarrollo cualquier contraseña le permite iniciar sesión, como a todos. EN MODO PRODUCTO es también quien recibe una contraseña generada cuando arranca este servicio y NADIE en el dominio tiene una credencial; esa contraseña se registra una vez y nunca más, y es la única forma de entrar en un despliegue nuevo en modo producto. La contraseña generada nunca se escribe donde alguien ya tiene una credencial, así que no puede sobrescribir una contraseña. El cambio obligatorio solo se aplica a una cuenta que este paso CREÓ — una cuenta existente con este nombre conserva su contraseña y solo recibe los dos roles."
+    "en": "9b6fe650632ee79d",
+    "text": "El nombre de usuario del administrador inicial (2026-09-13), en el dominio PREDETERMINADO y, desde el 2026-09-14, en cada dominio de confianza, donde administra solo ese dominio: se crea al arrancar si no existe, es miembro de ambos roles de consola, se le obliga a cambiar su contraseña en su primer inicio de sesión y no se puede eliminar ni renombrar. Hasta que inicie sesión por primera vez en /admin, cualquier persona que haya iniciado sesión puede usar la consola (admin.openWhenEmpty). En desarrollo cualquier contraseña le permite iniciar sesión, como a todos. EN MODO PRODUCTO es también quien recibe una contraseña generada cuando arranca este servicio y NADIE en el dominio tiene una credencial; el nombre y esa contraseña se escriben una sola vez en el archivo bootstrap-admin-password de persistence.dataDir, legible solo por este servicio (el registro indica dónde, y solo los incluye él mismo con admin.logBootstrapPassword activado), y son la única forma de entrar en un despliegue nuevo en modo producto. La contraseña generada nunca se escribe donde alguien ya tiene una credencial, así que no puede sobrescribir una contraseña. El cambio obligatorio solo se aplica a una cuenta que este paso CREÓ — una cuenta existente con este nombre conserva su contraseña y solo recibe los dos roles."
   },
   "admin.bootstrapUsername|restartReason": {
     "en": "0191948468332113",
@@ -924,8 +924,8 @@
     "text": "Tiempo de inactividad de la sesión (segundos, 0 = ninguno)"
   },
   "authn.sessionIdleTimeoutS|description": {
-    "en": "8c722efc24fd3b60",
-    "text": "Cuánto tiempo puede pasar una sesión SIN USARSE antes de terminar, además de la vigencia absoluta de arriba. **Cero, el valor predeterminado, significa sin tiempo de inactividad**, que es lo que este servicio ha hecho siempre. Si se define, una sesión que alguien deja de usar termina esa cantidad de segundos después de su última solicitud, sea cual sea el primero de los dos límites en llegar — y una solicitud a la consola de administración o al portal de usuario cuenta como uso de la sesión de inicio de sesión único que hay detrás, de modo que a un operador que trabaja en la consola no le cierra la sesión un reloj de inactividad sobre una sesión que no está presentando. Es en vivo: se aplica a las sesiones que ya existen, porque se comprueba donde se lee una sesión y no se sella donde se crea. En modo producto, si no se define, el valor predeterminado es 1800."
+    "en": "a5806c4c1917a3f7",
+    "text": "Cuánto tiempo puede pasar una sesión SIN USARSE antes de terminar, además de la vigencia absoluta de arriba. **Cero significa sin tiempo de inactividad**, el valor predeterminado en desarrollo y lo que este servicio ha hecho siempre allí. Si se define, una sesión que alguien deja de usar termina esa cantidad de segundos después de su última solicitud, sea cual sea el primero de los dos límites en llegar — y una solicitud a la consola de administración o al portal de usuario cuenta como uso de la sesión de inicio de sesión único que hay detrás, de modo que a un operador que trabaja en la consola no le cierra la sesión un reloj de inactividad sobre una sesión que no está presentando. Es en vivo: se aplica a las sesiones que ya existen, porque se comprueba donde se lee una sesión y no se sella donde se crea. El modo producto usa 1800 por defecto."
   },
   "authn.deviceBoundSessions|label": {
     "en": "454fe488dcb65a89",
@@ -3000,8 +3000,8 @@
     "text": "Permitir cualquier concesión a un cliente sin lista"
   },
   "oauth2.allowUndeclaredGrants|description": {
-    "en": "22bb986fa3711e13",
-    "text": "Solo en modo producto. Desactivado, el valor predeterminado, un cliente que no declara tipos de concesión solo puede usar authorization_code y refresh_token. Activado, puede usar cualquier concesión que ofrezca este servicio. ADVERTENCIA: el requisito 10.4.4 de ASVS 5.0.0 limita un cliente a las concesiones que necesita, así que déjelo desactivado fuera de un entorno de pruebas."
+    "en": "dad6e01199413088",
+    "text": "Solo en modo producto. Desactivado, el valor predeterminado, un cliente que no declara tipos de concesión solo puede usar authorization_code y refresh_token, y uno que no declara tipos de respuesta (ni la concesión implícita) solo puede usar response_type=code. Activado, puede usar cualquier concesión y tipo de respuesta que ofrezca este servicio. ADVERTENCIA: el requisito 10.4.4 de ASVS 5.0.0 limita un cliente a las concesiones que necesita, así que déjelo desactivado fuera de un entorno de pruebas."
   },
   "oauth2.signedMetadataAlgorithm|label": {
     "en": "71fb31f9a62ec657",
@@ -3672,8 +3672,8 @@
     "text": "Algoritmo de clave predeterminado de la CA"
   },
   "pki.keyAlgorithm|description": {
-    "en": "00e61f4da7498a62",
-    "text": "Con qué algoritmo de clave se construye una nueva autoridad de certificación cuando el formulario no indica ninguno: rsa-2048, rsa-3072, rsa-4096, ec-p256, ec-p384, ec-p521 o ed25519, o uno de los identificadores poscuánticos (ML-DSA, SLH-DSA, los compuestos y ML-KEM — que no puede firmar, así que es una clave de sujeto y nunca la de una autoridad). RSA 2048 es el predeterminado porque la HOJA que esta jerarquía existe para emitir firma una aserción de cliente que la biblioteca OAuth de otra persona tiene que verificar, y RS256 es el único algoritmo que tienen todas esas bibliotecas. La lista se lee de common/crypto_impl/key_material.js — el módulo que genera la clave — así que un valor que no conoce se rechaza al construir, con la lista al lado."
+    "en": "d0667a437e4fd5f6",
+    "text": "Con qué algoritmo de clave se construye una nueva autoridad de certificación cuando el formulario no indica ninguno: rsa-2048, rsa-3072, rsa-4096, ec-p256, ec-p384, ec-p521 o ed25519, o uno de los identificadores poscuánticos (ML-DSA, SLH-DSA, los compuestos y ML-KEM — que no puede firmar, así que es una clave de sujeto y nunca la de una autoridad). RSA es el predeterminado porque la HOJA que esta jerarquía existe para emitir firma una aserción de cliente que la biblioteca OAuth de otra persona tiene que verificar, y RS256 es el único algoritmo que tienen todas esas bibliotecas: rsa-2048 en modo desarrollo, rsa-3072 en modo producto (ASVS 5.0.0 11.2.3). La lista se lee de common/crypto_impl/key_material.js — el módulo que genera la clave — así que un valor que no conoce se rechaza al construir, con la lista al lado."
   },
   "pki.signatureAlgorithm|label": {
     "en": "43cdf39e69d6fdd4",
@@ -7332,8 +7332,8 @@
     "text": "Escucha LDAP sin cifrar"
   },
   "ldap.plainListener|description": {
-    "en": "e0685a195274dbbb",
-    "text": "Si se inicia siquiera la escucha sin cifrar en ldap.port. Activado por defecto, que es lo que este servicio siempre hizo. Desactivado deja LDAPS en ldap.tlsPort como única vía de entrada — que es lo que quiere un despliegue cuyos binds se VERIFICAN (modo producto), ya que un bind simple en 389 envía la contraseña en claro. El modo producto con esto activado registra al arrancar una advertencia que dice exactamente eso. En modo producto, si no se define, está desactivado."
+    "en": "64c4523fa982995b",
+    "text": "Si se inicia siquiera la escucha sin cifrar en ldap.port. Activado por defecto en modo desarrollo, que es lo que este servicio siempre hizo, y desactivado por defecto en modo producto. Desactivado deja LDAPS en ldap.tlsPort como única vía de entrada — que es lo que quiere un despliegue cuyos binds se VERIFICAN (modo producto), ya que un bind simple en 389 envía la contraseña en claro. El modo producto con esto activado registra al arrancar una advertencia que dice exactamente eso."
   },
   "ldap.plainListener|restartReason": {
     "en": "e92026b5264f72ad",

@@ -298,11 +298,11 @@ host), only `https` with the receiver's certificate verified is used — plain
 http only with `ssf.pushAllowHttp` and verification off only with
 `ssf.pushSkipTlsVerification`, **both in development mode only** (#171);
 product reaches a privately certified receiver through `ssf.pushCaFile` — and
-every push has a timeout, a cap on the response size and **no redirects**. In
-product mode the receiver's host is also held to the rules every outbound
-request follows: it must be in `security.outboundAllowedHosts` when that is set,
-it must not resolve to an internal address, and the push goes to the address
-that was checked (`STS-SSF-0158` otherwise). With push
+every push has a timeout, a cap on the response size and **no redirects**. The
+receiver's host must be in `security.outboundAllowedHosts` when that is set, in
+either mode. In product mode it is also held to the rules every outbound
+request follows: it must not resolve to an internal address, and the push goes
+to the address that was checked (`STS-SSF-0158` otherwise). With push
 turned off, SSF still works in full over poll, and `delivery_methods_supported`
 lists only poll.
 

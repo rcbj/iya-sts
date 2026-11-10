@@ -3163,7 +3163,8 @@ const REQUIREMENTS = [
     product: 'Each weak value is IGNORED where it is read (logged once, ' +
              'STS-CORE-0106) and refused on write (STS-CORE-0103, and ' +
              'STS-REG-0193 on an application): XML is signed with the ' +
-             'default rsa-sha256, keys are wrapped with rsa-oaep-mgf1p, a ' +
+             'default rsa-sha256, keys are wrapped with rsa-oaep (and ' +
+             'rsa-oaep-mgf1p only with crypto.allowLegacyHashes on), a ' +
              'SHA-1 signature is refused, a CA build or key pair naming ' +
              'SHA-1 is refused (STS-PKI-0191) and one inherited from a ' +
              'branch built in development is replaced by the key\'s ' +

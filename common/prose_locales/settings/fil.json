@@ -120,8 +120,8 @@
     "text": "Mga address ng pinagkakatiwalaang proxy"
   },
   "global.trustedProxies|description": {
-    "en": "1f176030f2e4d953",
-    "text": "Ang mga address o CIDR range na pinagkokonektahan ng sariling mga proxy at load balancer ng deployment na ito, pinaghihiwalay ng kuwit (10.0.0.0/8, fd00::/8). Binabasa lang kapag naka-on ang global.trustProxy. Ang WALANG LAMAN, ang default, ay nagpapanatili ng lumang patakaran: pinaniniwalaan ang mga forwarded header mula sa kahit anong caller, at kinukuha ng rate limiter ang pinakakaliwang X-Forwarded-For entry, na isinusulat mismo ng client. Kapag ITINAKDA, ang X-Forwarded-For, X-Forwarded-Proto at X-Forwarded-Host ay pinaniniwalaan lang mula sa connection na ang peer ay nasa isa sa mga range na ito, at ang client ay ang pinakakanang X-Forwarded-For entry na wala roon — kaya ang caller na direktang umaabot sa isang node ay hindi makakapili ng sarili nitong rate-limit address ni ng akala ng serbisyong ito sa sarili nitong URL. Ang value na hindi address o range ay binabalewala at nilo-log, hindi kailanman pinalalawak. Kapag naka-on ang global.proxyProtocol, ito RIN ang listahan na pinaniniwalaan ang PROXY protocol header, anuman ang sinasabi ng global.trustProxy — at doon, walang pinagkakatiwalaan ang listahang walang laman, kaya tumatangging mag-start ang serbisyo."
+    "en": "0af5f57bfac2e8d3",
+    "text": "Ang mga address o CIDR range na pinagkokonektahan ng sariling mga proxy at load balancer ng deployment na ito, pinaghihiwalay ng kuwit (10.0.0.0/8, fd00::/8). Binabasa lang kapag naka-on ang global.trustProxy. Ang WALANG LAMAN, ang default, ay nagpapanatili ng lumang patakaran sa development mode: pinaniniwalaan ang mga forwarded header mula sa kahit anong caller, at kinukuha ng rate limiter ang pinakakaliwang X-Forwarded-For entry, na isinusulat mismo ng client. Sa product mode, ang WALANG LAMAN ay walang pinaniniwalaan, kaya ang client ay ang peer ng connection. Kapag ITINAKDA, ang X-Forwarded-For, X-Forwarded-Proto at X-Forwarded-Host ay pinaniniwalaan lang mula sa connection na ang peer ay nasa isa sa mga range na ito, at ang client ay ang pinakakanang X-Forwarded-For entry na wala roon — kaya ang caller na direktang umaabot sa isang node ay hindi makakapili ng sarili nitong rate-limit address ni ng akala ng serbisyong ito sa sarili nitong URL. Ang value na hindi address o range ay binabalewala at nilo-log, hindi kailanman pinalalawak. Kapag naka-on ang global.proxyProtocol, ito RIN ang listahan na pinaniniwalaan ang PROXY protocol header, anuman ang sinasabi ng global.trustProxy — at doon, walang pinagkakatiwalaan ang listahang walang laman, kaya tumatangging mag-start ang serbisyo."
   },
   "http.keepAliveTimeoutS|label": {
     "en": "d9f06661ccb4fd07",
@@ -268,12 +268,12 @@
     "text": "Kapag naka-off, ang default, tinatanggap lamang ng product mode ang Logout Token ng partner kung logout+jwt ang type. Kapag naka-on, tinatanggap din ang token na jwt ang type o walang type, para sa partner na hindi nagpapadala ng type. Inirerekomenda lamang ito ng OpenID specification."
   },
   "account.recentAuthMinutes|label": {
-    "en": "dfa5936497901458",
-    "text": "Gaano kabago dapat ang sign-in para baguhin ang second factor (min)"
+    "en": "7a29e5cd3a5ff016",
+    "text": "Gaano kabago dapat ang sign-in para sa sensitibong pagbabago (min)"
   },
   "account.recentAuthMinutes|description": {
-    "en": "50ed3d8089739a00",
-    "text": "Ang taong nagbabago ng second factor, recovery code, passkey o email address sa portal ay dapat nakapag-sign in sa loob ng ganitong karaming minuto, o papapag-sign in muna siya. Ang 0 ay hindi hinihingi, ang default sa development. 15 ang default ng product mode."
+    "en": "4bfb2112a9f37a5d",
+    "text": "Gaano kabago, sa minuto, dapat nakapag-sign in ang isang tao para baguhin kung paano nagsa-sign in ang isang tao. Sa portal: ang kaniyang mga second factor, recovery code, passkey, app password, certificate, signing key, self-issued ID, email address o isang wallet credential offer, at ang pagtatapos ng iba pa niyang session; papapag-sign in muna siya. Para sa administrator: ang pagpapalit ng password, second factor, passkey, recovery code, email address o app password ng isang tao sa console o sa /admin-api, na sumasagot ng insufficient_user_authentication ng RFC 9470. Ang 0 ay hindi hinihingi, ang default sa development. 15 ang default ng product mode."
   },
   "persistence.allowDefaultDatabasePassword|label": {
     "en": "24634837693652d6",
@@ -424,8 +424,8 @@
     "text": "Payagan ang default na pangalan ng administrator sa product"
   },
   "admin.allowDefaultUsername|description": {
-    "en": "261e7a2bb89b22e2",
-    "text": "Sa product mode lang. Kapag naka-off, ang default, ang bootstrap administrator na pinangalanang admin, root, sa o administrator, o walang pangalan, ay binibigyan ng hindi mahulaang nabuong pangalan, na ipinapakita kasama ng password nito sa unang pagsisimula. Kapag naka-on, ginagamit ang naka-configure na pangalan. BABALA: ipinagbabawal ng requirement 6.3.2 ng ASVS 5.0.0 ang default na pangalan ng account, kaya iwanang naka-off ito sa labas ng test stack."
+    "en": "53da4f7ba4ff5dcc",
+    "text": "Sa product mode lang. Kapag naka-off, ang default, ang bootstrap administrator na pinangalanang admin, root, sa o administrator, o walang pangalan, ay binibigyan ng hindi mahulaang nabuong pangalan, na isinusulat kasama ng password nito sa file na bootstrap-admin-password sa persistence.dataDir sa unang pagsisimula (tingnan ang admin.logBootstrapPassword). Kapag naka-on, ginagamit ang naka-configure na pangalan. BABALA: ipinagbabawal ng requirement 6.3.2 ng ASVS 5.0.0 ang default na pangalan ng account, kaya iwanang naka-off ito sa labas ng test stack."
   },
   "admin.allowDefaultUsername|restartReason": {
     "en": "0191948468332113",
@@ -436,8 +436,8 @@
     "text": "Account ng bootstrap administrator"
   },
   "admin.bootstrapUsername|description": {
-    "en": "b174944b711d5987",
-    "text": "Ang username ng bootstrap administrator (2026-09-13), sa DEFAULT na realm at, mula 2026-09-14, sa bawat trust realm, kung saan ang realm na iyon lang ang pinangangasiwaan nito: ginagawa sa startup kung wala pa, miyembro ng parehong console role, pinipilit na palitan ang password nito sa unang sign-in, at hindi mabubura o mapapalitan ng pangalan. Hangga't hindi pa ito unang nagsa-sign in sa /admin, puwedeng gamitin ng bawat naka-sign in na tao ang console (admin.openWhenEmpty). Sa development, kahit anong password ay nagsa-sign in dito, gaya ng sa lahat. SA PRODUCT MODE, ito rin ang binibigyan ng ginawang password kapag nag-start ang serbisyong ito at WALANG sinuman sa realm ang may hawak na credential; nilo-log nang isang beses ang password na iyon at hindi na kailanman, at iyon lang ang daan papasok sa bagong product deployment. Hindi kailanman isinusulat ang ginawang password kung saan may may hawak nang credential, kaya hindi nito mao-overwrite ang isang password. Nalalapat lang ang sapilitang pagpapalit sa account na GINAWA ng hakbang na ito — ang kasalukuyang account na may ganitong pangalan ay nagpapanatili ng password nito at binibigyan lang ng dalawang role."
+    "en": "9b6fe650632ee79d",
+    "text": "Ang username ng bootstrap administrator (2026-09-13), sa DEFAULT na realm at, mula 2026-09-14, sa bawat trust realm, kung saan ang realm na iyon lang ang pinangangasiwaan nito: ginagawa sa startup kung wala pa, miyembro ng parehong console role, pinipilit na palitan ang password nito sa unang sign-in, at hindi mabubura o mapapalitan ng pangalan. Hangga't hindi pa ito unang nagsa-sign in sa /admin, puwedeng gamitin ng bawat naka-sign in na tao ang console (admin.openWhenEmpty). Sa development, kahit anong password ay nagsa-sign in dito, gaya ng sa lahat. SA PRODUCT MODE, ito rin ang binibigyan ng ginawang password kapag nag-start ang serbisyong ito at WALANG sinuman sa realm ang may hawak na credential; ang pangalan at ang password na iyon ay isinusulat nang isang beses sa file na bootstrap-admin-password sa persistence.dataDir, na mababasa lang ng serbisyong ito (sinasabi ng log kung saan, at dala lang mismo ng log ang mga ito kapag naka-on ang admin.logBootstrapPassword), at iyon lang ang daan papasok sa bagong product deployment. Hindi kailanman isinusulat ang ginawang password kung saan may may hawak nang credential, kaya hindi nito mao-overwrite ang isang password. Nalalapat lang ang sapilitang pagpapalit sa account na GINAWA ng hakbang na ito — ang kasalukuyang account na may ganitong pangalan ay nagpapanatili ng password nito at binibigyan lang ng dalawang role."
   },
   "admin.bootstrapUsername|restartReason": {
     "en": "0191948468332113",
@@ -924,8 +924,8 @@
     "text": "Idle timeout ng session (segundo, 0 = wala)"
   },
   "authn.sessionIdleTimeoutS|description": {
-    "en": "8c722efc24fd3b60",
-    "text": "Gaano katagal puwedeng HINDI GAMITIN ang isang session bago ito matapos, bukod pa sa absolute lifetime sa itaas. **Ang zero, ang default, ay nangangahulugang walang idle timeout**, na siyang palaging ginagawa ng serbisyong ito. Kapag itinakda, ang session na tinigilang gamitin ng isang tao ay natatapos ilang segundo matapos ang huling request nito, alinman sa dalawang limit ang mauna — at ang request sa admin console o sa user portal ay binibilang na paggamit ng sign-on session sa likod nito, kaya ang operator na nagtatrabaho sa console ay hindi masa-sign out dito ng idle clock sa session na hindi nila ipinapakita. Live ito: nalalapat ito sa mga session na umiiral na, dahil sinusuri ito kung saan binabasa ang session sa halip na itinatatak kung saan ito ginagawa. Sa product mode, kung hindi ito itinakda, 1800 ang default."
+    "en": "a5806c4c1917a3f7",
+    "text": "Gaano katagal puwedeng HINDI GAMITIN ang isang session bago ito matapos, bukod pa sa absolute lifetime sa itaas. **Ang zero ay nangangahulugang walang idle timeout**, ang default sa development at siyang palaging ginagawa roon ng serbisyong ito. Kapag itinakda, ang session na tinigilang gamitin ng isang tao ay natatapos ilang segundo matapos ang huling request nito, alinman sa dalawang limit ang mauna — at ang request sa admin console o sa user portal ay binibilang na paggamit ng sign-on session sa likod nito, kaya ang operator na nagtatrabaho sa console ay hindi masa-sign out dito ng idle clock sa session na hindi nila ipinapakita. Live ito: nalalapat ito sa mga session na umiiral na, dahil sinusuri ito kung saan binabasa ang session sa halip na itinatatak kung saan ito ginagawa. 1800 ang default ng product mode."
   },
   "authn.deviceBoundSessions|label": {
     "en": "454fe488dcb65a89",
@@ -3000,8 +3000,8 @@
     "text": "Hayaang gumamit ng anumang grant ang client na walang listahan"
   },
   "oauth2.allowUndeclaredGrants|description": {
-    "en": "22bb986fa3711e13",
-    "text": "Sa product mode lang. Kapag naka-off, ang default, authorization_code at refresh_token lang ang magagamit ng client na walang idineklarang grant type. Kapag naka-on, magagamit nito ang anumang grant ng serbisyong ito. BABALA: nililimitahan ng requirement 10.4.4 ng ASVS 5.0.0 ang client sa mga grant na kailangan nito, kaya iwanang naka-off ito sa labas ng test stack."
+    "en": "dad6e01199413088",
+    "text": "Sa product mode lang. Kapag naka-off, ang default, authorization_code at refresh_token lang ang magagamit ng client na walang idineklarang grant type, at response_type=code lang ang magagamit ng client na walang idineklarang response type (at hindi ang implicit grant). Kapag naka-on, magagamit nito ang anumang grant at response type ng serbisyong ito. BABALA: nililimitahan ng requirement 10.4.4 ng ASVS 5.0.0 ang client sa mga grant na kailangan nito, kaya iwanang naka-off ito sa labas ng test stack."
   },
   "oauth2.signedMetadataAlgorithm|label": {
     "en": "71fb31f9a62ec657",
@@ -3672,8 +3672,8 @@
     "text": "Default na key algorithm ng CA"
   },
   "pki.keyAlgorithm|description": {
-    "en": "00e61f4da7498a62",
-    "text": "Aling key algorithm ang ginagamit sa pagbuo ng bagong certificate authority kapag walang pinapangalanan ang form: rsa-2048, rsa-3072, rsa-4096, ec-p256, ec-p384, ec-p521 o ed25519, o isa sa mga post-quantum id (ML-DSA, SLH-DSA, ang mga composite at ML-KEM — na hindi nakakapirma, kaya subject key ito at hindi kailanman key ng authority). RSA 2048 ang default dahil ang LEAF na dahilan ng pag-iral ng hierarchy na ito ay pumipirma ng client assertion na kailangang i-verify ng OAuth library ng iba, at RS256 ang iisang algorithm na mayroon ang bawat ganoong library. Binabasa ang listahan mula sa common/crypto_impl/key_material.js — ang module na bumubuo ng key — kaya ang value na hindi nito kilala ay tinatanggihan sa build kasama ang listahan sa tabi nito."
+    "en": "d0667a437e4fd5f6",
+    "text": "Aling key algorithm ang ginagamit sa pagbuo ng bagong certificate authority kapag walang pinapangalanan ang form: rsa-2048, rsa-3072, rsa-4096, ec-p256, ec-p384, ec-p521 o ed25519, o isa sa mga post-quantum id (ML-DSA, SLH-DSA, ang mga composite at ML-KEM — na hindi nakakapirma, kaya subject key ito at hindi kailanman key ng authority). RSA ang default dahil ang LEAF na dahilan ng pag-iral ng hierarchy na ito ay pumipirma ng client assertion na kailangang i-verify ng OAuth library ng iba, at RS256 ang iisang algorithm na mayroon ang bawat ganoong library: rsa-2048 sa development mode, rsa-3072 sa product mode (ASVS 5.0.0 11.2.3). Binabasa ang listahan mula sa common/crypto_impl/key_material.js — ang module na bumubuo ng key — kaya ang value na hindi nito kilala ay tinatanggihan sa build kasama ang listahan sa tabi nito."
   },
   "pki.signatureAlgorithm|label": {
     "en": "43cdf39e69d6fdd4",
@@ -7332,8 +7332,8 @@
     "text": "Plain na LDAP listener"
   },
   "ldap.plainListener|description": {
-    "en": "e0685a195274dbbb",
-    "text": "Kung sinisimulan man lang ang hindi naka-encrypt na listener sa ldap.port. Naka-on bilang default, na siyang palaging ginagawa ng serbisyong ito. Ang Off ay nag-iiwan sa LDAPS sa ldap.tlsPort bilang tanging daan papasok — na siyang gusto ng deployment na ang mga bind ay VINE-VERIFY (product mode), dahil ang simple bind sa 389 ay nagpapadala ng password nang hindi naka-encrypt. Ang product mode na naka-on ito ay naglo-log ng babala sa startup na eksaktong nagsasabi niyon. Sa product mode, kung hindi ito itinakda, naka-off ito."
+    "en": "64c4523fa982995b",
+    "text": "Kung sinisimulan man lang ang hindi naka-encrypt na listener sa ldap.port. Naka-on bilang default sa development mode, na siyang palaging ginagawa ng serbisyong ito, at naka-off bilang default sa product mode. Ang Off ay nag-iiwan sa LDAPS sa ldap.tlsPort bilang tanging daan papasok — na siyang gusto ng deployment na ang mga bind ay VINE-VERIFY (product mode), dahil ang simple bind sa 389 ay nagpapadala ng password nang hindi naka-encrypt. Ang product mode na naka-on ito ay naglo-log ng babala sa startup na eksaktong nagsasabi niyon."
   },
   "ldap.plainListener|restartReason": {
     "en": "e92026b5264f72ad",

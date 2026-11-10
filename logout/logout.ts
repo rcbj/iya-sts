@@ -4444,6 +4444,14 @@ class Logout {
       log.debug("Leaving Logout.signOutAct(). Refused.");
       return this.subjectRefusal(subject, true);
     }
+    // THE SAME QUESTION THE JSON DOOR ASKS (#1521, ASVS 5.0.0 7.5.2; #1577).
+    // Until #1577 only `POST /logout` asked it, so the page — the one a
+    // person is sent to, the portal's own "end your other sessions" among
+    // them — ended other sessions on a sign-in of any age.
+    if (this.reauthenticationOwed(subject, body || {})) {
+      log.debug("Leaving Logout.signOutAct(). Sign in again.");
+      return this.reauthenticationRefusal(req, subject, body || {});
+    }
     const ended = this.endFor(req, res, subject, body || {});
     const result = ended.result;
     const answer: Loose = { ok: true, next: 'signed-out',
@@ -4460,6 +4468,41 @@ class Logout {
     answer.view = this.resultView(result, remaining);
     log.debug("Leaving Logout.signOutAct(). The result's view.");
     return { status: 200, json: answer };
+  }
+
+  /**
+   * The page's answer when ending another session needs a recent sign-in:
+   * 403, `STS-LOGOUT-0015` (the JSON door's code), the English refusal every
+   * refusal here is, and a `reauthenticate` view carrying where to sign in
+   * again. The sign-in comes back to `/logout`, re-authenticating this same
+   * session (`authn`'s `session.reauthenticate`), so the person ticks the
+   * rows again and the act is then asked of a fresh sign-in.
+   *
+   * @param req - the request
+   * @param subject - whom the act is about
+   * @param body - the act's body, for the account it names (#561)
+   * @returns `{ status, code, json }` for the API to send
+   */
+  private reauthenticationRefusal(req?, subject?, body?): Loose {
+    const { log, authn } = this.deps;
+    log.debug("Entering Logout.reauthenticationRefusal().");
+    const account = body && body.account ? String(body.account) : '';
+    // A fresh sign-in, never the account picker (prompt=login's choice), for
+    // the person the page is about.
+    const signIn = authn.beginAuthentication({
+      returnTo: LOGOUT_PATH + (account
+        ? '?account=' + encodeURIComponent(account) : ''),
+      protocol: 'Logout', request: req, accountChoice: 'never',
+      hint: subject && subject.username ? String(subject.username) : '',
+      details: [{ label: 'what happens next',
+                  value: 'you will be returned to the sign-out page',
+                  note: 'ending your other sessions needs a recent ' +
+                        'sign-in (account.recentAuthMinutes)' }]
+    });
+    log.debug("Leaving Logout.reauthenticationRefusal().");
+    return { status: 403, code: 'STS-LOGOUT-0015', json: { ok: false,
+      errors: ['Sign in again, then come back to end your other sessions.'],
+      view: { state: 'reauthenticate', signIn: signIn } } };
   }
 
   // Whether a result leaves the browser something to do — `fanOutOf()`'s

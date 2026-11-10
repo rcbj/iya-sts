@@ -3,6 +3,8 @@
   "heading": "Cerrar sesión",
   "startAgain": "Volver a empezar",
   "startAgainEnd": ".",
+  "reauthenticate.lead": "Para finalizar sus otras sesiones hace falta un inicio de sesión reciente. Vuelva a iniciar sesión y regresará a esta página, donde podrá marcarlas de nuevo.",
+  "reauthenticate.signIn": "Volver a iniciar sesión",
   "inventory.holding": "Todo lo que este servicio aún conserva para <code>{username}</code>, en cada familia de protocolos que habla.",
   "inventory.globalButton": "Cierre de sesión global — terminar todo lo de abajo",
   "inventory.globalNote": "La opción predeterminada. Un POST a <code>/logout</code> sin nada seleccionado hace exactamente esto. Las credenciales verificables, y los DID a los que están vinculadas, siguen siendo válidas.",

@@ -662,11 +662,15 @@ type RouteApp = typeof app;
  * operation, over the same action functions and views the console uses, behind
  * an OAuth 2.0 access-token gate.
  */
-// The operations that change how somebody signs in (#1538).
+// The operations that change how somebody signs in (#1538). `disable-mfa`
+// and `disable-primary-keys` since #1577: #1558 gave them the four clear
+// actions' `evidence`, being the same act on every factor at once, and they
+// had been left out of this list, so they were the two that took none of the
+// recent sign-in the single-factor removals take.
 const REAUTHENTICATED_ACTIONS = ['set-password', 'reset-password',
   'issue-password-reset', 'clear-totp', 'clear-key', 'clear-backup-codes',
-  'clear-email-factor', 'set-mail', 'create-app-password',
-  'revoke-app-password'];
+  'clear-email-factor', 'disable-mfa', 'disable-primary-keys', 'set-mail',
+  'create-app-password', 'revoke-app-password'];
 
 class AdminApi {
   /**

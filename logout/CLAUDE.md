@@ -136,7 +136,14 @@ that much can be recalled. The rest of this paragraph stands.
 refuses it (403, `STS-LOGOUT-0015`) when the latest authentication event is
 older than `account.recentAuthMinutes`. A global sign-out and the caller's own
 session are never asked, whatever else a global sign-out ends: nothing may
-stand between a person and leaving.
+stand between a person and leaving. **`signOutAct()`, the page's door at `POST
+/authn-api/logout`, asks the same since #1577** — until then only the JSON door
+did, and the page, where the portal sends people to end their other sessions,
+never asked. It answers in that API's shape (`reauthenticationRefusal()`: 403,
+the same code, an English `errors`, and a `reauthenticate` view whose `signIn`
+is a `beginAuthentication()` path back to `/logout`), and `web_signout.ts`
+draws that view rather than leaving the refusal over the old page.
+`tests/logout_api.js` section 9 holds both doors.
 
 **THIS SERVICE DOES NOT RECALL ANYTHING IT HAS ALREADY ISSUED** — a SAML
 assertion, a Kerberos service ticket, an X509-SVID. **Still true, and QUALIFIED

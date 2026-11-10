@@ -3185,7 +3185,7 @@ op `getSignOut`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:
         `content`:#{`application/json`:#{`schema`:null}}
       },
       `403`:#{
-        `description`:"No Origin of this service, or no CSRF token bound to this browser's session.",
+        `description`:"No Origin of this service, or no CSRF token bound to this browser's session; or ending another session needs a recent sign-in (`account.recentAuthMinutes`), when the answer's view is `reauthenticate` and names where to sign in again.",
         `content`:#{`application/json`:#{`schema`:null}}
       },
       `409`:#{
