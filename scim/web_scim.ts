@@ -201,7 +201,7 @@ class ScimPage {
 
       '<h2>' + t.html('consoleScim.whatWentBack') + '</h2>' +
       kit.note(t.html('consoleScim.whatWentBackNote')) +
-      '<div class="tiles" style="align-items:flex-start">' +
+      '<div class="tiles tiles-top">' +
       '<div><table><tr><th>' + t.html('consoleScim.colStatus') +
       '</th><th class="num">' + t.html('consoleScim.colCount') + '</th></tr>' +
       statusRows +
@@ -683,7 +683,7 @@ class ScimPage {
       '<h2 data-tab="responses">' +
       t.html('consoleScim.whatWentBack') + '</h2>' +
       kit.note(t.html('consoleScim.whatWentBackMonitorNote')) +
-      '<div class="tiles" style="align-items:flex-start">' +
+      '<div class="tiles tiles-top">' +
       '<div><table><tr><th>' + t.html('consoleScim.colClass') +
       '</th><th class="num">' + t.html('consoleScim.colCount') + '</th></tr>' +
       statusClassRows + '</table></div>' +

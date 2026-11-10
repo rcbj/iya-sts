@@ -4663,6 +4663,9 @@ class AdminConsole {
       '.geo-swatch{display:inline-block;vertical-align:middle;' +
       'margin:0 4px 0 12px}' +
       'input.rank{width:4.5em}' +
+      // xacml/web_xacml.ts's warnings and scim/web_scim.ts's top-aligned
+      // tiles, which were `style=""` until the families' pages followed.
+      '.xacml-alert{color:#b00}.tiles.tiles-top{align-items:flex-start}' +
       [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(function (n) {
         return '.indent-' + n + '{padding-left:' + (n * 1.4).toFixed(1) +
                'rem}';
