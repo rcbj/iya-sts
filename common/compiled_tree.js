@@ -64,6 +64,7 @@ const GENERATED = ['application', 'role', 'device', 'serviceAccount', 'spiffe',
     'models/generated/openapi.console.json',
     'models/generated/scim.json',
     'models/generated/oauth.json',
+    'models/generated/gnap.json',
     'models/generated/authzen.json']);
 
 /**

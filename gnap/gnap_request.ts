@@ -59,41 +59,25 @@ import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 import validation = require('../common/validation');
 import schemas = require('./gnap_schemas');
+import GnapModel = require('./gnap_model');
 
-// RFC 9635 section 10.4. `durable` is RESPONSE-only, so a client asking for it
-// has a flag configuration that is not valid — which is precisely what
-// `invalid_flag` says.
-const REQUEST_FLAGS = ['bearer'];
-const RESPONSE_ONLY_FLAGS = ['durable'];
-
-// Section 10.9 and 10.10.
-const START_MODES = ['redirect', 'app', 'user_code', 'user_code_uri'];
-const FINISH_METHODS = ['redirect', 'push'];
-
-// Section 10.6.
-const ASSERTION_FORMATS = ['id_token', 'saml2'];
-
-// ---------------------------------------------------------------------------
-// RFC 9493 SUBJECT IDENTIFIER FORMATS, IN THE SPELLINGS RFC 9493 USES.
-//
-// `ssf/ssf_subjects.js` exists and is NOT used, deliberately. It carried the
-// pre-RFC names (`issuer_subject_id`, `decentralized_identifier`) when this was
-// written, and although it says `iss_sub` and `did` now (#144, 2026-09-22) it
-// also carries SSF 1.0 section 3.5's three formats, which are SSF's and not
-// RFC 9493's — GNAP section 2.2 names RFC 9493's registry and nothing else. So
-// the grammar is written again, in GNAP's words, the way `ssf_subjects.js`'s
-// own header argues a grammar should be.
-// ---------------------------------------------------------------------------
-const SUB_ID_FORMATS = {
-  account: ['uri'],
-  email: ['email'],
-  iss_sub: ['iss', 'sub'],
-  opaque: ['id'],
-  phone_number: ['phone_number'],
-  did: ['url'],
-  uri: ['uri'],
-  aliases: ['identifiers']
-};
+// THE REGISTRIES THIS WALK READS ARE THE MODEL'S (#1579): `@registry` in
+// `models/gnap/gnap.tsp`, each with its section. `durable` is RESPONSE-only
+// (section 10.4), so a client asking for it has a flag configuration that is
+// not valid — which is precisely what `invalid_flag` says. The subject
+// identifier formats are RFC 9493's, in RFC 9493's spellings, each with the
+// members it must carry: `ssf/ssf_subjects.js` is NOT used, deliberately,
+// because it also carries SSF 1.0 section 3.5's formats, which are SSF's and
+// not RFC 9493's, and GNAP section 2.2 names RFC 9493's registry and nothing
+// else.
+const REQUEST_FLAGS: string[] = GnapModel.registry('request-flags');
+const RESPONSE_ONLY_FLAGS: string[] =
+  GnapModel.registry('response-only-flags');
+const START_MODES: string[] = GnapModel.registry('start-modes');
+const FINISH_METHODS: string[] = GnapModel.registry('finish-methods');
+const ASSERTION_FORMATS: string[] = GnapModel.registry('assertion-formats');
+const SUB_ID_FORMATS: Record<string, string[]> =
+  GnapModel.registry('sub-id-formats');
 
 // The IANA "Named Information Hash Algorithm Registry" names node can compute,
 // for section 2.5.2's `hash_method`. The truncated SHA-256 rows are the

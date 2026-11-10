@@ -24,6 +24,7 @@ import { checkDomains, readDomains, renderClasses, renderTypes }
   from '../lib/domain_lib.mjs';
 import { checkScim, readScim } from '../lib/scim_lib.mjs';
 import { checkOAuth, readOAuth } from '../lib/oauth_lib.mjs';
+import { checkGnap, readGnap } from '../lib/gnap_lib.mjs';
 import { checkAuthzen, readAuthzen } from '../lib/authzen_lib.mjs';
 import { checkFacts, factsOf, fieldsOf, linksIn, readDirectory, readPersistence,
   readSpellings, renderScript, schemaOf } from '../lib/model_lib.mjs';
@@ -105,6 +106,14 @@ async function generate() {
     throw new Error('The OAuth model is wrong: ' + oauthProblems.join('; '));
   }
   fs.writeFileSync(path.join(out, 'oauth.json'), JSON.stringify(oauth));
+  const gnap = readGnap(program);
+  const gnapProblems = checkGnap(gnap);
+  if (gnapProblems.length > 0) {
+    log.debug("Leaving generate(). The GNAP model is wrong.");
+    throw new Error('The GNAP model is wrong: ' + gnapProblems.join('; '));
+  }
+  delete gnap.problems;
+  fs.writeFileSync(path.join(out, 'gnap.json'), JSON.stringify(gnap));
   const authzen = readAuthzen(program);
   const authzenProblems = checkAuthzen(authzen);
   if (authzenProblems.length > 0) {

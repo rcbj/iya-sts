@@ -208,6 +208,11 @@ const validation = require('./validation');
 // no cycle and moves no route.
 const certificateSubject = require('./certificate_subject');
 
+// THE OAUTH MODEL (#1579): the JSON type of each client metadata member a
+// registration refusal tests. A leaf over `validation.js` and
+// `model_tables.js`, so the require closes no cycle and moves no route.
+const OAuthModel = require('../oauth-oidc/oauth_model');
+
 // ---------------------------------------------------------------------------
 // THE KINDS. One per way an application can present itself to this service.
 //
@@ -4694,6 +4699,39 @@ function backchannelSchemeProblem(uri, publicClient) {
   return null;
 }
 
+// THE JSON TYPE OF A CLIENT METADATA MEMBER IS THE MODEL'S (#1579).
+// `models/oauth/oauth_members.tsp`'s RegistrationRequest states each member
+// RFC 7591 section 2, OpenID Connect Registration section 2 and the extension
+// specifications define, with its type; every refusal below that tests a
+// member's type asks this, and keeps its own words and its own error code.
+/**
+ * Whether a client metadata member's value is of the JSON type the model
+ * gives it.
+ *
+ * @param {string} member - the registration member
+ * @param {unknown} value - its value
+ * @returns {boolean} true when it is
+ */
+function registrationTypeFits(member, value) {
+  log.debug("Entering registrationTypeFits().");
+  log.debug("Leaving registrationTypeFits().");
+  return OAuthModel.memberFits('registration-request', member, value);
+}
+
+/**
+ * Whether one value of an array member is of the JSON type the model gives
+ * the array's values.
+ *
+ * @param {string} member - the registration member, an array
+ * @param {unknown} value - one of its values
+ * @returns {boolean} true when it is
+ */
+function registrationItemFits(member, value) {
+  log.debug("Entering registrationItemFits().");
+  log.debug("Leaving registrationItemFits().");
+  return OAuthModel.itemFits('registration-request', member, value);
+}
+
 // The same question about an RFC 7591 document, before any of it is written.
 // Answers null or `{ errorCode, error, description }` in RFC 7591 section
 // 3.2.2's vocabulary — `invalid_redirect_uri` for a redirect URI, and
@@ -4867,7 +4905,8 @@ function introspectionResponseProblem(values) {
   const names = Object.keys(INTROSPECTION_ATTRIBUTES);
   for (let i = 0; i < names.length; i++) {
     const value = asked[names[i]];
-    if (value !== undefined && value !== null && typeof value !== 'string') {
+    if (value !== undefined && value !== null &&
+        !registrationTypeFits(names[i], value)) {
       log.debug("Leaving introspectionResponseProblem(). Not a string.");
       return refusal(names[i], 'must be a string naming one algorithm.');
     }
@@ -5009,7 +5048,8 @@ function idTokenEncryptionMetadataProblem(values) {
                  'id_token_encrypted_response_enc'];
   for (let i = 0; i < names.length; i++) {
     const value = asked[names[i]];
-    if (value !== undefined && value !== null && typeof value !== 'string') {
+    if (value !== undefined && value !== null &&
+        !registrationTypeFits(names[i], value)) {
       log.debug("Leaving idTokenEncryptionMetadataProblem(). Not a string.");
       return refusal(names[i], 'must be a string naming one algorithm.');
     }
@@ -5082,7 +5122,8 @@ function jarmMetadataProblem(values) {
                  'authorization_encrypted_response_enc'];
   for (let i = 0; i < names.length; i++) {
     const value = asked[names[i]];
-    if (value !== undefined && value !== null && typeof value !== 'string') {
+    if (value !== undefined && value !== null &&
+        !registrationTypeFits(names[i], value)) {
       log.debug("Leaving jarmMetadataProblem(). Not a string.");
       return refusal(names[i], 'must be a string naming one algorithm.');
     }
@@ -5158,7 +5199,8 @@ function userinfoEncryptionMetadataProblem(values) {
                  'userinfo_encrypted_response_enc'];
   for (let i = 0; i < names.length; i++) {
     const value = asked[names[i]];
-    if (value !== undefined && value !== null && typeof value !== 'string') {
+    if (value !== undefined && value !== null &&
+        !registrationTypeFits(names[i], value)) {
       log.debug("Leaving userinfoEncryptionMetadataProblem(). Not a string.");
       return refusal(names[i], 'must be a string naming one algorithm.');
     }
@@ -5313,12 +5355,12 @@ function requestObjectMetadataProblem(values) {
              member: member, description: member + ': ' + description };
   };
   if (asked.request_uris !== undefined && asked.request_uris !== null) {
-    if (!Array.isArray(asked.request_uris)) {
+    if (!registrationTypeFits('request_uris', asked.request_uris)) {
       log.debug("Leaving requestObjectMetadataProblem(). Not an array.");
       return refusal('request_uris', 'must be an array of URLs.');
     }
     for (let i = 0; i < asked.request_uris.length; i++) {
-      if (typeof asked.request_uris[i] !== 'string') {
+      if (!registrationItemFits('request_uris', asked.request_uris[i])) {
         log.debug("Leaving requestObjectMetadataProblem(). Not a string.");
         return refusal('request_uris', 'every member must be a string.');
       }
@@ -5335,7 +5377,8 @@ function requestObjectMetadataProblem(values) {
                    'request_object_encryption_enc'];
   for (let i = 0; i < strings.length; i++) {
     const value = asked[strings[i]];
-    if (value !== undefined && value !== null && typeof value !== 'string') {
+    if (value !== undefined && value !== null &&
+        !registrationTypeFits(strings[i], value)) {
       log.debug("Leaving requestObjectMetadataProblem(). Not a string.");
       return refusal(strings[i], 'must be a string naming one algorithm.');
     }
@@ -5343,7 +5386,7 @@ function requestObjectMetadataProblem(values) {
   }
   const required = asked.require_signed_request_object;
   if (required !== undefined && required !== null &&
-      typeof required !== 'boolean') {
+      !registrationTypeFits('require_signed_request_object', required)) {
     log.debug("Leaving requestObjectMetadataProblem(). Not a boolean.");
     return refusal('require_signed_request_object', 'must be true or false.');
   }
@@ -5722,21 +5765,23 @@ function requestDefaultsProblem(values) {
              member: member, description: member + ': ' + description };
   };
   if (asked.default_max_age !== undefined &&
-      !(Number.isInteger(asked.default_max_age) &&
+      !(registrationTypeFits('default_max_age', asked.default_max_age) &&
         asked.default_max_age >= 0)) {
     log.debug("Leaving requestDefaultsProblem(). default_max_age.");
     return refusal('default_max_age', 'must be a non-negative whole number ' +
       'of seconds.');
   }
   if (asked.require_auth_time !== undefined &&
-      typeof asked.require_auth_time !== 'boolean') {
+      !registrationTypeFits('require_auth_time', asked.require_auth_time)) {
     log.debug("Leaving requestDefaultsProblem(). require_auth_time.");
     return refusal('require_auth_time', 'must be a boolean.');
   }
   if (asked.default_acr_values !== undefined &&
-      !(Array.isArray(asked.default_acr_values) &&
+      !(registrationTypeFits('default_acr_values',
+                             asked.default_acr_values) &&
         asked.default_acr_values.every(function (one) {
-          return typeof one === 'string' && ACR_VALUE_SHAPE.test(one);
+          return registrationItemFits('default_acr_values', one) &&
+                 ACR_VALUE_SHAPE.test(one);
         }))) {
     log.debug("Leaving requestDefaultsProblem(). default_acr_values.");
     return refusal('default_acr_values', 'must be an array of acr values.');
@@ -6006,7 +6051,8 @@ function cibaMetadataProblem(values) {
                    'verifies (CIBA Core section 4 forbids none).');
   }
   const userCode = asked.backchannel_user_code_parameter;
-  if (userCode !== undefined && typeof userCode !== 'boolean') {
+  if (userCode !== undefined &&
+      !registrationTypeFits('backchannel_user_code_parameter', userCode)) {
     log.debug("Leaving cibaMetadataProblem(). Not a boolean.");
     return refusal('backchannel_user_code_parameter', 'must be a boolean.');
   }
@@ -6141,7 +6187,8 @@ function oidcSubjectMetadataProblem(values) {
   const members = Object.keys(OIDC_SUBJECT_ATTRIBUTES);
   for (let i = 0; i < members.length; i++) {
     const value = asked[members[i]];
-    if (value !== undefined && value !== null && typeof value !== 'string') {
+    if (value !== undefined && value !== null &&
+        !registrationTypeFits(members[i], value)) {
       log.debug("Leaving oidcSubjectMetadataProblem(). Not a string.");
       return refusal(members[i], 'must be a string.');
     }
@@ -6276,7 +6323,8 @@ function pushedAuthorizationMetadataProblem(values) {
   log.debug("Entering pushedAuthorizationMetadataProblem().");
   const asked = values || {};
   const value = asked.require_pushed_authorization_requests;
-  if (value !== undefined && value !== null && typeof value !== 'boolean') {
+  if (value !== undefined && value !== null &&
+      !registrationTypeFits('require_pushed_authorization_requests', value)) {
     log.debug("Leaving pushedAuthorizationMetadataProblem(). Not a boolean.");
     return { errorCode: 'STS-REG-0120', error: 'invalid_client_metadata',
              member: 'require_pushed_authorization_requests',
@@ -6606,7 +6654,9 @@ function mtlsMetadataProblem(values) {
                'Register the one subject the certificate will carry.' };
   }
   const flag = asked.tls_client_certificate_bound_access_tokens;
-  if (flag !== undefined && flag !== null && typeof flag !== 'boolean') {
+  if (flag !== undefined && flag !== null &&
+      !registrationTypeFits('tls_client_certificate_bound_access_tokens',
+                            flag)) {
     log.debug("Leaving mtlsMetadataProblem(). Not a boolean.");
     return { errorCode: 'STS-REG-0132', error: 'invalid_client_metadata',
              member: 'tls_client_certificate_bound_access_tokens',
@@ -6843,22 +6893,29 @@ function gnapMtlsTrustProblem(attribute, value) {
  */
 const AUTHORIZATION_DETAILS_BUILT_IN = ['openid_credential'];
 
-const AUTHORIZATION_DETAILS_DEFINITION_MEMBERS = ['type', 'description',
-                                                  'locations', 'schema',
-                                                  'actions', 'datatypes',
-                                                  'privileges', 'required',
-                                                  'interaction',
-                                                  'consentActions', 'bearer',
-                                                  'maxLifetimeS', 'acr',
-                                                  'derivableFrom',
-                                                  'introspectionClaims',
-                                                  'limits', 'xacml',
-                                                  'notForPolicy'];
+// THE DEFINITION'S MEMBERS ARE THE MODEL'S (#1579): `models/gnap/gnap.tsp`'s
+// `AccessTypeDefinition`, each with its citation, in the order a refusal
+// lists them. What each member MEANS is checked below, because a list's
+// grammar, a member naming another and a sentence a console shows are not
+// shapes.
+const ACCESS_TYPE_DEFINITION = ModelTables.file('gnap.json').members
+  .find(function (set) {
+    return set.id === 'access-type-definition';
+  });
+
+const AUTHORIZATION_DETAILS_DEFINITION_MEMBERS =
+  ACCESS_TYPE_DEFINITION.list.map(function (member) {
+    return member.name;
+  });
 
 // The three values `interaction` may take (#432 phase 4; enforced by phase
-// 6): `always` asks the resource owner whatever the client is, `never` lets a
-// client that may skip the page skip it, `default` leaves it to the client.
-const ACCESS_TYPE_INTERACTIONS = ['always', 'default', 'never'];
+// 6), the model's: `always` asks the resource owner whatever the client is,
+// `never` lets a client that may skip the page skip it, `default` leaves it
+// to the client.
+const ACCESS_TYPE_INTERACTIONS = ACCESS_TYPE_DEFINITION.list
+  .find(function (member) {
+    return member.name === 'interaction';
+  }).values;
 
 // The members an introspection response already carries, which no type may
 // name as a claim to add beside them: RFC 7662 section 2.2's, RFC 9767
@@ -7361,7 +7418,7 @@ function authorizationDetailsMetadataProblem(values) {
              member: 'authorization_details_types',
              description: 'authorization_details_types: ' + description };
   };
-  if (!Array.isArray(types)) {
+  if (!registrationTypeFits('authorization_details_types', types)) {
     log.debug("Leaving authorizationDetailsMetadataProblem(). Not an array.");
     return refusal('must be an array of type names (RFC 9396 section 10).');
   }

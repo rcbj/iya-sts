@@ -3629,7 +3629,8 @@
      "nonce=n-fixed",
      "code_challenge=<random>",
      "code_challenge_method=S256"
-    ]
+    ],
+    "in": "query"
    },
    "status": 302,
    "headers": {
@@ -3639,7 +3640,8 @@
      "url": "/authn/login",
      "query": [
       "authn=<authn>"
-     ]
+     ],
+     "in": "query"
     },
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -3650,7 +3652,15 @@
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
    },
-   "body": "Found. Redirecting to /authn/login?<authn>"
+   "body": {
+    "redirecting": {
+     "url": "/authn/login",
+     "query": [
+      "authn=<authn>"
+     ],
+     "in": "query"
+    }
+   }
   },
   {
    "mode": "development",
@@ -3667,7 +3677,8 @@
      "nonce=n-fixed",
      "code_challenge=<random>",
      "code_challenge_method=S256"
-    ]
+    ],
+    "in": "query"
    },
    "status": 302,
    "headers": {
@@ -3677,7 +3688,8 @@
      "url": "/authn/login",
      "query": [
       "authn=<authn>"
-     ]
+     ],
+     "in": "query"
     },
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -3688,7 +3700,15 @@
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
    },
-   "body": "Found. Redirecting to /authn/login?<authn>"
+   "body": {
+    "redirecting": {
+     "url": "/authn/login",
+     "query": [
+      "authn=<authn>"
+     ],
+     "in": "query"
+    }
+   }
   },
   {
    "mode": "development",
@@ -3703,7 +3723,8 @@
      "url": "/authn/login",
      "query": [
       "authn=<authn>"
-     ]
+     ],
+     "in": "query"
     },
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -3714,7 +3735,15 @@
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
    },
-   "body": "Found. Redirecting to /authn/login?<authn>"
+   "body": {
+    "redirecting": {
+     "url": "/authn/login",
+     "query": [
+      "authn=<authn>"
+     ],
+     "in": "query"
+    }
+   }
   },
   {
    "mode": "development",
@@ -3731,7 +3760,8 @@
      "nonce=n-fixed",
      "code_challenge=<random>",
      "code_challenge_method=S256"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -3768,7 +3798,8 @@
      "code_challenge=<random>",
      "code_challenge_method=S256",
      "redirect_uri=https://rp.wire.example/cb"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -3804,7 +3835,8 @@
      "nonce=n-fixed",
      "code_challenge=<random>",
      "code_challenge_method=S256"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -3840,7 +3872,8 @@
      "nonce=n-fixed",
      "code_challenge=<random>",
      "code_challenge_method=S256"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -3876,7 +3909,8 @@
      "nonce=n-fixed",
      "code_challenge=abc",
      "code_challenge_method=S256"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -3913,7 +3947,8 @@
      "code_challenge=<random>",
      "code_challenge_method=S256",
      "max_age=soon"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -3950,7 +3985,8 @@
      "code_challenge=<random>",
      "code_challenge_method=S256",
      "max_age=-1"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -3987,7 +4023,8 @@
      "code_challenge=<random>",
      "code_challenge_method=S256",
      "domain_hint=a b"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -4023,7 +4060,8 @@
      "nonce=n-fixed",
      "code_challenge=<random>",
      "code_challenge_method=S256"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -4053,7 +4091,8 @@
      "code_challenge=<random>",
      "code_challenge_method=S256",
      "response_mode=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -4089,7 +4128,8 @@
      "nonce=n-fixed",
      "code_challenge=",
      "code_challenge_method="
-    ]
+    ],
+    "in": "query"
    },
    "status": 302,
    "headers": {
@@ -4099,7 +4139,8 @@
      "url": "/authn/login",
      "query": [
       "authn=<authn>"
-     ]
+     ],
+     "in": "query"
     },
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -4110,7 +4151,15 @@
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
    },
-   "body": "Found. Redirecting to /authn/login?<authn>"
+   "body": {
+    "redirecting": {
+     "url": "/authn/login",
+     "query": [
+      "authn=<authn>"
+     ],
+     "in": "query"
+    }
+   }
   },
   {
    "mode": "development",
@@ -4127,7 +4176,8 @@
      "nonce=n-fixed",
      "code_challenge=",
      "code_challenge_method="
-    ]
+    ],
+    "in": "query"
    },
    "status": 302,
    "headers": {
@@ -4137,7 +4187,8 @@
      "url": "/authn/login",
      "query": [
       "authn=<authn>"
-     ]
+     ],
+     "in": "query"
     },
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -4148,7 +4199,15 @@
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
    },
-   "body": "Found. Redirecting to /authn/login?<authn>"
+   "body": {
+    "redirecting": {
+     "url": "/authn/login",
+     "query": [
+      "authn=<authn>"
+     ],
+     "in": "query"
+    }
+   }
   },
   {
    "mode": "development",
@@ -4165,7 +4224,8 @@
      "nonce=n-fixed",
      "code_challenge=<random>",
      "code_challenge_method=plain"
-    ]
+    ],
+    "in": "query"
    },
    "status": 302,
    "headers": {
@@ -4175,7 +4235,8 @@
      "url": "/authn/login",
      "query": [
       "authn=<authn>"
-     ]
+     ],
+     "in": "query"
     },
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -4186,7 +4247,15 @@
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
    },
-   "body": "Found. Redirecting to /authn/login?<authn>"
+   "body": {
+    "redirecting": {
+     "url": "/authn/login",
+     "query": [
+      "authn=<authn>"
+     ],
+     "in": "query"
+    }
+   }
   },
   {
    "mode": "development",
@@ -4204,7 +4273,8 @@
      "code_challenge=<random>",
      "code_challenge_method=S256",
      "dpop_jkt=not base64url!"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -4242,7 +4312,8 @@
      "code_challenge_method=S256",
      "resource=https://a.example/",
      "resource=https://b.example/"
-    ]
+    ],
+    "in": "query"
    },
    "status": 302,
    "headers": {
@@ -4255,7 +4326,8 @@
       "error_description=RFC 8707 section 2: the resource 'https://a.example/', 'https://b.example/' name no registered target. A token is addressed only to one of this service's own resource servers or to an application registered ahead of time (the console, /admin-api, RFC 7591, an LDAP add under ou=applications or an OpenID Federation), found by its oauthAudience, permission base URI, client_id or identifier; one that was only seen is not registered.",
       "state=st-fixed",
       "iss=http://<port>"
-     ]
+     ],
+     "in": "query"
     },
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -4266,7 +4338,18 @@
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
    },
-   "body": "Found. Redirecting to https://rp.wire.example/cb?error=invalid_target&error_description=RFC+8707+section+2%3A+the+resource+%27https%3A%2F%2Fa.example%2F%27%2C+%27https%3A%2F%2Fb.example%2F%27+name+no+registered+target.+A+token+is+addressed+only+to+one+of+this+service%27s+own+resource+servers+or+to+an+application+registered+ahead+of+time+%28the+console%2C+%2Fadmin-api%2C+RFC+7591%2C+an+LDAP+add+under+ou%3Dapplications+or+an+OpenID+Federation%29%2C+found+by+its+oauthAudience%2C+permission+base+URI%2C+client_id+or+identifier%3B+one+that+was+only+seen+is+not+registered.&state=st-fixed&iss=http%3A%2F%2F<port>"
+   "body": {
+    "redirecting": {
+     "url": "https://rp.wire.example/cb",
+     "query": [
+      "error=invalid_target",
+      "error_description=RFC 8707 section 2: the resource 'https://a.example/', 'https://b.example/' name no registered target. A token is addressed only to one of this service's own resource servers or to an application registered ahead of time (the console, /admin-api, RFC 7591, an LDAP add under ou=applications or an OpenID Federation), found by its oauthAudience, permission base URI, client_id or identifier; one that was only seen is not registered.",
+      "state=st-fixed",
+      "iss=http://<port>"
+     ],
+     "in": "query"
+    }
+   }
   },
   {
    "mode": "development",
@@ -4284,7 +4367,8 @@
      "code_challenge=<random>",
      "code_challenge_method=S256",
      "resource=javascript:alert(1)"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -4321,7 +4405,8 @@
      "code_challenge=<random>",
      "code_challenge_method=S256",
      "__proto__=x"
-    ]
+    ],
+    "in": "query"
    },
    "status": 302,
    "headers": {
@@ -4331,7 +4416,8 @@
      "url": "/authn/login",
      "query": [
       "authn=<authn>"
-     ]
+     ],
+     "in": "query"
     },
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -4342,7 +4428,15 @@
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
    },
-   "body": "Found. Redirecting to /authn/login?<authn>"
+   "body": {
+    "redirecting": {
+     "url": "/authn/login",
+     "query": [
+      "authn=<authn>"
+     ],
+     "in": "query"
+    }
+   }
   },
   {
    "mode": "development",
@@ -4353,7 +4447,8 @@
     "query": [
      "client_id=wire-conf",
      "request_uri=<request_uri>"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -4509,7 +4604,8 @@
     "query": [
      "client_id=wire-conf",
      "request_uri=<request_uri>"
-    ]
+    ],
+    "in": "query"
    },
    "status": 302,
    "headers": {
@@ -4520,7 +4616,8 @@
      "url": "/authn/login",
      "query": [
       "authn=<authn>"
-     ]
+     ],
+     "in": "query"
     },
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -4531,7 +4628,15 @@
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
    },
-   "body": "Found. Redirecting to /authn/login?<authn>"
+   "body": {
+    "redirecting": {
+     "url": "/authn/login",
+     "query": [
+      "authn=<authn>"
+     ],
+     "in": "query"
+    }
+   }
   },
   {
    "mode": "development",
@@ -5683,7 +5788,8 @@
     "query": [
      "claim=email",
      "claim=address"
-    ]
+    ],
+    "in": "query"
    },
    "status": 200,
    "headers": {
@@ -5734,7 +5840,8 @@
     "url": "/oauth2/userinfo",
     "query": [
      "claims={nope"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -5829,7 +5936,8 @@
     "url": "/oauth2/userinfo",
     "query": [
      "access_token=<access_token>"
-    ]
+    ],
+    "in": "query"
    },
    "status": 401,
    "headers": {
@@ -6086,6 +6194,1271 @@
   },
   {
    "mode": "development",
+   "step": "register, redirect_uris \"x\"",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_redirect_uri",
+    "error_description": "redirect_uris must be an array."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, request_uris \"x\"",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "request_uris: must be an array of URLs."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, request_uris [5]",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "request_uris: every member must be a string."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, jwks_uri 5",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "jwks_uri: must be an https URL."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, jwks \"x\"",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 201,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "redirect_uris": [
+     "https://rp.wire.example/cb"
+    ],
+    "jwks": "x",
+    "token_endpoint_auth_method": "client_secret_basic",
+    "grant_types": [
+     "authorization_code"
+    ],
+    "response_types": [
+     "code"
+    ],
+    "application_type": "web",
+    "client_id": "<client>",
+    "client_id_issued_at": "<epoch>",
+    "client_secret": "<client_secret>",
+    "client_secret_expires_at": "<client_secret_expires_at>",
+    "registration_access_token": "<registration_access_token>",
+    "registration_client_uri": "http://<port>/oauth2/register/<client>"
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, backchannel_logout_uri 5",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "backchannel_logout_uri: '5' cannot be oauthBackchannelLogoutUri: it is not an absolute URI."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, frontchannel_logout_uri 5",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "frontchannel_logout_uri: '5' cannot be oauthFrontchannelLogoutUri: it is not an absolute URI."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, initiate_login_uri 5",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "initiate_login_uri: must be an https URL (OpenID Connect Registration section 2)."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, post_logout_redirect_uris \"x\"",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "post_logout_redirect_uris: 'x' cannot be oauthPostLogoutRedirectUri: it is not an absolute URI."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, sector_identifier_uri 5",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "sector_identifier_uri: must be a string."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, introspection_signed_response_alg 5",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "introspection_signed_response_alg: must be a string naming one algorithm."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, introspection_encrypted_response_alg 5",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "introspection_encrypted_response_alg: must be a string naming one algorithm."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, id_token_signed_response_alg 5",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "id_token_signed_response_alg: 5 is not an algorithm this service signs with; it signs with HS256, HS384, HS512, RS256, RS384, RS512, PS256, PS384, PS512, ES256, ES384, ES512, ES256K, ML-DSA-44, ML-DSA-65, ML-DSA-87, SLH-DSA-SHA2-128s, SLH-DSA-SHAKE-128s, ML-DSA-44-ES256, ML-DSA-65-ES256, ML-DSA-87-ES384, ML-DSA-44-Ed25519, ML-DSA-65-Ed25519, ML-DSA-87-Ed448."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, id_token_encrypted_response_alg 5",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "id_token_encrypted_response_alg: must be a string naming one algorithm."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, userinfo_signed_response_alg 5",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "userinfo_signed_response_alg: 5 is not an algorithm this service signs with; it signs with HS256, HS384, HS512, RS256, RS384, RS512, PS256, PS384, PS512, ES256, ES384, ES512, ES256K, ML-DSA-44, ML-DSA-65, ML-DSA-87, SLH-DSA-SHA2-128s, SLH-DSA-SHAKE-128s, ML-DSA-44-ES256, ML-DSA-65-ES256, ML-DSA-87-ES384, ML-DSA-44-Ed25519, ML-DSA-65-Ed25519, ML-DSA-87-Ed448, none."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, userinfo_encrypted_response_alg 5",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "userinfo_encrypted_response_alg: must be a string naming one algorithm."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, authorization_signed_response_alg 5",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "authorization_signed_response_alg: must be a string naming one algorithm."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, authorization_encrypted_response_alg 5",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "authorization_encrypted_response_alg: must be a string naming one algorithm."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, request_object_signing_alg 5",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "request_object_signing_alg: must be a string naming one algorithm."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, request_object_encryption_alg 5",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "request_object_encryption_alg: must be a string naming one algorithm."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, token_endpoint_auth_signing_alg 5",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "token_endpoint_auth_signing_alg: must be a string."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, require_pushed_authorization_requests \"yes\"",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "require_pushed_authorization_requests must be true or false (RFC 9126 section 6), and this registration gives 'yes'."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, require_signed_request_object \"yes\"",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "require_signed_request_object: must be true or false."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, backchannel_user_code_parameter \"yes\"",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "backchannel_user_code_parameter: must be a boolean."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, backchannel_token_delivery_mode 5",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "backchannel_token_delivery_mode: must be poll, ping or push (CIBA Core section 4)."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, backchannel_client_notification_endpoint 5",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "backchannel_client_notification_endpoint: must be an https URL with no fragment (CIBA Core section 4)."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, backchannel_authentication_request_signing_alg 5",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "backchannel_authentication_request_signing_alg: '5' is not an asymmetric JWS algorithm this service verifies (CIBA Core section 4 forbids none)."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, backchannel_logout_session_required \"yes\"",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 201,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "redirect_uris": [
+     "https://rp.wire.example/cb"
+    ],
+    "backchannel_logout_session_required": "yes",
+    "token_endpoint_auth_method": "client_secret_basic",
+    "grant_types": [
+     "authorization_code"
+    ],
+    "response_types": [
+     "code"
+    ],
+    "application_type": "web",
+    "client_id": "<client>",
+    "client_id_issued_at": "<epoch>",
+    "client_secret": "<client_secret>",
+    "client_secret_expires_at": "<client_secret_expires_at>",
+    "registration_access_token": "<registration_access_token>",
+    "registration_client_uri": "http://<port>/oauth2/register/<client>"
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, frontchannel_logout_session_required \"yes\"",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 201,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "redirect_uris": [
+     "https://rp.wire.example/cb"
+    ],
+    "frontchannel_logout_session_required": "yes",
+    "token_endpoint_auth_method": "client_secret_basic",
+    "grant_types": [
+     "authorization_code"
+    ],
+    "response_types": [
+     "code"
+    ],
+    "application_type": "web",
+    "client_id": "<client>",
+    "client_id_issued_at": "<epoch>",
+    "client_secret": "<client_secret>",
+    "client_secret_expires_at": "<client_secret_expires_at>",
+    "registration_access_token": "<registration_access_token>",
+    "registration_client_uri": "http://<port>/oauth2/register/<client>"
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, tls_client_certificate_bound_access_tokens \"yes\"",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "tls_client_certificate_bound_access_tokens must be true or false (RFC 8705 section 3.4), and this registration gives 'yes'."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, tls_client_auth_subject_dn 5",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "RFC 8705 section 2.1.2: tls_client_auth_subject_dn must be a string, and this gives 5."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, authorization_details_types \"x\"",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "authorization_details_types: must be an array of type names (RFC 9396 section 10)."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, default_max_age -5",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "default_max_age: must be a non-negative whole number of seconds."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, default_max_age \"x\"",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "default_max_age: must be a non-negative whole number of seconds."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, require_auth_time \"yes\"",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "require_auth_time: must be a boolean."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, default_acr_values \"mfa\"",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "default_acr_values: must be an array of acr values."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, subject_type 5",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "subject_type: must be a string."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, application_type 5",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "application_type: 5 is not web or native (OpenID Connect Registration section 2)."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, token_endpoint_auth_method 5",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 201,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "redirect_uris": [
+     "https://rp.wire.example/cb"
+    ],
+    "token_endpoint_auth_method": "5",
+    "grant_types": [
+     "authorization_code"
+    ],
+    "response_types": [
+     "code"
+    ],
+    "application_type": "web",
+    "client_id": "<client>",
+    "client_id_issued_at": "<epoch>",
+    "client_secret": "<client_secret>",
+    "client_secret_expires_at": "<client_secret_expires_at>",
+    "registration_access_token": "<registration_access_token>",
+    "registration_client_uri": "http://<port>/oauth2/register/<client>"
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, grant_types \"x\"",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 201,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "redirect_uris": [
+     "https://rp.wire.example/cb"
+    ],
+    "grant_types": [
+     "authorization_code"
+    ],
+    "token_endpoint_auth_method": "client_secret_basic",
+    "response_types": [
+     "code"
+    ],
+    "application_type": "web",
+    "client_id": "<client>",
+    "client_id_issued_at": "<epoch>",
+    "client_secret": "<client_secret>",
+    "client_secret_expires_at": "<client_secret_expires_at>",
+    "registration_access_token": "<registration_access_token>",
+    "registration_client_uri": "http://<port>/oauth2/register/<client>"
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, response_types \"x\"",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 201,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "redirect_uris": [
+     "https://rp.wire.example/cb"
+    ],
+    "response_types": [
+     "code"
+    ],
+    "token_endpoint_auth_method": "client_secret_basic",
+    "grant_types": [
+     "authorization_code"
+    ],
+    "application_type": "web",
+    "client_id": "<client>",
+    "client_id_issued_at": "<epoch>",
+    "client_secret": "<client_secret>",
+    "client_secret_expires_at": "<client_secret_expires_at>",
+    "registration_access_token": "<registration_access_token>",
+    "registration_client_uri": "http://<port>/oauth2/register/<client>"
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, client_name 5",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 201,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "redirect_uris": [
+     "https://rp.wire.example/cb"
+    ],
+    "client_name": 5,
+    "token_endpoint_auth_method": "client_secret_basic",
+    "grant_types": [
+     "authorization_code"
+    ],
+    "response_types": [
+     "code"
+    ],
+    "application_type": "web",
+    "client_id": "<client>",
+    "client_id_issued_at": "<epoch>",
+    "client_secret": "<client_secret>",
+    "client_secret_expires_at": "<client_secret_expires_at>",
+    "registration_access_token": "<registration_access_token>",
+    "registration_client_uri": "http://<port>/oauth2/register/<client>"
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, contacts \"x\"",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 201,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "redirect_uris": [
+     "https://rp.wire.example/cb"
+    ],
+    "contacts": "x",
+    "token_endpoint_auth_method": "client_secret_basic",
+    "grant_types": [
+     "authorization_code"
+    ],
+    "response_types": [
+     "code"
+    ],
+    "application_type": "web",
+    "client_id": "<client>",
+    "client_id_issued_at": "<epoch>",
+    "client_secret": "<client_secret>",
+    "client_secret_expires_at": "<client_secret_expires_at>",
+    "registration_access_token": "<registration_access_token>",
+    "registration_client_uri": "http://<port>/oauth2/register/<client>"
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, logo_uri 42",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "logo_uri must be an absolute https URL with no spaces (OpenID Connect Registration section 2)."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, client_uri 42",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 201,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "redirect_uris": [
+     "https://rp.wire.example/cb"
+    ],
+    "client_uri": 42,
+    "token_endpoint_auth_method": "client_secret_basic",
+    "grant_types": [
+     "authorization_code"
+    ],
+    "response_types": [
+     "code"
+    ],
+    "application_type": "web",
+    "client_id": "<client>",
+    "client_id_issued_at": "<epoch>",
+    "client_secret": "<client_secret>",
+    "client_secret_expires_at": "<client_secret_expires_at>",
+    "registration_access_token": "<registration_access_token>",
+    "registration_client_uri": "http://<port>/oauth2/register/<client>"
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, policy_uri 42",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "policy_uri must be an absolute https URL with no spaces (OpenID Connect Registration section 2)."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, tos_uri 42",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "tos_uri must be an absolute https URL with no spaces (OpenID Connect Registration section 2)."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, scope 5",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "scope must be a string of space-separated scope values (RFC 7591 section 2)."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, software_id 5",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 201,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "redirect_uris": [
+     "https://rp.wire.example/cb"
+    ],
+    "software_id": 5,
+    "token_endpoint_auth_method": "client_secret_basic",
+    "grant_types": [
+     "authorization_code"
+    ],
+    "response_types": [
+     "code"
+    ],
+    "application_type": "web",
+    "client_id": "<client>",
+    "client_id_issued_at": "<epoch>",
+    "client_secret": "<client_secret>",
+    "client_secret_expires_at": "<client_secret_expires_at>",
+    "registration_access_token": "<registration_access_token>",
+    "registration_client_uri": "http://<port>/oauth2/register/<client>"
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, software_version 5",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 201,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "redirect_uris": [
+     "https://rp.wire.example/cb"
+    ],
+    "software_version": 5,
+    "token_endpoint_auth_method": "client_secret_basic",
+    "grant_types": [
+     "authorization_code"
+    ],
+    "response_types": [
+     "code"
+    ],
+    "application_type": "web",
+    "client_id": "<client>",
+    "client_id_issued_at": "<epoch>",
+    "client_secret": "<client_secret>",
+    "client_secret_expires_at": "<client_secret_expires_at>",
+    "registration_access_token": "<registration_access_token>",
+    "registration_client_uri": "http://<port>/oauth2/register/<client>"
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, software_statement 5",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_software_statement",
+    "error_description": "software_statement must be a string holding the entire signed JWT (RFC 7591 section 3.1.1)."
+   }
+  },
+  {
+   "mode": "development",
+   "step": "register, command_endpoint 5",
+   "method": "POST",
+   "path": "/oauth2/register",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_client_metadata",
+    "error_description": "command_endpoint: must be an https URL with no fragment (OpenID Provider Commands 1.0)."
+   }
+  },
+  {
+   "mode": "development",
    "step": "device_authorization",
    "method": "POST",
    "path": "/oauth2/device_authorization",
@@ -6274,7 +7647,8 @@
     "query": [
      "client_id=wire-conf",
      "post_logout_redirect_uri=javascript:alert(1)"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -6287,7 +7661,7 @@
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
    },
-   "body": "<!doctype html><html lang=\"en\" dir=\"ltr\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>This sign-out request could not be read</title><style>body{font-family:system-ui,-apple-system,\"Segoe UI\",Roboto,sans-serif;margin:2rem auto;max-width:46rem;padding:0 1rem;line-height:1.5;color:#222;background:#fff}h1{font-size:1.5rem;margin:.4rem 0 1rem}code{font-family:ui-monospace,Menlo,monospace;font-size:.85rem;background:#f4f4f8;padding:.1rem .25rem;border-radius:3px;word-break:break-all}.warn{background:#fff8e1;border:1px solid #ffe082;padding:.7rem .9rem;border-radius:4px;margin:1rem 0}.warn .error{display:block;font-weight:600;margin-bottom:.2rem}details.prose{margin:1rem 0;color:#444}details.prose>summary{cursor:pointer;color:#1f4fa3}details.prose>summary:hover{color:#2c5cc5}details.prose>div{margin:.5rem 0 0 1rem;font-size:.92rem}.next{margin:1.2rem 0}.next a.portal{display:inline-block;margin-top:.5rem;padding:.35rem .8rem;border:1px solid #1f4fa3;border-radius:4px;color:#1f4fa3;text-decoration:none}.next a.portal:hover{background:#eef3fc}button.as-link{background:none;border:0;padding:0;font:inherit;color:#00e;color:LinkText;text-decoration:underline;cursor:pointer}section.diagnostics{margin:2rem 0 1rem;padding:.6rem .9rem;border:1px solid #ddd;border-radius:4px;background:#fafafa;font-size:.82rem;color:#555}section.diagnostics h2{font-size:.85rem;margin:0 0 .4rem;text-transform:uppercase;letter-spacing:.04em;color:#666}section.diagnostics dl{display:grid;grid-template-columns:max-content 1fr;gap:.15rem .9rem;margin:0}section.diagnostics dt{color:#666}section.diagnostics dd{margin:0;min-width:0}section.diagnostics dd code{font-size:.8rem}.sub{color:#666;font-size:.92rem}details.language-row{float:right;margin:0 0 .5rem 1rem}details.language-row{font-size:.85em;position:relative}details.language-row>summary{cursor:pointer;list-style:none;padding:2px 6px;border-radius:6px;white-space:nowrap}details.language-row>summary::-webkit-details-marker{display:none}details.language-row>summary::before{content:\"\\25B8\\00A0\"}details.language-row[open]>summary::before{content:\"\\25BE\\00A0\"}details.language-row .lr-label{opacity:.7}details.language-row .lr-current{font-weight:600}details.language-row form.language-chooser{float:none;display:flex;align-items:center;gap:6px;margin:0;position:absolute;right:0;top:100%;z-index:30;white-space:nowrap;background:#fff;color:#222;border:1px solid #c9cad6;border-radius:8px;padding:8px 10px;box-shadow:0 4px 14px rgba(0,0,0,.14)}</style></head><body><details class=\"language-row\"><summary><span class=\"lr-label\">Language</span> <span class=\"lr-current\" lang=\"en\">English</span></summary><form class=\"language-chooser\" method=\"post\" action=\"/authn/language\"><input type=\"hidden\" name=\"return\" value=\"/oauth2/logout?client_id=wire-conf&amp;post_logout_redirect_uri=javascript%3Aalert%281%29\"><label for=\"sts-language\">Language</label> <select id=\"sts-language\" name=\"lang\"><option value=\"en\" lang=\"en\" selected>English</option><option value=\"fr-FR\" lang=\"fr-FR\">Français (France)</option><option value=\"fr-CA\" lang=\"fr-CA\">Français (Canada)</option><option value=\"es-MX\" lang=\"es-MX\">Español (México)</option><option value=\"es-PA\" lang=\"es-PA\">Español (Panamá)</option><option value=\"es-ES\" lang=\"es-ES\">Español (España)</option><option value=\"zh-CN\" lang=\"zh-CN\">简体中文（中国）</option><option value=\"zh-HK\" lang=\"zh-HK\">繁體中文（香港）</option><option value=\"zh-TW\" lang=\"zh-TW\">繁體中文（台灣）</option><option value=\"fil-PH\" lang=\"fil-PH\">Filipino (Pilipinas)</option><option value=\"sv-SE\" lang=\"sv-SE\">Svenska (Sverige)</option></select> <button type=\"submit\">Change</button></form></details><h1>This sign-out request could not be read</h1><div class=\"warn\" role=\"alert\">This sign-out request is malformed: one of its parameters is not valid. The diagnostics below say which.</div><p>Nothing has been done: you are still signed in.</p><div class=\"next\"><p>Close this tab and start again from the application you were using. If this happens again, send the diagnostics below to whoever runs that application.</p><a class=\"portal\" href=\"/portal\">Go to your account</a></div><section class=\"diagnostics\" aria-labelledby=\"diagnostics-heading\"><h2 id=\"diagnostics-heading\">Diagnostics</h2><dl><dt>Time (UTC)</dt><dd><code><time></code></dd><dt>Incident ID</dt><dd><code>214</code></dd><dt>Detail</dt><dd><code>the query parameter &quot;post_logout_redirect_uri&quot; is not acceptable: must be an http or https URL, or a native application&#39;s private-use scheme named for a domain in reverse order, such as com.example.app:/callback (RFC 8252 section 7.1; a scheme with no period, like &quot;javascript:&quot;, is refused).</code></dd></dl></section></body></html>"
+   "body": "<!doctype html><html lang=\"en\" dir=\"ltr\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>This sign-out request could not be read</title><style>body{font-family:system-ui,-apple-system,\"Segoe UI\",Roboto,sans-serif;margin:2rem auto;max-width:46rem;padding:0 1rem;line-height:1.5;color:#222;background:#fff}h1{font-size:1.5rem;margin:.4rem 0 1rem}code{font-family:ui-monospace,Menlo,monospace;font-size:.85rem;background:#f4f4f8;padding:.1rem .25rem;border-radius:3px;word-break:break-all}.warn{background:#fff8e1;border:1px solid #ffe082;padding:.7rem .9rem;border-radius:4px;margin:1rem 0}.warn .error{display:block;font-weight:600;margin-bottom:.2rem}details.prose{margin:1rem 0;color:#444}details.prose>summary{cursor:pointer;color:#1f4fa3}details.prose>summary:hover{color:#2c5cc5}details.prose>div{margin:.5rem 0 0 1rem;font-size:.92rem}.next{margin:1.2rem 0}.next a.portal{display:inline-block;margin-top:.5rem;padding:.35rem .8rem;border:1px solid #1f4fa3;border-radius:4px;color:#1f4fa3;text-decoration:none}.next a.portal:hover{background:#eef3fc}button.as-link{background:none;border:0;padding:0;font:inherit;color:#00e;color:LinkText;text-decoration:underline;cursor:pointer}section.diagnostics{margin:2rem 0 1rem;padding:.6rem .9rem;border:1px solid #ddd;border-radius:4px;background:#fafafa;font-size:.82rem;color:#555}section.diagnostics h2{font-size:.85rem;margin:0 0 .4rem;text-transform:uppercase;letter-spacing:.04em;color:#666}section.diagnostics dl{display:grid;grid-template-columns:max-content 1fr;gap:.15rem .9rem;margin:0}section.diagnostics dt{color:#666}section.diagnostics dd{margin:0;min-width:0}section.diagnostics dd code{font-size:.8rem}.sub{color:#666;font-size:.92rem}details.language-row{float:right;margin:0 0 .5rem 1rem}details.language-row{font-size:.85em;position:relative}details.language-row>summary{cursor:pointer;list-style:none;padding:2px 6px;border-radius:6px;white-space:nowrap}details.language-row>summary::-webkit-details-marker{display:none}details.language-row>summary::before{content:\"\\25B8\\00A0\"}details.language-row[open]>summary::before{content:\"\\25BE\\00A0\"}details.language-row .lr-label{opacity:.7}details.language-row .lr-current{font-weight:600}details.language-row form.language-chooser{float:none;display:flex;align-items:center;gap:6px;margin:0;position:absolute;right:0;top:100%;z-index:30;white-space:nowrap;background:#fff;color:#222;border:1px solid #c9cad6;border-radius:8px;padding:8px 10px;box-shadow:0 4px 14px rgba(0,0,0,.14)}</style></head><body><details class=\"language-row\"><summary><span class=\"lr-label\">Language</span> <span class=\"lr-current\" lang=\"en\">English</span></summary><form class=\"language-chooser\" method=\"post\" action=\"/authn/language\"><input type=\"hidden\" name=\"return\" value=\"/oauth2/logout?client_id=wire-conf&amp;post_logout_redirect_uri=javascript%3Aalert%281%29\"><label for=\"sts-language\">Language</label> <select id=\"sts-language\" name=\"lang\"><option value=\"en\" lang=\"en\" selected>English</option><option value=\"fr-FR\" lang=\"fr-FR\">Français (France)</option><option value=\"fr-CA\" lang=\"fr-CA\">Français (Canada)</option><option value=\"es-MX\" lang=\"es-MX\">Español (México)</option><option value=\"es-PA\" lang=\"es-PA\">Español (Panamá)</option><option value=\"es-ES\" lang=\"es-ES\">Español (España)</option><option value=\"zh-CN\" lang=\"zh-CN\">简体中文（中国）</option><option value=\"zh-HK\" lang=\"zh-HK\">繁體中文（香港）</option><option value=\"zh-TW\" lang=\"zh-TW\">繁體中文（台灣）</option><option value=\"fil-PH\" lang=\"fil-PH\">Filipino (Pilipinas)</option><option value=\"sv-SE\" lang=\"sv-SE\">Svenska (Sverige)</option></select> <button type=\"submit\">Change</button></form></details><h1>This sign-out request could not be read</h1><div class=\"warn\" role=\"alert\">This sign-out request is malformed: one of its parameters is not valid. The diagnostics below say which.</div><p>Nothing has been done: you are still signed in.</p><div class=\"next\"><p>Close this tab and start again from the application you were using. If this happens again, send the diagnostics below to whoever runs that application.</p><a class=\"portal\" href=\"/portal\">Go to your account</a></div><section class=\"diagnostics\" aria-labelledby=\"diagnostics-heading\"><h2 id=\"diagnostics-heading\">Diagnostics</h2><dl><dt>Time (UTC)</dt><dd><code><time></code></dd><dt>Incident ID</dt><dd><code>336</code></dd><dt>Detail</dt><dd><code>the query parameter &quot;post_logout_redirect_uri&quot; is not acceptable: must be an http or https URL, or a native application&#39;s private-use scheme named for a domain in reverse order, such as com.example.app:/callback (RFC 8252 section 7.1; a scheme with no period, like &quot;javascript:&quot;, is refused).</code></dd></dl></section></body></html>"
   },
   {
    "mode": "development",
@@ -6298,7 +7672,8 @@
     "query": [
      "client_id=wire-conf",
      "post_logout_redirect_uri=https://evil.example/"
-    ]
+    ],
+    "in": "query"
    },
    "status": 200,
    "headers": {
@@ -6314,7 +7689,7 @@
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
    },
-   "body": "<!doctype html><html lang=\"en\" dir=\"ltr\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Sign-out request partly refused</title><style>body{font-family:system-ui,-apple-system,\"Segoe UI\",Roboto,sans-serif;margin:2rem auto;max-width:52rem;padding:0 1rem;line-height:1.5;color:#111}h1{font-size:1.4rem}h2{font-size:1.1rem;margin-top:1.6rem}.sub{color:#555;font-size:.9rem}.ok{background:#e8f5e9;border-left:4px solid #2e7d32;padding:.6rem .8rem;margin:1rem 0}.warn{background:#fff8e1;border-left:4px solid #b26a00;padding:.6rem .8rem;margin:1rem 0}table{border-collapse:collapse;width:100%;margin:.6rem 0}th,td{text-align:left;padding:.4rem .6rem;border-bottom:1px solid #ddd;vertical-align:top}code{background:#f4f4f4;padding:.05rem .25rem;border-radius:3px;word-break:break-all}details.language-row{float:right;margin:0 0 .5rem 1rem}.next{margin:1.2rem 0}.next a.portal{display:inline-block;margin-top:.5rem;padding:.35rem .8rem;border:1px solid #1f4fa3;border-radius:4px;color:#1f4fa3;text-decoration:none}.next a.portal:hover{background:#eef3fc}button.as-link{background:none;border:0;padding:0;font:inherit;color:#00e;color:LinkText;text-decoration:underline;cursor:pointer}section.diagnostics{margin:2rem 0 1rem;padding:.6rem .9rem;border:1px solid #ddd;border-radius:4px;background:#fafafa;font-size:.82rem;color:#555}section.diagnostics h2{font-size:.85rem;margin:0 0 .4rem;text-transform:uppercase;letter-spacing:.04em;color:#666}section.diagnostics dl{display:grid;grid-template-columns:max-content 1fr;gap:.15rem .9rem;margin:0}section.diagnostics dt{color:#666}section.diagnostics dd{margin:0;min-width:0}section.diagnostics dd code{font-size:.8rem}details.language-row{font-size:.85em;position:relative}details.language-row>summary{cursor:pointer;list-style:none;padding:2px 6px;border-radius:6px;white-space:nowrap}details.language-row>summary::-webkit-details-marker{display:none}details.language-row>summary::before{content:\"\\25B8\\00A0\"}details.language-row[open]>summary::before{content:\"\\25BE\\00A0\"}details.language-row .lr-label{opacity:.7}details.language-row .lr-current{font-weight:600}details.language-row form.language-chooser{float:none;display:flex;align-items:center;gap:6px;margin:0;position:absolute;right:0;top:100%;z-index:30;white-space:nowrap;background:#fff;color:#222;border:1px solid #c9cad6;border-radius:8px;padding:8px 10px;box-shadow:0 4px 14px rgba(0,0,0,.14)}</style></head><body><details class=\"language-row\"><summary><span class=\"lr-label\">Language</span> <span class=\"lr-current\" lang=\"en\">English</span></summary><form class=\"language-chooser\" method=\"post\" action=\"/authn/language\"><input type=\"hidden\" name=\"return\" value=\"/\"><label for=\"sts-language\">Language</label> <select id=\"sts-language\" name=\"lang\"><option value=\"en\" lang=\"en\" selected>English</option><option value=\"fr-FR\" lang=\"fr-FR\">Français (France)</option><option value=\"fr-CA\" lang=\"fr-CA\">Français (Canada)</option><option value=\"es-MX\" lang=\"es-MX\">Español (México)</option><option value=\"es-PA\" lang=\"es-PA\">Español (Panamá)</option><option value=\"es-ES\" lang=\"es-ES\">Español (España)</option><option value=\"zh-CN\" lang=\"zh-CN\">简体中文（中国）</option><option value=\"zh-HK\" lang=\"zh-HK\">繁體中文（香港）</option><option value=\"zh-TW\" lang=\"zh-TW\">繁體中文（台灣）</option><option value=\"fil-PH\" lang=\"fil-PH\">Filipino (Pilipinas)</option><option value=\"sv-SE\" lang=\"sv-SE\">Svenska (Sverige)</option></select> <button type=\"submit\">Change</button></form></details><h1>Sign-out request partly refused</h1><div class=\"warn\" role=\"alert\" id=\"logout-return-refused\"><strong>This sign-out request is not valid as sent: its post_logout_redirect_uri is not one this client registered, so it is not followed.</strong> The request named <code>https://evil.example/</code> (RP-Initiated Logout 1.0 section 3).</div><div class=\"ok\">There was no session to end.</div><div class=\"next\"><p>Close this tab and start again from the application you were using. If this happens again, send the diagnostics below to whoever runs that application.</p><a class=\"portal\" href=\"/portal\">Go to your account</a></div><section class=\"diagnostics\" aria-labelledby=\"diagnostics-heading\"><h2 id=\"diagnostics-heading\">Diagnostics</h2><dl><dt>Time (UTC)</dt><dd><code><time></code></dd><dt>Incident ID</dt><dd><code>216</code></dd><dt>Application (client_id)</dt><dd><code>wire-conf</code></dd><dt>Requested post_logout_redirect_uri</dt><dd><code>https://evil.example/</code></dd><dt>Detail</dt><dd><code>RP-Initiated Logout 1.0 section 3: &quot;https://evil.example/&quot; is not a post-logout redirect URI this client registered.</code></dd></dl></section></body></html>"
+   "body": "<!doctype html><html lang=\"en\" dir=\"ltr\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Sign-out request partly refused</title><style>body{font-family:system-ui,-apple-system,\"Segoe UI\",Roboto,sans-serif;margin:2rem auto;max-width:52rem;padding:0 1rem;line-height:1.5;color:#111}h1{font-size:1.4rem}h2{font-size:1.1rem;margin-top:1.6rem}.sub{color:#555;font-size:.9rem}.ok{background:#e8f5e9;border-left:4px solid #2e7d32;padding:.6rem .8rem;margin:1rem 0}.warn{background:#fff8e1;border-left:4px solid #b26a00;padding:.6rem .8rem;margin:1rem 0}table{border-collapse:collapse;width:100%;margin:.6rem 0}th,td{text-align:left;padding:.4rem .6rem;border-bottom:1px solid #ddd;vertical-align:top}code{background:#f4f4f4;padding:.05rem .25rem;border-radius:3px;word-break:break-all}details.language-row{float:right;margin:0 0 .5rem 1rem}.next{margin:1.2rem 0}.next a.portal{display:inline-block;margin-top:.5rem;padding:.35rem .8rem;border:1px solid #1f4fa3;border-radius:4px;color:#1f4fa3;text-decoration:none}.next a.portal:hover{background:#eef3fc}button.as-link{background:none;border:0;padding:0;font:inherit;color:#00e;color:LinkText;text-decoration:underline;cursor:pointer}section.diagnostics{margin:2rem 0 1rem;padding:.6rem .9rem;border:1px solid #ddd;border-radius:4px;background:#fafafa;font-size:.82rem;color:#555}section.diagnostics h2{font-size:.85rem;margin:0 0 .4rem;text-transform:uppercase;letter-spacing:.04em;color:#666}section.diagnostics dl{display:grid;grid-template-columns:max-content 1fr;gap:.15rem .9rem;margin:0}section.diagnostics dt{color:#666}section.diagnostics dd{margin:0;min-width:0}section.diagnostics dd code{font-size:.8rem}details.language-row{font-size:.85em;position:relative}details.language-row>summary{cursor:pointer;list-style:none;padding:2px 6px;border-radius:6px;white-space:nowrap}details.language-row>summary::-webkit-details-marker{display:none}details.language-row>summary::before{content:\"\\25B8\\00A0\"}details.language-row[open]>summary::before{content:\"\\25BE\\00A0\"}details.language-row .lr-label{opacity:.7}details.language-row .lr-current{font-weight:600}details.language-row form.language-chooser{float:none;display:flex;align-items:center;gap:6px;margin:0;position:absolute;right:0;top:100%;z-index:30;white-space:nowrap;background:#fff;color:#222;border:1px solid #c9cad6;border-radius:8px;padding:8px 10px;box-shadow:0 4px 14px rgba(0,0,0,.14)}</style></head><body><details class=\"language-row\"><summary><span class=\"lr-label\">Language</span> <span class=\"lr-current\" lang=\"en\">English</span></summary><form class=\"language-chooser\" method=\"post\" action=\"/authn/language\"><input type=\"hidden\" name=\"return\" value=\"/\"><label for=\"sts-language\">Language</label> <select id=\"sts-language\" name=\"lang\"><option value=\"en\" lang=\"en\" selected>English</option><option value=\"fr-FR\" lang=\"fr-FR\">Français (France)</option><option value=\"fr-CA\" lang=\"fr-CA\">Français (Canada)</option><option value=\"es-MX\" lang=\"es-MX\">Español (México)</option><option value=\"es-PA\" lang=\"es-PA\">Español (Panamá)</option><option value=\"es-ES\" lang=\"es-ES\">Español (España)</option><option value=\"zh-CN\" lang=\"zh-CN\">简体中文（中国）</option><option value=\"zh-HK\" lang=\"zh-HK\">繁體中文（香港）</option><option value=\"zh-TW\" lang=\"zh-TW\">繁體中文（台灣）</option><option value=\"fil-PH\" lang=\"fil-PH\">Filipino (Pilipinas)</option><option value=\"sv-SE\" lang=\"sv-SE\">Svenska (Sverige)</option></select> <button type=\"submit\">Change</button></form></details><h1>Sign-out request partly refused</h1><div class=\"warn\" role=\"alert\" id=\"logout-return-refused\"><strong>This sign-out request is not valid as sent: its post_logout_redirect_uri is not one this client registered, so it is not followed.</strong> The request named <code>https://evil.example/</code> (RP-Initiated Logout 1.0 section 3).</div><div class=\"ok\">There was no session to end.</div><div class=\"next\"><p>Close this tab and start again from the application you were using. If this happens again, send the diagnostics below to whoever runs that application.</p><a class=\"portal\" href=\"/portal\">Go to your account</a></div><section class=\"diagnostics\" aria-labelledby=\"diagnostics-heading\"><h2 id=\"diagnostics-heading\">Diagnostics</h2><dl><dt>Time (UTC)</dt><dd><code><time></code></dd><dt>Incident ID</dt><dd><code>338</code></dd><dt>Application (client_id)</dt><dd><code>wire-conf</code></dd><dt>Requested post_logout_redirect_uri</dt><dd><code>https://evil.example/</code></dd><dt>Detail</dt><dd><code>RP-Initiated Logout 1.0 section 3: &quot;https://evil.example/&quot; is not a post-logout redirect URI this client registered.</code></dd></dl></section></body></html>"
   },
   {
    "mode": "development",
@@ -6326,7 +7701,8 @@
      "client_id=wire-conf",
      "state=s1",
      "post_logout_redirect_uri=https://rp.wire.example/bye"
-    ]
+    ],
+    "in": "query"
    },
    "status": 302,
    "headers": {
@@ -6336,7 +7712,8 @@
      "url": "https://rp.wire.example/bye",
      "query": [
       "state=s1"
-     ]
+     ],
+     "in": "query"
     },
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -6347,7 +7724,15 @@
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
    },
-   "body": "Found. Redirecting to https://rp.wire.example/bye?state=s1"
+   "body": {
+    "redirecting": {
+     "url": "https://rp.wire.example/bye",
+     "query": [
+      "state=s1"
+     ],
+     "in": "query"
+    }
+   }
   },
   {
    "mode": "development",
@@ -6359,7 +7744,8 @@
      "id_token_hint={\"jwt\":{\"header\":{\"alg\":\"RS256\",\"typ\":\"JWT\",\"kid\":\"<kid>\"},\"claims\":{\"iss\":\"http://<port>\",\"sub\":\"urn:uuid:<uuid#1>\",\"aud\":\"wire-conf\",\"iat\":\"<epoch>\",\"nbf\":\"<epoch>\",\"exp\":\"<epoch>\",\"azp\":\"wire-conf\",\"jti\":\"<jti>\",\"at_hash\":\"<at_hash>\"},\"signed\":true}}",
      "state=s2",
      "post_logout_redirect_uri=https://rp.wire.example/bye"
-    ]
+    ],
+    "in": "query"
    },
    "status": 302,
    "headers": {
@@ -6369,7 +7755,8 @@
      "url": "https://rp.wire.example/bye",
      "query": [
       "state=s2"
-     ]
+     ],
+     "in": "query"
     },
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -6380,7 +7767,15 @@
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
    },
-   "body": "Found. Redirecting to https://rp.wire.example/bye?state=s2"
+   "body": {
+    "redirecting": {
+     "url": "https://rp.wire.example/bye",
+     "query": [
+      "state=s2"
+     ],
+     "in": "query"
+    }
+   }
   },
   {
    "mode": "development",
@@ -6391,7 +7786,8 @@
     "query": [
      "state=a",
      "state=b"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -6404,7 +7800,7 @@
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
    },
-   "body": "<!doctype html><html lang=\"en\" dir=\"ltr\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>This sign-out request could not be read</title><style>body{font-family:system-ui,-apple-system,\"Segoe UI\",Roboto,sans-serif;margin:2rem auto;max-width:46rem;padding:0 1rem;line-height:1.5;color:#222;background:#fff}h1{font-size:1.5rem;margin:.4rem 0 1rem}code{font-family:ui-monospace,Menlo,monospace;font-size:.85rem;background:#f4f4f8;padding:.1rem .25rem;border-radius:3px;word-break:break-all}.warn{background:#fff8e1;border:1px solid #ffe082;padding:.7rem .9rem;border-radius:4px;margin:1rem 0}.warn .error{display:block;font-weight:600;margin-bottom:.2rem}details.prose{margin:1rem 0;color:#444}details.prose>summary{cursor:pointer;color:#1f4fa3}details.prose>summary:hover{color:#2c5cc5}details.prose>div{margin:.5rem 0 0 1rem;font-size:.92rem}.next{margin:1.2rem 0}.next a.portal{display:inline-block;margin-top:.5rem;padding:.35rem .8rem;border:1px solid #1f4fa3;border-radius:4px;color:#1f4fa3;text-decoration:none}.next a.portal:hover{background:#eef3fc}button.as-link{background:none;border:0;padding:0;font:inherit;color:#00e;color:LinkText;text-decoration:underline;cursor:pointer}section.diagnostics{margin:2rem 0 1rem;padding:.6rem .9rem;border:1px solid #ddd;border-radius:4px;background:#fafafa;font-size:.82rem;color:#555}section.diagnostics h2{font-size:.85rem;margin:0 0 .4rem;text-transform:uppercase;letter-spacing:.04em;color:#666}section.diagnostics dl{display:grid;grid-template-columns:max-content 1fr;gap:.15rem .9rem;margin:0}section.diagnostics dt{color:#666}section.diagnostics dd{margin:0;min-width:0}section.diagnostics dd code{font-size:.8rem}.sub{color:#666;font-size:.92rem}details.language-row{float:right;margin:0 0 .5rem 1rem}details.language-row{font-size:.85em;position:relative}details.language-row>summary{cursor:pointer;list-style:none;padding:2px 6px;border-radius:6px;white-space:nowrap}details.language-row>summary::-webkit-details-marker{display:none}details.language-row>summary::before{content:\"\\25B8\\00A0\"}details.language-row[open]>summary::before{content:\"\\25BE\\00A0\"}details.language-row .lr-label{opacity:.7}details.language-row .lr-current{font-weight:600}details.language-row form.language-chooser{float:none;display:flex;align-items:center;gap:6px;margin:0;position:absolute;right:0;top:100%;z-index:30;white-space:nowrap;background:#fff;color:#222;border:1px solid #c9cad6;border-radius:8px;padding:8px 10px;box-shadow:0 4px 14px rgba(0,0,0,.14)}</style></head><body><details class=\"language-row\"><summary><span class=\"lr-label\">Language</span> <span class=\"lr-current\" lang=\"en\">English</span></summary><form class=\"language-chooser\" method=\"post\" action=\"/authn/language\"><input type=\"hidden\" name=\"return\" value=\"/oauth2/logout?state=a&amp;state=b\"><label for=\"sts-language\">Language</label> <select id=\"sts-language\" name=\"lang\"><option value=\"en\" lang=\"en\" selected>English</option><option value=\"fr-FR\" lang=\"fr-FR\">Français (France)</option><option value=\"fr-CA\" lang=\"fr-CA\">Français (Canada)</option><option value=\"es-MX\" lang=\"es-MX\">Español (México)</option><option value=\"es-PA\" lang=\"es-PA\">Español (Panamá)</option><option value=\"es-ES\" lang=\"es-ES\">Español (España)</option><option value=\"zh-CN\" lang=\"zh-CN\">简体中文（中国）</option><option value=\"zh-HK\" lang=\"zh-HK\">繁體中文（香港）</option><option value=\"zh-TW\" lang=\"zh-TW\">繁體中文（台灣）</option><option value=\"fil-PH\" lang=\"fil-PH\">Filipino (Pilipinas)</option><option value=\"sv-SE\" lang=\"sv-SE\">Svenska (Sverige)</option></select> <button type=\"submit\">Change</button></form></details><h1>This sign-out request could not be read</h1><div class=\"warn\" role=\"alert\">This sign-out request is malformed: one of its parameters is not valid. The diagnostics below say which.</div><p>Nothing has been done: you are still signed in.</p><div class=\"next\"><p>Close this tab and start again from the application you were using. If this happens again, send the diagnostics below to whoever runs that application.</p><a class=\"portal\" href=\"/portal\">Go to your account</a></div><section class=\"diagnostics\" aria-labelledby=\"diagnostics-heading\"><h2 id=\"diagnostics-heading\">Diagnostics</h2><dl><dt>Time (UTC)</dt><dd><code><time></code></dd><dt>Incident ID</dt><dd><code>221</code></dd><dt>Detail</dt><dd><code>the parameter &quot;state&quot; was given 2 times and this endpoint takes it once. It is refused rather than resolved to one of them, because choosing silently is how two readers of the same request come to disagree.</code></dd></dl></section></body></html>"
+   "body": "<!doctype html><html lang=\"en\" dir=\"ltr\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>This sign-out request could not be read</title><style>body{font-family:system-ui,-apple-system,\"Segoe UI\",Roboto,sans-serif;margin:2rem auto;max-width:46rem;padding:0 1rem;line-height:1.5;color:#222;background:#fff}h1{font-size:1.5rem;margin:.4rem 0 1rem}code{font-family:ui-monospace,Menlo,monospace;font-size:.85rem;background:#f4f4f8;padding:.1rem .25rem;border-radius:3px;word-break:break-all}.warn{background:#fff8e1;border:1px solid #ffe082;padding:.7rem .9rem;border-radius:4px;margin:1rem 0}.warn .error{display:block;font-weight:600;margin-bottom:.2rem}details.prose{margin:1rem 0;color:#444}details.prose>summary{cursor:pointer;color:#1f4fa3}details.prose>summary:hover{color:#2c5cc5}details.prose>div{margin:.5rem 0 0 1rem;font-size:.92rem}.next{margin:1.2rem 0}.next a.portal{display:inline-block;margin-top:.5rem;padding:.35rem .8rem;border:1px solid #1f4fa3;border-radius:4px;color:#1f4fa3;text-decoration:none}.next a.portal:hover{background:#eef3fc}button.as-link{background:none;border:0;padding:0;font:inherit;color:#00e;color:LinkText;text-decoration:underline;cursor:pointer}section.diagnostics{margin:2rem 0 1rem;padding:.6rem .9rem;border:1px solid #ddd;border-radius:4px;background:#fafafa;font-size:.82rem;color:#555}section.diagnostics h2{font-size:.85rem;margin:0 0 .4rem;text-transform:uppercase;letter-spacing:.04em;color:#666}section.diagnostics dl{display:grid;grid-template-columns:max-content 1fr;gap:.15rem .9rem;margin:0}section.diagnostics dt{color:#666}section.diagnostics dd{margin:0;min-width:0}section.diagnostics dd code{font-size:.8rem}.sub{color:#666;font-size:.92rem}details.language-row{float:right;margin:0 0 .5rem 1rem}details.language-row{font-size:.85em;position:relative}details.language-row>summary{cursor:pointer;list-style:none;padding:2px 6px;border-radius:6px;white-space:nowrap}details.language-row>summary::-webkit-details-marker{display:none}details.language-row>summary::before{content:\"\\25B8\\00A0\"}details.language-row[open]>summary::before{content:\"\\25BE\\00A0\"}details.language-row .lr-label{opacity:.7}details.language-row .lr-current{font-weight:600}details.language-row form.language-chooser{float:none;display:flex;align-items:center;gap:6px;margin:0;position:absolute;right:0;top:100%;z-index:30;white-space:nowrap;background:#fff;color:#222;border:1px solid #c9cad6;border-radius:8px;padding:8px 10px;box-shadow:0 4px 14px rgba(0,0,0,.14)}</style></head><body><details class=\"language-row\"><summary><span class=\"lr-label\">Language</span> <span class=\"lr-current\" lang=\"en\">English</span></summary><form class=\"language-chooser\" method=\"post\" action=\"/authn/language\"><input type=\"hidden\" name=\"return\" value=\"/oauth2/logout?state=a&amp;state=b\"><label for=\"sts-language\">Language</label> <select id=\"sts-language\" name=\"lang\"><option value=\"en\" lang=\"en\" selected>English</option><option value=\"fr-FR\" lang=\"fr-FR\">Français (France)</option><option value=\"fr-CA\" lang=\"fr-CA\">Français (Canada)</option><option value=\"es-MX\" lang=\"es-MX\">Español (México)</option><option value=\"es-PA\" lang=\"es-PA\">Español (Panamá)</option><option value=\"es-ES\" lang=\"es-ES\">Español (España)</option><option value=\"zh-CN\" lang=\"zh-CN\">简体中文（中国）</option><option value=\"zh-HK\" lang=\"zh-HK\">繁體中文（香港）</option><option value=\"zh-TW\" lang=\"zh-TW\">繁體中文（台灣）</option><option value=\"fil-PH\" lang=\"fil-PH\">Filipino (Pilipinas)</option><option value=\"sv-SE\" lang=\"sv-SE\">Svenska (Sverige)</option></select> <button type=\"submit\">Change</button></form></details><h1>This sign-out request could not be read</h1><div class=\"warn\" role=\"alert\">This sign-out request is malformed: one of its parameters is not valid. The diagnostics below say which.</div><p>Nothing has been done: you are still signed in.</p><div class=\"next\"><p>Close this tab and start again from the application you were using. If this happens again, send the diagnostics below to whoever runs that application.</p><a class=\"portal\" href=\"/portal\">Go to your account</a></div><section class=\"diagnostics\" aria-labelledby=\"diagnostics-heading\"><h2 id=\"diagnostics-heading\">Diagnostics</h2><dl><dt>Time (UTC)</dt><dd><code><time></code></dd><dt>Incident ID</dt><dd><code>343</code></dd><dt>Detail</dt><dd><code>the parameter &quot;state&quot; was given 2 times and this endpoint takes it once. It is refused rather than resolved to one of them, because choosing silently is how two readers of the same request come to disagree.</code></dd></dl></section></body></html>"
   },
   {
    "mode": "development",
@@ -10167,7 +11563,8 @@
      "nonce=n-fixed",
      "code_challenge=<random>",
      "code_challenge_method=S256"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -10203,7 +11600,8 @@
      "nonce=n-fixed",
      "code_challenge=<random>",
      "code_challenge_method=S256"
-    ]
+    ],
+    "in": "query"
    },
    "status": 302,
    "headers": {
@@ -10213,7 +11611,8 @@
      "url": "/realm/wire9700/authn/login",
      "query": [
       "authn=<authn>"
-     ]
+     ],
+     "in": "query"
     },
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -10224,7 +11623,15 @@
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
    },
-   "body": "Found. Redirecting to /realm/wire9700/authn/login?<authn>"
+   "body": {
+    "redirecting": {
+     "url": "/realm/wire9700/authn/login",
+     "query": [
+      "authn=<authn>"
+     ],
+     "in": "query"
+    }
+   }
   },
   {
    "mode": "rfc9700",
@@ -10239,7 +11646,8 @@
      "url": "/realm/wire9700/authn/login",
      "query": [
       "authn=<authn>"
-     ]
+     ],
+     "in": "query"
     },
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -10250,7 +11658,15 @@
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
    },
-   "body": "Found. Redirecting to /realm/wire9700/authn/login?<authn>"
+   "body": {
+    "redirecting": {
+     "url": "/realm/wire9700/authn/login",
+     "query": [
+      "authn=<authn>"
+     ],
+     "in": "query"
+    }
+   }
   },
   {
    "mode": "rfc9700",
@@ -10267,7 +11683,8 @@
      "nonce=n-fixed",
      "code_challenge=<random>",
      "code_challenge_method=S256"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -10304,7 +11721,8 @@
      "code_challenge=<random>",
      "code_challenge_method=S256",
      "redirect_uri=https://rp.wire.example/cb"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -10340,7 +11758,8 @@
      "nonce=n-fixed",
      "code_challenge=<random>",
      "code_challenge_method=S256"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -10376,7 +11795,8 @@
      "nonce=n-fixed",
      "code_challenge=<random>",
      "code_challenge_method=S256"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -10412,7 +11832,8 @@
      "nonce=n-fixed",
      "code_challenge=abc",
      "code_challenge_method=S256"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -10449,7 +11870,8 @@
      "code_challenge=<random>",
      "code_challenge_method=S256",
      "max_age=soon"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -10486,7 +11908,8 @@
      "code_challenge=<random>",
      "code_challenge_method=S256",
      "max_age=-1"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -10523,7 +11946,8 @@
      "code_challenge=<random>",
      "code_challenge_method=S256",
      "domain_hint=a b"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -10559,7 +11983,8 @@
      "nonce=n-fixed",
      "code_challenge=<random>",
      "code_challenge_method=S256"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -10589,7 +12014,8 @@
      "code_challenge=<random>",
      "code_challenge_method=S256",
      "response_mode=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -10625,7 +12051,8 @@
      "nonce=n-fixed",
      "code_challenge=",
      "code_challenge_method="
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -10658,7 +12085,8 @@
      "nonce=n-fixed",
      "code_challenge=",
      "code_challenge_method="
-    ]
+    ],
+    "in": "query"
    },
    "status": 302,
    "headers": {
@@ -10668,7 +12096,8 @@
      "url": "/realm/wire9700/authn/login",
      "query": [
       "authn=<authn>"
-     ]
+     ],
+     "in": "query"
     },
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -10679,7 +12108,15 @@
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
    },
-   "body": "Found. Redirecting to /realm/wire9700/authn/login?<authn>"
+   "body": {
+    "redirecting": {
+     "url": "/realm/wire9700/authn/login",
+     "query": [
+      "authn=<authn>"
+     ],
+     "in": "query"
+    }
+   }
   },
   {
    "mode": "rfc9700",
@@ -10696,7 +12133,8 @@
      "nonce=n-fixed",
      "code_challenge=<random>",
      "code_challenge_method=plain"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -10730,7 +12168,8 @@
      "code_challenge=<random>",
      "code_challenge_method=S256",
      "dpop_jkt=not base64url!"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -10768,7 +12207,8 @@
      "code_challenge_method=S256",
      "resource=https://a.example/",
      "resource=https://b.example/"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -10802,7 +12242,8 @@
      "code_challenge=<random>",
      "code_challenge_method=S256",
      "resource=javascript:alert(1)"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -10839,7 +12280,8 @@
      "code_challenge=<random>",
      "code_challenge_method=S256",
      "__proto__=x"
-    ]
+    ],
+    "in": "query"
    },
    "status": 302,
    "headers": {
@@ -10849,7 +12291,8 @@
      "url": "/realm/wire9700/authn/login",
      "query": [
       "authn=<authn>"
-     ]
+     ],
+     "in": "query"
     },
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -10860,7 +12303,15 @@
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
    },
-   "body": "Found. Redirecting to /realm/wire9700/authn/login?<authn>"
+   "body": {
+    "redirecting": {
+     "url": "/realm/wire9700/authn/login",
+     "query": [
+      "authn=<authn>"
+     ],
+     "in": "query"
+    }
+   }
   },
   {
    "mode": "rfc9700",
@@ -10871,7 +12322,8 @@
     "query": [
      "client_id=wire-conf",
      "request_uri=<request_uri>"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -11028,7 +12480,8 @@
     "query": [
      "client_id=wire-conf",
      "request_uri=<request_uri>"
-    ]
+    ],
+    "in": "query"
    },
    "status": 302,
    "headers": {
@@ -11039,7 +12492,8 @@
      "url": "/realm/wire9700/authn/login",
      "query": [
       "authn=<authn>"
-     ]
+     ],
+     "in": "query"
     },
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -11050,7 +12504,15 @@
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
    },
-   "body": "Found. Redirecting to /realm/wire9700/authn/login?<authn>"
+   "body": {
+    "redirecting": {
+     "url": "/realm/wire9700/authn/login",
+     "query": [
+      "authn=<authn>"
+     ],
+     "in": "query"
+    }
+   }
   },
   {
    "mode": "rfc9700",
@@ -11996,7 +13458,8 @@
     "query": [
      "claim=email",
      "claim=address"
-    ]
+    ],
+    "in": "query"
    },
    "status": 401,
    "headers": {
@@ -12024,7 +13487,8 @@
     "url": "/oauth2/userinfo",
     "query": [
      "claims={nope"
-    ]
+    ],
+    "in": "query"
    },
    "status": 401,
    "headers": {
@@ -12119,7 +13583,8 @@
     "url": "/oauth2/userinfo",
     "query": [
      "access_token=<access_token>"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -12564,7 +14029,8 @@
     "query": [
      "client_id=wire-conf",
      "post_logout_redirect_uri=javascript:alert(1)"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -12588,7 +14054,8 @@
     "query": [
      "client_id=wire-conf",
      "post_logout_redirect_uri=https://evil.example/"
-    ]
+    ],
+    "in": "query"
    },
    "status": 200,
    "headers": {
@@ -12616,7 +14083,8 @@
      "client_id=wire-conf",
      "state=s1",
      "post_logout_redirect_uri=https://rp.wire.example/bye"
-    ]
+    ],
+    "in": "query"
    },
    "status": 302,
    "headers": {
@@ -12626,7 +14094,8 @@
      "url": "https://rp.wire.example/bye",
      "query": [
       "state=s1"
-     ]
+     ],
+     "in": "query"
     },
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -12637,7 +14106,15 @@
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
    },
-   "body": "Found. Redirecting to https://rp.wire.example/bye?state=s1"
+   "body": {
+    "redirecting": {
+     "url": "https://rp.wire.example/bye",
+     "query": [
+      "state=s1"
+     ],
+     "in": "query"
+    }
+   }
   },
   {
    "mode": "rfc9700",
@@ -12648,7 +14125,8 @@
     "query": [
      "state=a",
      "state=b"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -16383,7 +17861,8 @@
      "nonce=n-fixed",
      "code_challenge=<random>",
      "code_challenge_method=S256"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -16419,7 +17898,8 @@
      "nonce=n-fixed",
      "code_challenge=<random>",
      "code_challenge_method=S256"
-    ]
+    ],
+    "in": "query"
    },
    "status": 302,
    "headers": {
@@ -16429,7 +17909,8 @@
      "url": "/realm/wire21/authn/login",
      "query": [
       "authn=<authn>"
-     ]
+     ],
+     "in": "query"
     },
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -16440,7 +17921,15 @@
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
    },
-   "body": "Found. Redirecting to /realm/wire21/authn/login?<authn>"
+   "body": {
+    "redirecting": {
+     "url": "/realm/wire21/authn/login",
+     "query": [
+      "authn=<authn>"
+     ],
+     "in": "query"
+    }
+   }
   },
   {
    "mode": "oauth21",
@@ -16455,7 +17944,8 @@
      "url": "/realm/wire21/authn/login",
      "query": [
       "authn=<authn>"
-     ]
+     ],
+     "in": "query"
     },
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -16466,7 +17956,15 @@
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
    },
-   "body": "Found. Redirecting to /realm/wire21/authn/login?<authn>"
+   "body": {
+    "redirecting": {
+     "url": "/realm/wire21/authn/login",
+     "query": [
+      "authn=<authn>"
+     ],
+     "in": "query"
+    }
+   }
   },
   {
    "mode": "oauth21",
@@ -16483,7 +17981,8 @@
      "nonce=n-fixed",
      "code_challenge=<random>",
      "code_challenge_method=S256"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -16520,7 +18019,8 @@
      "code_challenge=<random>",
      "code_challenge_method=S256",
      "redirect_uri=https://rp.wire.example/cb"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -16556,7 +18056,8 @@
      "nonce=n-fixed",
      "code_challenge=<random>",
      "code_challenge_method=S256"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -16592,7 +18093,8 @@
      "nonce=n-fixed",
      "code_challenge=<random>",
      "code_challenge_method=S256"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -16628,7 +18130,8 @@
      "nonce=n-fixed",
      "code_challenge=abc",
      "code_challenge_method=S256"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -16665,7 +18168,8 @@
      "code_challenge=<random>",
      "code_challenge_method=S256",
      "max_age=soon"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -16702,7 +18206,8 @@
      "code_challenge=<random>",
      "code_challenge_method=S256",
      "max_age=-1"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -16739,7 +18244,8 @@
      "code_challenge=<random>",
      "code_challenge_method=S256",
      "domain_hint=a b"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -16775,7 +18281,8 @@
      "nonce=n-fixed",
      "code_challenge=<random>",
      "code_challenge_method=S256"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -16805,7 +18312,8 @@
      "code_challenge=<random>",
      "code_challenge_method=S256",
      "response_mode=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -16841,7 +18349,8 @@
      "nonce=n-fixed",
      "code_challenge=",
      "code_challenge_method="
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -16874,7 +18383,8 @@
      "nonce=n-fixed",
      "code_challenge=",
      "code_challenge_method="
-    ]
+    ],
+    "in": "query"
    },
    "status": 302,
    "headers": {
@@ -16884,7 +18394,8 @@
      "url": "/realm/wire21/authn/login",
      "query": [
       "authn=<authn>"
-     ]
+     ],
+     "in": "query"
     },
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -16895,7 +18406,15 @@
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
    },
-   "body": "Found. Redirecting to /realm/wire21/authn/login?<authn>"
+   "body": {
+    "redirecting": {
+     "url": "/realm/wire21/authn/login",
+     "query": [
+      "authn=<authn>"
+     ],
+     "in": "query"
+    }
+   }
   },
   {
    "mode": "oauth21",
@@ -16912,7 +18431,8 @@
      "nonce=n-fixed",
      "code_challenge=<random>",
      "code_challenge_method=plain"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -16946,7 +18466,8 @@
      "code_challenge=<random>",
      "code_challenge_method=S256",
      "dpop_jkt=not base64url!"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -16984,7 +18505,8 @@
      "code_challenge_method=S256",
      "resource=https://a.example/",
      "resource=https://b.example/"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -17018,7 +18540,8 @@
      "code_challenge=<random>",
      "code_challenge_method=S256",
      "resource=javascript:alert(1)"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -17055,7 +18578,8 @@
      "code_challenge=<random>",
      "code_challenge_method=S256",
      "__proto__=x"
-    ]
+    ],
+    "in": "query"
    },
    "status": 302,
    "headers": {
@@ -17065,7 +18589,8 @@
      "url": "/realm/wire21/authn/login",
      "query": [
       "authn=<authn>"
-     ]
+     ],
+     "in": "query"
     },
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -17076,7 +18601,15 @@
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
    },
-   "body": "Found. Redirecting to /realm/wire21/authn/login?<authn>"
+   "body": {
+    "redirecting": {
+     "url": "/realm/wire21/authn/login",
+     "query": [
+      "authn=<authn>"
+     ],
+     "in": "query"
+    }
+   }
   },
   {
    "mode": "oauth21",
@@ -17087,7 +18620,8 @@
     "query": [
      "client_id=wire-conf",
      "request_uri=<request_uri>"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -17244,7 +18778,8 @@
     "query": [
      "client_id=wire-conf",
      "request_uri=<request_uri>"
-    ]
+    ],
+    "in": "query"
    },
    "status": 302,
    "headers": {
@@ -17255,7 +18790,8 @@
      "url": "/realm/wire21/authn/login",
      "query": [
       "authn=<authn>"
-     ]
+     ],
+     "in": "query"
     },
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -17266,7 +18802,15 @@
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
    },
-   "body": "Found. Redirecting to /realm/wire21/authn/login?<authn>"
+   "body": {
+    "redirecting": {
+     "url": "/realm/wire21/authn/login",
+     "query": [
+      "authn=<authn>"
+     ],
+     "in": "query"
+    }
+   }
   },
   {
    "mode": "oauth21",
@@ -18186,7 +19730,8 @@
     "query": [
      "claim=email",
      "claim=address"
-    ]
+    ],
+    "in": "query"
    },
    "status": 401,
    "headers": {
@@ -18214,7 +19759,8 @@
     "url": "/oauth2/userinfo",
     "query": [
      "claims={nope"
-    ]
+    ],
+    "in": "query"
    },
    "status": 401,
    "headers": {
@@ -18309,7 +19855,8 @@
     "url": "/oauth2/userinfo",
     "query": [
      "access_token=<access_token>"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -18754,7 +20301,8 @@
     "query": [
      "client_id=wire-conf",
      "post_logout_redirect_uri=javascript:alert(1)"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -18778,7 +20326,8 @@
     "query": [
      "client_id=wire-conf",
      "post_logout_redirect_uri=https://evil.example/"
-    ]
+    ],
+    "in": "query"
    },
    "status": 200,
    "headers": {
@@ -18806,7 +20355,8 @@
      "client_id=wire-conf",
      "state=s1",
      "post_logout_redirect_uri=https://rp.wire.example/bye"
-    ]
+    ],
+    "in": "query"
    },
    "status": 302,
    "headers": {
@@ -18816,7 +20366,8 @@
      "url": "https://rp.wire.example/bye",
      "query": [
       "state=s1"
-     ]
+     ],
+     "in": "query"
     },
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -18827,7 +20378,15 @@
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
    },
-   "body": "Found. Redirecting to https://rp.wire.example/bye?state=s1"
+   "body": {
+    "redirecting": {
+     "url": "https://rp.wire.example/bye",
+     "query": [
+      "state=s1"
+     ],
+     "in": "query"
+    }
+   }
   },
   {
    "mode": "oauth21",
@@ -18838,7 +20397,8 @@
     "query": [
      "state=a",
      "state=b"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -21843,7 +23403,8 @@
      "nonce=n-fixed",
      "code_challenge=<random>",
      "code_challenge_method=S256"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -21879,7 +23440,8 @@
      "nonce=n-fixed",
      "code_challenge=<random>",
      "code_challenge_method=S256"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -21939,7 +23501,8 @@
      "nonce=n-fixed",
      "code_challenge=<random>",
      "code_challenge_method=S256"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -21976,7 +23539,8 @@
      "code_challenge=<random>",
      "code_challenge_method=S256",
      "redirect_uri=https://rp.wire.example/cb"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -22012,7 +23576,8 @@
      "nonce=n-fixed",
      "code_challenge=<random>",
      "code_challenge_method=S256"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -22048,7 +23613,8 @@
      "nonce=n-fixed",
      "code_challenge=<random>",
      "code_challenge_method=S256"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -22084,7 +23650,8 @@
      "nonce=n-fixed",
      "code_challenge=abc",
      "code_challenge_method=S256"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -22121,7 +23688,8 @@
      "code_challenge=<random>",
      "code_challenge_method=S256",
      "max_age=soon"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -22158,7 +23726,8 @@
      "code_challenge=<random>",
      "code_challenge_method=S256",
      "max_age=-1"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -22195,7 +23764,8 @@
      "code_challenge=<random>",
      "code_challenge_method=S256",
      "domain_hint=a b"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -22231,7 +23801,8 @@
      "nonce=n-fixed",
      "code_challenge=<random>",
      "code_challenge_method=S256"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -22261,7 +23832,8 @@
      "code_challenge=<random>",
      "code_challenge_method=S256",
      "response_mode=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -22297,7 +23869,8 @@
      "nonce=n-fixed",
      "code_challenge=",
      "code_challenge_method="
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -22333,7 +23906,8 @@
      "nonce=n-fixed",
      "code_challenge=",
      "code_challenge_method="
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -22369,7 +23943,8 @@
      "nonce=n-fixed",
      "code_challenge=<random>",
      "code_challenge_method=plain"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -22406,7 +23981,8 @@
      "code_challenge=<random>",
      "code_challenge_method=S256",
      "dpop_jkt=not base64url!"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -22444,7 +24020,8 @@
      "code_challenge_method=S256",
      "resource=https://a.example/",
      "resource=https://b.example/"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -22481,7 +24058,8 @@
      "code_challenge=<random>",
      "code_challenge_method=S256",
      "resource=javascript:alert(1)"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -22518,7 +24096,8 @@
      "code_challenge=<random>",
      "code_challenge_method=S256",
      "__proto__=x"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -22548,7 +24127,8 @@
     "query": [
      "client_id=wire-conf",
      "request_uri=<request_uri>"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -23461,7 +25041,8 @@
     "query": [
      "claim=email",
      "claim=address"
-    ]
+    ],
+    "in": "query"
    },
    "status": 401,
    "headers": {
@@ -23489,7 +25070,8 @@
     "url": "/oauth2/userinfo",
     "query": [
      "claims={nope"
-    ]
+    ],
+    "in": "query"
    },
    "status": 401,
    "headers": {
@@ -23585,7 +25167,8 @@
     "url": "/oauth2/userinfo",
     "query": [
      "access_token=<access_token>"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -23875,7 +25458,8 @@
     "query": [
      "client_id=wire-conf",
      "post_logout_redirect_uri=javascript:alert(1)"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -23899,7 +25483,8 @@
     "query": [
      "client_id=wire-conf",
      "post_logout_redirect_uri=https://evil.example/"
-    ]
+    ],
+    "in": "query"
    },
    "status": 200,
    "headers": {
@@ -23927,7 +25512,8 @@
      "client_id=wire-conf",
      "state=s1",
      "post_logout_redirect_uri=https://rp.wire.example/bye"
-    ]
+    ],
+    "in": "query"
    },
    "status": 302,
    "headers": {
@@ -23937,7 +25523,8 @@
      "url": "https://rp.wire.example/bye",
      "query": [
       "state=s1"
-     ]
+     ],
+     "in": "query"
     },
     "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
     "referrer-policy": "no-referrer",
@@ -23948,7 +25535,15 @@
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
    },
-   "body": "Found. Redirecting to https://rp.wire.example/bye?state=s1"
+   "body": {
+    "redirecting": {
+     "url": "https://rp.wire.example/bye",
+     "query": [
+      "state=s1"
+     ],
+     "in": "query"
+    }
+   }
   },
   {
    "mode": "fapi2",
@@ -23959,7 +25554,8 @@
     "query": [
      "state=a",
      "state=b"
-    ]
+    ],
+    "in": "query"
    },
    "status": 400,
    "headers": {
@@ -24055,6 +25651,1421 @@
     "x-frame-options": "DENY"
    },
    "body": "OpenID Connect Session Management is off in this realm (oauth2.sessionManagement), so there is no OP iframe."
+  },
+  {
+   "mode": "flows",
+   "step": "code flow, to sign-in",
+   "method": "GET",
+   "path": {
+    "url": "/oauth2/authorize",
+    "query": [
+     "response_type=code",
+     "client_id=wire-flow",
+     "redirect_uri=https://rp.wire.example/cb",
+     "scope=openid profile email",
+     "state=st-flow",
+     "nonce=n-flow",
+     "code_challenge=<random>",
+     "code_challenge_method=S256"
+    ],
+    "in": "query"
+   },
+   "status": 302,
+   "headers": {
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "text/plain; charset=utf-8",
+    "location": {
+     "url": "/authn/login",
+     "query": [
+      "authn=<authn>"
+     ],
+     "in": "query"
+    },
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "set-cookie": [
+     "sts_session=<cookie>; Path=/; HttpOnly; SameSite=Lax"
+    ],
+    "vary": "Origin, Accept",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "redirecting": {
+     "url": "/authn/login",
+     "query": [
+      "authn=<authn>"
+     ],
+     "in": "query"
+    }
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "code flow, the sign-in act",
+   "method": "POST",
+   "path": "/authn-api/pending/{id}",
+   "status": 303,
+   "headers": {},
+   "body": {
+    "next": "redirect",
+    "location": {
+     "url": "/oauth2/authorize",
+     "query": [
+      "client_id=wire-flow",
+      "response_type=code",
+      "redirect_uri=https://rp.wire.example/cb",
+      "scope=openid profile email",
+      "state=st-flow",
+      "nonce=n-flow",
+      "code_challenge=<random>",
+      "code_challenge_method=S256",
+      "sts_account=<random>"
+     ],
+     "in": "query"
+    }
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "code flow, back from sign-in",
+   "method": "GET",
+   "path": {
+    "url": "/oauth2/authorize",
+    "query": [
+     "client_id=wire-flow",
+     "response_type=code",
+     "redirect_uri=https://rp.wire.example/cb",
+     "scope=openid profile email",
+     "state=st-flow",
+     "nonce=n-flow",
+     "code_challenge=<random>",
+     "code_challenge_method=S256",
+     "sts_account=<random>"
+    ],
+    "in": "query"
+   },
+   "status": 302,
+   "headers": {
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "text/plain; charset=utf-8",
+    "location": {
+     "url": "https://rp.wire.example/cb",
+     "query": [
+      "code=<code>",
+      "state=st-flow",
+      "iss=http://<port>"
+     ],
+     "in": "query"
+    },
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin, Accept",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "redirecting": {
+     "url": "https://rp.wire.example/cb",
+     "query": [
+      "code=<code>",
+      "state=st-flow",
+      "iss=http://<port>"
+     ],
+     "in": "query"
+    }
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "code flow, the code redeemed",
+   "method": "POST",
+   "path": "/oauth2/token",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "access_token": {
+     "jwt": {
+      "header": {
+       "alg": "RS256",
+       "typ": "at+jwt",
+       "kid": "<kid>"
+      },
+      "claims": {
+       "iss": "http://<port>",
+       "sub": "urn:uuid:<uuid#1>",
+       "aud": "http://<port>/resource",
+       "client_id": "wire-flow",
+       "typ": "Bearer",
+       "jti": "<jti>",
+       "iat": "<epoch>",
+       "nbf": "<epoch>",
+       "exp": "<epoch>",
+       "status": {
+        "status_list": {
+         "idx": "<idx>",
+         "uri": "http://<port>/status-lists/access-tokens"
+        }
+       },
+       "username": "wire-user",
+       "scope": "openid profile email",
+       "auth_time": "<epoch>",
+       "amr": [
+        "pwd"
+       ],
+       "acr": "1"
+      },
+      "signed": true
+     }
+    },
+    "token_type": "Bearer",
+    "expires_in": 3600,
+    "scope": "openid profile email",
+    "refresh_token": "<refresh_token>",
+    "id_token": {
+     "jwt": {
+      "header": {
+       "alg": "RS256",
+       "typ": "JWT",
+       "kid": "<kid>"
+      },
+      "claims": {
+       "iss": "http://<port>",
+       "sub": "urn:uuid:<uuid#1>",
+       "aud": "wire-flow",
+       "iat": "<epoch>",
+       "nbf": "<epoch>",
+       "exp": "<epoch>",
+       "auth_time": "<epoch>",
+       "azp": "wire-flow",
+       "jti": "<jti>",
+       "amr": [
+        "pwd"
+       ],
+       "acr": "1",
+       "nonce": "n-flow",
+       "sid": "<sid>",
+       "at_hash": "<at_hash>"
+      },
+      "signed": true
+     }
+    }
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "code flow, userinfo",
+   "method": "GET",
+   "path": "/oauth2/userinfo",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-fapi-interaction-id": "<uuid#42>",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "name": "wire-user (mock)",
+    "family_name": "Mock",
+    "given_name": "wire-user",
+    "preferred_username": "wire-user",
+    "email": "wire-user@example.com",
+    "email_verified": true,
+    "middle_name": "Priya",
+    "nickname": "Rosa",
+    "profile": "https://www.example.com/~wire-user/profile",
+    "picture": "https://www.example.com/~wire-user/photo.jpg",
+    "website": "https://www.example.com/~wire-user",
+    "gender": "female",
+    "birthdate": "1990-09-11",
+    "zoneinfo": "America/New_York",
+    "locale": "en",
+    "updated_at": "<epoch>",
+    "sub": "urn:uuid:<uuid#1>"
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "code flow, refresh",
+   "method": "POST",
+   "path": "/oauth2/token",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "access_token": {
+     "jwt": {
+      "header": {
+       "alg": "RS256",
+       "typ": "at+jwt",
+       "kid": "<kid>"
+      },
+      "claims": {
+       "iss": "http://<port>",
+       "sub": "urn:uuid:<uuid#1>",
+       "aud": "http://<port>/resource",
+       "client_id": "wire-flow",
+       "typ": "Bearer",
+       "jti": "<jti>",
+       "iat": "<epoch>",
+       "nbf": "<epoch>",
+       "exp": "<epoch>",
+       "status": {
+        "status_list": {
+         "idx": "<idx>",
+         "uri": "http://<port>/status-lists/access-tokens"
+        }
+       },
+       "username": "wire-user",
+       "scope": "openid profile email",
+       "auth_time": "<epoch>",
+       "amr": [
+        "pwd"
+       ],
+       "acr": "1"
+      },
+      "signed": true
+     }
+    },
+    "token_type": "Bearer",
+    "expires_in": 3600,
+    "scope": "openid profile email",
+    "refresh_token": "<refresh_token>",
+    "id_token": {
+     "jwt": {
+      "header": {
+       "alg": "RS256",
+       "typ": "JWT",
+       "kid": "<kid>"
+      },
+      "claims": {
+       "iss": "http://<port>",
+       "sub": "urn:uuid:<uuid#1>",
+       "aud": "wire-flow",
+       "iat": "<epoch>",
+       "nbf": "<epoch>",
+       "exp": "<epoch>",
+       "auth_time": "<epoch>",
+       "azp": "wire-flow",
+       "jti": "<jti>",
+       "amr": [
+        "pwd"
+       ],
+       "acr": "1",
+       "sid": "<sid>",
+       "at_hash": "<at_hash>"
+      },
+      "signed": true
+     }
+    }
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "code flow, the code again",
+   "method": "POST",
+   "path": "/oauth2/token",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_grant",
+    "error_description": "RFC 6749 section 4.1.2 and RFC 9700 section 4.5: an authorization code is single use. This one was redeemed 0 second(s) ago by client 'wire-flow'. A code presented twice means two holders and this server cannot tell which of them is the client, so the 3 token(s) it bought have been revoked as well (RFC 6749 section 10.5). Start a new authorization request."
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "code flow, userinfo after the replay",
+   "method": "GET",
+   "path": "/oauth2/userinfo",
+   "status": 401,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "www-authenticate": "Bearer error=\"invalid_token\", error_description=\"This access token was revoked at /oauth2/revoke. Introspection reports it inactive, and UserInfo answers the same way - a revocation that only some endpoints honoured would be worse than none.\"",
+    "x-content-type-options": "nosniff",
+    "x-fapi-interaction-id": "<uuid#43>",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_token",
+    "error_description": "This access token was revoked at /oauth2/revoke. Introspection reports it inactive, and UserInfo answers the same way - a revocation that only some endpoints honoured would be worse than none."
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "hybrid, code id_token",
+   "method": "GET",
+   "path": {
+    "url": "/oauth2/authorize",
+    "query": [
+     "response_type=code id_token",
+     "client_id=wire-flow",
+     "redirect_uri=https://rp.wire.example/cb",
+     "scope=openid profile email",
+     "state=st-flow",
+     "nonce=n-flow",
+     "code_challenge=<random>",
+     "code_challenge_method=S256"
+    ],
+    "in": "query"
+   },
+   "status": 302,
+   "headers": {
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "text/plain; charset=utf-8",
+    "location": {
+     "url": "https://rp.wire.example/cb",
+     "query": [
+      "code=<code>",
+      "id_token={\"jwt\":{\"header\":{\"alg\":\"RS256\",\"typ\":\"JWT\",\"kid\":\"<kid>\"},\"claims\":{\"iss\":\"http://<port>\",\"sub\":\"urn:uuid:<uuid#1>\",\"aud\":\"wire-flow\",\"iat\":\"<epoch>\",\"nbf\":\"<epoch>\",\"exp\":\"<epoch>\",\"auth_time\":\"<epoch>\",\"azp\":\"wire-flow\",\"jti\":\"<jti>\",\"amr\":[\"pwd\"],\"acr\":\"1\",\"nonce\":\"n-flow\",\"sid\":\"<sid>\",\"c_hash\":\"<c_hash>\",\"s_hash\":\"<s_hash>\"},\"signed\":true}}",
+      "state=st-flow",
+      "iss=http://<port>"
+     ],
+     "in": "fragment"
+    },
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin, Accept",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "redirecting": {
+     "url": "https://rp.wire.example/cb",
+     "query": [
+      "code=<code>",
+      "id_token={\"jwt\":{\"header\":{\"alg\":\"RS256\",\"typ\":\"JWT\",\"kid\":\"<kid>\"},\"claims\":{\"iss\":\"http://<port>\",\"sub\":\"urn:uuid:<uuid#1>\",\"aud\":\"wire-flow\",\"iat\":\"<epoch>\",\"nbf\":\"<epoch>\",\"exp\":\"<epoch>\",\"auth_time\":\"<epoch>\",\"azp\":\"wire-flow\",\"jti\":\"<jti>\",\"amr\":[\"pwd\"],\"acr\":\"1\",\"nonce\":\"n-flow\",\"sid\":\"<sid>\",\"c_hash\":\"<c_hash>\",\"s_hash\":\"<s_hash>\"},\"signed\":true}}",
+      "state=st-flow",
+      "iss=http://<port>"
+     ],
+     "in": "fragment"
+    }
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "hybrid, code id_token token",
+   "method": "GET",
+   "path": {
+    "url": "/oauth2/authorize",
+    "query": [
+     "response_type=code id_token token",
+     "client_id=wire-flow",
+     "redirect_uri=https://rp.wire.example/cb",
+     "scope=openid profile email",
+     "state=st-flow",
+     "nonce=n-flow",
+     "code_challenge=<random>",
+     "code_challenge_method=S256"
+    ],
+    "in": "query"
+   },
+   "status": 302,
+   "headers": {
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "text/plain; charset=utf-8",
+    "location": {
+     "url": "https://rp.wire.example/cb",
+     "query": [
+      "code=<code>",
+      "access_token={\"jwt\":{\"header\":{\"alg\":\"RS256\",\"typ\":\"at+jwt\",\"kid\":\"<kid>\"},\"claims\":{\"iss\":\"http://<port>\",\"sub\":\"urn:uuid:<uuid#1>\",\"aud\":\"http://<port>/resource\",\"client_id\":\"wire-flow\",\"typ\":\"Bearer\",\"jti\":\"<jti>\",\"iat\":\"<epoch>\",\"nbf\":\"<epoch>\",\"exp\":\"<epoch>\",\"status\":{\"status_list\":{\"idx\":\"<idx>\",\"uri\":\"http://<port>/status-lists/access-tokens\"}},\"username\":\"wire-user\",\"scope\":\"openid profile email\",\"auth_time\":\"<epoch>\",\"amr\":[\"pwd\"],\"acr\":\"1\"},\"signed\":true}}",
+      "token_type=Bearer",
+      "expires_in=3600",
+      "scope=openid profile email",
+      "id_token={\"jwt\":{\"header\":{\"alg\":\"RS256\",\"typ\":\"JWT\",\"kid\":\"<kid>\"},\"claims\":{\"iss\":\"http://<port>\",\"sub\":\"urn:uuid:<uuid#1>\",\"aud\":\"wire-flow\",\"iat\":\"<epoch>\",\"nbf\":\"<epoch>\",\"exp\":\"<epoch>\",\"auth_time\":\"<epoch>\",\"azp\":\"wire-flow\",\"jti\":\"<jti>\",\"amr\":[\"pwd\"],\"acr\":\"1\",\"nonce\":\"n-flow\",\"sid\":\"<sid>\",\"at_hash\":\"<at_hash>\",\"c_hash\":\"<c_hash>\",\"s_hash\":\"<s_hash>\"},\"signed\":true}}",
+      "state=st-flow",
+      "iss=http://<port>"
+     ],
+     "in": "fragment"
+    },
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin, Accept",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "redirecting": {
+     "url": "https://rp.wire.example/cb",
+     "query": [
+      "code=<code>",
+      "access_token={\"jwt\":{\"header\":{\"alg\":\"RS256\",\"typ\":\"at+jwt\",\"kid\":\"<kid>\"},\"claims\":{\"iss\":\"http://<port>\",\"sub\":\"urn:uuid:<uuid#1>\",\"aud\":\"http://<port>/resource\",\"client_id\":\"wire-flow\",\"typ\":\"Bearer\",\"jti\":\"<jti>\",\"iat\":\"<epoch>\",\"nbf\":\"<epoch>\",\"exp\":\"<epoch>\",\"status\":{\"status_list\":{\"idx\":\"<idx>\",\"uri\":\"http://<port>/status-lists/access-tokens\"}},\"username\":\"wire-user\",\"scope\":\"openid profile email\",\"auth_time\":\"<epoch>\",\"amr\":[\"pwd\"],\"acr\":\"1\"},\"signed\":true}}",
+      "token_type=Bearer",
+      "expires_in=3600",
+      "scope=openid profile email",
+      "id_token={\"jwt\":{\"header\":{\"alg\":\"RS256\",\"typ\":\"JWT\",\"kid\":\"<kid>\"},\"claims\":{\"iss\":\"http://<port>\",\"sub\":\"urn:uuid:<uuid#1>\",\"aud\":\"wire-flow\",\"iat\":\"<epoch>\",\"nbf\":\"<epoch>\",\"exp\":\"<epoch>\",\"auth_time\":\"<epoch>\",\"azp\":\"wire-flow\",\"jti\":\"<jti>\",\"amr\":[\"pwd\"],\"acr\":\"1\",\"nonce\":\"n-flow\",\"sid\":\"<sid>\",\"at_hash\":\"<at_hash>\",\"c_hash\":\"<c_hash>\",\"s_hash\":\"<s_hash>\"},\"signed\":true}}",
+      "state=st-flow",
+      "iss=http://<port>"
+     ],
+     "in": "fragment"
+    }
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "implicit, id_token token",
+   "method": "GET",
+   "path": {
+    "url": "/oauth2/authorize",
+    "query": [
+     "response_type=id_token token",
+     "client_id=wire-flow",
+     "redirect_uri=https://rp.wire.example/cb",
+     "scope=openid profile email",
+     "state=st-flow",
+     "nonce=n-flow",
+     "code_challenge=",
+     "code_challenge_method="
+    ],
+    "in": "query"
+   },
+   "status": 302,
+   "headers": {
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "text/plain; charset=utf-8",
+    "location": {
+     "url": "https://rp.wire.example/cb",
+     "query": [
+      "access_token={\"jwt\":{\"header\":{\"alg\":\"RS256\",\"typ\":\"at+jwt\",\"kid\":\"<kid>\"},\"claims\":{\"iss\":\"http://<port>\",\"sub\":\"urn:uuid:<uuid#1>\",\"aud\":\"http://<port>/resource\",\"client_id\":\"wire-flow\",\"typ\":\"Bearer\",\"jti\":\"<jti>\",\"iat\":\"<epoch>\",\"nbf\":\"<epoch>\",\"exp\":\"<epoch>\",\"status\":{\"status_list\":{\"idx\":\"<idx>\",\"uri\":\"http://<port>/status-lists/access-tokens\"}},\"username\":\"wire-user\",\"scope\":\"openid profile email\",\"auth_time\":\"<epoch>\",\"amr\":[\"pwd\"],\"acr\":\"1\"},\"signed\":true}}",
+      "token_type=Bearer",
+      "expires_in=3600",
+      "scope=openid profile email",
+      "id_token={\"jwt\":{\"header\":{\"alg\":\"RS256\",\"typ\":\"JWT\",\"kid\":\"<kid>\"},\"claims\":{\"iss\":\"http://<port>\",\"sub\":\"urn:uuid:<uuid#1>\",\"aud\":\"wire-flow\",\"iat\":\"<epoch>\",\"nbf\":\"<epoch>\",\"exp\":\"<epoch>\",\"auth_time\":\"<epoch>\",\"azp\":\"wire-flow\",\"jti\":\"<jti>\",\"amr\":[\"pwd\"],\"acr\":\"1\",\"nonce\":\"n-flow\",\"sid\":\"<sid>\",\"at_hash\":\"<at_hash>\",\"s_hash\":\"<s_hash>\"},\"signed\":true}}",
+      "state=st-flow",
+      "iss=http://<port>"
+     ],
+     "in": "fragment"
+    },
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin, Accept",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "redirecting": {
+     "url": "https://rp.wire.example/cb",
+     "query": [
+      "access_token={\"jwt\":{\"header\":{\"alg\":\"RS256\",\"typ\":\"at+jwt\",\"kid\":\"<kid>\"},\"claims\":{\"iss\":\"http://<port>\",\"sub\":\"urn:uuid:<uuid#1>\",\"aud\":\"http://<port>/resource\",\"client_id\":\"wire-flow\",\"typ\":\"Bearer\",\"jti\":\"<jti>\",\"iat\":\"<epoch>\",\"nbf\":\"<epoch>\",\"exp\":\"<epoch>\",\"status\":{\"status_list\":{\"idx\":\"<idx>\",\"uri\":\"http://<port>/status-lists/access-tokens\"}},\"username\":\"wire-user\",\"scope\":\"openid profile email\",\"auth_time\":\"<epoch>\",\"amr\":[\"pwd\"],\"acr\":\"1\"},\"signed\":true}}",
+      "token_type=Bearer",
+      "expires_in=3600",
+      "scope=openid profile email",
+      "id_token={\"jwt\":{\"header\":{\"alg\":\"RS256\",\"typ\":\"JWT\",\"kid\":\"<kid>\"},\"claims\":{\"iss\":\"http://<port>\",\"sub\":\"urn:uuid:<uuid#1>\",\"aud\":\"wire-flow\",\"iat\":\"<epoch>\",\"nbf\":\"<epoch>\",\"exp\":\"<epoch>\",\"auth_time\":\"<epoch>\",\"azp\":\"wire-flow\",\"jti\":\"<jti>\",\"amr\":[\"pwd\"],\"acr\":\"1\",\"nonce\":\"n-flow\",\"sid\":\"<sid>\",\"at_hash\":\"<at_hash>\",\"s_hash\":\"<s_hash>\"},\"signed\":true}}",
+      "state=st-flow",
+      "iss=http://<port>"
+     ],
+     "in": "fragment"
+    }
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "implicit, id_token",
+   "method": "GET",
+   "path": {
+    "url": "/oauth2/authorize",
+    "query": [
+     "response_type=id_token",
+     "client_id=wire-flow",
+     "redirect_uri=https://rp.wire.example/cb",
+     "scope=openid profile email",
+     "state=st-flow",
+     "nonce=n-flow",
+     "code_challenge=",
+     "code_challenge_method="
+    ],
+    "in": "query"
+   },
+   "status": 302,
+   "headers": {
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "text/plain; charset=utf-8",
+    "location": {
+     "url": "https://rp.wire.example/cb",
+     "query": [
+      "id_token={\"jwt\":{\"header\":{\"alg\":\"RS256\",\"typ\":\"JWT\",\"kid\":\"<kid>\"},\"claims\":{\"iss\":\"http://<port>\",\"sub\":\"urn:uuid:<uuid#1>\",\"aud\":\"wire-flow\",\"iat\":\"<epoch>\",\"nbf\":\"<epoch>\",\"exp\":\"<epoch>\",\"auth_time\":\"<epoch>\",\"azp\":\"wire-flow\",\"jti\":\"<jti>\",\"name\":\"wire-user (mock)\",\"family_name\":\"Mock\",\"given_name\":\"wire-user\",\"preferred_username\":\"wire-user\",\"email\":\"wire-user@example.com\",\"email_verified\":true,\"middle_name\":\"Priya\",\"nickname\":\"Rosa\",\"profile\":\"https://www.example.com/~wire-user/profile\",\"picture\":\"https://www.example.com/~wire-user/photo.jpg\",\"website\":\"https://www.example.com/~wire-user\",\"gender\":\"female\",\"birthdate\":\"1990-09-11\",\"zoneinfo\":\"America/New_York\",\"locale\":\"en\",\"updated_at\":\"<epoch>\",\"amr\":[\"pwd\"],\"acr\":\"1\",\"nonce\":\"n-flow\",\"sid\":\"<sid>\",\"s_hash\":\"<s_hash>\"},\"signed\":true}}",
+      "state=st-flow",
+      "iss=http://<port>"
+     ],
+     "in": "fragment"
+    },
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin, Accept",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "redirecting": {
+     "url": "https://rp.wire.example/cb",
+     "query": [
+      "id_token={\"jwt\":{\"header\":{\"alg\":\"RS256\",\"typ\":\"JWT\",\"kid\":\"<kid>\"},\"claims\":{\"iss\":\"http://<port>\",\"sub\":\"urn:uuid:<uuid#1>\",\"aud\":\"wire-flow\",\"iat\":\"<epoch>\",\"nbf\":\"<epoch>\",\"exp\":\"<epoch>\",\"auth_time\":\"<epoch>\",\"azp\":\"wire-flow\",\"jti\":\"<jti>\",\"name\":\"wire-user (mock)\",\"family_name\":\"Mock\",\"given_name\":\"wire-user\",\"preferred_username\":\"wire-user\",\"email\":\"wire-user@example.com\",\"email_verified\":true,\"middle_name\":\"Priya\",\"nickname\":\"Rosa\",\"profile\":\"https://www.example.com/~wire-user/profile\",\"picture\":\"https://www.example.com/~wire-user/photo.jpg\",\"website\":\"https://www.example.com/~wire-user\",\"gender\":\"female\",\"birthdate\":\"1990-09-11\",\"zoneinfo\":\"America/New_York\",\"locale\":\"en\",\"updated_at\":\"<epoch>\",\"amr\":[\"pwd\"],\"acr\":\"1\",\"nonce\":\"n-flow\",\"sid\":\"<sid>\",\"s_hash\":\"<s_hash>\"},\"signed\":true}}",
+      "state=st-flow",
+      "iss=http://<port>"
+     ],
+     "in": "fragment"
+    }
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "form_post",
+   "method": "GET",
+   "path": {
+    "url": "/oauth2/authorize",
+    "query": [
+     "response_type=code",
+     "client_id=wire-flow",
+     "redirect_uri=https://rp.wire.example/cb",
+     "scope=openid profile email",
+     "state=st-flow",
+     "nonce=n-flow",
+     "code_challenge=<random>",
+     "code_challenge_method=S256",
+     "response_mode=form_post"
+    ],
+    "in": "query"
+   },
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "text/html; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": "<!doctype html><html lang=\"en\" dir=\"ltr\"><head><meta charset=\"utf-8\"><title>Returning to the client</title><style>body{font-family:system-ui,sans-serif;margin:2rem;max-width:52rem;color:#222}code{font-family:ui-monospace,Menlo,monospace;font-size:.85rem;background:#f4f4f8;padding:.1rem .25rem;border-radius:3px;word-break:break-all}.sub{color:#666}.meta{margin-top:1.5rem;font-size:.9rem;color:#444}button{font:inherit;padding:.4rem .9rem}</style></head><body><h1>Returning to the client</h1><p class=\"sub\">OAuth 2.0 Form Post Response Mode — the authorization response travels in a form POST rather than in a redirect, so it never appears in a URL, in browser history or in a <code>Referer</code> header (RFC 9700 section 4.3).</p><form method=\"post\" action=\"https://rp.wire.example/cb\" id=\"oauth2-form\"><input type=\"hidden\" name=\"code\" value=\"<code>\"><input type=\"hidden\" name=\"state\" value=\"st-flow\"><input type=\"hidden\" name=\"iss\" value=\"http://<port>\"><div><button type=\"submit\">Continue to the client</button></div></form><div class=\"meta\"><div>posting to: <code>https://rp.wire.example/cb</code></div><div>code: <code><random></code></div><div>state: <code>st-flow</code></div><div>iss: <code>http://<port></code></div><div>The form submits itself from <code>/oauth2/autopost.js</code>. It is a separate resource because this service sets <code>script-src 'none'</code> on every response and this page relaxes it to <code>'self'</code>; with scripting off the button IS the mechanism.</div></div><script src=\"/oauth2/autopost.js\"></script></body></html>"
+  },
+  {
+   "mode": "flows",
+   "step": "JARM, query.jwt",
+   "method": "GET",
+   "path": {
+    "url": "/oauth2/authorize",
+    "query": [
+     "response_type=code",
+     "client_id=wire-flow",
+     "redirect_uri=https://rp.wire.example/cb",
+     "scope=openid profile email",
+     "state=st-flow",
+     "nonce=n-flow",
+     "code_challenge=<random>",
+     "code_challenge_method=S256",
+     "response_mode=query.jwt"
+    ],
+    "in": "query"
+   },
+   "status": 302,
+   "headers": {
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "text/plain; charset=utf-8",
+    "location": {
+     "url": "https://rp.wire.example/cb",
+     "query": [
+      "response={\"jwt\":{\"header\":{\"alg\":\"RS256\",\"typ\":\"JWT\",\"kid\":\"<kid>\"},\"claims\":{\"code\":\"<code>\",\"state\":\"st-flow\",\"iss\":\"http://<port>\",\"aud\":\"wire-flow\",\"exp\":\"<epoch>\",\"iat\":\"<epoch>\"},\"signed\":true}}"
+     ],
+     "in": "query"
+    },
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin, Accept",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "redirecting": {
+     "url": "https://rp.wire.example/cb",
+     "query": [
+      "response={\"jwt\":{\"header\":{\"alg\":\"RS256\",\"typ\":\"JWT\",\"kid\":\"<kid>\"},\"claims\":{\"code\":\"<code>\",\"state\":\"st-flow\",\"iss\":\"http://<port>\",\"aud\":\"wire-flow\",\"exp\":\"<epoch>\",\"iat\":\"<epoch>\"},\"signed\":true}}"
+     ],
+     "in": "query"
+    }
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "JARM, jwt",
+   "method": "GET",
+   "path": {
+    "url": "/oauth2/authorize",
+    "query": [
+     "response_type=code",
+     "client_id=wire-flow",
+     "redirect_uri=https://rp.wire.example/cb",
+     "scope=openid profile email",
+     "state=st-flow",
+     "nonce=n-flow",
+     "code_challenge=<random>",
+     "code_challenge_method=S256",
+     "response_mode=jwt"
+    ],
+    "in": "query"
+   },
+   "status": 302,
+   "headers": {
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "text/plain; charset=utf-8",
+    "location": {
+     "url": "https://rp.wire.example/cb",
+     "query": [
+      "response={\"jwt\":{\"header\":{\"alg\":\"RS256\",\"typ\":\"JWT\",\"kid\":\"<kid>\"},\"claims\":{\"code\":\"<code>\",\"state\":\"st-flow\",\"iss\":\"http://<port>\",\"aud\":\"wire-flow\",\"exp\":\"<epoch>\",\"iat\":\"<epoch>\"},\"signed\":true}}"
+     ],
+     "in": "query"
+    },
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin, Accept",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "redirecting": {
+     "url": "https://rp.wire.example/cb",
+     "query": [
+      "response={\"jwt\":{\"header\":{\"alg\":\"RS256\",\"typ\":\"JWT\",\"kid\":\"<kid>\"},\"claims\":{\"code\":\"<code>\",\"state\":\"st-flow\",\"iss\":\"http://<port>\",\"aud\":\"wire-flow\",\"exp\":\"<epoch>\",\"iat\":\"<epoch>\"},\"signed\":true}}"
+     ],
+     "in": "query"
+    }
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "JARM, fragment.jwt",
+   "method": "GET",
+   "path": {
+    "url": "/oauth2/authorize",
+    "query": [
+     "response_type=code id_token",
+     "client_id=wire-flow",
+     "redirect_uri=https://rp.wire.example/cb",
+     "scope=openid profile email",
+     "state=st-flow",
+     "nonce=n-flow",
+     "code_challenge=<random>",
+     "code_challenge_method=S256",
+     "response_mode=fragment.jwt"
+    ],
+    "in": "query"
+   },
+   "status": 302,
+   "headers": {
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "text/plain; charset=utf-8",
+    "location": {
+     "url": "https://rp.wire.example/cb",
+     "query": [
+      "response={\"jwt\":{\"header\":{\"alg\":\"RS256\",\"typ\":\"JWT\",\"kid\":\"<kid>\"},\"claims\":{\"code\":\"<code>\",\"id_token\":{\"jwt\":{\"header\":{\"alg\":\"RS256\",\"typ\":\"JWT\",\"kid\":\"<kid>\"},\"claims\":{\"iss\":\"http://<port>\",\"sub\":\"urn:uuid:<uuid#1>\",\"aud\":\"wire-flow\",\"iat\":\"<epoch>\",\"nbf\":\"<epoch>\",\"exp\":\"<epoch>\",\"auth_time\":\"<epoch>\",\"azp\":\"wire-flow\",\"jti\":\"<jti>\",\"amr\":[\"pwd\"],\"acr\":\"1\",\"nonce\":\"n-flow\",\"sid\":\"<sid>\",\"c_hash\":\"<c_hash>\",\"s_hash\":\"<s_hash>\"},\"signed\":true}},\"state\":\"st-flow\",\"iss\":\"http://<port>\",\"aud\":\"wire-flow\",\"exp\":\"<epoch>\",\"iat\":\"<epoch>\"},\"signed\":true}}"
+     ],
+     "in": "fragment"
+    },
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin, Accept",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "redirecting": {
+     "url": "https://rp.wire.example/cb",
+     "query": [
+      "response={\"jwt\":{\"header\":{\"alg\":\"RS256\",\"typ\":\"JWT\",\"kid\":\"<kid>\"},\"claims\":{\"code\":\"<code>\",\"id_token\":{\"jwt\":{\"header\":{\"alg\":\"RS256\",\"typ\":\"JWT\",\"kid\":\"<kid>\"},\"claims\":{\"iss\":\"http://<port>\",\"sub\":\"urn:uuid:<uuid#1>\",\"aud\":\"wire-flow\",\"iat\":\"<epoch>\",\"nbf\":\"<epoch>\",\"exp\":\"<epoch>\",\"auth_time\":\"<epoch>\",\"azp\":\"wire-flow\",\"jti\":\"<jti>\",\"amr\":[\"pwd\"],\"acr\":\"1\",\"nonce\":\"n-flow\",\"sid\":\"<sid>\",\"c_hash\":\"<c_hash>\",\"s_hash\":\"<s_hash>\"},\"signed\":true}},\"state\":\"st-flow\",\"iss\":\"http://<port>\",\"aud\":\"wire-flow\",\"exp\":\"<epoch>\",\"iat\":\"<epoch>\"},\"signed\":true}}"
+     ],
+     "in": "fragment"
+    }
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "prompt=none, on the session",
+   "method": "GET",
+   "path": {
+    "url": "/oauth2/authorize",
+    "query": [
+     "response_type=code",
+     "client_id=wire-flow",
+     "redirect_uri=https://rp.wire.example/cb",
+     "scope=openid profile email",
+     "state=st-flow",
+     "nonce=n-flow",
+     "code_challenge=<random>",
+     "code_challenge_method=S256",
+     "prompt=none"
+    ],
+    "in": "query"
+   },
+   "status": 302,
+   "headers": {
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "text/plain; charset=utf-8",
+    "location": {
+     "url": "https://rp.wire.example/cb",
+     "query": [
+      "code=<code>",
+      "state=st-flow",
+      "iss=http://<port>"
+     ],
+     "in": "query"
+    },
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin, Accept",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "redirecting": {
+     "url": "https://rp.wire.example/cb",
+     "query": [
+      "code=<code>",
+      "state=st-flow",
+      "iss=http://<port>"
+     ],
+     "in": "query"
+    }
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "request object, by value",
+   "method": "GET",
+   "path": {
+    "url": "/oauth2/authorize",
+    "query": [
+     "client_id=wire-flow",
+     "request={\"jwt\":{\"header\":{\"alg\":\"ES256\",\"kid\":\"<kid>\",\"typ\":\"oauth-authz-req+jwt\"},\"claims\":{\"iss\":\"wire-flow\",\"aud\":\"http://<port>\",\"client_id\":\"wire-flow\",\"response_type\":\"code\",\"redirect_uri\":\"https://rp.wire.example/cb\",\"scope\":\"openid\",\"state\":\"st-ro\",\"nonce\":\"n-ro\",\"code_challenge\":\"<random>\",\"code_challenge_method\":\"S256\",\"iat\":\"<epoch>\",\"nbf\":\"<epoch>\",\"exp\":\"<epoch>\",\"jti\":\"<jti>\"},\"signed\":true}}"
+    ],
+    "in": "query"
+   },
+   "status": 302,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "text/plain; charset=utf-8",
+    "location": {
+     "url": "https://rp.wire.example/cb",
+     "query": [
+      "code=<code>",
+      "state=st-ro",
+      "iss=http://<port>"
+     ],
+     "in": "query"
+    },
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin, Accept",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "redirecting": {
+     "url": "https://rp.wire.example/cb",
+     "query": [
+      "code=<code>",
+      "state=st-ro",
+      "iss=http://<port>"
+     ],
+     "in": "query"
+    }
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "request object, a bad signature",
+   "method": "GET",
+   "path": {
+    "url": "/oauth2/authorize",
+    "query": [
+     "client_id=wire-flow",
+     "request={\"jwt\":{\"header\":{\"alg\":\"ES256\",\"kid\":\"<kid>\",\"typ\":\"oauth-authz-req+jwt\"},\"claims\":{\"iss\":\"wire-flow\",\"aud\":\"http://<port>\",\"client_id\":\"wire-flow\",\"response_type\":\"code\",\"redirect_uri\":\"https://rp.wire.example/cb\",\"scope\":\"openid\",\"state\":\"st-ro\",\"nonce\":\"n-ro\",\"code_challenge\":\"<random>\",\"code_challenge_method\":\"S256\",\"iat\":\"<epoch>\",\"nbf\":\"<epoch>\",\"exp\":\"<epoch>\",\"jti\":\"<jti>\"},\"signed\":true}}"
+    ],
+    "in": "query"
+   },
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_request_object",
+    "error_description": "the request object did not verify with any key this client holds: invalid signature."
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "request object, pushed",
+   "method": "POST",
+   "path": "/oauth2/par",
+   "status": 201,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "request_uri": "<request_uri>",
+    "expires_in": 60
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "request object, the pushed one used",
+   "method": "GET",
+   "path": {
+    "url": "/oauth2/authorize",
+    "query": [
+     "client_id=wire-flow",
+     "request_uri=<request_uri>"
+    ],
+    "in": "query"
+   },
+   "status": 302,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "text/plain; charset=utf-8",
+    "location": {
+     "url": "https://rp.wire.example/cb",
+     "query": [
+      "code=<code>",
+      "state=st-par",
+      "iss=http://<port>"
+     ],
+     "in": "query"
+    },
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin, Accept",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "redirecting": {
+     "url": "https://rp.wire.example/cb",
+     "query": [
+      "code=<code>",
+      "state=st-par",
+      "iss=http://<port>"
+     ],
+     "in": "query"
+    }
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "DPoP, client_credentials",
+   "method": "POST",
+   "path": "/oauth2/token",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "access_token": {
+     "jwt": {
+      "header": {
+       "alg": "RS256",
+       "typ": "at+jwt",
+       "kid": "<kid>"
+      },
+      "claims": {
+       "iss": "http://<port>",
+       "sub": "wire-dpop",
+       "aud": "wire-dpop",
+       "client_id": "wire-dpop",
+       "typ": "Bearer",
+       "jti": "<jti>",
+       "iat": "<epoch>",
+       "nbf": "<epoch>",
+       "exp": "<epoch>",
+       "status": {
+        "status_list": {
+         "idx": "<idx>",
+         "uri": "http://<port>/status-lists/access-tokens"
+        }
+       },
+       "cnf": {
+        "jkt": "<jkt>"
+       }
+      },
+      "signed": true
+     }
+    },
+    "token_type": "DPoP",
+    "expires_in": 3600
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "DPoP, introspected",
+   "method": "POST",
+   "path": "/oauth2/introspect",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Accept",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "active": true,
+    "scope": "",
+    "client_id": "wire-dpop",
+    "token_type": "DPoP",
+    "cnf": {
+     "jkt": "<jkt>"
+    },
+    "exp": "<epoch>",
+    "iat": "<epoch>",
+    "nbf": "<epoch>",
+    "sub": "wire-dpop",
+    "aud": "wire-dpop",
+    "iss": "http://<port>",
+    "jti": "<jti>"
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "DPoP, a bound token presented as Bearer",
+   "method": "GET",
+   "path": "/oauth2/userinfo",
+   "status": 401,
+   "headers": {
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "www-authenticate": "Bearer error=\"invalid_token\"",
+    "x-content-type-options": "nosniff",
+    "x-fapi-interaction-id": "<uuid#44>",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_token",
+    "error_description": "RFC 9068 section 4 and RFC 9700 section 2.3: an access token is audience-restricted, and a resource server MUST refuse one whose aud does not name it. This token names \"wire-dpop\", and the endpoints here are the resource server \"http://<port>/resource\" (or that of a named authorization server under http://<port>). A token narrowed with RFC 8707's resource parameter, or addressed to an API by a scope naming it, is usable at THAT resource server and nowhere else."
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "DPoP, a proof for another URL",
+   "method": "POST",
+   "path": "/oauth2/token",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_dpop_proof",
+    "error_description": "The DPoP proof was made for http://<port>/elsewhere, but this request went to http://<port>/oauth2/token. If something is terminating TLS in front of this service, that is why: global.trustProxy is OFF, so X-Forwarded-Proto and X-Forwarded-Host are ignored and this server describes the LAST HOP rather than the URL the client used. Turn it on where a proxy really is in front - and leave it off where one is not, because those are headers any client can set, and a client that chooses its own htu has unbound its own proof."
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "mTLS, client_credentials",
+   "method": "POST",
+   "path": "/oauth2/token",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "access_token": {
+     "jwt": {
+      "header": {
+       "alg": "RS256",
+       "typ": "at+jwt",
+       "kid": "<kid>"
+      },
+      "claims": {
+       "iss": "https://<port>",
+       "sub": "wire-mtls",
+       "aud": "wire-mtls",
+       "client_id": "wire-mtls",
+       "typ": "Bearer",
+       "jti": "<jti>",
+       "iat": "<epoch>",
+       "nbf": "<epoch>",
+       "exp": "<epoch>",
+       "status": {
+        "status_list": {
+         "idx": "<idx>",
+         "uri": "https://<port>/status-lists/access-tokens"
+        }
+       },
+       "cnf": {
+        "x5t#S256": "<x5t#S256>"
+       }
+      },
+      "signed": true
+     }
+    },
+    "token_type": "Bearer",
+    "expires_in": 3600
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "mTLS, introspected",
+   "method": "POST",
+   "path": "/oauth2/introspect",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Accept",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "active": true,
+    "scope": "",
+    "client_id": "wire-mtls",
+    "token_type": "Bearer",
+    "cnf": {
+     "x5t#S256": "<x5t#S256>"
+    },
+    "exp": "<epoch>",
+    "iat": "<epoch>",
+    "nbf": "<epoch>",
+    "sub": "wire-mtls",
+    "aud": "wire-mtls",
+    "iss": "https://<port>",
+    "jti": "<jti>"
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "mTLS, no certificate",
+   "method": "POST",
+   "path": "/oauth2/token",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_request",
+    "error_description": "RFC 8705 section 3.4: this client registered tls_client_certificate_bound_access_tokens=true, and this request arrived on a connection with no client certificate, so there is nothing to bind a token to. It is refused rather than answered with an unbound token, which the client would present as if it were bound."
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "CIBA, poll",
+   "method": "POST",
+   "path": "/oauth2/bc-authorize",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "auth_req_id": "<auth_req_id>",
+    "expires_in": 120,
+    "interval": 5
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "CIBA, pending",
+   "method": "POST",
+   "path": "/oauth2/token",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "authorization_pending",
+    "error_description": "The person has not answered yet."
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "CIBA, an unknown user",
+   "method": "POST",
+   "path": "/oauth2/bc-authorize",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "unknown_user_id",
+    "error_description": "the login_hint names nobody this realm holds (section 13)."
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "SAML bearer, verifying",
+   "method": "POST",
+   "path": "/oauth2/token",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "access_token": {
+     "jwt": {
+      "header": {
+       "alg": "RS256",
+       "typ": "at+jwt",
+       "kid": "<kid>"
+      },
+      "claims": {
+       "iss": "http://<port>",
+       "sub": "urn:uuid:<uuid#1>",
+       "aud": "http://<port>/resource",
+       "client_id": "wire-saml",
+       "typ": "Bearer",
+       "jti": "<jti>",
+       "iat": "<epoch>",
+       "nbf": "<epoch>",
+       "exp": "<epoch>",
+       "status": {
+        "status_list": {
+         "idx": "<idx>",
+         "uri": "http://<port>/status-lists/access-tokens"
+        }
+       },
+       "username": "wire-user",
+       "scope": "openid"
+      },
+      "signed": true
+     }
+    },
+    "token_type": "Bearer",
+    "expires_in": 3600,
+    "scope": "openid",
+    "refresh_token": "<refresh_token>",
+    "id_token": {
+     "jwt": {
+      "header": {
+       "alg": "RS256",
+       "typ": "JWT",
+       "kid": "<kid>"
+      },
+      "claims": {
+       "iss": "http://<port>",
+       "sub": "urn:uuid:<uuid#1>",
+       "aud": "wire-saml",
+       "iat": "<epoch>",
+       "nbf": "<epoch>",
+       "exp": "<epoch>",
+       "azp": "wire-saml",
+       "jti": "<jti>",
+       "at_hash": "<at_hash>"
+      },
+      "signed": true
+     }
+    }
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "SAML bearer, another audience",
+   "method": "POST",
+   "path": "/oauth2/token",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": "invalid_grant",
+    "error_description": "RFC 7522 section 3 item 2: this assertion is addressed to https://elsewhere.example/ and this authorization server is http://<port>/oauth2/token or http://<port> or http://<port>. The comparison is Simple String Comparison (RFC 3986 section 6.2.1), so a trailing slash or a different host spelling is a different audience."
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "logout, with the session",
+   "method": "GET",
+   "path": {
+    "url": "/oauth2/logout",
+    "query": [
+     "id_token_hint={\"jwt\":{\"header\":{\"alg\":\"RS256\",\"typ\":\"JWT\",\"kid\":\"<kid>\"},\"claims\":{\"iss\":\"http://<port>\",\"sub\":\"urn:uuid:<uuid#1>\",\"aud\":\"wire-flow\",\"iat\":\"<epoch>\",\"nbf\":\"<epoch>\",\"exp\":\"<epoch>\",\"auth_time\":\"<epoch>\",\"azp\":\"wire-flow\",\"jti\":\"<jti>\",\"amr\":[\"pwd\"],\"acr\":\"1\",\"nonce\":\"n-flow\",\"sid\":\"<sid>\",\"at_hash\":\"<at_hash>\"},\"signed\":true}}",
+     "post_logout_redirect_uri=https://rp.wire.example/bye",
+     "state=st-out"
+    ],
+    "in": "query"
+   },
+   "status": 302,
+   "headers": {
+    "clear-site-data": "\"storage\"",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "text/plain; charset=utf-8",
+    "location": {
+     "url": "https://rp.wire.example/bye",
+     "query": [
+      "state=st-out"
+     ],
+     "in": "query"
+    },
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "set-cookie": [
+     "sts_session=<cookie>; Path=/; Max-Age=0"
+    ],
+    "vary": "Origin, Accept",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "redirecting": {
+     "url": "https://rp.wire.example/bye",
+     "query": [
+      "state=st-out"
+     ],
+     "in": "query"
+    }
+   }
+  },
+  {
+   "mode": "flows",
+   "step": "the back-channel Logout Token",
+   "method": "POST",
+   "path": "/bc",
+   "status": 1,
+   "headers": {
+    "content-type": "application/x-www-form-urlencoded"
+   },
+   "body": {
+    "logout_token": {
+     "jwt": {
+      "header": {
+       "alg": "RS256",
+       "typ": "logout+jwt",
+       "kid": "<kid>"
+      },
+      "claims": {
+       "iss": "http://<port>",
+       "aud": "wire-flow",
+       "iat": "<epoch>",
+       "exp": "<epoch>",
+       "jti": "<jti>",
+       "events": {
+        "http://schemas.openid.net/event/backchannel-logout": {}
+       },
+       "sub": "urn:uuid:<uuid#1>",
+       "sid": "<sid>"
+      },
+      "signed": true
+     }
+    }
+   }
   }
  ],
  "problems": []
