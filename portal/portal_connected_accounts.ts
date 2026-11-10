@@ -57,6 +57,8 @@ import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
+type AccountAnswering<K extends keyof IyaApi.Account.Operations> =
+  import('../types/account-api').AccountAnswering<K>;
 type AccountContext = import('../types/account-api').AccountContext;
 type AccountCaller = import('../types/account-api').AccountCaller;
 
@@ -268,7 +270,8 @@ class PortalConnectedAccounts {
    * @param body - the checked body
    * @returns nothing
    */
-  act(ctx: AccountContext, req: Json, res: Json, caller: AccountCaller,
+  act(ctx: AccountContext, req: Json, res: AccountAnswering<'connectAccount'>,
+      caller: AccountCaller,
       body: Json): unknown {
     const { log, config } = this.deps;
     log.debug("Entering PortalConnectedAccounts.act(). " + body.action);
@@ -368,8 +371,8 @@ class PortalConnectedAccounts {
       { method: 'GET', path: ctx.BASE + '/connected-accounts',
         operationId: 'getConnectedAccounts', access: 'person',
         query: PAGE_QUERY,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           const view = self.view(caller.username);
           if (input.query.done) {
             view.notice = ctx.translatorFor(caller.username)
@@ -384,8 +387,8 @@ class PortalConnectedAccounts {
       { method: 'POST', path: ctx.BASE + '/connected-accounts',
         operationId: 'connectAccount', access: 'person',
         body: ACT_FORM,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.act(ctx, req, res, caller, input.body);
         } }
     ];

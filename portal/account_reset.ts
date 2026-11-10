@@ -81,6 +81,8 @@ import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
+type AccountAnswering<K extends keyof IyaApi.Account.Operations> =
+  import('../types/account-api').AccountAnswering<K>;
 type AccountContext = import('../types/account-api').AccountContext;
 
 const vz = validation.z;
@@ -250,7 +252,8 @@ class AccountReset {
    * @param query - the checked query
    * @returns nothing
    */
-  async look(ctx: AccountContext, req: Json, res: Json,
+  async look(ctx: AccountContext, req: Json,
+             res: AccountAnswering<'getPasswordReset'>,
              query: Json): Promise<unknown> {
     const { log, credentials } = this.deps;
     const { audit, websecurity, errorCodes } = ctx;
@@ -294,7 +297,8 @@ class AccountReset {
    * @param body - the checked body
    * @returns nothing
    */
-  async spend(ctx: AccountContext, req: Json, res: Json,
+  async spend(ctx: AccountContext, req: Json,
+              res: AccountAnswering<'spendPasswordReset'>,
               body: Json): Promise<unknown> {
     const { log, credentials } = this.deps;
     const { audit, websecurity, errorCodes } = ctx;
@@ -507,15 +511,15 @@ class AccountReset {
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/reset-password',
         operationId: 'getPasswordReset', access: 'link', query: RESET_QUERY,
-        handler: function (req: Json, res: Json, caller: Json,
-                           input: Json): unknown {
+        handler: function (req, res, caller,
+                           input): unknown {
           return self.look(ctx, req, res, Object.assign({}, input.query,
             { token: String(req.headers['x-link-token'] || '') }));
         } },
       { method: 'POST', path: ctx.BASE + '/reset-password',
         operationId: 'spendPasswordReset', access: 'link', body: RESET_FORM,
-        handler: function (req: Json, res: Json, caller: Json,
-                           input: Json): unknown {
+        handler: function (req, res, caller,
+                           input): unknown {
           return self.spend(ctx, req, res, input.body);
         } }
     ];

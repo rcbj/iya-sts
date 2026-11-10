@@ -59,6 +59,8 @@ import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
+type AccountAnswering<K extends keyof IyaApi.Account.Operations> =
+  import('../types/account-api').AccountAnswering<K>;
 type AccountContext = import('../types/account-api').AccountContext;
 type AccountCaller = import('../types/account-api').AccountCaller;
 
@@ -276,7 +278,8 @@ class AccountMfa {
    * @param body - the checked body
    * @returns nothing
    */
-  async act(ctx: AccountContext, req: Json, res: Json, caller: AccountCaller,
+  async act(ctx: AccountContext, req: Json, res: AccountAnswering<'changeMfa'>,
+            caller: AccountCaller,
             body: Json): Promise<unknown> {
     const { log, credentials } = this.deps;
     const { audit, websecurity } = ctx;
@@ -559,7 +562,7 @@ class AccountMfa {
       { method: 'GET', path: ctx.BASE + '/mfa', operationId: 'getMfa',
         access: 'person',
         query: ModelZod.query('account', 'getMfa'),
-        handler: function (req: Json, res: Json,
+        handler: function (req, res,
                            caller: AccountCaller): unknown {
           return self.view(ctx, caller, ctx.baseUrlOf(req))
             .then(function (view: Json) {
@@ -569,8 +572,8 @@ class AccountMfa {
       { method: 'POST', path: ctx.BASE + '/mfa', operationId: 'changeMfa',
         access: 'person', recentAuth: true,
         body: MFA_FORM,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.act(ctx, req, res, caller, input.body);
         } }
     ];

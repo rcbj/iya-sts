@@ -61,8 +61,11 @@ export interface AccountContext {
   // The portal's translator for a person (their own language first), or for
   // nobody — a page drawn for an activation link or a reset.
   translatorFor(username?: string): any;
-  // Answers JSON with `Cache-Control: no-store`.
-  json(res: any, status: number, body: any): unknown;
+  // Answers JSON with `Cache-Control: no-store`. Through a handler's
+  // response the answer is held to the model's at a literal 2xx status
+  // (#1579, `types/api-handlers.d.ts`).
+  json<R, S extends number>(res: R, status: S,
+                            body: IyaApi.AnswerOf<R, S>): unknown;
   // Marks `code` and answers `{ ok: false, errors, ...extra }`.
   refuse(res: any, status: number, code: string, errors: string | string[],
          extra?: any): unknown;
@@ -73,13 +76,13 @@ export interface AccountContext {
 }
 
 // ONE OPERATION, which is both a route and a row of the OpenAPI document.
-export interface AccountOperation {
+// Every member but the operationId and the handler, which the model types.
+export interface AccountOperationRow {
   /** Needs a sign-in within `account.recentAuthMinutes` (ASVS 5.0.0 7.5.1). */
   recentAuth?: boolean;
   method: 'GET' | 'POST';
   // The full path, `/account-api/...`. Express parameters (`:id`) allowed.
   path: string;
-  operationId: string;
   // The OpenAPI tag: the portal page's name.
   tag?: string;
   summary?: string;
@@ -98,9 +101,32 @@ export interface AccountOperation {
   // The access gate's action: `read` for a GET and `manage-own` otherwise,
   // unless said.
   action?: string;
-  handler(req: any, res: any, caller: AccountCaller | null,
-          input: { query: any; body: any }): unknown;
 }
+
+// THE OPERATION THE MODEL DECLARES (#1579): the handler of the row naming
+// `operationId` K is typed by `IyaApi.Account.Operations[K]` — the body and
+// query it is handed (checked against the model's zod schemas before it
+// runs), the request's query names, and what it may answer through
+// `ctx.json()` at a literal 2xx status.
+export type AccountOperationOf<K extends keyof IyaApi.Account.Operations> =
+  AccountOperationRow & {
+    operationId: K;
+    handler(req: IyaApi.RequestTo<IyaApi.Account.Operations[K]>,
+            res: IyaApi.Answering<IyaApi.Account.Operations[K]>,
+            caller: AccountCaller | null,
+            input: IyaApi.ValidatedInput<IyaApi.Account.Operations[K]>):
+      unknown;
+  };
+
+// The response a helper a handler hands its answer to is typed by (#1579):
+// the operations whose handlers call it.
+export type AccountAnswering<K extends keyof IyaApi.Account.Operations> =
+  IyaApi.Answering<IyaApi.Account.Operations[K]>;
+
+// ONE OPERATION OF THE TABLE: any of the model's, discriminated by its id.
+export type AccountOperation = {
+  [K in keyof IyaApi.Account.Operations]: AccountOperationOf<K>
+}[keyof IyaApi.Account.Operations];
 
 // ---------------------------------------------------------------------------
 // THE BROWSER HALF: ONE PORTAL PAGE, as `portal/web_portal_pages.ts` lists it

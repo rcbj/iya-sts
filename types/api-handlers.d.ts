@@ -54,6 +54,7 @@ declare namespace IyaApi {
     body: O['body'];
     query: RawQuery<O['query']>;
     [member: string]: any;
+    [member: symbol]: any;
   }
 
   // A response to one operation: it carries, as a type only, what the
@@ -62,6 +63,7 @@ declare namespace IyaApi {
   interface Answering<O extends Operation> {
     readonly __iyaAnswers?: O['answers'];
     [member: string]: any;
+    [member: symbol]: any;
   }
 
   // What a handler holding response `R` may send with status `S`: the

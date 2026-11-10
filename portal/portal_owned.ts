@@ -328,8 +328,8 @@ class PortalOwned {
           'what they own through /admin-api with owner:read and ' +
           'owner:write.',
         query: PAGE_QUERY,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return ctx.json(res, 200,
             self.view(kind, caller, input.query.page || 1));
         } } as AccountOperation;

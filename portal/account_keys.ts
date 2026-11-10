@@ -68,6 +68,8 @@ import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
+type AccountAnswering<K extends keyof IyaApi.Account.Operations> =
+  import('../types/account-api').AccountAnswering<K>;
 type AccountContext = import('../types/account-api').AccountContext;
 type AccountCaller = import('../types/account-api').AccountCaller;
 
@@ -422,7 +424,7 @@ class AccountKeys {
    * @param body - the checked body
    * @returns nothing
    */
-  async enrol(ctx: AccountContext, req: Json, res: Json,
+  async enrol(ctx: AccountContext, req: Json, res: AccountAnswering<'enrolKey'>,
               caller: AccountCaller, body: Json): Promise<unknown> {
     const { log, credentials, authn, passkeyPolicy } = this.deps;
     const { audit, websecurity } = ctx;
@@ -616,7 +618,8 @@ class AccountKeys {
    * @param body - the checked body
    * @returns nothing
    */
-  remove(ctx: AccountContext, req: Json, res: Json, caller: AccountCaller,
+  remove(ctx: AccountContext, req: Json, res: AccountAnswering<'removeKey'>,
+         caller: AccountCaller,
          body: Json): unknown {
     const { log, credentials } = this.deps;
     const { audit, websecurity } = ctx;
@@ -682,7 +685,8 @@ class AccountKeys {
    * @param body - the checked body
    * @returns nothing
    */
-  rename(ctx: AccountContext, req: Json, res: Json, caller: AccountCaller,
+  rename(ctx: AccountContext, req: Json, res: AccountAnswering<'renameKey'>,
+         caller: AccountCaller,
          body: Json): unknown {
     const { log, credentials } = this.deps;
     const { audit, websecurity } = ctx;
@@ -725,29 +729,29 @@ class AccountKeys {
       { method: 'GET', path: ctx.BASE + '/keys', operationId: 'getKeys',
         access: 'person',
         query: KEYS_QUERY,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return ctx.json(res, 200, self.view(caller, ctx.baseUrlOf(req)));
         } },
       { method: 'POST', path: ctx.BASE + '/keys', operationId: 'enrolKey',
         access: 'person', recentAuth: true,
         body: ENROL_KEY_FORM,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.enrol(ctx, req, res, caller, input.body);
         } },
       { method: 'POST', path: ctx.BASE + '/keys/remove',
         operationId: 'removeKey', access: 'person', recentAuth: true,
         body: REMOVE_KEY_FORM,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.remove(ctx, req, res, caller, input.body);
         } },
       { method: 'POST', path: ctx.BASE + '/keys/rename',
         operationId: 'renameKey', access: 'person',
         body: RENAME_KEY_FORM,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.rename(ctx, req, res, caller, input.body);
         } }
     ];

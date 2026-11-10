@@ -57,6 +57,8 @@ import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
+type AccountAnswering<K extends keyof IyaApi.Account.Operations> =
+  import('../types/account-api').AccountAnswering<K>;
 type AccountContext = import('../types/account-api').AccountContext;
 type AccountCaller = import('../types/account-api').AccountCaller;
 
@@ -140,7 +142,8 @@ class PortalGnap {
    * @param body - the checked body
    * @returns nothing
    */
-  revoke(ctx: AccountContext, req: Json, res: Json, caller: AccountCaller,
+  revoke(ctx: AccountContext, req: Json,
+         res: AccountAnswering<'revokeGnapGrant'>, caller: AccountCaller,
          body: Json): unknown {
     const { log } = this.deps;
     log.debug("Entering PortalGnap.revoke().");
@@ -179,15 +182,15 @@ class PortalGnap {
       { method: 'GET', path: ctx.BASE + '/gnap',
         operationId: 'getGnapGrants', access: 'person',
         query: GNAP_QUERY,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return ctx.json(res, 200,
                           self.view(caller.username, input.query.page || 1));
         } },
       { method: 'POST', path: ctx.BASE + '/gnap',
         operationId: 'revokeGnapGrant', access: 'person', body: REVOKE_FORM,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.revoke(ctx, req, res, caller, input.body);
         } }
     ];
