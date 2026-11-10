@@ -8,7 +8,7 @@ Dockerfile removes this directory from the image.
 |---|---|---|---|
 | `bootstrap-state.sh` | once | the S3 state bucket `iya-sts-terraform-state-<account>` — not Terraform, because it holds Terraform's state | an administrator |
 | `foundation/` | long-lived | the deployer IAM user, the role it assumes, the two permissions boundaries (the workload one, and the ECS infrastructure role's since #214), the KMS key, the KEY-ENCRYPTION KEY — a multi-region KMS key of its own, `alias/iya-sts-kek` (#391) — the ECR repository, the container log group, the test report bucket `iya-sts-test-reports-<account>` — and since #98, for every region in `permitted_regions`, a single-region CELL key, a replica of the multi-region GLOBAL key and of the KEK, a log group and a replica of the repository (`modules/region`), with ECR replication to them (*Cells*, below) | an administrator |
-| `environment/` | per run | VPC, NLB (443, 389, 636, the plain-HTTP CRL/OCSP port on 80, and TCP 88 for the KDC — the same in every environment since 2026-09-21), and with `public_hostname` a CNAME (`dns.tf`) — and the public certificate's ARN, READ from `certificate/`'s state, since 2026-10-01, RDS primary + replica, secrets, ECS cluster, task and execution roles, the ECS infrastructure role, with `mail_ses_domain` an SES identity and its DKIM records (`mail.tf`, #311), three services — each task with an EBS volume for risk dataset uploads (#214) | the deployer role |
+| `environment/` | per run | VPC, NLB (443, 636, the plain-HTTP CRL/OCSP port on 80, and TCP 88 for the KDC — the same in every environment since 2026-09-21), and with `public_hostname` a CNAME (`dns.tf`) — and the public certificate's ARN, READ from `certificate/`'s state, since 2026-10-01, RDS primary + replica, secrets, ECS cluster, task and execution roles, the ECS infrastructure role, with `mail_ses_domain` an SES identity and its DKIM records (`mail.tf`, #311), three services — each task with an EBS volume for risk dataset uploads (#214) | the deployer role |
 | `certificate/` | **kept across destroys** | **the public ACM certificate (2026-10-01, rcbj)**: the exportable certificate the nodes present, its DNS validation records — one state per environment (`environment/<env>/certificate.tfstate`) and per cell (`environment/<env>/<cell>/certificate.tfstate`). Applied before every environment apply, NEVER destroyed with the environment, and its first apply ADOPTS an existing certificate rather than requesting one (*The public certificate is kept*, below) | the deployer role, through `entrypoint.sh` |
 | `spiffe-realm/` | per realm | one additional realm's SPIRE Server API on an existing environment's NLB: one listener, one target group with the nodes registered BY ADDRESS, and the security-group rules. The Workload API is not published (#324). State at `environment/<env>/spiffe-realm/<realm>.tfstate` (*A realm's SPIFFE ports*, below) | the deployer role |
 | `environment/envs/<env>.tfvars` | per environment | what a named environment sets differently; `entrypoint.sh` passes it when it exists. `dev` and `ci` have none | the deployer role |
@@ -115,9 +115,12 @@ realms_max_count` (100,000, #368)** for the same reason: the service default
 of 10, which a deployment keeps, would refuse the eleventh realm a run makes
 (`STS-CORE-0161`). `STS_SUITE_KEEP_REALMS=1` skips the reset.
 
-**Four published ports.** 443 → 8081; 389 (the directory in the clear) and
-**636 (the same directory behind TLS, since 2026-09-17)** on the same numbers
-inside and out; and the plain-HTTP CRL/OCSP listener, **8082 inside and
+**Four published ports.** 443 → 8081; **636 (the directory behind TLS, since
+2026-09-17)** on the same number inside and out — and **no 389 since
+2026-11-10** (rcbj): the ASVS L2 hardening (#1490) turns `ldap.plainListener`
+off in product, so a product node bound nothing on 389, its TCP health check
+failed and ECS replaced a node that was otherwise healthy. `suite-callbacks/`
+hands the jobs `ldaps://…:636` when the environment publishes no 389; and the plain-HTTP CRL/OCSP listener, **8082 inside and
 `var.pki_listener_port` outside** — 80 in every environment since 2026-09-21 (it was 8082 everywhere but `testidp`).
 The service writes the OUTSIDE number into what it publishes:
 `PKI_DISTRIBUTION_BASE_URL` is built from `published_ports.pki.listener` and

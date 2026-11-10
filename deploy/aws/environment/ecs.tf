@@ -92,7 +92,10 @@ locals {
     # altogether (`pki_public_url`).
     PKI_DISTRIBUTION_BASE_URL  = local.pki_public_url
     PKI_DISTRIBUTION_LDAP_HOST = local.direct_host
-    PKI_DISTRIBUTION_LDAP_PORT = tostring(local.published_ports.ldap.listener)
+    # 389 is what an ldap:// address names (RFC 4516; RFC 5280 section 8
+    # rules out ldaps://), and the load balancer no longer publishes it
+    # (locals.tf), so from outside the VPC that address does not resolve.
+    PKI_DISTRIBUTION_LDAP_PORT = "389"
 
     # REVOCATION IS NOT CONSULTED ON THESE CLUSTERS (rcbj, #371). A
     # certificate presented to a node, or registered and used, is not checked
