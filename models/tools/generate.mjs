@@ -26,6 +26,7 @@ import { checkScim, readScim } from '../lib/scim_lib.mjs';
 import { checkOAuth, readOAuth } from '../lib/oauth_lib.mjs';
 import { checkGnap, readGnap } from '../lib/gnap_lib.mjs';
 import { checkAuthzen, readAuthzen } from '../lib/authzen_lib.mjs';
+import { checkSaml, readSaml } from '../lib/saml_lib.mjs';
 import { checkFacts, factsOf, fieldsOf, linksIn, readDirectory, readPersistence,
   readSpellings, renderScript, schemaOf } from '../lib/model_lib.mjs';
 
@@ -122,6 +123,13 @@ async function generate() {
                     authzenProblems.join('; '));
   }
   fs.writeFileSync(path.join(out, 'authzen.json'), JSON.stringify(authzen));
+  const saml = readSaml(program);
+  const samlProblems = checkSaml(saml);
+  if (samlProblems.length > 0) {
+    log.debug("Leaving generate(). The SAML model is wrong.");
+    throw new Error('The SAML model is wrong: ' + samlProblems.join('; '));
+  }
+  fs.writeFileSync(path.join(out, 'saml.json'), JSON.stringify(saml));
   const persistence = readPersistence(program);
   fs.writeFileSync(path.join(out, 'persistence.postgres.json'),
     JSON.stringify({ objects: persistence.objects,
