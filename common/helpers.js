@@ -3738,6 +3738,22 @@ function narrowSigningAlgs(doc) {
   return doc;
 }
 
+// ONE MEMBER OF A DOCUMENT, AS A DOCUMENT WOULD PUBLISH IT. The crypto report
+// (`admin-ui/crypto_metadata.ts`) lists what discovery lists, and narrowing
+// its rows its own way drifted the first time a narrowing was added here
+// (ES256K out of the accept lists in product, ASVS 5.0.0 11.6.1): so it asks
+// this, which is `narrowSigningAlgs()` over a document holding that member
+// alone. The member's NAME decides how it is narrowed — what this realm
+// signs, or what it accepts — so it is passed as discovery spells it.
+function publishedSigningAlgs(member, list) {
+  log.debug("Entering publishedSigningAlgs().");
+  const doc = {};
+  doc[member] = (list || []).slice();
+  narrowSigningAlgs(doc);
+  log.debug("Leaving publishedSigningAlgs().");
+  return doc[member];
+}
+
 function withoutUnlistedSigningKeys(keys) {
   log.debug("Entering withoutUnlistedSigningKeys().");
   if (!signingAlgsNarrowed()) {
@@ -9526,6 +9542,7 @@ module.exports = {
   listedSigningAlgs: listedSigningAlgs,
   withoutUnlistedSigningAlgs: withoutUnlistedSigningAlgs,
   narrowSigningAlgs: narrowSigningAlgs,
+  publishedSigningAlgs: publishedSigningAlgs,
   webauthnAlgorithmsOffered: webauthnAlgorithmsOffered,
   withoutUnlistedSigningKeys: withoutUnlistedSigningKeys,
   browserDeviceKeysFor: browserDeviceKeysFor,

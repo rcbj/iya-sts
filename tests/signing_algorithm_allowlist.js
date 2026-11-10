@@ -586,6 +586,54 @@ function childMain() {
          'F13. an XML signature on secp256k1 verifies in product only ' +
          'where ES256K is listed, P-256 always, and secp256k1 in development',
          JSON.stringify(xml));
+    // THE CRYPTO REPORT IS THE DISCOVERY DOCUMENT READ TWICE: in a product
+    // realm it lists, for every signing list it shares with RFC 8414 and
+    // OpenID Connect Discovery, exactly what discovery publishes. It listed
+    // ES256K in the request object and DPoP rows after #1577 took it out of
+    // discovery (tests/protocol/admin_api.js, product mode).
+    const cryptoMetadata = require(ROOT + '/admin-ui/crypto_metadata');
+    const k1As = await get(port, k1Prefix +
+                           '/.well-known/oauth-authorization-server');
+    const reported = realms.run(realms.get(K1REALM), function () {
+      const family = cryptoMetadata.FAMILIES.filter(function (one) {
+        return one.name === 'OAuth2 / OIDC';
+      })[0];
+      const out = {};
+      (family ? family.algorithms() : []).forEach(function (one) {
+        out[one[0]] = one[1];
+      });
+      return out;
+    });
+    const pairs = [
+      ['ID Token, when a client registers one', k1Disc.json,
+       'id_token_signing_alg_values_supported'],
+      ['UserInfo response', k1Disc.json,
+       'userinfo_signing_alg_values_supported'],
+      ['JWT introspection response (RFC 9701)', k1As.json,
+       'introspection_signing_alg_values_supported'],
+      ['Request object signature (RFC 9101)', k1As.json,
+       'request_object_signing_alg_values_supported'],
+      ['DPoP proof', k1As.json, 'dpop_signing_alg_values_supported']];
+    // `none` is published where an unsigned answer or object is taken, and
+    // is not a signature: compared without it on both sides.
+    const signed = function (list) {
+      return (list || []).filter(function (alg) {
+        return alg !== 'none';
+      });
+    };
+    const drift = pairs.filter(function (one) {
+      return JSON.stringify(signed(reported[one[0]])) !==
+        JSON.stringify(signed((one[1] || {})[one[2]]));
+    }).map(function (one) {
+      return one[0] + ': ' + JSON.stringify(reported[one[0]]) + ' vs ' +
+        JSON.stringify((one[1] || {})[one[2]]);
+    });
+    note(k1As.status === 200 && drift.length === 0 &&
+         (reported['Request object signature (RFC 9101)'] || [])
+           .indexOf('ES256K') < 0,
+         'F14. in product the crypto report lists what discovery publishes, ' +
+         'ES256K out of the request object and DPoP rows too',
+         drift.join('; ') || k1As.status);
     realms.run(realms.get(K1REALM), function () {
       config.clearOverride('global.mode');
     });
