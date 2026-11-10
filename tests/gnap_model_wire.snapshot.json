@@ -1,0 +1,3821 @@
+{
+ "wire": [
+  {
+   "mode": "development",
+   "step": "discovery",
+   "method": "OPTIONS",
+   "path": "/gnap",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "grant_request_endpoint": "http://<port>/gnap",
+    "interaction_start_modes_supported": [
+     "redirect",
+     "app",
+     "user_code",
+     "user_code_uri"
+    ],
+    "interaction_finish_methods_supported": [
+     "redirect",
+     "push"
+    ],
+    "key_proofs_supported": [
+     "httpsig",
+     "mtls",
+     "jwsd",
+     "jws"
+    ],
+    "sub_id_formats_supported": [
+     "opaque",
+     "iss_sub",
+     "email",
+     "account",
+     "uri",
+     "phone_number",
+     "aliases"
+    ],
+    "assertion_formats_supported": [
+     "id_token",
+     "saml2"
+    ],
+    "key_rotation_supported": true,
+    "token_formats_supported": [
+     "jwt-signed",
+     "jwt-encrypted",
+     "macaroon",
+     "biscuit",
+     "zcap"
+    ]
+   },
+   "code": ""
+  },
+  {
+   "mode": "development",
+   "step": "rs discovery",
+   "method": "GET",
+   "path": "/.well-known/gnap-as-rs",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "grant_request_endpoint": "http://<port>/gnap",
+    "introspection_endpoint": "http://<port>/gnap/introspect",
+    "token_formats_supported": [
+     "jwt-signed",
+     "jwt-encrypted",
+     "macaroon",
+     "biscuit",
+     "zcap"
+    ],
+    "resource_registration_endpoint": "http://<port>/gnap/resource",
+    "key_proofs_supported": [
+     "httpsig",
+     "mtls",
+     "jwsd",
+     "jws"
+    ],
+    "status_list_aggregation_endpoint": "http://<port>/status-lists",
+    "biscuit_revocation_endpoint": "http://<port>/gnap/biscuit/revocations"
+   },
+   "code": ""
+  },
+  {
+   "mode": "development",
+   "step": "keys",
+   "method": "GET",
+   "path": "/gnap/keys",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "jwt": {
+     "jwks_uri": "http://<port>/oauth2/jwks",
+     "alg": "RS256",
+     "kid": "<kid>",
+     "typ": "gnap-at+jwt",
+     "status_list_aggregation_endpoint": "http://<port>/status-lists"
+    },
+    "biscuit": {
+     "algorithm": "ed25519",
+     "root_public_key": "<root_public_key>",
+     "revocation_endpoint": "http://<port>/gnap/biscuit/revocations",
+     "jwk": {
+      "use": "sig",
+      "alg": "EdDSA",
+      "kty": "OKP",
+      "crv": "Ed25519",
+      "x": "<x>",
+      "kid": "<kid>"
+     },
+     "root_public_keys": "<root_public_keys>"
+    },
+    "zcap": {
+     "controller": "<controller>",
+     "cryptosuite": "eddsa-jcs-2022"
+    },
+    "macaroon": {
+     "root_key": "per resource server; carried (sealed) on the resource server's application entry as gnapMacaroonKey"
+    },
+    "jwt-encrypted": {
+     "authorization_server": "dir/A256GCM under a realm-derived key (introspect)",
+     "resource_server": "the resource server's registered gnapJweKey"
+    }
+   },
+   "code": ""
+  },
+  {
+   "mode": "development",
+   "step": "zcap controller",
+   "method": "GET",
+   "path": "/gnap/zcap/controller",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "@context": [
+     "https://www.w3.org/ns/cid/v1"
+    ],
+    "id": "<id>",
+    "verificationMethod": "<verificationMethod>",
+    "assertionMethod": "<assertionMethod>",
+    "capabilityDelegation": "<capabilityDelegation>"
+   },
+   "code": ""
+  },
+  {
+   "mode": "development",
+   "step": "biscuit revocations",
+   "method": "GET",
+   "path": "/gnap/biscuit/revocations",
+   "status": 200,
+   "headers": {
+    "cache-control": "max-age=60",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "revocation_ids": "<revocation_ids>",
+    "ttl": 60
+   },
+   "code": ""
+  },
+  {
+   "mode": "development",
+   "step": "discovery, a named server",
+   "method": "OPTIONS",
+   "path": "/gw-as/gnap",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "grant_request_endpoint": "http://<port>/gw-as/gnap",
+    "interaction_start_modes_supported": [
+     "redirect",
+     "app",
+     "user_code",
+     "user_code_uri"
+    ],
+    "interaction_finish_methods_supported": [
+     "redirect",
+     "push"
+    ],
+    "key_proofs_supported": [
+     "httpsig",
+     "mtls",
+     "jwsd",
+     "jws"
+    ],
+    "sub_id_formats_supported": [
+     "opaque",
+     "iss_sub",
+     "email",
+     "account",
+     "uri",
+     "phone_number",
+     "aliases"
+    ],
+    "assertion_formats_supported": [
+     "id_token",
+     "saml2"
+    ],
+    "key_rotation_supported": true,
+    "token_formats_supported": [
+     "jwt-signed",
+     "jwt-encrypted",
+     "macaroon",
+     "biscuit",
+     "zcap"
+    ]
+   },
+   "code": ""
+  },
+  {
+   "mode": "development",
+   "step": "rs discovery, a named server",
+   "method": "GET",
+   "path": "/.well-known/gnap-as-rs/gw-as",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "grant_request_endpoint": "http://<port>/gw-as/gnap",
+    "introspection_endpoint": "http://<port>/gnap/introspect",
+    "token_formats_supported": [
+     "jwt-signed",
+     "jwt-encrypted",
+     "macaroon",
+     "biscuit",
+     "zcap"
+    ],
+    "resource_registration_endpoint": "http://<port>/gnap/resource",
+    "key_proofs_supported": [
+     "httpsig",
+     "mtls",
+     "jwsd",
+     "jws"
+    ],
+    "status_list_aggregation_endpoint": "http://<port>/status-lists",
+    "biscuit_revocation_endpoint": "http://<port>/gnap/biscuit/revocations"
+   },
+   "code": ""
+  },
+  {
+   "mode": "development",
+   "step": "discovery, a bad server name",
+   "method": "OPTIONS",
+   "path": "/a%20b/gnap",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "the params parameter \"as\" is not acceptable: must be printable ASCII with no spaces."
+    }
+   },
+   "code": "STS-GNAP-0162"
+  },
+  {
+   "mode": "development",
+   "step": "grant, not JSON",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "the request content is not JSON (RFC 9635 section 2 requires a JSON object with Content-Type application/json)."
+    }
+   },
+   "code": "STS-GNAP-0261"
+  },
+  {
+   "mode": "development",
+   "step": "grant, unsigned",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 401,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_client",
+     "description": "the Content-Digest does not match the request content: The message has no Content-Digest field to validate against its content (RFC 9530 section 2)."
+    }
+   },
+   "code": "STS-KEYS-0108"
+  },
+  {
+   "mode": "development",
+   "step": "grant, an array",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "the grant request must be a JSON object."
+    }
+   },
+   "code": "STS-GNAP-0052"
+  },
+  {
+   "mode": "development",
+   "step": "grant, a control character",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "the grant request does not match its schema: /client/display/name contains a control character, which no member of a GNAP document may carry (JSON Schema urn:iya-sts:gnap:grant-request)."
+    }
+   },
+   "code": "STS-GNAP-0061"
+  },
+  {
+   "mode": "development",
+   "step": "grant, a wrong type",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "the grant request does not match its schema: /access_token/access must be array (JSON Schema urn:iya-sts:gnap:grant-request)."
+    }
+   },
+   "code": "STS-GNAP-0061"
+  },
+  {
+   "mode": "development",
+   "step": "grant, an overlong label",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "the grant request does not match its schema: /access_token/label must NOT have more than 256 characters (JSON Schema urn:iya-sts:gnap:grant-request)."
+    }
+   },
+   "code": "STS-GNAP-0061"
+  },
+  {
+   "mode": "development",
+   "step": "grant, a finish member nobody defines",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "the grant request does not match its schema: /interact/finish must NOT have additional properties (JSON Schema urn:iya-sts:gnap:grant-request)."
+    }
+   },
+   "code": "STS-GNAP-0061"
+  },
+  {
+   "mode": "development",
+   "step": "grant, a finish uri that is not a URI",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "the grant request does not match its schema: /interact/finish/uri must match format \"uri\" (JSON Schema urn:iya-sts:gnap:grant-request)."
+    }
+   },
+   "code": "STS-GNAP-0061"
+  },
+  {
+   "mode": "development",
+   "step": "grant, no client",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 401,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_client",
+     "description": "\"client\" is REQUIRED: an object or an instance identifier (RFC 9635 section 2.3)."
+    }
+   },
+   "code": "STS-GNAP-0039"
+  },
+  {
+   "mode": "development",
+   "step": "grant, the durable flag",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_flag",
+     "description": "the flag \"durable\" is a response flag and cannot be requested (RFC 9635 section 10.4)."
+    }
+   },
+   "code": "STS-GNAP-0029"
+  },
+  {
+   "mode": "development",
+   "step": "grant, an unknown start mode",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_interaction",
+     "description": "none of the interaction start modes offered (telepathy) is supported for this client, and this authorization server cannot reach the resource owner another way (RFC 9635 section 2.5)."
+    }
+   },
+   "code": "STS-GNAP-0100"
+  },
+  {
+   "mode": "development",
+   "step": "grant, an unknown finish method",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "instance_id": "<instance_id>",
+    "interact": {
+     "redirect": "http://<port>/gnap/interact/<handle>",
+     "expires_in": "<expires_in>"
+    },
+    "continue": {
+     "access_token": {
+      "value": "<value>"
+     },
+     "uri": "http://<port>/gnap/continue/<handle>",
+     "wait": "<wait>"
+    }
+   },
+   "code": ""
+  },
+  {
+   "mode": "development",
+   "step": "grant, an interaction reference",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "\"interact_ref\" is only sent to a continuation URI (RFC 9635 section 5.1)."
+    }
+   },
+   "code": "STS-GNAP-0054"
+  },
+  {
+   "mode": "development",
+   "step": "grant, two tokens without labels",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "every access token in a request for multiple tokens must carry a label (RFC 9635 section 2.1.2)."
+    }
+   },
+   "code": "STS-GNAP-0026"
+  },
+  {
+   "mode": "development",
+   "step": "grant, a location nobody registered",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "access_token.access[0] names the location \"https://nobody.gw.test/\", and \"gw-dev-rs\", which declares \"gw-dev-read\", answers to \"gw-dev-rs\", \"https://rs-dev.gw.test/api\". A token is addressed to its locations, so a location nobody declared would be an audience nobody checks (RFC 9635 section 8: an access right is read as its API defines it)."
+    }
+   },
+   "code": "STS-GNAP-0812"
+  },
+  {
+   "mode": "development",
+   "step": "grant, no resource server at all",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "access_token.access names no resource server, so the token would be for nobody in particular, and this authorization server issues none. Name one: a reference a resource server registered (RFC 9767 section 3.4), a location at or under a registered resource server's gnapResourceServerUri, or a type a registered resource server declares (RFC 9635 section 8) — or this service's Shared Signals transmitter, by \"ssf.read\" or \"ssf.manage\" or an object of type \"ssf\"."
+    }
+   },
+   "code": "STS-GNAP-0904"
+  },
+  {
+   "mode": "development",
+   "step": "grant, an unknown sub_id format",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "instance_id": "<instance_id>",
+    "interact": {
+     "redirect": "http://<port>/gnap/interact/<handle>",
+     "expires_in": "<expires_in>"
+    },
+    "continue": {
+     "access_token": {
+      "value": "<value>"
+     },
+     "uri": "http://<port>/gnap/continue/<handle>",
+     "wait": "<wait>"
+    }
+   },
+   "code": ""
+  },
+  {
+   "mode": "development",
+   "step": "grant, an unknown key",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 401,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_client",
+     "description": "the HTTP message signature does not verify: No verification key is known for the signature \"sig1\" (keyid=\"kid-gw-stranger\"); an unknown or untrusted key MUST fail (RFC 9421 section 3.2 step 5)."
+    }
+   },
+   "code": "STS-KEYS-0151"
+  },
+  {
+   "mode": "development",
+   "step": "grant, a key nobody registered",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "instance_id": "<instance_id>",
+    "interact": {
+     "redirect": "http://<port>/gnap/interact/<handle>",
+     "expires_in": "<expires_in>"
+    },
+    "continue": {
+     "access_token": {
+      "value": "<value>"
+     },
+     "uri": "http://<port>/gnap/continue/<handle>",
+     "wait": "<wait>"
+    }
+   },
+   "code": ""
+  },
+  {
+   "mode": "development",
+   "step": "grant, nothing to interact with",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_interaction",
+     "description": "this request needs the resource owner's approval and the client offered no way to interact (RFC 9635 section 2.5)."
+    }
+   },
+   "code": "STS-GNAP-0113"
+  },
+  {
+   "mode": "development",
+   "step": "grant, pending with redirect and finish",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "instance_id": "<instance_id>",
+    "interact": {
+     "redirect": "http://<port>/gnap/interact/<handle>",
+     "finish": "<random>",
+     "expires_in": "<expires_in>"
+    },
+    "continue": {
+     "access_token": {
+      "value": "<value>"
+     },
+     "uri": "http://<port>/gnap/continue/<handle>",
+     "wait": "<wait>"
+    }
+   },
+   "code": ""
+  },
+  {
+   "mode": "development",
+   "step": "grant, pending with a user code",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "instance_id": "<instance_id>",
+    "interact": {
+     "user_code": "<user_code>",
+     "user_code_uri": {
+      "code": "<usercode>",
+      "uri": "http://<port>/gnap/code"
+     },
+     "app": "http://<port>/gnap/app/<handle>",
+     "expires_in": "<expires_in>"
+    },
+    "continue": {
+     "access_token": {
+      "value": "<value>"
+     },
+     "uri": "http://<port>/gnap/continue/<handle>",
+     "wait": "<wait>"
+    }
+   },
+   "code": ""
+  },
+  {
+   "mode": "development",
+   "step": "grant, issued to a trusted client",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "instance_id": "<instance_id>",
+    "access_token": {
+     "value": "<value>",
+     "access": [
+      {
+       "type": "gw-dev-read",
+       "actions": [
+        "read"
+       ],
+       "locations": [
+        "https://rs-dev.gw.test/api"
+       ]
+      }
+     ],
+     "expires_in": "<expires_in>",
+     "manage": {
+      "uri": "http://<port>/gnap/token/<handle>",
+      "access_token": {
+       "value": "<value>"
+      }
+     }
+    },
+    "continue": {
+     "access_token": {
+      "value": "<value>"
+     },
+     "uri": "http://<port>/gnap/continue/<handle>",
+     "wait": "<wait>"
+    }
+   },
+   "code": ""
+  },
+  {
+   "mode": "development",
+   "step": "grant, two labelled tokens",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "instance_id": "<instance_id>",
+    "access_token": [
+     {
+      "value": "<value>",
+      "access": [
+       {
+        "type": "gw-dev-read",
+        "actions": [
+         "read"
+        ],
+        "locations": [
+         "https://rs-dev.gw.test/api"
+        ]
+       }
+      ],
+      "expires_in": "<expires_in>",
+      "label": "a",
+      "manage": {
+       "uri": "http://<port>/gnap/token/<handle>",
+       "access_token": {
+        "value": "<value>"
+       }
+      }
+     },
+     {
+      "value": "<value>",
+      "access": [
+       {
+        "type": "gw-dev-read",
+        "actions": [
+         "write"
+        ],
+        "locations": [
+         "https://rs-dev.gw.test/api"
+        ]
+       }
+      ],
+      "expires_in": "<expires_in>",
+      "label": "b",
+      "manage": {
+       "uri": "http://<port>/gnap/token/<handle>",
+       "access_token": {
+        "value": "<value>"
+       }
+      }
+     }
+    ],
+    "continue": {
+     "access_token": {
+      "value": "<value>"
+     },
+     "uri": "http://<port>/gnap/continue/<handle>",
+     "wait": "<wait>"
+    }
+   },
+   "code": ""
+  },
+  {
+   "mode": "development",
+   "step": "grant, the bearer flag",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "instance_id": "<instance_id>",
+    "access_token": {
+     "value": "<value>",
+     "access": [
+      {
+       "type": "gw-dev-read",
+       "actions": [
+        "read"
+       ],
+       "locations": [
+        "https://rs-dev.gw.test/api"
+       ]
+      }
+     ],
+     "expires_in": "<expires_in>",
+     "flags": [
+      "bearer"
+     ],
+     "manage": {
+      "uri": "http://<port>/gnap/token/<handle>",
+      "access_token": {
+       "value": "<value>"
+      }
+     }
+    },
+    "continue": {
+     "access_token": {
+      "value": "<value>"
+     },
+     "uri": "http://<port>/gnap/continue/<handle>",
+     "wait": "<wait>"
+    }
+   },
+   "code": ""
+  },
+  {
+   "mode": "development",
+   "step": "continue, no token",
+   "method": "POST",
+   "path": "/gnap/continue/<handle>",
+   "status": 401,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_continuation",
+     "description": "the continuation URI and access token do not identify an active grant request (RFC 9635 section 5)."
+    }
+   },
+   "code": "STS-GNAP-0130"
+  },
+  {
+   "mode": "development",
+   "step": "continue, a bad grant path",
+   "method": "POST",
+   "path": "/gnap/continue/<handle>%20b",
+   "status": 401,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_continuation",
+     "description": "The continuation URI does not identify a grant request."
+    }
+   },
+   "code": "STS-GNAP-0164"
+  },
+  {
+   "mode": "development",
+   "step": "continue, an unknown token",
+   "method": "POST",
+   "path": "/gnap/continue/<handle>",
+   "status": 401,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_continuation",
+     "description": "the continuation URI and access token do not identify an active grant request (RFC 9635 section 5)."
+    }
+   },
+   "code": "STS-GNAP-0130"
+  },
+  {
+   "mode": "development",
+   "step": "continue, a body member nobody defines",
+   "method": "POST",
+   "path": "/gnap/continue/<handle>",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "a continuation POST carries only \"interact_ref\"; \"unexpected\" belong to a PATCH (RFC 9635 section 5.3)."
+    }
+   },
+   "code": "STS-GNAP-0057"
+  },
+  {
+   "mode": "development",
+   "step": "continue, an interaction reference out of turn",
+   "method": "POST",
+   "path": "/gnap/continue/<handle>",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_interaction",
+     "description": "the interaction reference is not the one issued for this grant request."
+    },
+    "continue": {
+     "access_token": {
+      "value": "<value>"
+     },
+     "uri": "http://<port>/gnap/continue/<handle>",
+     "wait": "<wait>"
+    }
+   },
+   "code": "STS-GNAP-0135"
+  },
+  {
+   "mode": "development",
+   "step": "continue, a poll",
+   "method": "POST",
+   "path": "/gnap/continue/<handle>",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_continuation",
+     "description": "this grant request finishes with a redirect carrying an interaction reference; the client must present it rather than poll (RFC 9635 section 3.3.5)."
+    },
+    "continue": {
+     "access_token": {
+      "value": "<value>"
+     },
+     "uri": "http://<port>/gnap/continue/<handle>",
+     "wait": "<wait>"
+    }
+   },
+   "code": "STS-GNAP-0137"
+  },
+  {
+   "mode": "development",
+   "step": "continue, a modification",
+   "method": "PATCH",
+   "path": "/gnap/continue/<handle>",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "interact": {
+     "redirect": "http://<port>/gnap/interact/<handle>",
+     "expires_in": "<expires_in>"
+    },
+    "continue": {
+     "access_token": {
+      "value": "<value>"
+     },
+     "uri": "http://<port>/gnap/continue/<handle>",
+     "wait": "<wait>"
+    }
+   },
+   "code": ""
+  },
+  {
+   "mode": "development",
+   "step": "continue, a modification with a wrong type",
+   "method": "PATCH",
+   "path": "/gnap/continue/<handle>",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "the modification request does not match its schema: /access_token must be object (JSON Schema urn:iya-sts:gnap:modification)."
+    }
+   },
+   "code": "STS-GNAP-0061"
+  },
+  {
+   "mode": "development",
+   "step": "continue, revoked",
+   "method": "DELETE",
+   "path": "/gnap/continue/<handle>",
+   "status": 204,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": "",
+   "code": ""
+  },
+  {
+   "mode": "development",
+   "step": "continue, after the revocation",
+   "method": "POST",
+   "path": "/gnap/continue/<handle>",
+   "status": 401,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_continuation",
+     "description": "the continuation URI and access token do not identify an active grant request (RFC 9635 section 5)."
+    }
+   },
+   "code": "STS-GNAP-0130"
+  },
+  {
+   "mode": "development",
+   "step": "start, the app link",
+   "method": "GET",
+   "path": "/gnap/app/<handle>",
+   "status": 303,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "text/plain; charset=utf-8",
+    "location": "/gnap/approve/<handle>",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin, Accept",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": "See Other. Redirecting to /gnap/approve/<handle>",
+   "code": ""
+  },
+  {
+   "mode": "development",
+   "step": "start, an unknown link",
+   "method": "GET",
+   "path": "/gnap/interact/<handle>",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; connect-src 'self'",
+    "content-type": "text/html; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": "<!DOCTYPE html>\n<html lang=\"en\" data-sts-state=\"{&quot;view&quot;:{&quot;kind&quot;:&quot;problem&quot;,&quot;heading&quot;:&quot;This link is not active&quot;,&quot;detail&quot;:&quot;The link does not belong to a request that is still waiting for approval — it may have expired, been used already, or been answered.&quot;}}\" data-sts-version=\"<version>\" data-sts-locale-default=\"en\" data-sts-build=\"<build>\" data-sts-accounts=\"on\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>GNAP authorization server — IYA STS</title><link rel=\"stylesheet\" href=\"/web/card.css\"><script src=\"/gnap/interaction.js\" defer></script></head><body><div class=\"card gnap\"><noscript><h1>GNAP authorization</h1><div class=\"err\">This page is a script that runs in your browser, and with scripts blocked there is nothing it can show. Allow scripts for this page to answer the application that sent you here.</div></noscript><p class=\"sub\">Loading&hellip;</p></div></body></html>\n",
+   "code": "STS-GNAP-0400"
+  },
+  {
+   "mode": "development",
+   "step": "start, the user code page",
+   "method": "GET",
+   "path": "/gnap/code",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; connect-src 'self'",
+    "content-type": "text/html; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "set-cookie": [
+     "sts_session=<cookie>; Path=/; HttpOnly; SameSite=Lax"
+    ],
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": "<!DOCTYPE html>\n<html lang=\"en\" data-sts-version=\"<version>\" data-sts-locale-default=\"en\" data-sts-build=\"<build>\" data-sts-accounts=\"on\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>GNAP authorization server — IYA STS</title><link rel=\"stylesheet\" href=\"/web/card.css\"><script src=\"/gnap/interaction.js\" defer></script></head><body><div class=\"card gnap\"><noscript><h1>GNAP authorization</h1><div class=\"err\">This page is a script that runs in your browser, and with scripts blocked there is nothing it can show. Allow scripts for this page to answer the application that sent you here.</div></noscript><p class=\"sub\">Loading&hellip;</p></div></body></html>\n",
+   "code": ""
+  },
+  {
+   "mode": "development",
+   "step": "gnap-api, the index",
+   "method": "GET",
+   "path": "/gnap-api",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "api": "IYA STS GNAP interaction",
+    "operations": [
+     {
+      "method": "GET",
+      "path": "/gnap-api",
+      "operationId": "getIndex",
+      "mirrors": null,
+      "summary": "Lists every operation of this API"
+     },
+     {
+      "method": "GET",
+      "path": "/gnap-api/code",
+      "operationId": "getCodePage",
+      "mirrors": "GET /gnap/code",
+      "summary": "What the user code page needs: its CSRF token"
+     },
+     {
+      "method": "POST",
+      "path": "/gnap-api/code",
+      "operationId": "enterUserCode",
+      "mirrors": "POST /gnap/code",
+      "summary": "Spends a user code (RFC 9635 sections 4.1.2 and 4.1.3) and names the approval page it leads to"
+     },
+     {
+      "method": "GET",
+      "path": "/gnap-api/approve/{id}",
+      "operationId": "getApproval",
+      "mirrors": "GET /gnap/approve/{id}",
+      "summary": "What the approval page asks the signed-in resource owner, as facts, and its CSRF token"
+     },
+     {
+      "method": "POST",
+      "path": "/gnap-api/approve/{id}",
+      "operationId": "answerApproval",
+      "mirrors": "POST /gnap/approve/{id}",
+      "summary": "The resource owner's answer: the rights left ticked, the limits as lowered, and whether to say who they are"
+     }
+    ]
+   },
+   "code": ""
+  },
+  {
+   "mode": "development",
+   "step": "gnap-api, the code view",
+   "method": "GET",
+   "path": "/gnap-api/code",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "ok": true,
+    "view": {
+     "kind": "code"
+    },
+    "csrf": ""
+   },
+   "code": ""
+  },
+  {
+   "mode": "development",
+   "step": "gnap-api, a code act unbound",
+   "method": "POST",
+   "path": "/gnap-api/code",
+   "status": 403,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "ok": false,
+    "errors": [
+     "This operation is sent by a page of this service: the request carried no Origin."
+    ]
+   },
+   "code": "STS-GNAP-0411"
+  },
+  {
+   "mode": "development",
+   "step": "gnap-api, an approval view of nothing",
+   "method": "GET",
+   "path": "/gnap-api/approve/gw-none",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "ok": false,
+    "errors": [
+     "There is no request waiting for approval at this address, or it was already answered or has expired."
+    ],
+    "view": {
+     "kind": "problem",
+     "heading": "This request is not waiting for you",
+     "detail": "There is no request waiting for approval at this address, or it was already answered or has expired."
+    }
+   },
+   "code": "STS-GNAP-0406"
+  },
+  {
+   "mode": "development",
+   "step": "gnap-api, an approval act unbound",
+   "method": "POST",
+   "path": "/gnap-api/approve/gw-none",
+   "status": 403,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "ok": false,
+    "errors": [
+     "This operation is sent by a page of this service: the request carried no Origin."
+    ]
+   },
+   "code": "STS-GNAP-0411"
+  },
+  {
+   "mode": "development",
+   "step": "manage, a bad handle",
+   "method": "POST",
+   "path": "/gnap/token/<handle>%20b",
+   "status": 401,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_rotation",
+     "description": "The token management URI does not identify a token."
+    }
+   },
+   "code": "STS-GNAP-0166"
+  },
+  {
+   "mode": "development",
+   "step": "manage, an unknown token",
+   "method": "POST",
+   "path": "/gnap/token/<handle>",
+   "status": 401,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_rotation",
+     "description": "the token management URI and access token do not identify a token (RFC 9635 section 6)."
+    }
+   },
+   "code": "STS-GNAP-0150"
+  },
+  {
+   "mode": "development",
+   "step": "introspect, unsigned",
+   "method": "POST",
+   "path": "/gnap/introspect",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_resource_server",
+     "description": "the Content-Digest does not match the request content: The message has no Content-Digest field to validate against its content (RFC 9530 section 2)."
+    }
+   },
+   "code": "STS-KEYS-0108"
+  },
+  {
+   "mode": "development",
+   "step": "introspect, a live token",
+   "method": "POST",
+   "path": "/gnap/introspect",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "active": true,
+    "access": [
+     {
+      "type": "gw-dev-read",
+      "actions": [
+       "read"
+      ],
+      "locations": [
+       "https://rs-dev.gw.test/api"
+      ]
+     }
+    ],
+    "iss": "http://<port>/gnap",
+    "key": {
+     "proof": "httpsig",
+     "jwk": {
+      "kty": "EC",
+      "x": "<x>",
+      "y": "<y>",
+      "crv": "P-256",
+      "alg": "ES256",
+      "kid": "<kid>"
+     }
+    },
+    "exp": "<exp>",
+    "iat": "<iat>",
+    "nbf": "<nbf>",
+    "aud": "gw-dev-rs",
+    "instance_id": "<instance_id>",
+    "grant_id": "<random>",
+    "format": "jwt-signed"
+   },
+   "code": ""
+  },
+  {
+   "mode": "development",
+   "step": "introspect, an unknown token",
+   "method": "POST",
+   "path": "/gnap/introspect",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "active": false
+   },
+   "code": ""
+  },
+  {
+   "mode": "development",
+   "step": "introspect, a malformed token",
+   "method": "POST",
+   "path": "/gnap/introspect",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "the introspection request does not match its schema: /access_token must match pattern \"^[A-Za-z0-9._~+/-]*=*$\" (JSON Schema urn:iya-sts:gnap:introspection)."
+    }
+   },
+   "code": "STS-GNAP-0061"
+  },
+  {
+   "mode": "development",
+   "step": "introspect, no resource server",
+   "method": "POST",
+   "path": "/gnap/introspect",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_resource_server",
+     "description": "\"resource_server\" is REQUIRED: an object with a \"key\" or an instance identifier (RFC 9767 section 3.2)."
+    }
+   },
+   "code": "STS-GNAP-0500"
+  },
+  {
+   "mode": "development",
+   "step": "register, a resource set",
+   "method": "POST",
+   "path": "/gnap/resource",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "resource_reference": "<resource_reference>",
+    "introspection_endpoint": "http://<port>/gnap/introspect",
+    "instance_id": "<instance_id>"
+   },
+   "code": ""
+  },
+  {
+   "mode": "development",
+   "step": "register, owners of no identifier",
+   "method": "POST",
+   "path": "/gnap/resource",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "\"resource_owners\" names \"gw-other\", which no right in \"access\" carries as its identifier."
+    }
+   },
+   "code": "STS-GNAP-0864"
+  },
+  {
+   "mode": "development",
+   "step": "register, a wrong type",
+   "method": "POST",
+   "path": "/gnap/resource",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "the resource registration request does not match its schema: /token_introspection_required must be boolean (JSON Schema urn:iya-sts:gnap:registration)."
+    }
+   },
+   "code": "STS-GNAP-0061"
+  },
+  {
+   "mode": "development",
+   "step": "manage, a rotation",
+   "method": "POST",
+   "path": "/gnap/token/<handle>",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "access_token": {
+     "value": "<value>",
+     "access": [
+      {
+       "type": "gw-dev-read",
+       "actions": [
+        "read"
+       ],
+       "locations": [
+        "https://rs-dev.gw.test/api"
+       ]
+      }
+     ],
+     "expires_in": "<expires_in>",
+     "manage": {
+      "uri": "http://<port>/gnap/token/<handle>",
+      "access_token": {
+       "value": "<value>"
+      }
+     }
+    }
+   },
+   "code": ""
+  },
+  {
+   "mode": "development",
+   "step": "manage, a key rotation body nobody defines",
+   "method": "POST",
+   "path": "/gnap/token/<handle>",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_rotation",
+     "description": "the rotation request does not match its schema: (the document) must NOT have more than 4 properties (JSON Schema urn:iya-sts:gnap:rotation)."
+    }
+   },
+   "code": "STS-GNAP-0061"
+  },
+  {
+   "mode": "development",
+   "step": "manage, revoked",
+   "method": "DELETE",
+   "path": "/gnap/token/<handle>",
+   "status": 204,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": "",
+   "code": ""
+  },
+  {
+   "mode": "development",
+   "step": "manage, after the revocation",
+   "method": "POST",
+   "path": "/gnap/token/<handle>",
+   "status": 401,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_rotation",
+     "description": "the token management URI and access token do not identify a token (RFC 9635 section 6)."
+    }
+   },
+   "code": "STS-GNAP-0150"
+  },
+  {
+   "mode": "product",
+   "step": "discovery",
+   "method": "OPTIONS",
+   "path": "/gnap",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "grant_request_endpoint": "http://<port>/gnap",
+    "interaction_start_modes_supported": [
+     "redirect",
+     "app",
+     "user_code",
+     "user_code_uri"
+    ],
+    "interaction_finish_methods_supported": [
+     "redirect",
+     "push"
+    ],
+    "key_proofs_supported": [
+     "httpsig",
+     "mtls",
+     "jwsd",
+     "jws"
+    ],
+    "sub_id_formats_supported": [
+     "opaque",
+     "iss_sub",
+     "email",
+     "account",
+     "uri",
+     "phone_number",
+     "aliases"
+    ],
+    "assertion_formats_supported": [
+     "id_token",
+     "saml2"
+    ],
+    "key_rotation_supported": true,
+    "token_formats_supported": [
+     "jwt-signed",
+     "jwt-encrypted",
+     "macaroon",
+     "biscuit",
+     "zcap"
+    ]
+   },
+   "code": ""
+  },
+  {
+   "mode": "product",
+   "step": "rs discovery",
+   "method": "GET",
+   "path": "/.well-known/gnap-as-rs",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "grant_request_endpoint": "http://<port>/gnap",
+    "introspection_endpoint": "http://<port>/gnap/introspect",
+    "token_formats_supported": [
+     "jwt-signed",
+     "jwt-encrypted",
+     "macaroon",
+     "biscuit",
+     "zcap"
+    ],
+    "resource_registration_endpoint": "http://<port>/gnap/resource",
+    "key_proofs_supported": [
+     "httpsig",
+     "mtls",
+     "jwsd",
+     "jws"
+    ],
+    "status_list_aggregation_endpoint": "http://<port>/status-lists",
+    "biscuit_revocation_endpoint": "http://<port>/gnap/biscuit/revocations"
+   },
+   "code": ""
+  },
+  {
+   "mode": "product",
+   "step": "keys",
+   "method": "GET",
+   "path": "/gnap/keys",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "jwt": {
+     "jwks_uri": "http://<port>/oauth2/jwks",
+     "alg": "RS256",
+     "kid": "<kid>",
+     "typ": "gnap-at+jwt",
+     "status_list_aggregation_endpoint": "http://<port>/status-lists"
+    },
+    "biscuit": {
+     "algorithm": "ed25519",
+     "root_public_key": "<root_public_key>",
+     "revocation_endpoint": "http://<port>/gnap/biscuit/revocations",
+     "jwk": {
+      "use": "sig",
+      "alg": "EdDSA",
+      "kty": "OKP",
+      "crv": "Ed25519",
+      "x": "<x>",
+      "kid": "<kid>"
+     },
+     "root_public_keys": "<root_public_keys>"
+    },
+    "zcap": {
+     "controller": "<controller>",
+     "cryptosuite": "eddsa-jcs-2022"
+    },
+    "macaroon": {
+     "root_key": "per resource server; carried (sealed) on the resource server's application entry as gnapMacaroonKey"
+    },
+    "jwt-encrypted": {
+     "authorization_server": "dir/A256GCM under a realm-derived key (introspect)",
+     "resource_server": "the resource server's registered gnapJweKey"
+    }
+   },
+   "code": ""
+  },
+  {
+   "mode": "product",
+   "step": "zcap controller",
+   "method": "GET",
+   "path": "/gnap/zcap/controller",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "@context": [
+     "https://www.w3.org/ns/cid/v1"
+    ],
+    "id": "<id>",
+    "verificationMethod": "<verificationMethod>",
+    "assertionMethod": "<assertionMethod>",
+    "capabilityDelegation": "<capabilityDelegation>"
+   },
+   "code": ""
+  },
+  {
+   "mode": "product",
+   "step": "biscuit revocations",
+   "method": "GET",
+   "path": "/gnap/biscuit/revocations",
+   "status": 200,
+   "headers": {
+    "cache-control": "max-age=60",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "revocation_ids": "<revocation_ids>",
+    "ttl": 60
+   },
+   "code": ""
+  },
+  {
+   "mode": "product",
+   "step": "discovery, a named server",
+   "method": "OPTIONS",
+   "path": "/gw-as/gnap",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "grant_request_endpoint": "http://<port>/gw-as/gnap",
+    "interaction_start_modes_supported": [
+     "redirect",
+     "app",
+     "user_code",
+     "user_code_uri"
+    ],
+    "interaction_finish_methods_supported": [
+     "redirect",
+     "push"
+    ],
+    "key_proofs_supported": [
+     "httpsig",
+     "mtls",
+     "jwsd",
+     "jws"
+    ],
+    "sub_id_formats_supported": [
+     "opaque",
+     "iss_sub",
+     "email",
+     "account",
+     "uri",
+     "phone_number",
+     "aliases"
+    ],
+    "assertion_formats_supported": [
+     "id_token",
+     "saml2"
+    ],
+    "key_rotation_supported": true,
+    "token_formats_supported": [
+     "jwt-signed",
+     "jwt-encrypted",
+     "macaroon",
+     "biscuit",
+     "zcap"
+    ]
+   },
+   "code": ""
+  },
+  {
+   "mode": "product",
+   "step": "rs discovery, a named server",
+   "method": "GET",
+   "path": "/.well-known/gnap-as-rs/gw-as",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "grant_request_endpoint": "http://<port>/gw-as/gnap",
+    "introspection_endpoint": "http://<port>/gnap/introspect",
+    "token_formats_supported": [
+     "jwt-signed",
+     "jwt-encrypted",
+     "macaroon",
+     "biscuit",
+     "zcap"
+    ],
+    "resource_registration_endpoint": "http://<port>/gnap/resource",
+    "key_proofs_supported": [
+     "httpsig",
+     "mtls",
+     "jwsd",
+     "jws"
+    ],
+    "status_list_aggregation_endpoint": "http://<port>/status-lists",
+    "biscuit_revocation_endpoint": "http://<port>/gnap/biscuit/revocations"
+   },
+   "code": ""
+  },
+  {
+   "mode": "product",
+   "step": "discovery, a bad server name",
+   "method": "OPTIONS",
+   "path": "/a%20b/gnap",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "the params parameter \"as\" is not acceptable: must be printable ASCII with no spaces."
+    }
+   },
+   "code": "STS-GNAP-0162"
+  },
+  {
+   "mode": "product",
+   "step": "grant, not JSON",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "the request content is not JSON (RFC 9635 section 2 requires a JSON object with Content-Type application/json)."
+    }
+   },
+   "code": "STS-GNAP-0261"
+  },
+  {
+   "mode": "product",
+   "step": "grant, unsigned",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 401,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_client",
+     "description": "the Content-Digest does not match the request content: The message has no Content-Digest field to validate against its content (RFC 9530 section 2)."
+    }
+   },
+   "code": "STS-KEYS-0108"
+  },
+  {
+   "mode": "product",
+   "step": "grant, an array",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "the grant request must be a JSON object."
+    }
+   },
+   "code": "STS-GNAP-0052"
+  },
+  {
+   "mode": "product",
+   "step": "grant, a control character",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "the grant request does not match its schema: /client/display/name contains a control character, which no member of a GNAP document may carry (JSON Schema urn:iya-sts:gnap:grant-request)."
+    }
+   },
+   "code": "STS-GNAP-0061"
+  },
+  {
+   "mode": "product",
+   "step": "grant, a wrong type",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "the grant request does not match its schema: /access_token/access must be array (JSON Schema urn:iya-sts:gnap:grant-request)."
+    }
+   },
+   "code": "STS-GNAP-0061"
+  },
+  {
+   "mode": "product",
+   "step": "grant, an overlong label",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "the grant request does not match its schema: /access_token/label must NOT have more than 256 characters (JSON Schema urn:iya-sts:gnap:grant-request)."
+    }
+   },
+   "code": "STS-GNAP-0061"
+  },
+  {
+   "mode": "product",
+   "step": "grant, a finish member nobody defines",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "the grant request does not match its schema: /interact/finish must NOT have additional properties (JSON Schema urn:iya-sts:gnap:grant-request)."
+    }
+   },
+   "code": "STS-GNAP-0061"
+  },
+  {
+   "mode": "product",
+   "step": "grant, a finish uri that is not a URI",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "the grant request does not match its schema: /interact/finish/uri must match format \"uri\" (JSON Schema urn:iya-sts:gnap:grant-request)."
+    }
+   },
+   "code": "STS-GNAP-0061"
+  },
+  {
+   "mode": "product",
+   "step": "grant, no client",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 401,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_client",
+     "description": "\"client\" is REQUIRED: an object or an instance identifier (RFC 9635 section 2.3)."
+    }
+   },
+   "code": "STS-GNAP-0039"
+  },
+  {
+   "mode": "product",
+   "step": "grant, the durable flag",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_flag",
+     "description": "the flag \"durable\" is a response flag and cannot be requested (RFC 9635 section 10.4)."
+    }
+   },
+   "code": "STS-GNAP-0029"
+  },
+  {
+   "mode": "product",
+   "step": "grant, an unknown start mode",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_interaction",
+     "description": "none of the interaction start modes offered (telepathy) is supported for this client, and this authorization server cannot reach the resource owner another way (RFC 9635 section 2.5)."
+    }
+   },
+   "code": "STS-GNAP-0100"
+  },
+  {
+   "mode": "product",
+   "step": "grant, an unknown finish method",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "instance_id": "<instance_id>",
+    "interact": {
+     "redirect": "http://<port>/gnap/interact/<handle>",
+     "expires_in": "<expires_in>"
+    },
+    "continue": {
+     "access_token": {
+      "value": "<value>"
+     },
+     "uri": "http://<port>/gnap/continue/<handle>",
+     "wait": "<wait>"
+    }
+   },
+   "code": ""
+  },
+  {
+   "mode": "product",
+   "step": "grant, an interaction reference",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "\"interact_ref\" is only sent to a continuation URI (RFC 9635 section 5.1)."
+    }
+   },
+   "code": "STS-GNAP-0054"
+  },
+  {
+   "mode": "product",
+   "step": "grant, two tokens without labels",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "every access token in a request for multiple tokens must carry a label (RFC 9635 section 2.1.2)."
+    }
+   },
+   "code": "STS-GNAP-0026"
+  },
+  {
+   "mode": "product",
+   "step": "grant, a location nobody registered",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "access_token.access[0] names the location \"https://nobody.gw.test/\", and \"gw-pro-rs\", which declares \"gw-pro-read\", answers to \"gw-pro-rs\", \"https://rs-pro.gw.test/api\". A token is addressed to its locations, so a location nobody declared would be an audience nobody checks (RFC 9635 section 8: an access right is read as its API defines it)."
+    }
+   },
+   "code": "STS-GNAP-0812"
+  },
+  {
+   "mode": "product",
+   "step": "grant, no resource server at all",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "access_token.access names no resource server, so the token would be for nobody in particular, and this authorization server issues none. Name one: a reference a resource server registered (RFC 9767 section 3.4), a location at or under a registered resource server's gnapResourceServerUri, or a type a registered resource server declares (RFC 9635 section 8) — or this service's Shared Signals transmitter, by \"ssf.read\" or \"ssf.manage\" or an object of type \"ssf\"."
+    }
+   },
+   "code": "STS-GNAP-0904"
+  },
+  {
+   "mode": "product",
+   "step": "grant, an unknown sub_id format",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "instance_id": "<instance_id>",
+    "interact": {
+     "redirect": "http://<port>/gnap/interact/<handle>",
+     "expires_in": "<expires_in>"
+    },
+    "continue": {
+     "access_token": {
+      "value": "<value>"
+     },
+     "uri": "http://<port>/gnap/continue/<handle>",
+     "wait": "<wait>"
+    }
+   },
+   "code": ""
+  },
+  {
+   "mode": "product",
+   "step": "grant, an unknown key",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 401,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_client",
+     "description": "the HTTP message signature does not verify: No verification key is known for the signature \"sig1\" (keyid=\"kid-gw-stranger\"); an unknown or untrusted key MUST fail (RFC 9421 section 3.2 step 5)."
+    }
+   },
+   "code": "STS-KEYS-0151"
+  },
+  {
+   "mode": "product",
+   "step": "grant, a key nobody registered",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 401,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_client",
+     "description": "this key is not registered with this authorization server, and in product mode an application must be provisioned before it can make requests (RFC 9635 section 2.3.3)."
+    }
+   },
+   "code": "STS-GNAP-0082"
+  },
+  {
+   "mode": "product",
+   "step": "grant, nothing to interact with",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_interaction",
+     "description": "this request needs the resource owner's approval and the client offered no way to interact (RFC 9635 section 2.5)."
+    }
+   },
+   "code": "STS-GNAP-0113"
+  },
+  {
+   "mode": "product",
+   "step": "grant, pending with redirect and finish",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "instance_id": "<instance_id>",
+    "interact": {
+     "redirect": "http://<port>/gnap/interact/<handle>",
+     "finish": "<random>",
+     "expires_in": "<expires_in>"
+    },
+    "continue": {
+     "access_token": {
+      "value": "<value>"
+     },
+     "uri": "http://<port>/gnap/continue/<handle>",
+     "wait": "<wait>"
+    }
+   },
+   "code": ""
+  },
+  {
+   "mode": "product",
+   "step": "grant, pending with a user code",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "instance_id": "<instance_id>",
+    "interact": {
+     "user_code": "<user_code>",
+     "user_code_uri": {
+      "code": "<usercode>",
+      "uri": "http://<port>/gnap/code"
+     },
+     "app": "http://<port>/gnap/app/<handle>",
+     "expires_in": "<expires_in>"
+    },
+    "continue": {
+     "access_token": {
+      "value": "<value>"
+     },
+     "uri": "http://<port>/gnap/continue/<handle>",
+     "wait": "<wait>"
+    }
+   },
+   "code": ""
+  },
+  {
+   "mode": "product",
+   "step": "grant, issued to a trusted client",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "instance_id": "<instance_id>",
+    "access_token": {
+     "value": "<value>",
+     "access": [
+      {
+       "type": "gw-pro-read",
+       "actions": [
+        "read"
+       ],
+       "locations": [
+        "https://rs-pro.gw.test/api"
+       ]
+      }
+     ],
+     "expires_in": "<expires_in>",
+     "manage": {
+      "uri": "http://<port>/gnap/token/<handle>",
+      "access_token": {
+       "value": "<value>"
+      }
+     }
+    },
+    "continue": {
+     "access_token": {
+      "value": "<value>"
+     },
+     "uri": "http://<port>/gnap/continue/<handle>",
+     "wait": "<wait>"
+    }
+   },
+   "code": ""
+  },
+  {
+   "mode": "product",
+   "step": "grant, two labelled tokens",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "instance_id": "<instance_id>",
+    "access_token": [
+     {
+      "value": "<value>",
+      "access": [
+       {
+        "type": "gw-pro-read",
+        "actions": [
+         "read"
+        ],
+        "locations": [
+         "https://rs-pro.gw.test/api"
+        ]
+       }
+      ],
+      "expires_in": "<expires_in>",
+      "label": "a",
+      "manage": {
+       "uri": "http://<port>/gnap/token/<handle>",
+       "access_token": {
+        "value": "<value>"
+       }
+      }
+     },
+     {
+      "value": "<value>",
+      "access": [
+       {
+        "type": "gw-pro-read",
+        "actions": [
+         "write"
+        ],
+        "locations": [
+         "https://rs-pro.gw.test/api"
+        ]
+       }
+      ],
+      "expires_in": "<expires_in>",
+      "label": "b",
+      "manage": {
+       "uri": "http://<port>/gnap/token/<handle>",
+       "access_token": {
+        "value": "<value>"
+       }
+      }
+     }
+    ],
+    "continue": {
+     "access_token": {
+      "value": "<value>"
+     },
+     "uri": "http://<port>/gnap/continue/<handle>",
+     "wait": "<wait>"
+    }
+   },
+   "code": ""
+  },
+  {
+   "mode": "product",
+   "step": "grant, the bearer flag",
+   "method": "POST",
+   "path": "/gnap",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "instance_id": "<instance_id>",
+    "access_token": {
+     "value": "<value>",
+     "access": [
+      {
+       "type": "gw-pro-read",
+       "actions": [
+        "read"
+       ],
+       "locations": [
+        "https://rs-pro.gw.test/api"
+       ]
+      }
+     ],
+     "expires_in": "<expires_in>",
+     "flags": [
+      "bearer"
+     ],
+     "manage": {
+      "uri": "http://<port>/gnap/token/<handle>",
+      "access_token": {
+       "value": "<value>"
+      }
+     }
+    },
+    "continue": {
+     "access_token": {
+      "value": "<value>"
+     },
+     "uri": "http://<port>/gnap/continue/<handle>",
+     "wait": "<wait>"
+    }
+   },
+   "code": ""
+  },
+  {
+   "mode": "product",
+   "step": "continue, no token",
+   "method": "POST",
+   "path": "/gnap/continue/<handle>",
+   "status": 401,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_continuation",
+     "description": "the continuation URI and access token do not identify an active grant request (RFC 9635 section 5)."
+    }
+   },
+   "code": "STS-GNAP-0130"
+  },
+  {
+   "mode": "product",
+   "step": "continue, a bad grant path",
+   "method": "POST",
+   "path": "/gnap/continue/<handle>%20b",
+   "status": 401,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_continuation",
+     "description": "The continuation URI does not identify a grant request."
+    }
+   },
+   "code": "STS-GNAP-0164"
+  },
+  {
+   "mode": "product",
+   "step": "continue, an unknown token",
+   "method": "POST",
+   "path": "/gnap/continue/<handle>",
+   "status": 401,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_continuation",
+     "description": "the continuation URI and access token do not identify an active grant request (RFC 9635 section 5)."
+    }
+   },
+   "code": "STS-GNAP-0130"
+  },
+  {
+   "mode": "product",
+   "step": "continue, a body member nobody defines",
+   "method": "POST",
+   "path": "/gnap/continue/<handle>",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "a continuation POST carries only \"interact_ref\"; \"unexpected\" belong to a PATCH (RFC 9635 section 5.3)."
+    }
+   },
+   "code": "STS-GNAP-0057"
+  },
+  {
+   "mode": "product",
+   "step": "continue, an interaction reference out of turn",
+   "method": "POST",
+   "path": "/gnap/continue/<handle>",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_interaction",
+     "description": "the interaction reference is not the one issued for this grant request."
+    },
+    "continue": {
+     "access_token": {
+      "value": "<value>"
+     },
+     "uri": "http://<port>/gnap/continue/<handle>",
+     "wait": "<wait>"
+    }
+   },
+   "code": "STS-GNAP-0135"
+  },
+  {
+   "mode": "product",
+   "step": "continue, a poll",
+   "method": "POST",
+   "path": "/gnap/continue/<handle>",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_continuation",
+     "description": "this grant request finishes with a redirect carrying an interaction reference; the client must present it rather than poll (RFC 9635 section 3.3.5)."
+    },
+    "continue": {
+     "access_token": {
+      "value": "<value>"
+     },
+     "uri": "http://<port>/gnap/continue/<handle>",
+     "wait": "<wait>"
+    }
+   },
+   "code": "STS-GNAP-0137"
+  },
+  {
+   "mode": "product",
+   "step": "continue, a modification",
+   "method": "PATCH",
+   "path": "/gnap/continue/<handle>",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "interact": {
+     "redirect": "http://<port>/gnap/interact/<handle>",
+     "expires_in": "<expires_in>"
+    },
+    "continue": {
+     "access_token": {
+      "value": "<value>"
+     },
+     "uri": "http://<port>/gnap/continue/<handle>",
+     "wait": "<wait>"
+    }
+   },
+   "code": ""
+  },
+  {
+   "mode": "product",
+   "step": "continue, a modification with a wrong type",
+   "method": "PATCH",
+   "path": "/gnap/continue/<handle>",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "the modification request does not match its schema: /access_token must be object (JSON Schema urn:iya-sts:gnap:modification)."
+    }
+   },
+   "code": "STS-GNAP-0061"
+  },
+  {
+   "mode": "product",
+   "step": "continue, revoked",
+   "method": "DELETE",
+   "path": "/gnap/continue/<handle>",
+   "status": 204,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": "",
+   "code": ""
+  },
+  {
+   "mode": "product",
+   "step": "continue, after the revocation",
+   "method": "POST",
+   "path": "/gnap/continue/<handle>",
+   "status": 401,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_continuation",
+     "description": "the continuation URI and access token do not identify an active grant request (RFC 9635 section 5)."
+    }
+   },
+   "code": "STS-GNAP-0130"
+  },
+  {
+   "mode": "product",
+   "step": "start, the app link",
+   "method": "GET",
+   "path": "/gnap/app/<handle>",
+   "status": 303,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "text/plain; charset=utf-8",
+    "location": "/gnap/approve/<handle>",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin, Accept",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": "See Other. Redirecting to /gnap/approve/<handle>",
+   "code": ""
+  },
+  {
+   "mode": "product",
+   "step": "start, an unknown link",
+   "method": "GET",
+   "path": "/gnap/interact/<handle>",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; connect-src 'self'",
+    "content-type": "text/html; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": "<!DOCTYPE html>\n<html lang=\"en\" data-sts-state=\"{&quot;view&quot;:{&quot;kind&quot;:&quot;problem&quot;,&quot;heading&quot;:&quot;This link is not active&quot;,&quot;detail&quot;:&quot;The link does not belong to a request that is still waiting for approval — it may have expired, been used already, or been answered.&quot;}}\" data-sts-version=\"<version>\" data-sts-locale-default=\"en\" data-sts-build=\"<build>\" data-sts-accounts=\"on\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>GNAP authorization server — IYA STS</title><link rel=\"stylesheet\" href=\"/web/card.css\"><script src=\"/gnap/interaction.js\" defer></script></head><body><div class=\"card gnap\"><noscript><h1>GNAP authorization</h1><div class=\"err\">This page is a script that runs in your browser, and with scripts blocked there is nothing it can show. Allow scripts for this page to answer the application that sent you here.</div></noscript><p class=\"sub\">Loading&hellip;</p></div></body></html>\n",
+   "code": "STS-GNAP-0400"
+  },
+  {
+   "mode": "product",
+   "step": "start, the user code page",
+   "method": "GET",
+   "path": "/gnap/code",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'; connect-src 'self'",
+    "content-type": "text/html; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "set-cookie": [
+     "sts_session=<cookie>; Path=/; HttpOnly; SameSite=Lax"
+    ],
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": "<!DOCTYPE html>\n<html lang=\"en\" data-sts-version=\"<version>\" data-sts-locale-default=\"en\" data-sts-build=\"<build>\" data-sts-accounts=\"on\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>GNAP authorization server — IYA STS</title><link rel=\"stylesheet\" href=\"/web/card.css\"><script src=\"/gnap/interaction.js\" defer></script></head><body><div class=\"card gnap\"><noscript><h1>GNAP authorization</h1><div class=\"err\">This page is a script that runs in your browser, and with scripts blocked there is nothing it can show. Allow scripts for this page to answer the application that sent you here.</div></noscript><p class=\"sub\">Loading&hellip;</p></div></body></html>\n",
+   "code": ""
+  },
+  {
+   "mode": "product",
+   "step": "gnap-api, the index",
+   "method": "GET",
+   "path": "/gnap-api",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "api": "IYA STS GNAP interaction",
+    "operations": [
+     {
+      "method": "GET",
+      "path": "/gnap-api",
+      "operationId": "getIndex",
+      "mirrors": null,
+      "summary": "Lists every operation of this API"
+     },
+     {
+      "method": "GET",
+      "path": "/gnap-api/code",
+      "operationId": "getCodePage",
+      "mirrors": "GET /gnap/code",
+      "summary": "What the user code page needs: its CSRF token"
+     },
+     {
+      "method": "POST",
+      "path": "/gnap-api/code",
+      "operationId": "enterUserCode",
+      "mirrors": "POST /gnap/code",
+      "summary": "Spends a user code (RFC 9635 sections 4.1.2 and 4.1.3) and names the approval page it leads to"
+     },
+     {
+      "method": "GET",
+      "path": "/gnap-api/approve/{id}",
+      "operationId": "getApproval",
+      "mirrors": "GET /gnap/approve/{id}",
+      "summary": "What the approval page asks the signed-in resource owner, as facts, and its CSRF token"
+     },
+     {
+      "method": "POST",
+      "path": "/gnap-api/approve/{id}",
+      "operationId": "answerApproval",
+      "mirrors": "POST /gnap/approve/{id}",
+      "summary": "The resource owner's answer: the rights left ticked, the limits as lowered, and whether to say who they are"
+     }
+    ]
+   },
+   "code": ""
+  },
+  {
+   "mode": "product",
+   "step": "gnap-api, the code view",
+   "method": "GET",
+   "path": "/gnap-api/code",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "ok": true,
+    "view": {
+     "kind": "code"
+    },
+    "csrf": ""
+   },
+   "code": ""
+  },
+  {
+   "mode": "product",
+   "step": "gnap-api, a code act unbound",
+   "method": "POST",
+   "path": "/gnap-api/code",
+   "status": 403,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "ok": false,
+    "errors": [
+     "This operation is sent by a page of this service: the request carried no Origin."
+    ]
+   },
+   "code": "STS-GNAP-0411"
+  },
+  {
+   "mode": "product",
+   "step": "gnap-api, an approval view of nothing",
+   "method": "GET",
+   "path": "/gnap-api/approve/gw-none",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "ok": false,
+    "errors": [
+     "There is no request waiting for approval at this address, or it was already answered or has expired."
+    ],
+    "view": {
+     "kind": "problem",
+     "heading": "This request is not waiting for you",
+     "detail": "There is no request waiting for approval at this address, or it was already answered or has expired."
+    }
+   },
+   "code": "STS-GNAP-0406"
+  },
+  {
+   "mode": "product",
+   "step": "gnap-api, an approval act unbound",
+   "method": "POST",
+   "path": "/gnap-api/approve/gw-none",
+   "status": 403,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "ok": false,
+    "errors": [
+     "This operation is sent by a page of this service: the request carried no Origin."
+    ]
+   },
+   "code": "STS-GNAP-0411"
+  },
+  {
+   "mode": "product",
+   "step": "manage, a bad handle",
+   "method": "POST",
+   "path": "/gnap/token/<handle>%20b",
+   "status": 401,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_rotation",
+     "description": "The token management URI does not identify a token."
+    }
+   },
+   "code": "STS-GNAP-0166"
+  },
+  {
+   "mode": "product",
+   "step": "manage, an unknown token",
+   "method": "POST",
+   "path": "/gnap/token/<handle>",
+   "status": 401,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_rotation",
+     "description": "the token management URI and access token do not identify a token (RFC 9635 section 6)."
+    }
+   },
+   "code": "STS-GNAP-0150"
+  },
+  {
+   "mode": "product",
+   "step": "introspect, unsigned",
+   "method": "POST",
+   "path": "/gnap/introspect",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_resource_server",
+     "description": "the Content-Digest does not match the request content: The message has no Content-Digest field to validate against its content (RFC 9530 section 2)."
+    }
+   },
+   "code": "STS-KEYS-0108"
+  },
+  {
+   "mode": "product",
+   "step": "introspect, a live token",
+   "method": "POST",
+   "path": "/gnap/introspect",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "active": true,
+    "access": [
+     {
+      "type": "gw-pro-read",
+      "actions": [
+       "read"
+      ],
+      "locations": [
+       "https://rs-pro.gw.test/api"
+      ]
+     }
+    ],
+    "iss": "http://<port>/gnap",
+    "key": {
+     "proof": "httpsig",
+     "jwk": {
+      "kty": "EC",
+      "x": "<x>",
+      "y": "<y>",
+      "crv": "P-256",
+      "alg": "ES256",
+      "kid": "<kid>"
+     }
+    },
+    "exp": "<exp>",
+    "iat": "<iat>",
+    "nbf": "<nbf>",
+    "aud": "gw-pro-rs",
+    "instance_id": "<instance_id>",
+    "grant_id": "<random>",
+    "format": "jwt-signed"
+   },
+   "code": ""
+  },
+  {
+   "mode": "product",
+   "step": "introspect, an unknown token",
+   "method": "POST",
+   "path": "/gnap/introspect",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "active": false
+   },
+   "code": ""
+  },
+  {
+   "mode": "product",
+   "step": "introspect, a malformed token",
+   "method": "POST",
+   "path": "/gnap/introspect",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "the introspection request does not match its schema: /access_token must match pattern \"^[A-Za-z0-9._~+/-]*=*$\" (JSON Schema urn:iya-sts:gnap:introspection)."
+    }
+   },
+   "code": "STS-GNAP-0061"
+  },
+  {
+   "mode": "product",
+   "step": "introspect, no resource server",
+   "method": "POST",
+   "path": "/gnap/introspect",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_resource_server",
+     "description": "\"resource_server\" is REQUIRED: an object with a \"key\" or an instance identifier (RFC 9767 section 3.2)."
+    }
+   },
+   "code": "STS-GNAP-0500"
+  },
+  {
+   "mode": "product",
+   "step": "register, a resource set",
+   "method": "POST",
+   "path": "/gnap/resource",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "resource_reference": "<resource_reference>",
+    "introspection_endpoint": "http://<port>/gnap/introspect",
+    "instance_id": "<instance_id>"
+   },
+   "code": ""
+  },
+  {
+   "mode": "product",
+   "step": "register, owners of no identifier",
+   "method": "POST",
+   "path": "/gnap/resource",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "\"resource_owners\" names \"gw-other\", which no right in \"access\" carries as its identifier."
+    }
+   },
+   "code": "STS-GNAP-0864"
+  },
+  {
+   "mode": "product",
+   "step": "register, a wrong type",
+   "method": "POST",
+   "path": "/gnap/resource",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_request",
+     "description": "the resource registration request does not match its schema: /token_introspection_required must be boolean (JSON Schema urn:iya-sts:gnap:registration)."
+    }
+   },
+   "code": "STS-GNAP-0061"
+  },
+  {
+   "mode": "product",
+   "step": "manage, a rotation",
+   "method": "POST",
+   "path": "/gnap/token/<handle>",
+   "status": 200,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "access_token": {
+     "value": "<value>",
+     "access": [
+      {
+       "type": "gw-pro-read",
+       "actions": [
+        "read"
+       ],
+       "locations": [
+        "https://rs-pro.gw.test/api"
+       ]
+      }
+     ],
+     "expires_in": "<expires_in>",
+     "manage": {
+      "uri": "http://<port>/gnap/token/<handle>",
+      "access_token": {
+       "value": "<value>"
+      }
+     }
+    }
+   },
+   "code": ""
+  },
+  {
+   "mode": "product",
+   "step": "manage, a key rotation body nobody defines",
+   "method": "POST",
+   "path": "/gnap/token/<handle>",
+   "status": 400,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_rotation",
+     "description": "the rotation request does not match its schema: (the document) must NOT have more than 4 properties (JSON Schema urn:iya-sts:gnap:rotation)."
+    }
+   },
+   "code": "STS-GNAP-0061"
+  },
+  {
+   "mode": "product",
+   "step": "manage, revoked",
+   "method": "DELETE",
+   "path": "/gnap/token/<handle>",
+   "status": 204,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": "",
+   "code": ""
+  },
+  {
+   "mode": "product",
+   "step": "manage, after the revocation",
+   "method": "POST",
+   "path": "/gnap/token/<handle>",
+   "status": 401,
+   "headers": {
+    "cache-control": "no-store",
+    "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
+    "content-type": "application/json; charset=utf-8",
+    "permissions-policy": "publickey-credentials-get=(self), publickey-credentials-create=(self), digital-credentials-get=(self), clipboard-write=(self), fullscreen=(self), camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), display-capture=(), accelerometer=(), gyroscope=(), magnetometer=(), browsing-topics=()",
+    "referrer-policy": "no-referrer",
+    "vary": "Origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY"
+   },
+   "body": {
+    "error": {
+     "code": "invalid_rotation",
+     "description": "the token management URI and access token do not identify a token (RFC 9635 section 6)."
+    }
+   },
+   "code": "STS-GNAP-0150"
+  }
+ ],
+ "problems": []
+}
