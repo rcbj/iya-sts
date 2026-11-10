@@ -378,6 +378,11 @@ interface SchedulerDeps {
   // How many connections the store's pool holds, or 0 where there is no
   // pool (the memory store); the runs are kept to fewer than this.
   storeConnections?: () => number;
+  // How many protocol request worker threads this process runs (the
+  // threads a cluster run's body is handed to, #408), or 0. With
+  // `scheduler.maxConcurrentRuns` at 0 the cap is one fewer than this,
+  // and never under one.
+  requestWorkers?: () => number;
   // Resolves once what this process has journalled is written down: the
   // history purge waits on it between batches, so one flush never carries
   // more than one batch of deletes (#338). Optional; a test has no store.
@@ -724,6 +729,12 @@ class Scheduler {
         return Number(require('../persistence/persistence_postgres')
           .poolMax(workers)) || 0;
       },
+      requestWorkers: function (): number {
+        // LAZILY, for storeConnections()'s reason. Only the PROTOCOL pool:
+        // a surface worker never runs a job's body (#408).
+        return Number(require('../common/process_memory')
+          .requestWorkers()) || 0;
+      },
       now: function (): number {
         return Date.now();
       },
@@ -1051,16 +1062,26 @@ class Scheduler {
     return Number(config.value(key));
   }
 
-  // How many cluster runs this leader may have going at once: the setting
-  // (read directly — the row's `min` of 1 bounds it, the root CLAUDE.md's
-  // `|| n` rule), and NEVER EVERY CONNECTION the store's pool holds. Each run
-  // holds one while it claims and works, and a leader whose runs held them
-  // all would leave every request in this process waiting on the store —
-  // which is what 11:00:07 was. So at least one is always left, whatever
-  // the setting says.
+  // How many cluster runs this leader may have going at once (rcbj,
+  // 2026-11-10): ONE, or one fewer than the node's protocol request worker
+  // threads when that is more. A cluster run's body is handed to the
+  // least-loaded protocol worker (#408), so a cap of N - 1 leaves at least one
+  // worker answering requests with no job body on it, and a node with one
+  // worker or none runs one job at a time. `scheduler.maxConcurrentRuns` at
+  // its default of 0 means exactly that; a value of 1 or more is an
+  // operator's own cap and is used instead (read directly — 0 is a legal
+  // value, the root CLAUDE.md's `|| n` rule).
+  //
+  // AND NEVER EVERY CONNECTION the store's pool holds, whichever of the two
+  // decided. Each run holds one while it claims and works, and a leader
+  // whose runs held them all would leave every request in this process
+  // waiting on the store — which is what 11:00:07 was. So at least one is
+  // always left, whatever the setting says.
   /**
    * Returns how many cluster runs the leader may have going at once:
-   * `scheduler.maxConcurrentRuns`, always leaving one store connection free.
+   * `scheduler.maxConcurrentRuns` when it is 1 or more, otherwise the larger
+   * of 1 and one fewer than the protocol request workers; always leaving one
+   * store connection free.
    *
    * @returns the limit, at least 1
    */
@@ -1068,7 +1089,14 @@ class Scheduler {
     const { log } = this.deps;
     log.debug("Entering Scheduler.maxConcurrentRuns().");
     const setting = this.setting('scheduler.maxConcurrentRuns');
-    let n = setting >= 1 ? setting : 1;
+    let n: number;
+    if (setting >= 1) {
+      n = Math.floor(setting);
+    } else {
+      const workers = this.deps.requestWorkers ?
+        Number(this.deps.requestWorkers()) || 0 : 0;
+      n = Math.max(1, workers - 1);
+    }
     const pool = this.deps.storeConnections ?
       Number(this.deps.storeConnections()) || 0 : 0;
     if (pool > 0) {

@@ -11076,8 +11076,8 @@
     "text": "Pinakamaraming sabay-sabay na run"
   },
   "scheduler.maxConcurrentRuns|description": {
-    "en": "56fac41f63177db7",
-    "text": "Ilang naka-iskedyul o manual na run ang sabay-sabay na pinapatakbo ng leader, sa lahat ng job at trust realm. Ang slot ay multiple ng interval nito, kaya ang bawat oras-orasang job sa bawat realm ay dapat patakbuhin sa parehong segundo; bawat run ay may hawak na connection sa store habang nagke-claim at gumagawa ito, at apat ang mayroon ang postgres store. Naghihintay ang iba, inuuna ang Run now ng isang tao, at nagsisimula habang natatapos ang mga run. Hindi ito kailanman lalampas sa isang mas kaunti kaysa sa hawak ng pool, anuman ang itakda rito, kaya hindi makukuha ng scheduler ang bawat connection mula sa mga request."
+    "en": "2f1ce9da6481ae58",
+    "text": "Ilang nakaiskedyul o manwal na pagtakbo ang sabay-sabay na pinapatakbo ng leader, sa lahat ng job at trust realm. Ang 0, ang default, ay isang pagtakbo, o isang mas kaunti kaysa sa mga request worker thread (workers.requestCount) kapag mas marami iyon, kaya laging may isang thread na naiiwang sumasagot sa mga request nang walang job. Ang halagang 1 o higit pa ang ginagamit sa halip. Ang isang slot ay multiple ng interval nito, kaya ang bawat oras-oras na job sa bawat realm ay due sa parehong segundo; ang iba ay naghihintay, una ang Run now ng isang tao, at nagsisimula habang natatapos ang mga pagtakbo. Hindi ito kailanman lalampas sa isang mas kaunti kaysa sa hawak ng connection pool ng store, anuman ang itakda, kaya hindi makukuha ng scheduler ang lahat ng koneksyon mula sa mga request."
   },
   "scheduler.niceBusyThreshold|label": {
     "en": "115ae6125244b30a",
