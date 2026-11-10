@@ -54,18 +54,19 @@ async function run(t) {
           '(#1512)');
   t.equal(jose.PBKDF2_EXPORT_ITERATIONS, 600000,
           '2a. the constant PKCS#12 export reads is the same figure');
-  const ours = stsCrypto.encryptJweCompact('x',
+  const ours = await stsCrypto.encryptJweCompactAsync('x',
     { alg: 'PBES2-HS256+A128KW', enc: 'A256GCM', secret: 'pw' });
   t.equal(headerOf(ours).p2c, header.p2c,
           '2b. and crypto.js encrypts with it too');
-  const opened = stsCrypto.decryptJweCompact(file.data,
+  const opened = await stsCrypto.decryptJweCompactAsync(file.data,
     { secret: 'correct horse battery staple' });
   const jwk = JSON.parse(String(opened.plaintext));
   t.check(jwk.kty === 'oct' && jwk.k === secret,
           '3a. crypto.js opens the export with the password', jwk.kty);
   let wrong = '';
   try {
-    stsCrypto.decryptJweCompact(file.data, { secret: 'wrong password' });
+    await stsCrypto.decryptJweCompactAsync(file.data,
+                                           { secret: 'wrong password' });
     wrong = 'opened';
   } catch (e) {
     t.log.debug("Caught in run(): " + ((e && e.message) || e));
