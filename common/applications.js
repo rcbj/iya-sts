@@ -183,6 +183,7 @@ const cacheRegistry = require('./cache_registry');
 // files, and the day they disagreed every application would silently start
 // requiring a role nobody holds.
 const roles = require('./roles');
+const DomainClasses = require('./domain_classes');
 
 // THE KEY-ENCRYPTION KEY, for the one attribute in this table that is a PRIVATE
 // KEY (2026-09-10). It is a LIBRARY and registers nothing, and it requires
@@ -6529,17 +6530,19 @@ function cibaOf(clientId) {
   log.debug("Entering cibaOf().");
   const who = String(clientId == null ? '' : clientId).trim();
   const found = who ? (forClientId(who) || get(who)) : null;
-  const fields = (found && found.fields) || {};
-  const one = function (name) {
-    return String(valuesOf(fields[name])[0] || '').trim();
+  // What it registered is its OAuthClient's (#1579).
+  const client = DomainClasses.OAuthClient.fromEntry(
+    (found && found.fields) || {});
+  const one = function (value) {
+    return String(valuesOf(value)[0] || '').trim();
   };
-  const mode = one('oauthBackchannelTokenDeliveryMode');
+  const mode = one(client.backchannelTokenDeliveryMode);
   log.debug("Leaving cibaOf(). " + (mode || 'none'));
   return {
     mode: ['poll', 'ping', 'push'].indexOf(mode) >= 0 ? mode : '',
-    endpoint: one('oauthBackchannelClientNotificationEndpoint'),
-    signingAlg: one('oauthBackchannelAuthenticationRequestSigningAlg'),
-    userCode: one('oauthBackchannelUserCodeParameter').toUpperCase() ===
+    endpoint: one(client.backchannelClientNotificationEndpoint),
+    signingAlg: one(client.backchannelAuthenticationRequestSigningAlg),
+    userCode: one(client.backchannelUserCodeParameter).toUpperCase() ===
       'TRUE'
   };
 }
@@ -10659,22 +10662,24 @@ function softwareStatementFactNames() {
 function softwareStatementFactsOf(clientId) {
   log.debug("Entering softwareStatementFactsOf().");
   const loaded = load(clientId);
-  const fields = loaded.known ? (loaded.record.fields || {}) : {};
-  const one = function (name) {
+  // The facts are the Application's (#1579).
+  const app = DomainClasses.Application.fromEntry(
+    loaded.known ? (loaded.record.fields || {}) : {});
+  const one = function (value) {
     log.debug("Entering one().");
-    const values = valuesOf(fields[name]);
+    const values = valuesOf(value);
     log.debug("Leaving one().");
     return values.length ? String(values[0]) : '';
   };
-  const issuer = one('appSoftwareStatementIssuer');
+  const issuer = one(app.softwareStatementIssuer);
   if (!issuer) {
     log.debug("Leaving softwareStatementFactsOf(). None.");
     return null;
   }
   log.debug("Leaving softwareStatementFactsOf().");
   return { issuer: issuer,
-           trusted: one('appSoftwareStatementTrusted') === 'TRUE',
-           publisher: one('appSoftwareStatementPublisher') };
+           trusted: one(app.softwareStatementTrusted) === 'TRUE',
+           publisher: one(app.softwareStatementPublisher) };
 }
 
 // Has a federation registration ended (#134, 12.3)? Its expiry is checked
@@ -15093,9 +15098,12 @@ function declaredFlowsOf(clientId) {
     log.debug("Leaving declaredFlowsOf(). Not known.");
     return null;
   }
-  const listOf = function (name) {
-    log.debug("Entering listOf(). " + name);
-    const values = valuesOf(loaded.record.fields[name])
+  // The declared flows are the OAuthClient's (#1579).
+  const client = DomainClasses.OAuthClient.fromEntry(
+    loaded.record.fields || {});
+  const listOf = function (value) {
+    log.debug("Entering listOf().");
+    const values = valuesOf(value)
       .map(function (one) {
         return String(one).split(/\s+/).filter(Boolean).sort().join(' ');
       })
@@ -15105,8 +15113,8 @@ function declaredFlowsOf(clientId) {
     log.debug("Leaving listOf().");
     return values.length ? values : null;
   };
-  const grants = listOf('oauthGrantType');
-  const responses = listOf('oauthResponseType');
+  const grants = listOf(client.grantTypes);
+  const responses = listOf(client.responseTypes);
   if (!grants && !responses) {
     log.debug("Leaving declaredFlowsOf(). Nothing declared.");
     return null;
