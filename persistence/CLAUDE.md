@@ -777,7 +777,8 @@ like the LISTEN connection, opened on first use and again after it drops, with
 no timer — so write load cannot starve the lease that keeps a process writing.
 If it cannot be opened (a server at `max_connections`) the statement goes
 through the pool once rather than failing (STS-STORE-0070). A write's own
-fence checks stay inside its transaction. Each process now holds up to
+fence checks stay inside its transaction; what they share-lock is a row of
+`sts_cluster_locks` (#770, `cluster/CLAUDE.md`). Each process now holds up to
 `poolMax() + 2` connections; `POOL_FLOOR` stays 4, argued above it.
 
 **Key-row writes never hold the whole pool (#1590, 2026-11-10).**
@@ -1292,8 +1293,9 @@ containers against this store need, and three things changed here for it:
   node's rows for ever.
 * **`withTransaction()` checks the cluster fence first** when `cluster/cluster.js`
   has installed one — the node's membership, and any lease the write needs, under
-  `FOR SHARE` — and a fenced transaction calls back into cluster.js, which exits
-  the process or fails the one write.
+  `FOR SHARE` of a `sts_cluster_locks` row (#770, `cluster/CLAUDE.md`) — and a
+  fenced transaction calls back into cluster.js, which exits the process or
+  fails the one write.
 * **The pull no longer stops at a hole.** It applies everything visible above
   `highest`, remembers each hole, re-asks for them with `changesAt()` on every
   pull, and gives one up after ten minutes (`STS-STORE-0049`) instead of four
@@ -2137,8 +2139,10 @@ where it was:
   A live holder is waited out for 35 s — a crashed one's claim lapses in
   that time — and after that the process keeps a random origin
   (`STS-STORE-0060`), which is safe because the fan-in reads it. **Every
-  transaction checks the claim** (`checkOriginFence()`, under `FOR SHARE`,
-  before the cluster fence), so a process paused past its claim finds its
+  transaction checks the claim** (`checkOriginFence()`, under `FOR SHARE` of
+  its `sts_cluster_locks` row, #770, `cluster/CLAUDE.md`, before the cluster
+  fence; a lapse is extended by a bounded autocommit on the liveness
+  connection), so a process paused past its claim finds its
   writes refused rather than overwriting its successor's rows; outside a
   cluster it exits (`STS-STORE-0061`), inside one the cluster's fail-stop
   does. **LAPSED IS NOT TAKEN (2026-09-21)**: ownership is the RESERVATION
@@ -2743,7 +2747,8 @@ parameters are the table `MINTED_FLUSH_LAYOUT`, and the text takes its `$n`
 from that table. Every parameter is present in every flush, so there is
 one statement text. The order inside it is made of data dependencies:
 
-1. `fence`: the origin claim and the leases FOR SHARE, and the membership.
+1. `fence`: the origin's and the leases' rows of `sts_cluster_locks` FOR
+   SHARE (#770, `cluster/CLAUDE.md`), and the membership.
 2. `lk`: every existing row locked FOR UPDATE in (handle, realm, key)
    order. `ok` reads its count, so it is read to the end.
 3. Every write reads `ok`; the side tables and the change log read `done`

@@ -710,18 +710,31 @@ async function theLivenessConnection(t) {
           'D: THE ORIGIN RENEWAL SUCCEEDS WHILE EVERY POOLED CONNECTION IS ' +
           'TAKEN (on testidp it waited on the pool, the claim lapsed, and ' +
           'the worker exited)', String(renewed));
-  t.check(db.statements.length === 1 && db.statements[0].via === 'client',
-          'D: on the liveness connection, not the pool',
+  const renewalVia = db.statements.map(function (one) {
+    return one.via;
+  });
+  t.check(renewalVia.length > 0 &&
+          renewalVia.every(function (via) { return via === 'client'; }) &&
+          db.statements.some(function (one) {
+            return /^UPDATE sts_cluster_claims SET expires_at/.test(one.sql) ||
+              /sts:renewOrigin /.test(one.sql);
+          }),
+          'D: on the liveness connection, not the pool — the bound adds ' +
+          'BEGIN, the timeouts and COMMIT around the renewal',
           JSON.stringify(db.statements.map(function (one) {
-            return one.via;
+            return one.via + ' ' + one.sql.slice(0, 40);
           })));
   db.statements.length = 0;
   const beat = await bounded(driver.heartbeat('node-b', 30000, null), 2000);
-  t.check(beat && beat.alive === true && db.statements.length === 1 &&
-          db.statements[0].via === 'client',
+  t.check(beat && beat.alive === true && db.statements.length > 0 &&
+          db.statements.every(function (one) {
+            return one.via === 'client';
+          }) && db.statements.some(function (one) {
+            return /^WITH n AS \(UPDATE sts_cluster_nodes/.test(one.sql);
+          }),
           'D: and so does the cluster heartbeat',
           JSON.stringify({ beat: beat, via: db.statements.map(function (o) {
-            return o.via;
+            return o.via + ' ' + o.sql.slice(0, 32);
           }) }));
   const leased = await bounded(driver.releaseLease('scheduler', 'node-b', 3),
                                2000);
@@ -746,12 +759,16 @@ async function theLivenessConnection(t) {
   const viaPool = await bounded(second.heartbeat('node-c', 30000, null), 2000);
   t.check(viaPool && viaPool.alive === true &&
           db.statements.some(function (one) {
-            return one.via === 'pool';
+            return one.via === 'pool' &&
+              /^WITH n AS \(UPDATE sts_cluster_nodes/.test(one.sql);
+          }) && !db.statements.some(function (one) {
+            return one.via === 'pool' && one.sql === 'BEGIN';
           }) && second.livenessStatus().viaPool === 1,
           'D: a liveness connection that cannot be opened sends the ' +
-          'statement through the pool rather than failing it',
+          'statement through the pool rather than failing it, and does ' +
+          'not open a transaction there',
           JSON.stringify({ via: db.statements.map(function (o) {
-            return o.via;
+            return o.via + ' ' + o.sql.slice(0, 24);
           }), status: second.livenessStatus() }));
 
   // THE PURGE KEEPS A LAPSED ORIGIN CLAIM.
