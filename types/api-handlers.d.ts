@@ -88,6 +88,20 @@ declare namespace IyaApi {
     body: O['body'];
   }
 
+  // WHAT A VIEW ANSWERS (#1579): the JSON answer at 200 of the operations a
+  // view is the answer of, so `admin-core/admin_views.ts` builds the model's
+  // shape and the checker says where it does not.
+  type AnswerAt200<Ops, K extends keyof Ops> = K extends unknown
+    ? (Ops[K] extends { answers: { 200: infer A } } ? A : never)
+    : never;
+  type AdminAnswer<K extends keyof AdminOperations> =
+    AnswerAt200<AdminOperations, K>;
+  // A view that answers its page's model beside it, as `json`.
+  interface AdminView<K extends keyof AdminOperations> {
+    json: AdminAnswer<K>;
+    [member: string]: any;
+  }
+
   // ONE ROW OF A ROUTE TABLE, discriminated by its operationId: the row's
   // `handler` is typed by the operation the same row names. `Extra` is what
   // a table hands a handler after the request and the response. Every other
