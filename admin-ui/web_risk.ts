@@ -64,6 +64,16 @@ const LEVELS = ['HIGH', 'MEDIUM', 'LOW', 'UNSCORED'];
 const LEVEL_COLOURS: Record<string, string> = {
   LOW: '#188038', MEDIUM: '#f9ab00', HIGH: '#d93025', UNSCORED: '#5f6368' };
 
+// WHAT WERE `style=""` ATTRIBUTES (2026-11-10), for the console's stylesheet
+// (`admin.ts` stylesheet() reads `RiskPage.CSS`).
+const RISK_CSS = '.risk-bar-cell{width:45%}' +
+  '.risk-bar{display:block}' +
+  '.risk-swatch{display:inline-block;vertical-align:middle;' +
+  'margin:0 4px 0 12px}' +
+  '#risk-timeline{height:160px;padding:6px;border:1px solid #dadce0;' +
+  'border-radius:6px;box-sizing:border-box}' +
+  '#risk-timeline svg{display:block}';
+
 /**
  * Draws Risk from the answer of `GET /admin-api/risk` — the datasets a score
  * reads and their versions, the assessments and standings, an address lookup,
@@ -73,6 +83,11 @@ const LEVEL_COLOURS: Record<string, string> = {
  * A static utility class; it holds no state and takes no dependencies.
  */
 class RiskPage {
+  /**
+   * The page's rules, for the console's stylesheet (2026-11-10).
+   */
+  static readonly CSS = RISK_CSS;
+
   /**
    * Draws the page's body from its view.
    *
@@ -119,9 +134,13 @@ class RiskPage {
       return '<tr><td>' + esc(k || t.text('consoleRisk.none')) +
         '</td><td class="num">' + n +
         '</td><td class="num">' + (share * 100).toFixed(1) + '%</td>' +
-        '<td style="width:45%"><div style="height:12px;border-radius:3px;' +
-        'width:' + Math.max(share * 100, n ? 0.5 : 0).toFixed(1) + '%;' +
-        'background:' + (colour ? colour(k) : '#1a73e8') + '"></div></td>' +
+        // AN SVG BAR, its length and colour attributes (2026-11-10): the
+        // console's policy allows no `style=""`.
+        '<td class="risk-bar-cell"><svg class="risk-bar" width="100%" ' +
+        'height="12" viewBox="0 0 100 12" preserveAspectRatio="none" ' +
+        'aria-hidden="true" focusable="false"><rect height="12" rx="3" ' +
+        'width="' + Math.max(share * 100, n ? 0.5 : 0).toFixed(1) + '" ' +
+        'fill="' + esc(colour ? colour(k) : '#1a73e8') + '"/></svg></td>' +
         '</tr>';
     }).join('');
     return '<table class="grid" id="' + id + '"><thead><tr><th>' +
@@ -155,12 +174,20 @@ class RiskPage {
     const stamp = function (ms: number): string {
       return new Date(ms).toISOString().slice(0, 16).replace('T', ' ');
     };
-    const bars = columns.map(function (c: Json): string {
+    // ONE SVG, a column per bucket and each level a rectangle stacked from
+    // the bottom (2026-11-10): the console's policy allows no `style=""`, so
+    // a height is an attribute. 100 units tall; a column is 10 wide with a
+    // gap of 2, and the SVG is stretched to the box (`#risk-timeline`).
+    const bars = columns.map(function (c: Json, i: number): string {
+      let top = 100;
       const parts = LEVELS.filter(function (l: string): boolean {
         return Number(c[l]) > 0;
       }).map(function (l: string): string {
-        return '<div style="height:' + (Number(c[l]) / peak * 100)
-          .toFixed(2) + '%;background:' + LEVEL_COLOURS[l] + '"></div>';
+        const h = Number(c[l]) / peak * 100;
+        top -= h;
+        return '<rect x="' + (i * 10) + '" y="' + top.toFixed(2) + '" ' +
+          'width="8" height="' + h.toFixed(2) + '" fill="' +
+          LEVEL_COLOURS[l] + '"/>';
       }).join('');
       const title = t.text('consoleRisk.timeline.column',
                            { at: stamp(c.at), n: Number(c.total) || 0 }) +
@@ -169,17 +196,24 @@ class RiskPage {
         }).map(function (l: string): string {
           return ', ' + c[l] + ' ' + l;
         }).join('');
-      return '<div title="' + esc(title) + '" style="flex:1;display:flex;' +
-        'flex-direction:column-reverse;min-width:3px">' + parts + '</div>';
+      // The column's tooltip, as an SVG <title>; a rectangle the whole
+      // height carries it, so an empty bucket answers too.
+      return '<g><title>' + esc(title) + '</title><rect x="' + (i * 10) +
+        '" y="0" width="10" height="100" fill="transparent"/>' + parts +
+        '</g>';
     }).join('');
     const legend = LEVELS.map(function (l: string): string {
-      return '<span style="display:inline-block;width:10px;height:10px;' +
-        'background:' + LEVEL_COLOURS[l] + ';margin:0 4px 0 12px"></span>' +
-        l;
+      return '<svg class="risk-swatch" width="10" height="10" ' +
+        'viewBox="0 0 10 10" aria-hidden="true" focusable="false">' +
+        '<rect width="10" height="10" fill="' + LEVEL_COLOURS[l] + '"/>' +
+        '</svg>' + l;
     }).join('');
-    return '<div id="risk-timeline" style="display:flex;align-items:' +
-      'flex-end;gap:2px;height:160px;padding:6px;border:1px solid #dadce0;' +
-      'border-radius:6px">' + bars + '</div><p><small>' +
+    return '<div id="risk-timeline"><svg width="100%" height="100%" ' +
+      'viewBox="0 0 ' + Math.max(10, columns.length * 10) + ' 100" ' +
+      'preserveAspectRatio="none" role="img" aria-label="' +
+      esc(t.text('consoleRisk.timeline.caption', {
+        from: stamp(first), bucket: RiskPage.duration(m.bucketMs, t),
+        peak: peak })) + '">' + bars + '</svg></div><p><small>' +
       t.html('consoleRisk.timeline.caption', {
         from: stamp(first), bucket: RiskPage.duration(m.bucketMs, t),
         peak: peak }) + legend + '</small></p>';

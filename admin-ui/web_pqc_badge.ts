@@ -49,7 +49,7 @@ const WORDS: Record<PqcKind, string> = {
 // Nine points on a 3x3 grid and the lines between them. `currentColor`, so the
 // icon takes the badge's colour.
 const LATTICE = '<svg width="12" height="12" viewBox="0 0 12 12" ' +
-  'aria-hidden="true" focusable="false" style="flex:0 0 auto">' +
+  'aria-hidden="true" focusable="false">' +
   '<path d="M2 2H10M2 6H10M2 10H10M2 2V10M6 2V10M10 2V10" fill="none" ' +
   'stroke="currentColor" stroke-width="0.9" opacity="0.55"/>' +
   '<g fill="currentColor"><circle cx="2" cy="2" r="1.35"/>' +
@@ -59,6 +59,10 @@ const LATTICE = '<svg width="12" height="12" viewBox="0 0 12 12" ' +
   '<circle cx="6" cy="10" r="1.35"/><circle cx="10" cy="10" r="1.35"/></g>' +
   '</svg>';
 
+// THE BADGE'S LOOK IS A STYLESHEET'S, NOT A `style=""` (2026-11-10): the
+// console's policy allows no inline style. `.pqc-badge` and `.pqc-<kind>` are
+// the classes the badge already carried; the console's stylesheet
+// (`admin.ts` stylesheet()) takes these rules.
 const BASE_STYLE = 'display:inline-flex;align-items:center;gap:3px;' +
   'font-size:11px;font-weight:600;line-height:1;padding:2px 6px;' +
   'border-radius:999px;vertical-align:middle;white-space:nowrap;' +
@@ -110,6 +114,15 @@ class PqcBadgeView {
     return text + (info.standard ? ' (' + info.standard + ')' : '');
   }
 
+  /**
+   * The badge's rules, for the console's stylesheet.
+   */
+  static readonly CSS = '.pqc-badge{' + BASE_STYLE + '}' +
+    '.pqc-badge svg{flex:0 0 auto}' +
+    Object.keys(KIND_STYLE).map(function (kind: string): string {
+      return '.pqc-' + kind + '{' + KIND_STYLE[kind as PqcKind] + '}';
+    }).join('');
+
   // The icon for a classification, or '' where there is none — so a caller
   // can concatenate it after every row's algorithm without asking first.
   /**
@@ -127,8 +140,8 @@ class PqcBadgeView {
     const kind = info.kind as PqcKind;
     const said = PqcBadgeView.sentence(info, t);
     return '<span class="pqc-badge pqc-' + esc(kind) + '" role="img" ' +
-      'aria-label="' + esc(said) + '" title="' + esc(said) + '" style="' +
-      BASE_STYLE + KIND_STYLE[kind] + '">' + LATTICE +
+      'aria-label="' + esc(said) + '" title="' + esc(said) + '">' +
+      LATTICE +
       '<span aria-hidden="true">' + esc(WORDS[kind]) + '</span></span>';
   }
 

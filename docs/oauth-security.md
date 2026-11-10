@@ -1291,6 +1291,10 @@ nothing, so it carries the same framing clauses as every other page.
     re-authentication window keeps working.
   - The sign-in screens carry neither header, because a relying party may
     open one in a popup.
+- **No page of the console, the user portal or the reports application
+  allows an inline style:** their policy is `style-src 'self'`. Their styles
+  are stylesheet rules, and their charts are SVG, so a `style=""` attribute
+  injected into their markup is not applied.
 
 ### In-browser communication (section 4.17)
 

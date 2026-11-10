@@ -919,7 +919,10 @@ class PkiPage {
       return '';
     }
     return '<tr>' +
-      '<td style="padding-left:' + (depth * 1.4) + 'rem">' +
+      // `.indent-N` in the console's stylesheet, N × 1.4rem: the policy
+      // allows no `style=""` (2026-11-10). A chain is a few tiers deep.
+      '<td class="indent-' + Math.min(Math.max(0, Number(depth) || 0), 9) +
+      '">' +
       (depth ? '<span class="pki-branch">&#9492;&#9472;</span> ' : '') +
       '<strong>' + esc(tier.label) + '</strong>' +
       (tier.imported ? ' <em>' + t.html('consolePki.imported') + '</em>'
@@ -952,7 +955,7 @@ class PkiPage {
     // certified are the view's.
     tree.scopes.forEach(function (scope) {
       if (!scope.built) {
-        rows += '<tr><td style="padding-left:1.4rem">' +
+        rows += '<tr><td class="indent-1">' +
           '<span class="pki-branch">&#9492;&#9472;</span> <em>' +
           t.html('consolePki.scopeNotBuilt', { label: scope.label }) +
           '</em></td>' +
@@ -978,7 +981,7 @@ class PkiPage {
         // question a reader brings to a tree of CAs is which of them is
         // actually doing anything.
         one.certified.forEach(function (cert) {
-          rows += '<tr><td style="padding-left:4.2rem"><span ' +
+          rows += '<tr><td class="indent-3"><span ' +
             'class="pki-branch">&#9492;&#9472;</span> ' + esc(cert.label) +
             (cert.pinned ? ' <em>' + t.html('consolePki.yourKey') + '</em>'
                          : '') + '</td>' +
@@ -996,7 +999,7 @@ class PkiPage {
               '</td></tr>';
         });
         if (!one.certified.length) {
-          rows += '<tr><td style="padding-left:4.2rem"><em>' +
+          rows += '<tr><td class="indent-3"><em>' +
             t.html('consolePki.nothingCertified') +
             '</em></td><td colspan="4"><em>' + esc(one.what) +
             '</em></td></tr>';
