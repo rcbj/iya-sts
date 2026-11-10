@@ -87,7 +87,6 @@ import ModelZod = require('../common/model_zod');
 type Json = any;
 
 const vz = validation.z;
-const vt = validation.types;
 
 // The header an act's CSRF token travels in.
 const CSRF_HEADER = 'x-csrf-token';
@@ -138,8 +137,11 @@ const MFA_PAGES = ['totp', 'webauthn', 'backup-code', 'password', 'setup',
 
 const MFA_QUERY = ModelZod.query('authn', 'getStep');
 
+// THE `{id}` OF EVERY PATH HERE is the model's `SignInId` (#1579): one
+// component every such operation's path parameter names, so the shape a
+// caller reads and the check are one declaration.
 const ID_PARAMS = vz.object({
-  id: vt.base64url
+  id: ModelZod.component('authn', 'SignInId')
 });
 
 // WHAT THE WALLET'S START VIEW IS ASKED WITH (#1483, the names this door has
@@ -164,12 +166,6 @@ const SHAPE_CODES: Record<string, string> = {
 // back with (OpenID4VP section 8.2); `response` the DigitalCredential the
 // browser's API answered, as `{ protocol, data }` or its JSON text.
 // ---------------------------------------------------------------------------
-const WALLET_IDS = {
-  authn: vt.opt(vt.opaque),
-  mfa: vt.opt(vt.opaque),
-  enrol: vt.opt(vt.oneOf(['1']))
-};
-
 const WALLET_START_BODY = ModelZod.body('authn', 'startWalletSignIn');
 
 const WALLET_STATUS_BODY = ModelZod.body('authn', 'walletStatus');
@@ -466,14 +462,10 @@ OPERATIONS.push.apply(OPERATIONS, ACCOUNT_OPERATIONS);
 // receiver's boxes as an array. Nothing else is taken.
 // ---------------------------------------------------------------------------
 
-// A limit control's name, and what it may hold: `common/web_limits_form.ts`
-// draws one detail's controls as `lim_t0r<r>_<member>`.
-const LIMIT_FIELD = /^lim_t0r\d{1,3}_(amount|count|receiver|receiverShown|interval|notBefore|notAfter)$/;
-const LIMIT_VALUE = vz.union([vz.string().max(1024),
-                              vz.array(vz.string().max(1024)).max(64)]);
-
-// The answer itself, checked closed once the limit controls are taken off.
-// Documented open, since the controls are beside it.
+// The answer and its limit controls are one model (#1579): `action`, and the
+// `lim_t0r<r>_<member>` controls `common/web_limits_form.ts` draws, which the
+// operation names as `patternProperties` with what each may hold. Nothing
+// else is taken.
 const CONSENT_BODY = ModelZod.body('authn', 'answerConsent');
 
 const CONSENT_OPERATIONS = [
@@ -1553,26 +1545,30 @@ class AuthnApi {
     const raw = helpers.parseBody(req) || {};
     const answer: Json = {};
     const limits: Json = {};
-    let problem = '';
     Object.keys(raw).forEach(function (name: string): void {
-      if (!/^lim_/.test(name)) {
+      if (/^lim_/.test(name)) {
+        limits[name] = raw[name];
+      } else {
         answer[name] = raw[name];
-        return;
       }
-      if (!LIMIT_FIELD.test(name)) {
-        problem = problem || 'The body has a field this operation does not ' +
-          'take: ' + name + '.';
-        return;
-      }
-      if (!LIMIT_VALUE.safeParse(raw[name]).success) {
-        problem = problem || 'The limit ' + name + ' is not a string or a ' +
-          'list of strings of a reasonable size.';
-        return;
-      }
-      limits[name] = raw[name];
     });
-    const posted = validation.checkParsed(answer, 'body',
-                                          CONSENT_BODY.strict());
+    // The limit controls are held to the model whole, because a receiver's
+    // repeat is a list the request wrapper would refuse; the answer goes
+    // through the wrapper, which also refuses what is not a scalar.
+    const shaped = CONSENT_BODY.safeParse(raw);
+    const limitIssue = (shaped.success ? [] : shaped.error.issues).filter(
+      function (one: Json): boolean {
+        return /^lim_/.test(String(one.path[0] || ''));
+      })[0];
+    let problem = '';
+    if (limitIssue && limitIssue.params && limitIssue.params.unrecognized) {
+      problem = 'The body has a field this operation does not take: ' +
+        String(limitIssue.path[0]) + '.';
+    } else if (limitIssue) {
+      problem = 'The limit ' + String(limitIssue.path[0]) + ' is not a ' +
+        'string or a list of strings of a reasonable size.';
+    }
+    const posted = validation.checkParsed(answer, 'body', CONSENT_BODY);
     if (problem || !posted.ok) {
       errorCodes.mark(res, 'STS-OAUTH-0148');
       this.refuse(res, 400, problem || String(posted.detail ||
@@ -1616,28 +1612,19 @@ class AuthnApi {
     helpers.log.debug("Entering AuthnApi.parametersOf().");
     const Spec = require('../account-api/account_api_spec');
     const out: Json[] = [];
-    if (op.access === 'wallet' && op.path.indexOf(':state') >= 0) {
-      out.push({ name: 'state', in: 'path', required: true,
-                 description: 'The wallet sign-in\'s transaction: a bearer ' +
-                   'capability, answered to this browser only (its ' +
-                   '`sts_wallet_binding` cookie).',
-                 schema: { type: 'string' } });
-    } else if (op.path.indexOf(':id') >= 0) {
-      out.push({ name: 'id', in: 'path', required: true,
-                 description: op.access === 'consent'
-                   ? 'The pending consent\'s id: a bearer capability, as the ' +
-                     '`consent` the consent screen was opened with, answered ' +
-                     'only to the browser whose session is the person asked.'
-                   : op.access === 'step'
-                   ? 'The password change step\'s id.'
-                   : op.access === 'mfa'
-                   ? 'The second-factor or emailed-factor step\'s id: a ' +
-                     'bearer capability, as the `mfa` its page was opened ' +
-                     'with.'
-                   : 'The pending sign-in\'s id: a bearer capability, as the ' +
-                     '`authn` the screen was opened with.',
-                 schema: { type: 'string' } });
-    }
+    // The path's own parameter — a pending sign-in's, a step's or a
+    // consent's `id` (the model's `SignInId`, #1579), or the wallet's
+    // `state` — is the one the model states for this operation.
+    const path = String(op.path).replace(/:([A-Za-z]+)/g, '{$1}');
+    const entry = ModelTables.file('openapi.authn.json')
+      .paths[path][op.method.toLowerCase()];
+    (entry.parameters || []).filter(function (one: Json): boolean {
+      return one.in === 'path';
+    }).forEach(function (one: Json): void {
+      const copy = Object.assign({}, one);
+      delete copy.example;
+      out.push(copy);
+    });
     const query = op.query ? Spec.jsonSchemaOf(op.query) : null;
     const props = (query && query.properties) || {};
     Object.keys(props).forEach(function (name) {

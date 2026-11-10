@@ -2262,7 +2262,7 @@ Scope: `account:manage`.
 | `id` | string |  | The request's id. |
 | `right` | list, or string |  |  |
 | `right[]` | string |  |  |
-| `subject` | one of `yes` |  | Release your identity (GNAP). |
+| `subject` | ``, or one of `yes` |  | Release your identity (GNAP). |
 
 **200**: The answer.
 

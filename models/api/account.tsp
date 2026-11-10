@@ -5084,7 +5084,7 @@ op `getSignInRequests`(@js(#{`maxLength`:256}) `parameters/0/schema`: string,
   }) `responses/default/content/application~1json/schema`: WithOkErrorsErrorEtc4): void;
   
 
-@js(#{`description`:"The GNAP rights ticked.",`$comb`:"oneOf"}) @hoisted union post_account_api_ciba_b_application_json_right_h536 {string, (string)[]}
+@js(#{`description`:"The GNAP rights ticked.",`$comb`:"oneOf"}) @hoisted union post_account_api_ciba_b_application_json_right_h536 {StringMin1Max4096Matchingfb79a8, (StringMin1Max4096Matchingfb79a8)[]}
 
 @endpoint("/account-api/ciba",
   "post",
@@ -5130,10 +5130,10 @@ op `answerSignInRequest`(@js(#{
     `$open`:true
   }) `requestBody/content/application~1json/schema`: {
     `action`: "set-code" | "clear-code" | "approve" | "deny" | "gnap-approve" | "gnap-deny";
-    @js(#{`description`:"The request's id."}) `id`?: string;
-    @js(#{`description`:"Your user code."}) `code`?: string;
+    @js(#{`description`:"The request's id.",`maxLength`:256}) `id`?: string;
+    @js(#{`description`:"Your user code.",`maxLength`:64}) `code`?: string;
     `right`?: post_account_api_ciba_b_application_json_right_h536;
-    @js(#{`description`:"Release your identity (GNAP)."}) `subject`?: "yes"
+    @js(#{`description`:"Release your identity (GNAP)."}) `subject`?: EmptyText | "yes"
   },
   `responses/200/content/application~1json/schema`: WithOkMessageGo,
   @js(#{

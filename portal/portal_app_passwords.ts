@@ -39,7 +39,6 @@ import InstanceSlot = require('../common/instance_slot');
 import credentials = require('../common/credentials');
 import appPasswords = require('../common/app_passwords');
 import accountSignals = require('../ssf/account_signals');
-import validation = require('../common/validation');
 import ModelZod = require('../common/model_zod');
 
 type Json = any;
@@ -48,9 +47,6 @@ type AccountAnswering<K extends keyof IyaApi.Account.Operations> =
   import('../types/account-api').AccountAnswering<K>;
 type AccountContext = import('../types/account-api').AccountContext;
 type AccountCaller = import('../types/account-api').AccountCaller;
-
-const vz = validation.z;
-const vt = validation.types;
 
 interface PortalAppPasswordsDeps {
   log: { debug(message: string): void; info(message: string): void };
@@ -72,8 +68,6 @@ interface Fresh {
  * person makes for the clients that cannot do a second factor (#101).
  */
 class PortalAppPasswords {
-  private form: Json = null;
-
   /**
    * Builds the module over its dependencies.
    *
@@ -98,36 +92,6 @@ class PortalAppPasswords {
       appPasswords: appPasswords,
       accountSignals: accountSignals
     };
-  }
-
-  // ONE CHECKBOX PER DOOR, EACH WITH ITS OWN NAME (`door_ldap`, ...): a form
-  // repeating one name would arrive as an array, and the schema says each
-  // door's box is a flag of its own.
-  /**
-   * The body's schema, built once from the door table.
-   *
-   * @returns the zod object
-   */
-  formSchema(): Json {
-    const { log, appPasswords } = this.deps;
-    log.debug("Entering PortalAppPasswords.formSchema().");
-    if (!this.form) {
-      const shape: Json = {
-        action: vt.opt(vt.oneOf(['create', 'revoke']))
-          .describe('`create` makes one; `revoke` ends the one `id` names.'),
-        name: vz.string().max(200).optional()
-          .describe('What the new password is for, in your words.'),
-        id: vz.string().max(8).regex(/^[A-Za-z2-7]*$/).optional()
-          .describe('The id of the app password to revoke.')
-      };
-      appPasswords.DOOR_IDS.forEach(function (door: string) {
-        shape['door_' + door] = vt.opt(vt.flag)
-          .describe('Accept the new password at the ' + door + ' door.');
-      });
-      this.form = vz.object(shape);
-    }
-    log.debug("Leaving PortalAppPasswords.formSchema().");
-    return this.form;
   }
 
   // THE PAGE'S VIEW: what the server-drawn page read while it drew — which
