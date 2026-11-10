@@ -47,6 +47,7 @@
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import validation = require('../common/validation');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -71,21 +72,9 @@ const PER_PAGE = 20;
 // line break and a NUL (`applications.js`) — so it is bounded by length and
 // checked against the person's own entry, which is the rule that matters.
 // `scope` is one RFC 6749 scope token.
-const WITHDRAW_FORM = vz.object({
-  action: vt.oneOf(['scope', 'application'])
-    .describe('`scope`: withdraw one scope. `application`: withdraw ' +
-              'everything one application holds.'),
-  client: vz.string().min(1).max(512)
-    .describe('The application\'s client_id.'),
-  scope: vz.string().max(1024).optional()
-    .describe('The scope, for `action=scope`.'),
-  page: vt.opt(vt.integer(1, 100000))
-    .describe('The page of the list the form was on.')
-});
+const WITHDRAW_FORM = ModelZod.body('account', 'withdrawConsent');
 
-const CONSENTS_QUERY = vz.object({
-  page: vt.opt(vt.integer(1, 100000))
-});
+const CONSENTS_QUERY = ModelZod.query('account', 'getConsents');
 
 /**
  * `/portal/consents`' account API operations: what the person has agreed

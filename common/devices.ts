@@ -199,6 +199,7 @@
 // ===========================================================================
 
 import ModelTables = require('./model_tables');
+import Classes = require('./domain_classes');
 import helpers = require('./helpers');
 import InstanceSlot = require('./instance_slot');
 import config = require('./config');
@@ -655,52 +656,73 @@ class Devices {
     }
   }
 
+  // The entry as the domain model says it means (#1390). The secret hash is
+  // named because the device record has always carried it for the Native SSO
+  // check; nothing else asks.
+  private static conceptOf(entry: Json): IyaDomain.Device {
+    helpers.log.debug("Entering Devices.conceptOf().");
+    const held = Classes.Device.fromEntry((entry && entry.attributes) || {},
+                                          { secrets: ['secretHash'] });
+    helpers.log.debug("Leaving Devices.conceptOf().");
+    return held;
+  }
+
+  // ONE ARGUMENT, ON PURPOSE: three callers hand this to `.map()`, which
+  // passes the index second, so an optional second parameter here would be
+  // handed a number for every row but the first.
   private static fromEntry(entry: Json): Device {
     helpers.log.debug("Entering Devices.fromEntry().");
+    const out = Devices.fromConcept(entry, Devices.conceptOf(entry));
+    helpers.log.debug("Leaving Devices.fromEntry().");
+    return out;
+  }
+
+  // ONE CONCEPT PER ENTRY: this runs for every device on every read of the
+  // register. A caller that wants a field of its own from the same entry
+  // makes the concept itself and hands it in.
+  private static fromConcept(entry: Json, d: IyaDomain.Device): Device {
+    helpers.log.debug("Entering Devices.fromConcept().");
     const a = (entry && entry.attributes) || {};
-    // A HOT PATH: once per attribute of every device on every read of the
-    // register, so no Entering/Leaving pair — it would drown the log.
-    const one = function (name: string): string {
-      return String((a[name] || [])[0] || '');
-    };
-    const keys = (a.stsdevicekey || []).map(Devices.parsed)
+    const keys = (d.key || []).map(Devices.parsed)
       .filter(function (k: Json) {
         return k && typeof k.id === 'string' && KEY_KINDS.indexOf(k.kind) >= 0;
       });
-    const enrolment = Devices.parsed(one('stsdeviceenrolment')) || {};
-    helpers.log.debug("Leaving Devices.fromEntry().");
+    const enrolment = Devices.parsed(d.enrolment) || {};
+    const compliance = d.compliance || '';
+    const riskLevel = d.riskLevel || '';
+    helpers.log.debug("Leaving Devices.fromConcept().");
     return {
-      id: one('cn'), dn: String(entry.dn || ''), owner: one('owner'),
+      id: d.identifier || '', dn: String(entry.dn || ''),
+      owner: d.owner || '',
       // Every entry #130 wrote was a Native SSO device of a PERSON and
       // carries neither attribute; that is what an absent one says.
-      ownerKind: one('stsdeviceownerkind') || 'person',
-      label: one('description'),
-      applications: (a.stsdeviceapplication || []).map(String),
+      ownerKind: d.ownerKind || 'person',
+      label: d.description || '',
+      applications: d.applications || [],
       keys: keys,
-      attestation: Devices.levelOf(keys,
-                                   !!Devices.parsed(one('stsdevicebrowser'))),
-      compliance: COMPLIANCE_STATES.indexOf(one('stsdevicecompliance')) >= 0
-        ? one('stsdevicecompliance') : 'unknown',
-      complianceChange: Devices.parsed(one('stsdevicecompliancechange')),
-      status: one('stsdevicestatus') === 'compromised' ? 'compromised'
-                                                       : 'active',
-      statusChange: Devices.parsed(one('stsdevicestatuschange')),
-      riskLevel: RISK_LEVELS.indexOf(one('stsdevicerisklevel')) >= 0
-        ? one('stsdevicerisklevel') : '',
-      riskChange: Devices.parsed(one('stsdeviceriskchange')),
-      platform: one('stsdeviceplatform'),
-      model: one('stsdevicemodel'),
-      os: one('stsdeviceos'),
+      attestation: Devices.levelOf(keys, !!Devices.parsed(d.browser)),
+      compliance: COMPLIANCE_STATES.indexOf(compliance) >= 0
+        ? compliance : 'unknown',
+      complianceChange: Devices.parsed(d.complianceChange),
+      status: d.status === 'compromised' ? 'compromised' : 'active',
+      statusChange: Devices.parsed(d.statusChange),
+      riskLevel: RISK_LEVELS.indexOf(riskLevel) >= 0 ? riskLevel : '',
+      riskChange: Devices.parsed(d.riskChange),
+      platform: d.platform || '',
+      model: d.model || '',
+      os: d.os || '',
       enrolment: {
         method: String(enrolment.method || 'native-sso'),
         at: String(enrolment.at || ''),
         actor: String(enrolment.actor || '')
       },
-      secretHash: one('stsdevicesecrethash'),
-      session: one('stsdevicesession'),
-      lastUsed: one('stsdevicelastused'),
-      created: one('createtimestamp'),
-      browser: Devices.parsed(one('stsdevicebrowser'))
+      secretHash: d.secretHash || '',
+      session: d.session || '',
+      lastUsed: d.lastUsed || '',
+      // The directory's own operational attribute, which this concept does
+      // not carry (#1390).
+      created: String((a.createtimestamp || [])[0] || ''),
+      browser: Devices.parsed(d.browser)
     };
   }
 
@@ -1681,17 +1703,17 @@ class Devices {
       return out;
     }
     out.available = true;
-    const marker = ANDROID_MARKER_ATTRIBUTE.toLowerCase();
     const holders: Json[] = await this.store('holdersAsync', 'device',
       'stsDeviceKey', ANDROID_READ_ATTRIBUTES) || [];
     out.holders = holders.length;
     for (let i = 0; i < holders.length; i += 1) {
       const holder = holders[i];
-      const read = Devices.fromEntry({ dn: holder.dn,
-                                       attributes: holder.attributes });
+      const concept = Devices.conceptOf(holder);
+      const read = Devices.fromConcept({ dn: holder.dn,
+                                         attributes: holder.attributes },
+                                       concept);
       const want = Devices.androidMarkerOf(read.keys);
-      const have = ((holder.attributes || {})[marker] || []).map(String)
-        .sort();
+      const have = (concept.androidKey || []).slice().sort();
       if (want.join('\n') !== have.join('\n')) {
         const fresh = this.byId(read.id);
         if (fresh && this.write(fresh)) {

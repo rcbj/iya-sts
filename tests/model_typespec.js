@@ -108,9 +108,9 @@ function roundTrips(t, tools, objects) {
 
 function federationLists(t, objects) {
   log.debug("Entering federationLists().");
-  // These lists are in the model, and the code validates against constants
-  // with finer structure than one row's `enum`. They are held equal here
-  // until a validator is generated from the model.
+  // The lists are written once, in the model, and the code reads them. A
+  // mechanism or policy has a row of behaviour in the code too, so each list
+  // is held to those rows: an id with no behaviour would fail at sign-in.
   const federation = require('../federation/federation');
   const object = objects.filter(function (one) {
     return one.id === 'federationRelationship';
@@ -124,6 +124,14 @@ function federationLists(t, objects) {
       federation.JOSE_CONTENT_ENCRYPTION),
     fedAuthnMechanism: federation.MECHANISM_IDS
   };
+  t.equal(federation.MECHANISMS.map(function (one) {
+    return one.mechanism;
+  }).join(','), federation.MECHANISM_IDS.join(','),
+  'every federation mechanism in the model has its row in the code');
+  t.equal(federation.SUBJECT_POLICIES.map(function (one) {
+    return one.policy;
+  }).join(','), federation.SUBJECT_POLICY_IDS.join(','),
+  'every subject policy in the model has its row in the code');
   Object.keys(expected).forEach(function (name) {
     const row = object.attributes.filter(function (one) {
       return one.name === name;
@@ -192,24 +200,6 @@ function columnsAreInTheModel(t, persistence) {
       one.table + '.' + one.column + ': the upgrade adds what the model has');
   });
   log.debug("Leaving columnsAreInTheModel().");
-}
-
-function overlayLinks(t, objects) {
-  log.debug("Entering overlayLinks().");
-  const ApplicationOverlay = require(
-    '../models/directory/application.overlay');
-  const application = objects.filter(function (one) {
-    return one.id === 'application';
-  })[0];
-  const key = function (link) {
-    return [link.name, link.to, link.cardinality, link.owns].join(' ');
-  };
-  t.equal(application.relationships.map(key).sort().join('\n'),
-    ApplicationOverlay.relationships.filter(function (link) {
-      return !link.incoming;
-    }).map(key).sort().join('\n'),
-    'the links in the TypeSpec are the links the overlay names');
-  log.debug("Leaving overlayLinks().");
 }
 
 function classesRun(t, objects, persistence) {
@@ -378,7 +368,6 @@ async function run(t) {
   const objects = tools.lib.readDirectory(program);
   const persistence = tools.lib.readPersistence(program);
   roundTrips(t, tools, objects);
-  overlayLinks(t, objects);
   federationLists(t, objects);
   policyFields(t, tools, objects);
   const PostgresImport = require('../common/postgres_import');

@@ -129,6 +129,7 @@
 // ---------------------------------------------------------------------------
 
 import app = require('../common/app');
+import ModelTables = require('../common/model_tables');
 // The error-code registry, a leaf. A refusal here is MARKED on the response for
 // the call log and never written into the JSON a caller receives.
 import errorCodes = require('../common/error_codes');
@@ -1204,18 +1205,7 @@ class AdminApi {
   declareImplicitParameters(routes: any[]): void {
     const { log } = this.deps;
     log.debug("Entering AdminApi.declareImplicitParameters().");
-    const implicit = [
-      { name: 'DPoP', in: 'header', required: false,
-        schema: { type: 'string' },
-        description: 'RFC 9449: the proof of possession for a DPoP-bound ' +
-                     'access token, as `Authorization: DPoP <token>` ' +
-                     'requires.' },
-      { name: 'cell', in: 'query', required: false,
-        schema: { type: 'string' },
-        description: 'The cell to answer this request, where this service ' +
-                     'runs as several. Ignored in a service that runs as ' +
-                     'one.' }
-    ];
+    const implicit = ModelTables.file('openapi.every.json').management;
     routes.forEach(function (entry) {
       const own = entry.parameters || [];
       entry.parameters = own.concat(implicit.filter(function (one) {
@@ -2088,12 +2078,7 @@ class AdminApi {
       (kind.extraActions || []).forEach(function (extra) {
         out.push({
           action: extra.action,
-          operationId: extra.operationId,
-          summary: extra.summary,
-          description: extra.description,
-          requestBodyRequired: true,
-          requestBody: extra.requestBody,
-          responseDescription: 'What was done, and the sentence saying so.'
+          operationId: extra.operationId
         });
       });
     });
@@ -2185,157 +2170,11 @@ class AdminApi {
     const noun = family.noun;
     const setField = { type: 'string', enum: family.sets.slice() };
     const rows = [
-      { action: 'add', operationId: family.ids.add,
-        summary: 'Add one ' + noun + ' to one set',
-        description: 'Every ' + family.carrier + ' of that kind issued from ' +
-                     'now on carries it; nothing already issued ' +
-                     'changes.\n\nADDITIVE ONLY. What the protocol puts in ' +
-                     'is never displaced — an ID Token\'s `sub`, a SAML 2.0 ' +
-                     'assertion\'s `name`, a WS-Federation assertion\'s ' +
-                     'whole identity claim list.' +
-                     (family.reserved
-                       ? ' A name this service sets itself is REFUSED rather ' +
-                         'than allowed to win, because every one of those is ' +
-                         'load-bearing — a settable `exp` would produce ' +
-                         'tokens that fail to verify with nothing pointing ' +
-                         'back at the call that caused it. `GET ' +
-                         '/admin-api/claims` lists the refused names.'
-                       : ' There is NO reserved list here: those names are ' +
-                         'load-bearing in a JWT, and an assertion attribute ' +
-                         'called `exp` collides with ' +
-                         'nothing. An entry with no ' +
-                         'name, and two entries of one name, are still ' +
-                         'refused.'),
-        requestBodyRequired: true,
-        requestBody: {
-          type: 'object',
-          properties: {
-            set: setField,
-            name: { type: 'string' },
-            value: { type: 'string',
-                     description: 'May carry a ${...} placeholder.' },
-            type: { type: 'string', enum: ['string', 'int64', 'uint64',
-                                           'boolean'],
-                    description: 'The Kerberos PAC set only (#493): the ' +
-                                 'PAC claim type. Defaults to string; ' +
-                                 'ignored by the other sets.' },
-            nameFormat: { type: 'string',
-                          description: 'The SAML 2.0 set only.' },
-            namespace: { type: 'string',
-                         description: 'The SAML 1.1 set only. Defaults to ' +
-                                      'the WS-Federation claim ' +
-                                      'namespace, which is ' +
-                                      'what every relying party already ' +
-                                      'reads.' }
-          },
-          required: ['set', 'name'],
-          examples: [{ set: family.example, name: 'dept',
-                       value: 'engineering' }],
-          additionalProperties: false
-        },
-        responseDescription: 'The set as it now stands, in `claims`.' },
-
-      { action: 'add-attribute-claim', operationId: family.ids.addAttribute,
-        summary: 'Add one ' + noun + ' carrying a directory attribute',
-        description: 'The ' + noun + '\'s value is `attribute` on the ' +
-                     'entry of the person the ' + family.carrier + ' is ' +
-                     'about (#94) — any attribute, where the directory-' +
-                     'attribute half of a set offers only the fixed ' +
-                     'catalogue, under the name given here. Only the ' +
-                     'directory, never an invented value: a person whose ' +
-                     'entry lacks it gets no such ' + noun + ', and a lower ' +
-                     'layer of the same name still answers. `multi` ' +
-                     'carries every value. A secret, a binary value or an ' +
-                     'attribute this service keeps (sts*, hoba*, app*, ' +
-                     'pwd*) is refused. Removed by `remove`, by name. The ' +
-                     'same reserved names are refused as for `add`, and a ' +
-                     'directory write that moves the attribute sends CAEP ' +
-                     'token-claims-change to holders of live tokens.',
-        requestBodyRequired: true,
-        requestBody: {
-          type: 'object',
-          properties: {
-            set: setField,
-            name: { type: 'string' },
-            attribute: { type: 'string',
-                         description: 'The directory attribute.' },
-            multi: { type: 'boolean',
-                     description: 'Every value rather than the first.' },
-            type: { type: 'string',
-                    enum: (family.attributeTypes ||
-                           ['string', 'number', 'boolean', 'json']).slice(),
-                    description: family.attributeTypes
-                      ? 'The PAC claim type each value becomes; a value ' +
-                        'that is not one leaves the claim out of the ticket.'
-                      : 'The JSON type of each value, in a JWT or ' +
-                        'UserInfo set. Ignored by the SAML sets.' },
-            nameFormat: { type: 'string',
-                          description: 'The SAML 2.0 set only.' },
-            namespace: { type: 'string',
-                         description: 'The SAML 1.1 set only.' }
-          },
-          required: ['set', 'name', 'attribute'],
-          examples: [{ set: family.example, name: 'cost_center',
-                       attribute: 'costCenter' }],
-          additionalProperties: false
-        },
-        responseDescription: 'The set as it now stands, in `claims`.' },
-
-      { action: 'remove', operationId: family.ids.remove,
-        summary: 'Remove one ' + noun + ' from one set',
-        description: 'By name. A name the set does not carry is refused ' +
-                     'rather than treated as already done, because the two ' +
-                     'are different facts and a caller that misspelt a name ' +
-                     'would otherwise be told it succeeded.',
-        requestBodyRequired: true,
-        requestBody: {
-          type: 'object',
-          properties: { set: setField, name: { type: 'string' } },
-          required: ['set', 'name'],
-          examples: [{ set: family.example, name: 'dept' }],
-          additionalProperties: false
-        },
-        responseDescription: 'The set as it now stands, in `claims`.' },
-
-      { action: 'clear', operationId: family.ids.clear,
-        summary: 'Empty one set',
-        description: 'Those ' + family.carrier + 's then carry only what the ' +
-                     'protocol puts in them.',
-        requestBodyRequired: true,
-        requestBody: {
-          type: 'object',
-          properties: { set: setField },
-          required: ['set'],
-          examples: [{ set: family.example }],
-          additionalProperties: false
-        },
-        responseDescription: 'An empty `claims`.' },
-
-      { action: 'replace', operationId: family.ids.replace,
-        summary: 'Set a whole ' + noun + ' set at once',
-        description: 'The array replaces whatever the set held. An EMPTY ' +
-                     'array is a legitimate call and clears it. Every entry ' +
-                     'is checked by the same rules `add` applies, and a ' +
-                     'single bad entry refuses the whole call — a partial ' +
-                     'replace would leave the set in a state nobody asked ' +
-                     'for.',
-        requestBodyRequired: true,
-        requestBody: {
-          type: 'object',
-          properties: {
-            set: setField,
-            claims: { type: 'array',
-                      items: { $ref: '#/components/schemas/ClaimEntry' } }
-          },
-          required: ['set', 'claims'],
-          examples: [{ set: family.example, claims: [
-            { name: 'dept', value: 'engineering' },
-            { name: 'on_behalf_of', value: family.placeholder }
-          ] }],
-          additionalProperties: false
-        },
-        responseDescription: 'The set as it now stands, in `claims`.' },
-
+      { action: 'add', operationId: family.ids.add },
+      { action: 'add-attribute-claim', operationId: family.ids.addAttribute },
+      { action: 'remove', operationId: family.ids.remove },
+      { action: 'clear', operationId: family.ids.clear },
+      { action: 'replace', operationId: family.ids.replace },
       // --- the directory-attribute half of a set ----------------------------
       //
       // Three operations rather than one with a mode, mirroring the console's
@@ -2343,114 +2182,9 @@ class AdminApi {
       // `attributes` array would otherwise be ambiguous between "clear it" and
       // "my HTTP client dropped an empty array", which is a real behaviour of
       // real clients and the kind of ambiguity that silently empties a set.
-      { action: 'attributes', operationId: family.ids.attributes,
-        summary: 'Set which LDAP attributes one set carries',
-        description: 'The array REPLACES the selection for that set. An ' +
-                     'attribute not in the array is removed, which is how ' +
-                     'removal is expressed — there is no per-attribute ' +
-                     'remove, because the console\'s control is a table of ' +
-                     'checkboxes and an API that removed differently would ' +
-                     'be a second model of the same state.\n\n' +
-                     (family.entryOnly
-                       ? 'A selected attribute becomes a STRING PAC claim ' +
-                         'named ad://ext/<attribute>:<hex>, carrying EVERY ' +
-                         'value on that person\'s entry under ou=users; an ' +
-                         'entry without it carries no claim — nothing is ' +
-                         'invented (#498). '
-                       : 'The value a ' +
-                     'selected attribute carries is the one on that ' +
-                     'person\'s entry under ou=users, or — where the entry ' +
-                     'has nothing — invented from their username, ' +
-                     'deterministically, so one username is one invented ' +
-                     'person across restarts. ') + 'Unlike POST ' +
-                     '/admin-api/credential-claims/select this does NOT ' +
-                     'sweep the directory: the credential page writes the ' +
-                     'attributes it needs onto every entry, and doing it ' +
-                     'from here as well would mean two pages racing to ' +
-                     'populate one directory. Selecting an attribute nobody ' +
-                     'has an entry value for still produces a ' + noun + '; ' +
-                     'it is generated, and `attributeReport` says so per ' +
-                     'claim.\n\nAn unknown attribute name refuses the WHOLE ' +
-                     'call rather than being skipped: the catalogue is ' +
-                     'fixed, so an unknown name is either a hand-written ' +
-                     'request that deserves an answer or a rename that left ' +
-                     'a caller behind. `attributeCatalogue` in the GET ' +
-                     'beside this is the list — and it is ' +
-                     'ONE catalogue for all four sets, so ' +
-                     'either GET answers it in full.\n\nA TYPED ' + noun + ' ' +
-                     'of the same name WINS over one of these, and THE ' +
-                     'PROTOCOL\'S OWN beats both — which is worth knowing ' +
-                     'before it is discovered on the wire. An ID Token ' +
-                     'always carries name, given_name, family_name, ' +
-                     'preferred_username and email built from the sign-in, ' +
-                     'so selecting cn, givenName, sn, uid or mail ON THAT ' +
-                     'SET changes nothing the client sees; the same five ' +
-                     'reach an access token from the directory, because the ' +
-                     'protocol sets none of them there. A SAML 2.0 assertion ' +
-                     'sets `name` the same way and a WS-Federation one sets ' +
-                     'the whole identity claim list. Both halves are ' +
-                     'reported by that same GET.',
-        requestBodyRequired: true,
-        requestBody: {
-          type: 'object',
-          properties: {
-            set: setField,
-            attributes: { type: 'array', items: { type: 'string' },
-                          description: 'LDAP attribute type names, from ' +
-                                       '`attributeCatalogue`. An EMPTY ' +
-                                       'array clears the selection — and so ' +
-                                       'does an ABSENT one, so a misspelt ' +
-                                       'field name empties the set rather ' +
-                                       'than being refused. The reply names ' +
-                                       'everything it `removed` and the ' +
-                                       'audit log keeps a row saying the ' +
-                                       'same, and `attributes-clear` is how ' +
-                                       'a caller that means it says so.' }
-          },
-          required: ['set', 'attributes'],
-          examples: [{ set: family.example,
-                       attributes: ['mail', 'departmentNumber', 'title'] }],
-          additionalProperties: false
-        },
-        responseDescription: 'What the set carries now, in `attributes`, ' +
-                             'with `added` and `removed`.' },
-
-      { action: 'attributes-all', operationId: family.ids.all,
-        summary: 'Put every catalogued attribute in one set',
-        description: 'Every attribute type in the catalogue, which is a ' +
-                     'legitimate thing to test and makes a large ' +
-                     family.carrier + '. It exists as its own operation so ' +
-                     'that "all of them" does not mean a caller constructing ' +
-                     'the whole list of names that has to be updated ' +
-                     'whenever the catalogue is.',
-        requestBodyRequired: true,
-        requestBody: {
-          type: 'object',
-          properties: { set: setField },
-          required: ['set'],
-          examples: [{ set: family.example }],
-          additionalProperties: false
-        },
-        responseDescription: 'The whole catalogue, in `attributes`.' },
-
-      { action: 'attributes-clear', operationId: family.ids.none,
-        summary: 'Take every directory attribute out of one set',
-        description: 'The TYPED ' + noun +
-                     's on that set are untouched — this ' +
-                     'is the other half. Clearing both takes this and ' +
-                     '`clear`.\n\nNothing is deleted from the directory: ' +
-                     'what was written onto an entry stays there, because an ' +
-                     'operator may have set it and nothing here has the ' +
-                     'standing to remove it.',
-        requestBodyRequired: true,
-        requestBody: {
-          type: 'object',
-          properties: { set: setField },
-          required: ['set'],
-          examples: [{ set: family.example }],
-          additionalProperties: false
-        },
-        responseDescription: 'An empty `attributes`, and what was `removed`.' }
+      { action: 'attributes', operationId: family.ids.attributes },
+      { action: 'attributes-all', operationId: family.ids.all },
+      { action: 'attributes-clear', operationId: family.ids.none }
     ];
     log.debug("Leaving AdminApi.claimSetActions(). " + rows.length +
               " action(s).");
@@ -2549,11 +2283,6 @@ class AdminApi {
       return { method: 'GET', path: BASE + row.path, tag: row.tag,
                operationId: row.operationId,
                mirrors: 'GET ' + row.console,
-               responseDescription: 'What the page says, and the settings it ' +
-                                    'draws — described rows carrying each ' +
-                                    'value\'s source and whether it can be ' +
-                                    'changed while the service runs.',
-               responseSchema: { $ref: '#/components/schemas/PageSettings' },
                handler: function (req, res) {
                  log.debug("Entering the management API " + row.console + " " +
                      "endpoint.");
@@ -3493,32 +3222,7 @@ class AdminApi {
           any {
           return {
             action: action,
-            operationId: action + 'Credential',
-            summary: action === 'suspend'
-              ? 'Suspend one issued credential (SUSPENDED)'
-              : action === 'reinstate'
-                ? 'Reinstate a suspended credential (VALID)'
-                : 'Revoke one issued credential (INVALID, final)',
-            description: 'Sets the status-list entry `idx` names, in this ' +
-                         'realm\'s Token Status List and Bitstring Status ' +
-                         'Lists at once. A credential that is not VALID is ' +
-                         'refused by every verifier reading the list and ' +
-                         'signs nobody in at `/authn/wallet`. `reinstate` ' +
-                         'applies to a SUSPENDED credential only; INVALID ' +
-                         'is final. A refusal is 400 with `errors`.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: {
-                idx: { type: 'integer', minimum: 0,
-                       description: 'The index, as GET /admin-api/vc-status ' +
-                                    'lists it.' }
-              },
-              required: ['idx'],
-              examples: [{ idx: 4711 }],
-              additionalProperties: false
-            },
-            responseDescription: 'The index and its new status.'
+            operationId: action + 'Credential'
           };
         }).concat([{
           // THE STATUS-LIST PUBLISH (#598), moved here from the VC API's
@@ -5955,7 +5659,6 @@ class AdminApi {
           { action: 'revoke', operationId: 'revokeAdminRole' }
         ] },
 
-
       // ---------------------------------------------------------------------
       // MULTI-FACTOR AUTHENTICATION (2026-09-10).
       //
@@ -7124,15 +6827,8 @@ class AdminApi {
              'Poll the partner now', 'RFC 8936, as the ssf.foreign-poll job ' +
              'does.']
           ].map(function (one: string[]) {
-            return { action: one[0], operationId: one[1], summary: one[2],
-                     description: one[3], requestBodyRequired: true,
-                     requestBody: { type: 'object',
-                       properties: { id: { type: 'string',
-                         description: 'The relationship.' } },
-                       required: ['id'], examples: [{ id: 'partner' }],
-                       additionalProperties: false },
-                     responseDescription: 'The relationship\'s Shared ' +
-                                          'Signals as they stand.' };
+            return { action: one[0], operationId: one[1]
+                      };
           }),
           { action: 'signals-set-status',
             operationId: 'setFederationSignalsStatus' },
@@ -7143,18 +6839,8 @@ class AdminApi {
                'Remove a subject from the stream at the partner',
                'SSF 1.0 section 8.1.3.3. Audited.']
           ].map(function (one: string[]) {
-            return { action: one[0], operationId: one[1], summary: one[2],
-                     description: one[3], requestBodyRequired: true,
-                     requestBody: { type: 'object', properties: {
-                       id: { type: 'string', description: 'The relationship.' },
-                       subject: { type: 'object', additionalProperties: true } },
-                       required: ['id', 'subject'],
-                       examples: [{ id: 'partner', subject: {
-                         format: 'iss_sub', iss: 'https://idp.example',
-                         sub: '248289761001' } }],
-                       additionalProperties: false },
-                     responseDescription: 'The relationship\'s Shared ' +
-                                          'Signals as they stand.' };
+            return { action: one[0], operationId: one[1]
+                      };
           }),
           { action: 'signals-unblock', operationId: 'unblockFederationSignals' },
 
@@ -10429,9 +10115,6 @@ class AdminApi {
         entry.parameters = (entry.parameters || []).filter(function (one) {
           return one.name !== 'format';
         });
-        entry.description = String(entry.description || '')
-          .split('\n\nWith `format=svg`')[0] + '\n\nThe drawing is the ' +
-          'console\'s: `GET ' + BASE + twin.path + '`.';
       }
       out.push(copy);
     });
@@ -10570,7 +10253,6 @@ class AdminApi {
       if (!entry.actions) {
         const row: any = { method: entry.method, path: entry.path,
                            operationId: entry.operationId,
-                           summary: entry.summary,
                            mirrors: entry.mirrors || '', kind: rowKind };
         // The pages whose console operation draws this one's data (#454).
         if (entry.drawnOn) {
@@ -10592,7 +10274,7 @@ class AdminApi {
       entry.actions.forEach(function (action) {
         out.push({ method: entry.method,
                    path: entry.route.replace(':action', action.action),
-                   operationId: action.operationId, summary: action.summary,
+                   operationId: action.operationId, 
                    mirrors: action.mirrors || entry.mirrors || '',
                    kind: rowKind });
       });

@@ -42,6 +42,7 @@ import InstanceSlot = require('../common/instance_slot');
 import core = require('../common/cert_enrollment');
 import monitor = require('../common/enrollment_monitor');
 import validation = require('../common/validation');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -390,14 +391,14 @@ class PortalCertificates {
     log.debug("Entering PortalCertificates.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/certificates',
-        operationId: 'getCertificates', access: 'person', query: vz.object({}),
+        operationId: 'getCertificates', access: 'person', query: ModelZod.query('account', 'getCertificates'),
         handler: function (req: Json, res: Json,
                            caller: AccountCaller): unknown {
           return ctx.json(res, 200, self.view(ctx, caller,
                                               ctx.baseUrlOf(req), null));
         } },
       { method: 'POST', path: ctx.BASE + '/certificates',
-        operationId: 'changeCertificates', access: 'person', recentAuth: true, body: self.formSchema(),
+        operationId: 'changeCertificates', access: 'person', recentAuth: true, body: ModelZod.body('account', 'changeCertificates'),
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.act(ctx, req, res, caller, input.body);

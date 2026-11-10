@@ -55,6 +55,7 @@ import totp = require('../common/totp');
 import mode = require('../common/mode');
 import backupCodes = require('../common/backup_codes');
 import validation = require('../common/validation');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -64,34 +65,7 @@ type AccountCaller = import('../types/account-api').AccountCaller;
 const vz = validation.z;
 const vt = validation.types;
 
-const MFA_FORM = vz.object({
-  action: vt.opt(vt.oneOf(['start', 'confirm', 'remove',
-                          // The recovery codes, since 2026-09-11.
-                          'generate-codes', 'confirm-codes',
-                          'discard-codes',
-                          // #64: the emailed second factor, on and off.
-                          'email-factor-on', 'email-factor-off']))
-    .describe('The step: `start` an authenticator app, `confirm` it with a ' +
-              'code, `remove` it; `generate-codes`, `confirm-codes` or ' +
-              '`discard-codes` a set of recovery codes; ' +
-              '`email-factor-on` or `email-factor-off`.'),
-  // #64: which emailed factor, for `email-factor-on`.
-  kind: vt.opt(vt.oneOf(['code', 'link']))
-    .describe('For `email-factor-on`: a mailed `code` or a sign-in `link`.'),
-  // A STRING AND NOT AN INTEGER. `007123` is a code and 7123 is not: parsing
-  // a one-time password as a number loses the leading zeros that one code in
-  // ten has. The digit count is checked in `common/totp.ts`, where the
-  // person's own enrolment says what it should be.
-  code: vz.string().max(32).optional()
-    .describe('For `confirm`: the code the app shows.'),
-  // THE PENDING SET'S HANDLE (2026-09-11), which the Confirm and Throw-away
-  // forms carry back: a handle rather than the username, so that two tabs
-  // cannot confirm each other's set; opaque, so nothing here validates more
-  // than its length.
-  handle: vz.string().max(128).optional()
-    .describe('For `confirm-codes` and `discard-codes`: the pending set\'s ' +
-              'handle, from `generate-codes`\'s answer.')
-});
+const MFA_FORM = ModelZod.body('account', 'changeMfa');
 
 interface AccountMfaDeps {
   log: typeof helpers.log;
@@ -575,7 +549,7 @@ class AccountMfa {
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/mfa', operationId: 'getMfa',
         access: 'person',
-        query: vz.object({}),
+        query: ModelZod.query('account', 'getMfa'),
         handler: function (req: Json, res: Json,
                            caller: AccountCaller): unknown {
           return self.view(ctx, caller, ctx.baseUrlOf(req))

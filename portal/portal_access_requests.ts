@@ -32,6 +32,7 @@
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import validation = require('../common/validation');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -48,12 +49,7 @@ interface PortalAccessRequestsDeps {
 }
 
 // The answer to one request: which, and how.
-const DECIDE_FORM = vz.object({
-  request: vz.string().min(1).max(128).regex(/^[A-Za-z0-9_-]+$/)
-    .describe('The access request, from the list.'),
-  action: vt.oneOf(['approve', 'deny'])
-    .describe('approve or deny.')
-});
+const DECIDE_FORM = ModelZod.body('account', 'decideAccessRequest');
 
 /**
  * `/portal/access-requests`'s account API operations: the AuthZEN access

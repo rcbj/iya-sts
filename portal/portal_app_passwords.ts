@@ -40,6 +40,7 @@ import credentials = require('../common/credentials');
 import appPasswords = require('../common/app_passwords');
 import accountSignals = require('../ssf/account_signals');
 import validation = require('../common/validation');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -303,13 +304,13 @@ class PortalAppPasswords {
     log.debug("Entering PortalAppPasswords.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/app-passwords',
-        operationId: 'getAppPasswords', access: 'person', query: vz.object({}),
+        operationId: 'getAppPasswords', access: 'person', query: ModelZod.query('account', 'getAppPasswords'),
         handler: function (req: Json, res: Json,
                            caller: AccountCaller): unknown {
           return ctx.json(res, 200, self.view(caller.username, null));
         } },
       { method: 'POST', path: ctx.BASE + '/app-passwords',
-        operationId: 'changeAppPasswords', access: 'person', recentAuth: true, body: self.formSchema(),
+        operationId: 'changeAppPasswords', access: 'person', recentAuth: true, body: ModelZod.body('account', 'changeAppPasswords'),
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.act(ctx, req, res, caller, input.body);

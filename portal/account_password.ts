@@ -35,6 +35,7 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import credentials = require('../common/credentials');
 import validation = require('../common/validation');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -45,13 +46,7 @@ const vz = validation.z;
 
 // The three fields, each optional here because the handler says which one
 // is missing in a sentence rather than as a schema refusal.
-const PASSWORD_FORM = vz.object({
-  current: vz.string().max(1024).optional()
-    .describe('Your current password: a change re-proves it.'),
-  next: vz.string().max(1024).optional().describe('The new password.'),
-  confirm: vz.string().max(1024).optional()
-    .describe('The new password again.')
-});
+const PASSWORD_FORM = ModelZod.body('account', 'changePassword');
 
 interface AccountPasswordDeps {
   log: typeof helpers.log;
@@ -212,7 +207,7 @@ class AccountPassword {
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/password',
         operationId: 'getPassword', access: 'person',
-        query: vz.object({}),
+        query: ModelZod.query('account', 'getPassword'),
         handler: function (req: Json, res: Json,
                            caller: AccountCaller): unknown {
           return ctx.json(res, 200, self.view(caller.username));

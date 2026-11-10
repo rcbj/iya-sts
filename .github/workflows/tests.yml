@@ -298,6 +298,21 @@ jobs:
   # project is iya-sts-coverage, which is what keeps the two runs from reaching
   # each other's containers even when they land on one machine.
   # ---------------------------------------------------------------------------
+  # WHAT A CALLER RELIES ON HAS NOT GONE (#1390). Compares the OpenAPI documents
+  # the model generates here with the ones generated from the target branch. A
+  # pull request labelled `api-breaking` says the break is intended.
+  openapi-breaking:
+    if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'api-breaking')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - name: Fail on a breaking change to a published API
+        run: tests/tools/oasdiff-gate.sh "origin/${{ github.base_ref }}"
+
   coverage:
     needs: mirror
     runs-on: ubuntu-latest

@@ -69,5 +69,5 @@ model XacmlPolicy {
   @attr(#{
     what: "When the owning application was deleted. The policy is kept, disabled, for audit, until an administrator removes it."
   })
-  xacmlOrphanedAt?: unknown;
+  xacmlOrphanedAt?: DirectoryTime;
 }

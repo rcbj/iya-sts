@@ -84,6 +84,7 @@ import errorCodes = require('../common/error_codes');
 import stsCrypto = require('../common/crypto');
 import cacheRegistry = require('../common/cache_registry');
 import InstanceSlot = require('../common/instance_slot');
+import Classes = require('../common/domain_classes');
 import kcrypto = require('./krb5_crypto');
 // The vendored PAC codec (#430 Phase 2), for SID filtering: it requires only
 // the rest of the codec, which the KDC already loads.
@@ -541,17 +542,6 @@ class Krb5Trusts {
     return attributes;
   }
 
-  private firstValue(attributes: Json, name: string): string {
-    this.deps.log.debug("Entering Krb5Trusts.firstValue().");
-    const found = attributes[name] !== undefined ? attributes[name] :
-                  attributes[name.toLowerCase()];
-    this.deps.log.debug("Leaving Krb5Trusts.firstValue().");
-    return Array.isArray(found) ? String(found[0] === undefined ? '' :
-                                         found[0])
-                                : (found === undefined || found === null ?
-                                   '' : String(found));
-  }
-
   // The record and its opened secrets, or null for an entry that is not one
   // (said once per realm and partner, STS-KRB-0224). `stamp` is a digest of
   // the two stored values, so a cached principal is rebuilt the moment
@@ -559,9 +549,14 @@ class Krb5Trusts {
   private readEntry(stored: Json): Json | null {
     const { log, errorCodes, stsCrypto, realms } = this.deps;
     log.debug("Entering Krb5Trusts.readEntry().");
-    const attributes = (stored && stored.attributes) || {};
-    const data = this.firstValue(attributes, 'stsKrb5TrustData');
-    const keys = this.firstValue(attributes, 'stsKrb5TrustKeys');
+    // The record and its keys as the domain model reads them (#1390). The
+    // keys are the concept's secret, named here because this is the read
+    // that opens them; both forms of an entry, the directory's arrays and
+    // the in-process map's plain values, come out the same.
+    const trust = Classes.KerberosTrust.fromEntry(
+      (stored && stored.attributes) || {}, { secrets: ['keys'] });
+    const data = trust.data || '';
+    const keys = trust.keys || '';
     let record: Json = null;
     let secrets: Json = null;
     let why = '';

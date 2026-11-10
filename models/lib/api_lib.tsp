@@ -17,3 +17,4 @@ extern dec endpoint(target: Operation, path: valueof string,
 extern dec js(target: unknown, extras: valueof unknown);
 extern dec hoisted(target: unknown);
 extern dec component(target: unknown);
+extern dec projects(target: unknown, concept: valueof string);

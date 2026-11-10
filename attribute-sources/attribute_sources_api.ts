@@ -181,13 +181,6 @@ class AttributeSourcesApi {
     const ROUTES = [
       { method: 'GET', path: BASE + '/attribute-sources',
         tag: 'Directory', operationId: 'getAttributeSources',
-        summary: 'The SQL databases this realm reads people\'s attributes ' +
-                 'from (#94)',
-        description: 'Everything /admin/attribute-sources draws: each ' +
-          'source (its database, the row it reads, the columns it writes ' +
-          'onto which attributes, when it reads and what a failure does) ' +
-          'with its status, and the rules a definition is held to. Never a ' +
-          'password.',
         mirrors: 'GET /admin/attribute-sources',
         parameters: [
           { name: 'sourcesPage', in: 'query', required: false,
@@ -198,15 +191,6 @@ class AttributeSourcesApi {
             schema: { type: 'integer', minimum: 1, examples: [10] },
             description: 'Rows per page. Capped, like every list here.' }
         ],
-        responseDescription: 'The register.',
-        responseSchema: { type: 'object', additionalProperties: true,
-                          description: '`sources` (one page, with ' +
-                                       '`sourcesPaging`), `dialects`, ' +
-                                       '`modes`, ' +
-                                       '`hostPatterns`, `refused`, and ' +
-                                       '`settings` — the page\'s settings ' +
-                                       'block, as every page that owns ' +
-                                       'settings answers it.' },
         handler: function (req: Req, res: Res): void {
           log.debug("Entering the management API attribute sources " +
                     "endpoint.");
@@ -247,87 +231,13 @@ class AttributeSourcesApi {
           });
         },
         actions: [
-          { action: 'add-source', operationId: 'addAttributeSource',
-            summary: 'Add an attribute source',
-            description: 'A database this realm reads people\'s attributes ' +
-              'from. Refused for an attribute another source writes, one ' +
-              'no outside source may write, a host ' +
-              'attributeSources.hostPatterns does not allow, or a name ' +
-              'that is not an identifier. Audited.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object', properties: SOURCE_PROPERTIES,
-              required: ['id', 'dialect', 'host', 'database', 'user',
-                         'table', 'keyColumn', 'columns'],
-              examples: [{ id: 'hr-db', dialect: 'postgres',
-                           host: 'db.example.com', database: 'hr',
-                           user: 'iya_reader', passwordProvider: 'vault',
-                           passwordRef: 'secret/hr-db',
-                           table: 'people', keyColumn: 'login',
-                           keyAttribute: 'uid',
-                           columns: { cost_center: 'costCenter',
-                                      grade: 'employeeType' },
-                           refresh: ['sign-in', 'schedule'] }],
-              additionalProperties: false
-            },
-            responseDescription: 'The source as stored.' },
-          { action: 'update-source', operationId: 'updateAttributeSource',
-            summary: 'Change an attribute source',
-            description: 'The members given replace the source\'s; the rest ' +
-              'are kept. Checked as add-source is. Audited.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object', properties: SOURCE_PROPERTIES,
-              required: ['id'],
-              examples: [{ id: 'hr-db', onFailure: 'refuse' }],
-              additionalProperties: false
-            },
-            responseDescription: 'The source as stored.' },
-          { action: 'remove-source', operationId: 'removeAttributeSource',
-            summary: 'Remove an attribute source',
-            description: 'It leaves the register; what it wrote on people\'s ' +
-              'entries stays. Audited.',
-            requestBodyRequired: true,
-            requestBody: idOnly,
-            responseDescription: 'What was removed.' },
-          { action: 'test-source', operationId: 'testAttributeSource',
-            summary: 'Connect to a source and read one row, writing nothing',
-            description: 'Reads the row for a person (by `username`, whose ' +
-              'key attribute is used) or for a `key` given outright, and ' +
-              'returns it. Nothing is written.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: { id: SOURCE_PROPERTIES.id,
-                            username: { type: 'string', maxLength: 256 },
-                            key: { type: 'string', maxLength: 1024 } },
-              required: ['id'],
-              examples: [{ id: 'hr-db', username: 'alice' }],
-              additionalProperties: false
-            },
-            responseDescription: '`found` and the `row`.' },
-          { action: 'refresh-source', operationId: 'refreshAttributeSource',
-            summary: 'Read every person from a source now',
-            description: 'Queues the scheduled refresh for this source, ' +
-              'which reads the realm\'s people a page at a time. Audited.',
-            requestBodyRequired: true,
-            requestBody: idOnly,
-            responseDescription: 'The scheduler run, in `runId`.' },
+          { action: 'add-source', operationId: 'addAttributeSource' },
+          { action: 'update-source', operationId: 'updateAttributeSource' },
+          { action: 'remove-source', operationId: 'removeAttributeSource' },
+          { action: 'test-source', operationId: 'testAttributeSource' },
+          { action: 'refresh-source', operationId: 'refreshAttributeSource' },
           { action: 'refresh-person',
-            operationId: 'refreshAttributeSourcePerson',
-            summary: 'Read one person from the sources now',
-            description: 'From every source that allows on-demand, or the ' +
-              'one named by `id`. Audited.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: { username: { type: 'string', maxLength: 256 },
-                            id: SOURCE_PROPERTIES.id },
-              required: ['username'],
-              examples: [{ username: 'alice' }],
-              additionalProperties: false
-            },
-            responseDescription: 'What changed, and which sources failed.' }
+            operationId: 'refreshAttributeSourcePerson' }
         ] }
     ];
     log.debug("Leaving AttributeSourcesApi.buildRoutes().");

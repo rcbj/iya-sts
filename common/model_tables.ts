@@ -101,6 +101,20 @@ class ModelTables {
   }
 
   /**
+   * What an object states about itself beyond its rows: its key, its filing
+   * name, the closed lists its module reads.
+   *
+   * @param id - the object id
+   * @returns the facts, empty when it states none
+   */
+  static facts(id: string): any {
+    log.debug("Entering ModelTables.facts().");
+    const facts = ModelTables.file('directory.facts.json')[id] || {};
+    log.debug("Leaving ModelTables.facts().");
+    return facts;
+  }
+
+  /**
    * Every reference between directory objects.
    *
    * @returns one row per link

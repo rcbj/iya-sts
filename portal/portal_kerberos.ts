@@ -53,6 +53,7 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import credentials = require('../common/credentials');
 import validation = require('../common/validation');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -62,13 +63,7 @@ type AccountCaller = import('../types/account-api').AccountCaller;
 const vz = validation.z;
 const vt = validation.types;
 
-const KEYTAB_FORM = vz.object({
-  action: vt.opt(vt.oneOf(['keytab']))
-    .describe('`keytab`, the one thing this page does.'),
-  current: vz.string().max(1024).optional()
-    .describe('Your password: the keytab is derived from it, and it ' +
-              're-proves you.')
-});
+const KEYTAB_FORM = ModelZod.body('account', 'makeKeytab');
 
 interface PortalKerberosDeps {
   log: { debug(message: string): void; info(message: string): void };
@@ -248,7 +243,7 @@ class PortalKerberos {
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/kerberos',
         operationId: 'getKerberos', access: 'person',
-        query: vz.object({}),
+        query: ModelZod.query('account', 'getKerberos'),
         handler: function (req: Json, res: Json,
                            caller: AccountCaller): unknown {
           return ctx.json(res, 200, self.view(caller.username, null));

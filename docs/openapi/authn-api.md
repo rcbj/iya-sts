@@ -6544,7 +6544,7 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | `login_hint` | ``, or string |  |  |
 | `mfa` | ``, or string |  |  |
 | `siop` | ``, or one of `1` |  |  |
-| `wallet` | ``, or string |  |  |
+| `wallet` | ``, or string, uri |  |  |
 
 **200**: The answer.
 

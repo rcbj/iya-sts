@@ -105,6 +105,7 @@
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import validation = require('../common/validation');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -142,19 +143,9 @@ const MODES = ['cross-device', 'deferred'];
 // and `web_portal_kit.ts`'s `pageNav()` draws the control.
 const PER_PAGE = 20;
 
-const PAGE_FIELD = vt.opt(vt.integer(1, 100000))
-  .describe('Which page of `issued`, newest first. Clamped to the last.');
+const PAGE_QUERY = ModelZod.query('account', 'getOfferableCredentials');
 
-const PAGE_QUERY = vz.object({ page: PAGE_FIELD });
-
-const REMOVE_FORM = vz.object({
-  id: vz.string().min(1).max(64)
-    .describe('An issuance\'s `id`, from `issued` in ' +
-              '`GET /account-api/credentials/offerable`, which removes ' +
-              'every copy of it; or one copy\'s, from its `copies`, which ' +
-              'removes that copy alone.'),
-  page: PAGE_FIELD
-});
+const REMOVE_FORM = ModelZod.body('account', 'removeIssuedCredential');
 
 // The states a credential in the history can be in (`vc_issued.ts`).
 const STATES = ['valid', 'suspended', 'revoked', 'removed', 'signed-out',
@@ -208,20 +199,7 @@ const ALG_NOTES: Json = {
                'W3C Data Integrity BBS Cryptosuites v1.0']
 };
 
-const OFFER_FORM = vz.object({
-  configuration: vz.string().min(1).max(validation.CAP.SCOPE)
-    .describe('The `credential_configuration_id` to offer, one of ' +
-              '`GET /account-api/credentials/offerable`\'s.'),
-  mode: vt.oneOf(MODES)
-    .describe('`cross-device` (Appendix H.2: issued as soon as the wallet ' +
-              'asks) or `deferred` (H.3: the credential endpoint answers ' +
-              'a `transaction_id` first).'),
-  signingAlg: vz.string().max(64).optional()
-    .describe('The algorithm the credential is signed with, one of the ' +
-              'configuration\'s `signingAlgs`; left out or empty, the ' +
-              'configured `oid4vci.credentialSigningAlgorithm`.'),
-  page: PAGE_FIELD
-});
+const OFFER_FORM = ModelZod.body('account', 'createCredentialOffer');
 
 // The answer's shape, documented.
 

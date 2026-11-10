@@ -170,23 +170,6 @@ class ScepApi {
     const ROUTES = [
       { method: 'GET', path: BASE + '/scep', tag: 'SCEP',
         operationId: 'getScep',
-        summary: 'The SCEP server: endpoints, Issuing CA, RA certificate, ' +
-                 'profiles, challenges, host names, certificates, settings',
-        description: 'Everything /admin/scep draws, out of the same view ' +
-                     'function: the absolute endpoint URLs of this realm\'s ' +
-                     'SCEP server (RFC 8894) and GetCACaps\' capabilities; ' +
-                     'the SCEP Issuing CA and whether the hierarchy is ' +
-                     'built; the RA certificate (subject, serial, key ' +
-                     'algorithm, expiry, status — never its private key); ' +
-                     'the nine profiles with what each needs, whether ' +
-                     'scep.allowedProfiles allows it and its SCEP URL, and ' +
-                     'the five refused with why; the challenge passwords ' +
-                     '(paged, `credentialsPage`; ids and status, never a ' +
-                     'secret); the registered host names; the certificates ' +
-                     'issued over SCEP (paged, `certificatesPage`); the ' +
-                     'documented exceptions; the mode; and the ' +
-                     '`scep.*` settings, which are written through POST ' +
-                     '/admin-api/config/set-many.',
         mirrors: 'GET /admin/cert-issuance',
         parameters: [
           { name: 'per', in: 'query', required: false,
@@ -200,9 +183,6 @@ class ScepApi {
             schema: { type: 'integer', minimum: 1, examples: [1] },
             description: 'The page of the challenge passwords.' }
         ],
-        responseDescription: 'The SCEP server as the page draws it.',
-        responseSchema: this.openObject('The SCEP server of this realm, as ' +
-                                        '/admin/scep draws it.'),
         handler: function (req, res) {
           log.debug("Entering the management API SCEP endpoint.");
           const model = loadScepConsole();
@@ -219,16 +199,6 @@ class ScepApi {
 
       { method: 'GET', path: BASE + '/scep/monitor', tag: 'SCEP',
         operationId: 'getScepMonitor',
-        summary: 'What the SCEP server has done: requests, issuances, ' +
-                 'refusals by failInfo and by error code',
-        description: 'Everything /admin/scep/monitor draws: the counters ' +
-                     'since the process started, per trust realm and added ' +
-                     'across processes — requests, issued, refused, revoked, ' +
-                     'challenges created; counts by operation (PKIOperation ' +
-                     'by messageType), ' +
-                     'by RFC 8894 failInfo, by STS error code, by profile ' +
-                     'and by principal; and the recent requests (paged). No ' +
-                     'reset: the durable record is GET /admin-api/audit.',
         mirrors: 'GET /admin/scep/monitor',
         parameters: [
           { name: 'per', in: 'query', required: false,
@@ -239,10 +209,6 @@ class ScepApi {
             schema: { type: 'integer', minimum: 1, examples: [1] },
             description: 'The page of the recent requests.' }
         ],
-        responseDescription: 'The counters and the recent requests.',
-        responseSchema:
-          this.openObject('What the SCEP server has done in this realm, as ' +
-                                        '/admin/scep/monitor draws it.'),
         handler: function (req, res) {
           log.debug("Entering the management API SCEP monitor endpoint.");
           const model = loadScepConsole();
@@ -286,117 +252,12 @@ class ScepApi {
             });
         },
         actions: [
-          { action: 'create-challenge', operationId: 'createScepChallenge',
-            summary: 'Create a single-use SCEP challenge password for one ' +
-                     'entry and one profile',
-            description: 'The challenge authorizes ONE enrollment, AS the ' +
-                         'entry it names, for the profile it names (the ' +
-                         'default profile when none is given). **It is in ' +
-                         'this reply once and never again**: the entry keeps ' +
-                         'only its SHA-256. The reply also ' +
-                         'carries the SCEP URL for its ' +
-                         'profile and a ready-to-paste `sscep` sequence.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: Object.assign({}, ENTRY_PROPERTIES, {
-                profile: { type: 'string', maxLength: 64,
-                           description:
-                             'One of the nine enrollment profiles.' },
-                lifetimeS: { type: 'integer', minimum: 60, maximum: 2592000,
-                             description: 'Seconds it may wait, at most ' +
-                                          'scep.challengeLifetimeS.' }
-              }),
-              required: ['kind', 'identifier'],
-              examples: [{ kind: 'person', identifier: 'no-such-person-example',
-                           profile: 'tls-client' }],
-              additionalProperties: false
-            },
-            responseDescription: 'The challenge, once, with its URL.' },
-          { action: 'delete-challenge', operationId: 'deleteScepChallenge',
-            summary: 'Delete a SCEP challenge password',
-            description: 'The challenge stops being redeemable. A ' +
-                         'certificate already issued with it is untouched.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: { id: { type: 'string', maxLength: 600,
-                                  description: 'The challenge id, from GET ' +
-                                               '/admin-api/scep.' } },
-              required: ['id'],
-              examples: [{ id: 'scep-p-bm9ib2R5-0000000000000000' }],
-              additionalProperties: false
-            },
-            responseDescription: 'The id that was deleted.' },
-          { action: 'reissue-ra', operationId: 'reissueScepRa',
-            summary: 'Re-issue the SCEP RA certificate',
-            description: 'A new RSA key pair (scep.raKeyAlgorithm) certified ' +
-                         'by the SCEP Issuing CA; the certificate it ' +
-                         'replaces is put on that CA\'s CRL as superseded. ' +
-                         'Clients encrypting to the old one are answered ' +
-                         'badMessageCheck until they fetch GetCACert again.',
-            requestBodyRequired: false,
-            requestBody: {
-              type: 'object', properties: {}, examples: [{}],
-              additionalProperties: false
-            },
-            responseDescription: 'The RA certificate as it now stands.' },
-          { action: 'revoke-certificate', operationId: 'revokeScepCertificate',
-            summary: 'Revoke a certificate issued over SCEP',
-            description: 'Puts the serial on the SCEP Issuing CA\'s CRL and ' +
-                         'OCSP with the RFC 5280 reason given, and marks the ' +
-                         'record on the entry revoked.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: {
-                serial: { type: 'string', maxLength: 128,
-                          description: 'The serial, hexadecimal.' },
-                reason: { type: 'string',
-                          enum: ['unspecified', 'keyCompromise',
-                                 'affiliationChanged', 'superseded',
-                                 'cessationOfOperation', 'privilegeWithdrawn'],
-                          description: 'The RFC 5280 reason.' }
-              },
-              required: ['serial'],
-              examples: [{ serial: '0badc0de', reason: 'keyCompromise' }],
-              additionalProperties: false
-            },
-            responseDescription: 'The serial and the reason.' },
-          { action: 'add-host-name', operationId: 'addScepHostName',
-            summary: 'Register a DNS name or IP address on an entry',
-            description:
-              'A dNSName or iPAddress is issued over any enrollment ' +
-                         'protocol only when it is registered on the entry.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: Object.assign({}, ENTRY_PROPERTIES, {
-                hostName: { type: 'string', maxLength: 253,
-                            description: 'A DNS name or an IP address.' }
-              }),
-              required: ['kind', 'identifier', 'hostName'],
-              examples: [{ kind: 'person', identifier: 'no-such-person-example',
-                           hostName: 'device.example.com' }],
-              additionalProperties: false
-            },
-            responseDescription: 'The entry\'s host names now.' },
-          { action: 'remove-host-name', operationId: 'removeScepHostName',
-            summary: 'Remove a registered host name from an entry',
-            description: 'Certificates already issued for it are untouched.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: Object.assign({}, ENTRY_PROPERTIES, {
-                hostName: { type: 'string', maxLength: 253,
-                            description: 'A DNS name or an IP address.' }
-              }),
-              required: ['kind', 'identifier', 'hostName'],
-              examples: [{ kind: 'person', identifier: 'no-such-person-example',
-                           hostName: 'device.example.com' }],
-              additionalProperties: false
-            },
-            responseDescription: 'The entry\'s host names now.' }
+          { action: 'create-challenge', operationId: 'createScepChallenge' },
+          { action: 'delete-challenge', operationId: 'deleteScepChallenge' },
+          { action: 'reissue-ra', operationId: 'reissueScepRa' },
+          { action: 'revoke-certificate', operationId: 'revokeScepCertificate' },
+          { action: 'add-host-name', operationId: 'addScepHostName' },
+          { action: 'remove-host-name', operationId: 'removeScepHostName' }
         ] }
     ];
     log.debug("Leaving ScepApi.buildRoutes().");

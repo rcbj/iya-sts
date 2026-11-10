@@ -39,6 +39,7 @@
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import validation = require('../common/validation');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -70,17 +71,9 @@ const DAYS = 30;
 // rows whatever the person has.
 const PER_PAGE = 20;
 
-const PAGE_QUERY = vz.object({
-  page: vt.opt(vt.integer(1, 100000))
-    .describe('Which page of `rows`, newest first. Clamped to the last.')
-});
+const PAGE_QUERY = ModelZod.query('account', 'getSignIns');
 
-const ANSWER_FORM = vz.object({
-  action: vt.oneOf(['confirm', 'deny'])
-    .describe('`confirm`: this was me. `deny`: this was not me.'),
-  assessment: vz.string().min(1).max(200)
-    .describe('The assessment\'s id, from the list.')
-});
+const ANSWER_FORM = ModelZod.body('account', 'answerSignIn');
 
 /**
  * `/portal/sign-ins`' account API operations: the person's recent sign-ins

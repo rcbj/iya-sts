@@ -160,11 +160,19 @@ function sectionA(t, rows) {
   t.equal(actions.map(function (one) {
     return one.action;
   }).join(','), 'save,remove-logo', 'A3. the two acts');
+  // What an act takes is the model's (#1390): read from the document.
+  const paths = require('../mgmt-api/admin_api_spec').AdminApiSpec.merged()
+    .paths;
+  const bodyOf = function (one) {
+    const op = paths[rows[2].route.replace(':action', one.action)];
+    return op && op.post && op.post.requestBody &&
+      op.post.requestBody.content['application/json'].schema;
+  };
   t.check(actions.every(function (one) {
-    return one.requestBody && Array.isArray(one.requestBody.examples) &&
-      one.requestBody.examples.length === 1;
+    const body = bodyOf(one);
+    return body && Array.isArray(body.examples) && body.examples.length === 1;
   }), 'A4. each act carries one example for the operations walk');
-  t.equal(Object.keys(actions[0].requestBody.properties).join(','),
+  t.equal(Object.keys(bodyOf(actions[0]).properties).join(','),
           brandingApi.SAVED_KEYS.join(','),
           'A5. the save schema names exactly the settings a save takes');
   t.check(rows[1].handlerOwnsBody === true &&

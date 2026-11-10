@@ -171,14 +171,6 @@ class SecretDestinationsApi {
     const ROUTES = [
       { method: 'GET', path: BASE + '/secret-destinations',
         tag: 'Directory', operationId: 'getSecretDestinations',
-        summary: 'Where this realm pushes service accounts\' rotated ' +
-                 'passwords (#221)',
-        description: 'Everything Directory → Secret destinations draws: ' +
-          'each destination (an application entry declared for the ' +
-          'secret-destination family) with its provider, payload, ' +
-          'location, whether a write credential is set, and whether it is ' +
-          'usable and why not; the providers and payloads offered, and ' +
-          'what each provider\'s credential is. NEVER a credential.',
         mirrors: 'GET /admin/secret-destinations',
         parameters: [
           { name: 'q', in: 'query', required: false,
@@ -195,13 +187,6 @@ class SecretDestinationsApi {
             schema: { type: 'integer', minimum: 1, examples: [10] },
             description: 'Rows per page. Capped, like every list here.' }
         ],
-        responseDescription: 'The register.',
-        responseSchema: { type: 'object', additionalProperties: true,
-                          description: '`destinations` (one page, with ' +
-                                       '`destinationsPaging`; `matched` ' +
-                                       'with `q`), `providers`, ' +
-                                       '`payloads`, `credentialShapes`, ' +
-                                       '`fileAllowed`, `family`.' },
         handler: function (req: Req, res: Res): void {
           log.debug("Entering the management API secret destinations " +
                     "endpoint.");
@@ -264,90 +249,12 @@ class SecretDestinationsApi {
           });
         },
         actions: [
-          { action: 'add-destination', operationId: 'addSecretDestination',
-            summary: 'Add a secret push destination',
-            description: 'Creates an application entry declared for the ' +
-              'secret-destination family, with its location and its write ' +
-              'credential (sealed, write-only). Refused for an unknown ' +
-              'provider or payload, a missing location, a credential that ' +
-              'is not its provider\'s shape, a plain http address, or a ' +
-              'file in product mode. Audited, without the credential.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: {
-                identifier: PROPS.identifier, name: PROPS.name,
-                provider: PROPS.provider, payload: PROPS.payload,
-                region: PROPS.region, project: PROPS.project,
-                endpoint: PROPS.endpoint, mount: PROPS.mount,
-                field: PROPS.field, directory: PROPS.directory,
-                caCertificates: PROPS.caCertificates,
-                credential: PROPS.credential },
-              required: ['identifier', 'provider'],
-              examples: [{ identifier: 'vault-prod', name: 'Production Vault',
-                           provider: 'vault', payload: 'json',
-                           endpoint: 'https://vault.example.com:8200',
-                           mount: 'secret', credential: '<a token>' }],
-              additionalProperties: false
-            },
-            responseDescription: 'The destination as the register now ' +
-                                 'answers it.' },
+          { action: 'add-destination', operationId: 'addSecretDestination' },
           { action: 'update-destination',
-            operationId: 'updateSecretDestination',
-            summary: 'Change a secret push destination',
-            description: 'The members given replace the destination\'s; the ' +
-              'rest are kept, the credential included when none is given. ' +
-              'Checked as add-destination is. Audited, without the ' +
-              'credential.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: {
-                id: PROPS.id, name: PROPS.name,
-                provider: PROPS.provider, payload: PROPS.payload,
-                region: PROPS.region, project: PROPS.project,
-                endpoint: PROPS.endpoint, mount: PROPS.mount,
-                field: PROPS.field, directory: PROPS.directory,
-                caCertificates: PROPS.caCertificates,
-                credential: PROPS.credential },
-              required: ['id'],
-              examples: [{ id: 'vault-prod', payload: 'password' }],
-              additionalProperties: false
-            },
-            responseDescription: 'The destination as the register now ' +
-                                 'answers it.' },
+            operationId: 'updateSecretDestination' },
           { action: 'remove-destination',
-            operationId: 'removeSecretDestination',
-            summary: 'Remove a secret push destination',
-            description: 'Deletes its application entry, credential and ' +
-              'all. Nothing at the secrets manager changes. Audited.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object', properties: { id: PROPS.id },
-              required: ['id'], examples: [{ id: 'vault-prod' }],
-              additionalProperties: false
-            },
-            responseDescription: 'What was removed.' },
-          { action: 'test-push', operationId: 'testSecretDestination',
-            summary: 'Write a canary version to a test secret',
-            description: 'Writes a random password nobody uses, as the ' +
-              'destination\'s payload, to `secretName` — which must already ' +
-              'exist and must be kept for testing: a secret a service ' +
-              'account\'s rotation writes is refused. Proves the ' +
-              'credential, the address and the secret. Audited.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: { id: PROPS.id,
-                            secretName: { type: 'string', minLength: 1,
-                                          maxLength: 512,
-                                          description: 'The test secret.' } },
-              required: ['id', 'secretName'],
-              examples: [{ id: 'vault-prod', secretName: 'sts-push-canary' }],
-              additionalProperties: false
-            },
-            responseDescription: '`ok` and the `version` the store ' +
-                                 'answered, or a coded refusal.' }
+            operationId: 'removeSecretDestination' },
+          { action: 'test-push', operationId: 'testSecretDestination' }
         ] }
     ];
     log.debug("Leaving SecretDestinationsApi.buildRoutes().");

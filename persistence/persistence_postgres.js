@@ -746,78 +746,10 @@ const SCHEMA_RELOPTIONS = ['names', 'mails', 'uuids', 'values',
  * statement }`, probed in `information_schema.columns` and added where
  * missing.
  */
-const SCHEMA_COLUMNS = [
-  { table: 'sts_realms', column: 'domain', statement:
-  'ALTER TABLE sts_realms ADD COLUMN IF NOT EXISTS domain text' },
-  // When the realm's removal began (#262, schema version 10), or NULL.
-  { table: 'sts_realms', column: 'retiring_at', statement:
-  'ALTER TABLE sts_realms ADD COLUMN IF NOT EXISTS retiring_at bigint' },
-  // What the person said about a sign-in (#62 P6, schema version 9).
-  { table: 'sts_risk_assessments', column: 'feedback', statement:
-  'ALTER TABLE sts_risk_assessments ADD COLUMN IF NOT EXISTS feedback text ' +
-  'NOT NULL DEFAULT \'\'' },
-  { table: 'sts_risk_assessments', column: 'feedback_at', statement:
-  'ALTER TABLE sts_risk_assessments ADD COLUMN IF NOT EXISTS feedback_at ' +
-  'bigint NOT NULL DEFAULT 0' },
-  // A minted row's own expiry (#333, schema version 12). An existing row gets
-  // NULL — no expiry — and so falls under the write-age rule once, which is
-  // the whole of the migration.
-  { table: 'sts_minted', column: 'expires_at', statement:
-  'ALTER TABLE sts_minted ADD COLUMN IF NOT EXISTS expires_at bigint' },
-  // A minted row's name, sealed, beside its digest in `key` (#222, schema
-  // version 14). An existing row gets '' — its key is its name, as before.
-  { table: 'sts_minted', column: 'key_sealed', statement:
-  'ALTER TABLE sts_minted ADD COLUMN IF NOT EXISTS key_sealed text NOT ' +
-  'NULL DEFAULT \'\'' },
-  // A minted index row's sort value (#820, schema version 25). Nullable
-  // with no default, so adding it rewrites nothing: every existing index
-  // row reads NULL, which is what every row but a sort row holds anyway.
-  { table: 'sts_minted_index', column: 'sort_at', statement:
-  'ALTER TABLE sts_minted_index ADD COLUMN IF NOT EXISTS sort_at bigint' },
-  // The directory's six generated lookup columns (#349, schema version 13).
-  // Adding a STORED generated column rewrites the table once and fills every
-  // existing row, which is the whole of the migration.
-  { table: 'sts_ldap_entries', column: 'parent_key', statement:
-  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
-  LDAP_GENERATED.parent_key },
-  { table: 'sts_ldap_entries', column: 'rdn_value', statement:
-  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
-  LDAP_GENERATED.rdn_value },
-  { table: 'sts_ldap_entries', column: 'name_keys', statement:
-  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
-  LDAP_GENERATED.name_keys },
-  { table: 'sts_ldap_entries', column: 'mail_keys', statement:
-  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
-  LDAP_GENERATED.mail_keys },
-  { table: 'sts_ldap_entries', column: 'uuid_keys', statement:
-  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
-  LDAP_GENERATED.uuid_keys },
-  { table: 'sts_ldap_entries', column: 'class_keys', statement:
-  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
-  LDAP_GENERATED.class_keys },
-  { table: 'sts_ldap_entries', column: 'value_keys', statement:
-  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
-  LDAP_GENERATED.value_keys },
-  { table: 'sts_ldap_entries', column: 'attr_names', statement:
-  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
-  LDAP_GENERATED.attr_names },
-  // The data keys an entry holds values under (#623, schema version 17).
-  // Nullable and with no default, so adding it rewrites nothing: every
-  // existing row reads NULL — keys not known — until `indexSealed()` reaches
-  // it or the entry is next written.
-  { table: 'sts_ldap_entries', column: 'dek_keys', statement:
-  'ALTER TABLE sts_ldap_entries ADD COLUMN IF NOT EXISTS ' +
-  LDAP_GENERATED.dek_keys },
-  // The counters' shard (#630, schema version 19). An existing row gets 0:
-  // what it held is shard 0's, and the sums are unchanged. The key that
-  // takes it in is SCHEMA_UPGRADES' (`*_shard_key`).
-  { table: 'sts_ldap_counts', column: 'shard', statement:
-  'ALTER TABLE sts_ldap_counts ADD COLUMN IF NOT EXISTS shard smallint NOT ' +
-  'NULL DEFAULT 0' },
-  { table: 'sts_ldap_dek_counts', column: 'shard', statement:
-  'ALTER TABLE sts_ldap_dek_counts ADD COLUMN IF NOT EXISTS shard smallint ' +
-  'NOT NULL DEFAULT 0' }
-];
+// Written in models/persistence/persistence.tsp: a column marked `added` was
+// put on a table after the table first shipped, so an existing database is
+// given it here (#1390).
+const SCHEMA_COLUMNS = ModelTables.file('persistence.postgres.json').added;
 
 // ---------------------------------------------------------------------------
 // WHAT A STORE BUILT BY AN EARLIER VERSION NEEDS DONE TO IT BEYOND A MISSING

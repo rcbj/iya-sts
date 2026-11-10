@@ -107,6 +107,7 @@
 
 // The one place this service hashes (#453).
 import ModelTables = require('../common/model_tables');
+import DomainClasses = require('../common/domain_classes');
 import crypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
@@ -446,40 +447,11 @@ class PepRegistry {
   }
 
   // -------------------------------------------------------------------------
-  // READING. `attributeReader()` is `xacml_store.ts`'s, and it is written out
-  // again here rather than exported from there for one reason: this module
-  // depends on that one for the repository CONTENT the sync token is computed
-  // over and for nothing else. Both are eight lines and both exist because
-  // LDAP attribute names come back LOWER-CASED (RFC 4512), which cost a boot
-  // in phase two — `xacml/CLAUDE.md` records it as the first of four silent
-  // defects.
+  // READING. `all()` reads an entry through its concept (#1390), which finds
+  // an attribute in any case: LDAP attribute names come back LOWER-CASED
+  // (RFC 4512), which cost a boot in phase two — `xacml/CLAUDE.md` records it
+  // as the first of four silent defects.
   // -------------------------------------------------------------------------
-  private attributeReader(attributes: object):
-      (name: string) => string | null {
-    const { log } = this.deps;
-    log.debug("Entering PepRegistry.attributeReader().");
-    const lowered: Record<string, unknown> = {};
-    Object.keys(attributes || {}).forEach(function (key) {
-      lowered[key.toLowerCase()] = attributes[key];
-    });
-    log.debug("Leaving PepRegistry.attributeReader().");
-    const self = this;
-    return function (name) {
-      return self.one(lowered[String(name).toLowerCase()]);
-    };
-  }
-
-  private one(value: unknown): string | null {
-    const { log } = this.deps;
-    log.debug("Entering PepRegistry.one().");
-    if (Array.isArray(value)) {
-      log.debug("Leaving PepRegistry.one().");
-      return value.length ? String(value[0]) : null;
-    }
-    log.debug("Leaving PepRegistry.one().");
-    return value === undefined || value === null ? null : String(value);
-  }
-
   private number(value: unknown): number {
     const { log } = this.deps;
     log.debug("Entering PepRegistry.number().");
@@ -567,7 +539,6 @@ class PepRegistry {
    * @returns the rows; empty when there is no directory
    */
   all(): PepRow[] {
-    const self = this;
     const { log } = this.deps;
     log.debug('Entering PepRegistry.all().');
     if (!this.haveDirectory()) {
@@ -578,32 +549,33 @@ class PepRegistry {
     const now = Date.now();
     const stale = this.staleAfterS() * 1000;
     const rows = directory.allPeps().map(function (entry): PepRow {
-      const at = self.attributeReader(entry.attributes);
-      const lastSeen = at('xacmlPepLastSeen') || '';
+      const pep = DomainClasses.XacmlPep.fromEntry(entry.attributes);
+      const lastSeen = pep.lastSeen || '';
       const seenAt = lastSeen ? Date.parse(lastSeen) : NaN;
-      const token = at('xacmlPepSyncToken') || '';
+      const token = pep.syncToken || '';
       return {
         name: entry.name,
         dn: entry.dn,
-        identity: at('xacmlPepIdentity') || '',
-        certificateSubject: at('xacmlPepCertificateSubject') || '',
-        thumbprint: at('xacmlPepThumbprint') || '',
-        authenticated: at('xacmlPepAuthenticated') === 'TRUE',
-        notifyUrl: at('xacmlPepNotifyUrl') || '',
-        bias: at('xacmlPepBias') || '',
-        resource: at('xacmlPepResource') || '',
-        description: at('description') || '',
-        version: at('xacmlPepVersion') || '',
-        enabled: at('xacmlPepEnabled') !== 'FALSE',
-        registeredAt: at('xacmlPepRegisteredAt') || '',
+        identity: pep.identity || '',
+        certificateSubject: pep.certificateSubject || '',
+        thumbprint: pep.thumbprint || '',
+        authenticated: pep.authenticated === true,
+        notifyUrl: pep.notifyUrl || '',
+        bias: pep.bias || '',
+        resource: pep.resource || '',
+        description: (pep.description || [])[0] || '',
+        version: pep.version || '',
+        // A missing mark is not FALSE: only one that says so disables it.
+        enabled: pep.enabled !== false,
+        registeredAt: pep.registeredAt || '',
         lastSeen: lastSeen,
         syncToken: token,
-        policyCount: self.number(at('xacmlPepPolicyCount')),
-        decisions: self.number(at('xacmlPepDecisions')),
-        allowed: self.number(at('xacmlPepAllowed')),
-        refused: self.number(at('xacmlPepRefused')),
-        undischargeable: self.number(at('xacmlPepUndischargeable')),
-        lastNotify: at('xacmlPepLastNotify') || '',
+        policyCount: pep.policyCount || 0,
+        decisions: pep.decisions || 0,
+        allowed: pep.allowed || 0,
+        refused: pep.refused || 0,
+        undischargeable: pep.undischargeable || 0,
+        lastNotify: pep.lastNotify || '',
         // DERIVED, not stored, and both of them for the same reason: a
         // stored "current" would be a second copy of a comparison, and it
         // would be wrong the moment somebody edited a policy without this row

@@ -186,14 +186,6 @@ class ClaimsProvidersApi {
     const ROUTES = [
       { method: 'GET', path: BASE + '/claim-providers',
         tag: 'OAuth 2.0 / OIDC', operationId: 'getClaimProviders',
-        summary: 'The Claims Providers this realm aggregates claims from, ' +
-                 'and every person\'s link (OIDC Core 5.6.2)',
-        description: 'Everything /admin/claim-providers draws: each ' +
-          'registered provider (issuer, endpoints, client, the claims it ' +
-          'supplies, aggregated or distributed, whether a secret is held), ' +
-          'the redirect URI to register at a provider, and every link a ' +
-          'person made (their subject there, when, the token\'s expiry, ' +
-          'whether it is stale). Never a secret or a token.',
         mirrors: 'GET /admin/claim-providers',
         parameters: [
           { name: 'providersPage', in: 'query', required: false,
@@ -212,13 +204,6 @@ class ClaimsProvidersApi {
             schema: { type: 'integer', minimum: 1, examples: [10] },
             description: 'Rows per page of each list, capped.' }
         ],
-        responseDescription: 'The register and the links.',
-        responseSchema: { type: 'object', additionalProperties: true,
-                          description: '`providers` and `links`, one page ' +
-                            'of each (`paging.providers`, `paging.links`); ' +
-                            '`counts`, both lists whole; `matched.links`, ' +
-                            'the links `linkq` matched; `filter`; ' +
-                            '`redirectUri`.' },
         handler: function (req: Req, res: Res): void {
           log.debug("Entering the management API claim providers endpoint.");
           const json = self.pagedView(req.query || {});
@@ -259,62 +244,10 @@ class ClaimsProvidersApi {
           });
         },
         actions: [
-          { action: 'add-provider', operationId: 'addClaimProvider',
-            summary: 'Register a Claims Provider',
-            description: 'A provider this realm aggregates claims from. ' +
-              '`discover` fills the endpoints left empty from the issuer\'s ' +
-              'discovery document; the secret is sealed. Audited.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object', properties: PROVIDER_PROPERTIES,
-              required: ['id', 'issuer', 'clientId', 'claims'],
-              examples: [{ id: 'bank', issuer: 'https://bank.example',
-                           discover: true, clientId: 'iya-sts',
-                           clientSecret: 's3cret', claims: ['credit_score'],
-                           delivery: 'aggregated' }],
-              additionalProperties: false
-            },
-            responseDescription: 'What was registered.' },
-          { action: 'update-provider', operationId: 'updateClaimProvider',
-            summary: 'Change a Claims Provider',
-            description: 'The members given replace the provider\'s; the ' +
-              'secret is kept unless one is given. Audited.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object', properties: PROVIDER_PROPERTIES,
-              required: ['id'],
-              examples: [{ id: 'bank', delivery: 'distributed' }],
-              additionalProperties: false
-            },
-            responseDescription: 'What changed.' },
-          { action: 'remove-provider', operationId: 'removeClaimProvider',
-            summary: 'Remove a Claims Provider',
-            description: 'It leaves the register; people\'s links to it stay ' +
-              'on their entries and are never used. Audited.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: { id: PROVIDER_PROPERTIES.id },
-              required: ['id'], examples: [{ id: 'bank' }],
-              additionalProperties: false
-            },
-            responseDescription: 'What was removed.' },
-          { action: 'revoke-link', operationId: 'revokeClaimSourceLink',
-            summary: 'Revoke a person\'s link to a Claims Provider',
-            description: 'Their tokens at that provider are removed from ' +
-              'their entry, so its claims are no longer sent. Audited.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: {
-                username: { type: 'string', maxLength: 256 },
-                provider: PROVIDER_PROPERTIES.id
-              },
-              required: ['username', 'provider'],
-              examples: [{ username: 'alice', provider: 'bank' }],
-              additionalProperties: false
-            },
-            responseDescription: 'What was revoked.' }
+          { action: 'add-provider', operationId: 'addClaimProvider' },
+          { action: 'update-provider', operationId: 'updateClaimProvider' },
+          { action: 'remove-provider', operationId: 'removeClaimProvider' },
+          { action: 'revoke-link', operationId: 'revokeClaimSourceLink' }
         ] }
     ];
     log.debug("Leaving ClaimsProvidersApi.buildRoutes().");

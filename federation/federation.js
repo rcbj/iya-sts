@@ -166,6 +166,9 @@
 // ===========================================================================
 
 const ModelTables = require('../common/model_tables');
+
+// Closed lists written once, in models/directory/federation_relationship.tsp.
+const LISTS = ModelTables.facts('federationRelationship').lists;
 const config = require('./../common/config');
 const { log, nowSec, randomId } = require('./../common/helpers');
 // The release index below is per trust realm. A LEAF requiring only `config`,
@@ -554,9 +557,7 @@ const MECHANISMS = [
 /**
  * The mechanism names, in `MECHANISMS` order.
  */
-const MECHANISM_IDS = MECHANISMS.map(function (one) {
-  return one.mechanism;
-});
+const MECHANISM_IDS = LISTS.mechanisms;
 
 // ---------------------------------------------------------------------------
 // WHICH PEOPLE A PARTNER MAY ASSERT (#109, 2026-09-22): `fedSubjectPolicy`'s
@@ -595,9 +596,7 @@ const SUBJECT_POLICIES = [
 /**
  * The subject policy names, in `SUBJECT_POLICIES` order.
  */
-const SUBJECT_POLICY_IDS = SUBJECT_POLICIES.map(function (one) {
-  return one.policy;
-});
+const SUBJECT_POLICY_IDS = LISTS.subjectPolicies;
 
 /**
  * The subject policy an empty `fedSubjectPolicy` means.
@@ -881,30 +880,28 @@ const ENCRYPTING_PROTOCOLS = ['saml2', 'wsfed', 'oidc'];
  * The post-quantum key types, for an OpenID Connect relationship only
  * (#82).
  */
-const JOSE_ONLY_KEY_TYPES = ['x-wing', 'ml-kem-768'];
+const JOSE_ONLY_KEY_TYPES = LISTS.joseOnlyKeyTypes;
 /**
  * The encryption key types a relationship may hold.
  */
-const ENCRYPTION_KEY_TYPES = ['rsa-3072', 'ec-p256'].concat(
+const ENCRYPTION_KEY_TYPES = LISTS.classicalKeyTypes.concat(
   JOSE_ONLY_KEY_TYPES);
 /**
  * The XML Encryption key-management algorithms a relationship may accept.
  */
-const XML_KEY_MANAGEMENT = ['rsa-oaep', 'ecdh-es'];
+const XML_KEY_MANAGEMENT = LISTS.xmlKeyManagement;
 /**
  * The JWE key-management algorithms a relationship may accept.
  */
-const JOSE_KEY_MANAGEMENT = ['RSA-OAEP-256', 'RSA-OAEP', 'ECDH-ES',
-                             'ECDH-ES+A128KW', 'ECDH-ES+A256KW',
-                             'HPKE-10-KE', 'ML-KEM-768'];
+const JOSE_KEY_MANAGEMENT = LISTS.joseKeyManagement;
 /**
  * The XML Encryption content-encryption algorithms a relationship may accept.
  */
-const XML_CONTENT_ENCRYPTION = ['aes256-gcm', 'aes128-gcm'];
+const XML_CONTENT_ENCRYPTION = LISTS.xmlContentEncryption;
 /**
  * The JWE content-encryption algorithms a relationship may accept.
  */
-const JOSE_CONTENT_ENCRYPTION = ['A256GCM', 'A128GCM'];
+const JOSE_CONTENT_ENCRYPTION = LISTS.joseContentEncryption;
 /**
  * The encryption algorithms refused in every mode: AES-CBC and
  * RSAES-PKCS1-v1_5, in either family.

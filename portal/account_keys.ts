@@ -64,6 +64,7 @@ import validation = require('../common/validation');
 import passkeyPolicy = require('../common/passkey_policy');
 import webauthnPolicy = require('../authn/webauthn_policy');
 import authn = require('../authn/authn');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -76,64 +77,23 @@ const vt = validation.types;
 // `/portal/keys`' query: nothing since 2026-10-28 (rcbj). #470's `named`,
 // the passkey just registered whose nickname form the page opened, went
 // with that prompt; a `?named=` still on a bookmarked address is ignored.
-const KEYS_QUERY = vz.object({});
+const KEYS_QUERY = ModelZod.query('account', 'getKeys');
 
 // ENROLLING ONE (2026-09-10). `credential` is the browser's ceremony result
 // as JSON — a string here and parsed in the handler, exactly as `authn.ts`'s
 // WEBAUTHN_FORM carries it, because what is inside it is decided by the
 // WebAuthn verifier and a schema here would be a second opinion about an
 // object this file does not own.
-const ENROL_KEY_FORM = vz.object({
-  action: vt.opt(vt.oneOf(['begin', 'finish', 'cancel']))
-    .describe('`begin` mints a challenge, `finish` answers it, `cancel` ' +
-              'drops it.'),
-  // IGNORED SINCE #1135: a passkey carries no role, so the person is never
-  // asked whether it replaces their password or follows it — the realm
-  // decides how every key may be used, at the sign-in. The field is still
-  // ACCEPTED, because a caller written before #1135 (the parent project's
-  // vendored protocol jobs among them) sends it, and refusing it would break
-  // an enrolment over a question nobody asks any more.
-  role: vt.opt(vt.oneOf(['primary', 'mfa']))
-    .describe('Ignored since #1135: a passkey carries no role.'),
-  // WHICH CALL TO ACTION WAS PRESSED (#470): *Create a passkey* or *Use a
-  // security key*. A passkey takes its provider's name and is renamed
-  // afterwards.
-  kind: vt.opt(vt.oneOf(['passkey', 'security-key']))
-    .describe('`begin`: which call to action was pressed.'),
-  // THE LANE (#643): a classical passkey or a post-quantum one, where the
-  // realm offers both. Carried on the pending enrolment, never read back.
-  lane: vt.opt(vt.oneOf(['classical', 'pqc']))
-    .describe('`begin`: `classical` (the default) or `pqc`, where the realm ' +
-              'offers a post-quantum passkey beside a classical one.'),
-  // THE CLASSICAL RETRY (#944): after an ML-DSA-first registration failed
-  // on the device, a `begin` with the classical algorithms only. Refused
-  // where the realm forbids a classical passkey (STS-AUTHN-0420).
-  algorithms: vt.opt(vt.oneOf(['classical']))
-    .describe('`begin`: `classical` retries with the classical algorithms ' +
-              'only, where `enrol.pending.fallback.classical` says the ' +
-              'realm allows it.'),
-  enrolment_id: vt.opt(vt.base64url)
-    .describe('`finish`: the pending enrolment the ceremony answers.'),
-  credential: vz.string().max(validation.CAP.TEXT).optional()
-    .describe('`finish`: the browser\'s ceremony result, as JSON.')
-});
+const ENROL_KEY_FORM = ModelZod.body('account', 'enrolKey');
 
 // A WebAuthn credential id is base64url, and it names a key on the CALLER's
 // own entry, checked against that entry.
-const REMOVE_KEY_FORM = vz.object({
-  credentialId: vt.opt(vt.base64url)
-    .describe('One of your own passkeys.')
-});
+const REMOVE_KEY_FORM = ModelZod.body('account', 'removeKey');
 
 // RENAMING ONE (#470). The name's rules (at most 60 characters, no control
 // characters, empty restores the default) are `credentials.renameKey()`'s,
 // the one writer.
-const RENAME_KEY_FORM = vz.object({
-  credentialId: vt.opt(vt.base64url)
-    .describe('One of your own passkeys.'),
-  label: vz.string().max(200).optional()
-    .describe('Its new name; empty puts the default back.')
-});
+const RENAME_KEY_FORM = ModelZod.body('account', 'renameKey');
 
 interface AccountKeysDeps {
   log: typeof helpers.log;

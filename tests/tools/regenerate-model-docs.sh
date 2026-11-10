@@ -12,6 +12,8 @@
 #   postgres/schema.sql
 #   mariadb/schema.sql
 #   types/domain.generated.d.ts
+#   types/api.generated.d.ts
+#   common/domain_classes.ts
 #   docs/data-model-directory.md
 #   docs/data-model-persistence.md
 #
@@ -30,15 +32,20 @@ docker run --rm --label com.docker.compose.project=none \
   -v "${PWD}/postgres:/out/postgres" \
   -v "${PWD}/mariadb:/out/mariadb" \
   -v "${PWD}/types:/out/types" \
+  -v "${PWD}/common:/out/common" \
   "${TAG}" bash -c \
   "node common/model_emit.js --docs && \
    cp docs/data-model-directory.md docs/data-model-persistence.md /out/docs/ && \
    cp models/generated/schema.sql /out/postgres/schema.sql && \
    cp models/generated/mariadb.schema.sql /out/mariadb/schema.sql && \
    cp models/generated/domain.d.ts /out/types/domain.generated.d.ts && \
+   cp models/generated/api.d.ts /out/types/api.generated.d.ts && \
+   cp models/generated/domain_classes.txt /out/common/domain_classes.ts && \
    chown $(id -u):$(id -g) \
      /out/docs/data-model-directory.md \
      /out/docs/data-model-persistence.md \
      /out/postgres/schema.sql \
      /out/mariadb/schema.sql \
-     /out/types/domain.generated.d.ts"
+     /out/types/domain.generated.d.ts \
+     /out/types/api.generated.d.ts \
+     /out/common/domain_classes.ts"

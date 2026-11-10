@@ -121,23 +121,6 @@ class UmaApi {
     const ROUTES = [
       { method: 'GET', path: BASE + '/uma', tag: 'UMA',
         operationId: 'getUma',
-        summary: 'UMA 2.0: resource servers, resources, tickets, RPTs, ' +
-                 'pending approvals, an owner, the what-if, settings',
-        description: 'Everything /admin/uma draws: whether UMA answers in ' +
-          'this realm, its endpoints, the applications declared for uma ' +
-          'with umaOwnsResources and the delegated permission grant a PAT ' +
-          'needs, the registered resources (paged, `resourcesPage`; ' +
-          'filtered by `resourceServer` and `owner`), the live permission ' +
-          'tickets (`ticketsPage`, by the first characters of a hash, never ' +
-          'the ticket), the live RPTs (`rptsPage`), the requests waiting for ' +
-          'an owner (`pendingPage`), the UMA PEP\'s counts, and the uma.* ' +
-          'settings, written through POST /admin-api/config/set-many. ' +
-          '`?owner=<username or application>` adds that owner\'s resources, ' +
-          'document and waiting requests; an application\'s owner asking ' +
-          'about it is answered with that alone. `?resource=&scope=` ' +
-          '(with `party` and `client`) adds the what-if: every layer\'s ' +
-          'answer for that permission, asked as a dry run that is neither ' +
-          'audited nor counted.',
         mirrors: 'GET /admin/uma',
         parameters: [
           { name: 'resourceServer', in: 'query', required: false,
@@ -177,9 +160,6 @@ class UmaApi {
             schema: { type: 'integer', minimum: 1 },
             description: 'Which page of `pending` to return.' }
         ],
-        responseDescription: '`enabled`, `endpoints`, `resourceServers`, ' +
-          '`resources`, `tickets`, `rpts`, `pending`, `owner`, `whatIf`, ' +
-          '`monitor`, `actions`, `settings`.',
         handler: function (req: Req, res: Res): void {
           log.debug("Entering the management API UMA endpoint.");
           self.sendJson(res, 200, loadConsole().view(req));
@@ -187,14 +167,7 @@ class UmaApi {
         } },
       { method: 'GET', path: BASE + '/uma/monitor', tag: 'UMA',
         operationId: 'getUmaMonitor',
-        summary: 'The UMA PEP\'s counts and what each resource server holds',
-        description: 'The uma row of /admin/xacml/monitor (decisions, ' +
-          'allowed, refused, since the process started) and, per resource ' +
-          'server, its resources, live tickets, live RPTs and waiting ' +
-          'requests. Per trust realm, and with no reset: the durable record ' +
-          'is GET /admin-api/audit.',
         mirrors: 'GET /admin/uma#uma-tab-servers',
-        responseDescription: '`pep`, `resourceServers`, `totals`.',
         handler: function (req: Req, res: Res): void {
           log.debug("Entering the management API UMA monitor endpoint.");
           self.sendJson(res, 200, loadConsole().monitorView());
@@ -231,156 +204,17 @@ class UmaApi {
         },
         actions: [
           { action: 'enable-resource-server',
-            operationId: 'enableUmaResourceServer',
-            summary: 'Make an application a UMA resource server',
-            description: 'Adds uma to the application\'s appAllowedProtocol ' +
-              'and the delegated permission grant of ' +
-              'urn:sts:uma-protection-api:uma_protection, which a PAT ' +
-              'needs. A value already there is left. Audited.',
-            requestBodyRequired: true,
-            requestBody: { type: 'object',
-              properties: { application: APPLICATION },
-              required: ['application'],
-              examples: [{ application: 'photos-api' }],
-              additionalProperties: false },
-            responseDescription: 'The application, and whether it changed.' },
+            operationId: 'enableUmaResourceServer' },
           { action: 'disable-resource-server',
-            operationId: 'disableUmaResourceServer',
-            summary: 'Stop an application being a UMA resource server',
-            description: 'Takes uma and the uma_protection grant off the ' +
-              'application, and revokes every live RPT issued for it. Its ' +
-              'registered resources stay, unreachable, until it is enabled ' +
-              'again or they are deleted. Audited.',
-            requestBodyRequired: true,
-            requestBody: { type: 'object',
-              properties: { application: APPLICATION },
-              required: ['application'],
-              examples: [{ application: 'photos-api' }],
-              additionalProperties: false },
-            responseDescription: 'The application, and how many RPTs were ' +
-                                 'revoked.' },
+            operationId: 'disableUmaResourceServer' },
           { action: 'set-owns-resources',
-            operationId: 'setUmaOwnsResources',
-            summary: 'Let an application own UMA resources, or not',
-            description: 'Sets umaOwnsResources (rcbj\'s decision 5): TRUE ' +
-              'lets a PAT the application obtained as itself register ' +
-              'resources it owns; anything else clears it, after which such ' +
-              'a PAT is refused (STS-UMA-0105). Audited.',
-            requestBodyRequired: true,
-            requestBody: { type: 'object',
-              properties: { application: APPLICATION,
-                value: { type: 'string', enum: ['TRUE', 'FALSE'],
-                         description: 'TRUE, or FALSE to clear it.' } },
-              required: ['application', 'value'],
-              examples: [{ application: 'photos-api', value: 'TRUE' }],
-              additionalProperties: false },
-            responseDescription: 'The application and its value now.' },
-          { action: 'delete-resource', operationId: 'deleteUmaResource',
-            summary: 'Delete a registered UMA resource',
-            description: 'Removes the resource as its resource server\'s ' +
-              'DELETE would, and revokes every live RPT carrying a ' +
-              'permission over it. Audited.',
-            requestBodyRequired: true,
-            requestBody: { type: 'object',
-              properties: { resource: { type: 'string', minLength: 1,
-                maxLength: 128, description: 'The resource\'s _id.' } },
-              required: ['resource'],
-              examples: [{ resource: 'no-such-resource-example' }],
-              additionalProperties: false },
-            responseDescription: 'The resource, and how many RPTs were ' +
-                                 'revoked.' },
-          { action: 'revoke-rpt', operationId: 'revokeUmaRpt',
-            summary: 'Revoke one RPT',
-            description: 'Revokes a live RPT by its jti: introspection ' +
-              'answers inactive from then on. Audited.',
-            requestBodyRequired: true,
-            requestBody: { type: 'object',
-              properties: { rpt: { type: 'string', minLength: 1,
-                maxLength: 128, description: 'The RPT\'s jti.' } },
-              required: ['rpt'],
-              examples: [{ rpt: 'no-such-rpt-example' }],
-              additionalProperties: false },
-            responseDescription: 'The jti, and how many were revoked.' },
-          { action: 'owner-share', operationId: 'shareUmaResource',
-            summary: 'Share an application\'s resource',
-            description: 'Adds a share to the document of an application ' +
-              'that owns UMA resources, as a person does on /portal/shared. ' +
-              'An application\'s owners may call it under the owner rule. ' +
-              'Audited.',
-            requestBodyRequired: true,
-            requestBody: { type: 'object',
-              properties: {
-                owner: OWNER,
-                resource: { type: 'string', maxLength: 128,
-                            description: 'The resource\'s _id.' },
-                scope: { description: 'The scopes, a list or one string.',
-                         oneOf: [{ type: 'string', maxLength: 4096 },
-                                 { type: 'array', maxItems: 64,
-                                   items: { type: 'string',
-                                            maxLength: 256 } }] },
-                recipientKind: { type: 'string',
-                                 enum: ['person', 'group', 'realm', 'claim'],
-                                 description: 'Who it is shared with.' },
-                recipient: { type: 'string', maxLength: 1024,
-                             description: 'A username, a group, or a ' +
-                                          'claim\'s value; nothing for ' +
-                                          'realm.' },
-                claim: { type: 'string', maxLength: 256,
-                         description: 'For a claim share, its name.' },
-                expires: { type: 'string', maxLength: 64,
-                           description: 'When it ends (a date), or empty.' },
-                acr: { type: 'string', maxLength: 256,
-                       description: 'An authentication context the ' +
-                                    'requesting party must have.' },
-                askMe: { type: 'string', maxLength: 8,
-                         description: 'on: ask the owner each time.' } },
-              required: ['owner', 'resource', 'scope', 'recipientKind'],
-              examples: [{ owner: 'photos-api', resource: 'no-such-example',
-                           scope: 'view', recipientKind: 'person',
-                           recipient: 'alice' }],
-              additionalProperties: false },
-            responseDescription: 'The share as written.' },
-          { action: 'owner-unshare', operationId: 'unshareUmaResource',
-            summary: 'Remove a share from an application\'s document',
-            description: 'Removes one share and revokes the RPTs it ' +
-              'permitted. Audited.',
-            requestBodyRequired: true,
-            requestBody: { type: 'object',
-              properties: { owner: OWNER,
-                share: { type: 'string', minLength: 1, maxLength: 128,
-                         description: 'The share\'s id.' } },
-              required: ['owner', 'share'],
-              examples: [{ owner: 'photos-api', share: 'no-such-example' }],
-              additionalProperties: false },
-            responseDescription: 'What was removed.' },
-          { action: 'owner-approve', operationId: 'approveUmaRequest',
-            summary: 'Approve a request waiting for an application',
-            description: 'Approves a request_submitted waiting for an ' +
-              'application that owns resources: a rule for it is written ' +
-              'into the document. The client\'s next try with its ticket is ' +
-              'decided afresh. Audited.',
-            requestBodyRequired: true,
-            requestBody: { type: 'object',
-              properties: { owner: OWNER,
-                pending: { type: 'string', minLength: 1, maxLength: 128,
-                           description: 'The waiting request\'s id.' } },
-              required: ['owner', 'pending'],
-              examples: [{ owner: 'photos-api', pending: 'no-such-example' }],
-              additionalProperties: false },
-            responseDescription: 'The request as it now is.' },
-          { action: 'owner-refuse', operationId: 'refuseUmaRequest',
-            summary: 'Refuse a request waiting for an application',
-            description: 'Refuses a request_submitted waiting for an ' +
-              'application that owns resources. Audited.',
-            requestBodyRequired: true,
-            requestBody: { type: 'object',
-              properties: { owner: OWNER,
-                pending: { type: 'string', minLength: 1, maxLength: 128,
-                           description: 'The waiting request\'s id.' } },
-              required: ['owner', 'pending'],
-              examples: [{ owner: 'photos-api', pending: 'no-such-example' }],
-              additionalProperties: false },
-            responseDescription: 'The request as it now is.' }
+            operationId: 'setUmaOwnsResources' },
+          { action: 'delete-resource', operationId: 'deleteUmaResource' },
+          { action: 'revoke-rpt', operationId: 'revokeUmaRpt' },
+          { action: 'owner-share', operationId: 'shareUmaResource' },
+          { action: 'owner-unshare', operationId: 'unshareUmaResource' },
+          { action: 'owner-approve', operationId: 'approveUmaRequest' },
+          { action: 'owner-refuse', operationId: 'refuseUmaRequest' }
         ] }
     ];
     log.debug("Leaving UmaApi.buildRoutes().");

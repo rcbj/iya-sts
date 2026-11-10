@@ -166,15 +166,6 @@ class GrantManagementApi {
     const ROUTES = [
       { method: 'GET', path: BASE + '/grants', tag: 'OAuth 2.0 / OIDC',
         operationId: 'getGrants',
-        summary: 'The OAuth grants this realm holds (Grant Management for ' +
-                 'OAuth 2.0)',
-        description: 'Everything /admin/grants draws: every grant a client ' +
-          'created, merged or replaced through Grant Management, newest ' +
-          'first — its grant_id, client, subject and generation, the ' +
-          'grant resource the grant management API answers (scopes and ' +
-          'resources, claims, authorization_details, created_at, ' +
-          'last_updated, expires_at, updated_by) and how many tokens ' +
-          'minted under it this realm still records. Never a token.',
         mirrors: 'GET /admin/grants',
         parameters: [
           { name: 'client_id', in: 'query', required: false,
@@ -193,12 +184,6 @@ class GrantManagementApi {
             schema: { type: 'integer', minimum: 1, examples: [10] },
             description: 'Grants per page, capped.' }
         ],
-        responseDescription: 'The grants.',
-        responseSchema: { type: 'object', additionalProperties: true,
-                          description: '`grants`: one page of the matched ' +
-                            'grants, one row per grant; `total`, every ' +
-                            'grant listed; `matched`, those `grantq` ' +
-                            'matched; `filter`; `paging.grants`.' },
         handler: function (req: Req, res: Res): void {
           log.debug("Entering the management API grants endpoint.");
           self.sendJson(res, 200, self.grantsView(req.query || {}));
@@ -236,26 +221,7 @@ class GrantManagementApi {
                     result.ok);
         },
         actions: [
-          { action: 'revoke-grant', operationId: 'revokeGrant',
-            summary: 'Revoke a grant',
-            description: 'What a client\'s DELETE /oauth2/grants/{grant_id} ' +
-              'does, done by an administrator: the grant leaves the ' +
-              'register, so every refresh token issued under it is ' +
-              'refused, and every token this realm recorded under it is ' +
-              'revoked. Audited.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: {
-                grantId: { type: 'string', minLength: 1, maxLength: 128,
-                           description: 'The grant_id, as GET ' +
-                                        '/admin-api/grants lists it.' }
-              },
-              required: ['grantId'],
-              examples: [{ grantId: 'TSdqirmAxDa0_-DB_1bASQ' }],
-              additionalProperties: false
-            },
-            responseDescription: 'How many tokens were revoked with it.' }
+          { action: 'revoke-grant', operationId: 'revokeGrant' }
         ] }
     ];
     log.debug("Leaving GrantManagementApi.buildRoutes().");

@@ -84,6 +84,7 @@
 
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
+import Classes = require('../common/domain_classes');
 import config = require('../common/config');
 import realms = require('../common/realms');
 import errorCodes = require('../common/error_codes');
@@ -315,8 +316,8 @@ class ClaimsProviders {
   private readEntry(stored: Json): Provider | null {
     const { log } = this.deps;
     log.debug("Entering ClaimsProviders.readEntry().");
-    const a = stored.attributes || {};
-    const raw = String((a.stsclaimproviderdata || [])[0] || '');
+    const raw = Classes.ClaimProvider.fromEntry(
+      stored.attributes || {}).data || '';
     let record: Json = null;
     try {
       record = JSON.parse(raw);
@@ -393,8 +394,11 @@ class ClaimsProviders {
       .filter(function (e: Json): boolean {
         return String(((e.attributes || {}).cn || [])[0] || '') === id;
       })[0];
-    const raw = stored ? String(((stored.attributes || {})
-      .stsclaimprovidersecret || [])[0] || '') : '';
+    // The secret is the concept's, asked for by name where it is opened
+    // (#1390). An entry's `cn` above is not a field of the concept: the id
+    // the provider goes by is inside its data.
+    const raw = stored ? Classes.ClaimProvider.fromEntry(
+      stored.attributes || {}, { secrets: ['secret'] }).secret || '' : '';
     log.debug("Leaving ClaimsProviders.secretOf().");
     return raw ? this.open(raw, 'claims-provider-secret') : '';
   }

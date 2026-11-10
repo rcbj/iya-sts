@@ -107,7 +107,8 @@ interface Mechanism {
   primary: boolean | null;       // the built-in default, or null: incapable
   secondFactor: boolean | null;
   email?: boolean;
-  what: string;
+  // Written on the mechanism's attribute in the model; set below.
+  what?: string;
 }
 
 // One row of FIELDS, below.
@@ -242,66 +243,32 @@ const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
 });
 
 const MECHANISMS: Mechanism[] = [
-  { id: 'password', label: 'Password', primary: true, secondFactor: true,
-    what: 'A password on the sign-in screen. As a SECOND factor it is the ' +
-          'password asked for after a wallet or other passwordless first ' +
-          'factor.' },
+  { id: 'password', label: 'Password', primary: true, secondFactor: true },
   // TWO ROWS AND ONE KIND OF KEY (#1135). Until then `passkey` was a key
   // enrolled in the `primary` role and `securityKey` one in the `mfa` role.
   // A key has no role now: both rows are asked at each sign-in, of every key
   // a person holds (`webauthnPolicy.useAllowed()`), and a key may be enrolled
   // while either accepts one. The ids are stored attribute names and stay.
   { id: 'passkey', label: 'Passkey (passwordless)',
-    primary: true, secondFactor: null,
-    what: 'Any passkey (WebAuthn credential) the person holds, signing them ' +
-          'in with no password. A passkey has no role: this row says, at ' +
-          'each sign-in, whether any of them may be a first factor in this ' +
-          'realm, unless the first factors of the authentication policy ' +
-          'an application names (appAuthnPolicy) say otherwise.' },
+    primary: true, secondFactor: null },
   { id: 'securityKey', label: 'Passkey (second factor)', primary: null,
-    secondFactor: true,
-    what: 'Any passkey (WebAuthn credential) the person holds, asked for ' +
-          'after a first factor. A passkey has no role: this row says, at ' +
-          'each sign-in, whether any of them may be a second factor in ' +
-          'this realm, unless the second factors of the authentication ' +
-          'policy an application names (appAuthnPolicy) say otherwise.' },
+    secondFactor: true },
   { id: 'totp', label: 'Authenticator app (TOTP)', primary: null,
-    secondFactor: true,
-    what: 'An RFC 6238 one-time code. Never a first factor: this service ' +
-          'holds the same shared secret the app does. Off here, nobody may ' +
-          'ENROL one; a person who already holds one is still asked for it, ' +
-          'because an off switch that downgraded every enrolled account to a ' +
-          'password alone would do something other than it says (this row ' +
-          'replaced totp.enabled, and keeps its contract).' },
+    secondFactor: true },
   { id: 'recoveryCode', label: 'Recovery code', primary: null,
-    secondFactor: true,
-    what: 'A single-use code from a set the person generated. Off here, no ' +
-          'new set may be generated; a set already held still works (this ' +
-          'row replaced backupCodes.enabled, and keeps its contract).' },
+    secondFactor: true },
   { id: 'emailCode', label: 'Emailed six-digit code', primary: false,
-    secondFactor: false, email: true,
-    what: 'A six-digit code mailed to the person\'s VERIFIED address. ' +
-          NIST_EMAIL_WARNING },
+    secondFactor: false, email: true },
   { id: 'emailLink', label: 'Emailed sign-in link', primary: false,
-    secondFactor: false, email: true,
-    what: 'A single-use link mailed to the person\'s VERIFIED address, which ' +
-          'completes the sign-in only in the browser that started it. ' +
-          NIST_EMAIL_WARNING },
+    secondFactor: false, email: true },
   { id: 'certificate', label: 'TLS client certificate', primary: true,
-    secondFactor: null,
-    what: 'A verified TLS client certificate: GET /tls/sign-in, or ' +
-          'Continue with your certificate on the sign-in screen.' },
+    secondFactor: null },
   { id: 'kerberos', label: 'Kerberos (SPNEGO)', primary: true,
-    secondFactor: null,
-    what: 'GET /authn/spnego with a Kerberos ticket.' },
+    secondFactor: null },
   { id: 'wallet', label: 'Wallet presentation', primary: true,
-    secondFactor: true,
-    what: '/authn/wallet with a credential this realm issued, or a SIOPv2 ' +
-          'self-issued ID Token from an enrolled key. As a SECOND factor, ' +
-          'the wallet presented after a password.' },
+    secondFactor: true },
   { id: 'federation', label: 'Federation partner', primary: true,
-    secondFactor: null,
-    what: 'A sign-in asserted by a configured federation partner.' }
+    secondFactor: null }
 ];
 
 const MECHANISM_BY_ID: Record<string, Mechanism> = {};
@@ -331,6 +298,12 @@ function attributeOf(key: string): string {
  * The policy's fields: one table read as the schema, the console form, the API
  * body, the validation of a save and the parse of an entry.
  */
+// What each computed row says is written once, on its attribute in the model.
+const TABLE_WHAT = new Map<string, string>(ModelTables.schema('policy.authn').attributes
+  .map(function (row: any) {
+    return [row.name, row.what] as [string, string];
+  }));
+
 const FIELDS: PolicyField[] =
   // Written in models/directory/policy_authn.tsp (#1390). What is passed here is
   // what the code computes, so it has no second writing there.
@@ -347,11 +320,16 @@ const FIELDS: PolicyField[] =
                dflt: dflt, mechanism: m.id, role: role, email: !!m.email,
                label: m.label + (role === 'primary' ? ' — as a first factor'
                                    : ' — as a second factor'),
-               what: m.what });
+               what: TABLE_WHAT.get(attributeOf(key)) });
   });
   return out;
 }, [])
   });
+
+MECHANISMS.forEach(function (m) {
+  m.what = TABLE_WHAT.get(attributeOf(fieldKeyOf(m.id,
+    m.primary === null ? 'second-factor' : 'primary')));
+});
 
 /**
  * The fields, by key.

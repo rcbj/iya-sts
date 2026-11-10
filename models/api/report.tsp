@@ -55,8 +55,10 @@
 // `mediaOf()`. JSON is held to `QueryResult`; the other two are bytes.
 
 import "../lib/api_lib.tsp";
+import "./common.tsp";
 
 using IyaSts.ApiLib;
+using IyaSts.Api.Common;
 
 @apiDocument(#{
   `x-iya-every-operation`:#[#{`name`:"DPoP",`in`:"header",`required`:false,`schema`:#{`type`:"string"},`description`:"RFC 9449: the proof of possession for the DPoP-bound access token, which Authorization: DPoP <token> requires."},#{`name`:"X-Requested-With",`in`:"header",`required`:false,`schema`:#{`type`:"string"},`description`:"Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it."}],
@@ -85,7 +87,7 @@ namespace IyaSts.Api.Report {
 
 @component model `OpenApiDocument` {
     `openapi`?: string;
-    `info`?: {`title`?: string; `version`?: string; `description`?: string};
+    `info`?: WithTitleVersionDescription;
     @js(#{
       `x-free-form`:"The operations and components of an OpenAPI document are that specification's vocabulary, not this API's, and this document describes itself with them.",
       `description`:"The operations and components of an OpenAPI document are that specification's vocabulary, not this API's, and this document describes itself with them."
@@ -100,7 +102,7 @@ namespace IyaSts.Api.Report {
     @js(#{`example`:"report"}) `service`?: string;
     `catalog`?: string;
     `realms`?: string;
-    `version`?: {`version`?: string; `stamped`?: boolean; `buildInfo`?: string}
+    `version`?: WithVersionStampedBuildInfo
   }
 
 @component model `Realm` {
@@ -120,7 +122,7 @@ namespace IyaSts.Api.Report {
       `description`:"This service's clock, in milliseconds: the `since` of the next ask."
     }) `now`?: numeric;
     @js(#{`nullable`:true}) `everyMs`?: numeric;
-    `announcements`?: ({`id`?: string; `at`?: string; `message`?: string})[]
+    `announcements`?: (WithIdAtMessage)[]
   }
 
 @component model `SignalPage` {
@@ -230,17 +232,9 @@ namespace IyaSts.Api.Report {
 
 @component model `SourceEnvelope` {`source`?: `Source`}
 
-@js(#{`nullable`:true}) @hoisted scalar Filter_value_v0_h1 extends string;
   
 
-@js(#{`nullable`:true}) @hoisted scalar Filter_value_v3_i_v0_h2 extends string;
   
-
-@hoisted union Filter_value_v3_i_h3 {Filter_value_v3_i_v0_h2, numeric, boolean}
-
-@js(#{
-    `description`:"A string, a number, a boolean, null, or a list of those."
-  }) @hoisted union Filter_value_h4 {Filter_value_v0_h1, numeric, boolean, (Filter_value_v3_i_h3)[]}
 
 @js(#{
     `nullable`:true,
@@ -248,7 +242,7 @@ namespace IyaSts.Api.Report {
   }) @component model `Filter` {
     `op`?: string;
     `field`?: string;
-    `value`?: Filter_value_h4;
+    `value`?: StringOrNumericOrBooleanEtc9;
     `param`?: string;
     `args`?: (`Filter`)[];
     `arg`?: `Filter`
@@ -276,21 +270,17 @@ namespace IyaSts.Api.Report {
     @js(#{`nullable`:true}) `groupBy`?: (string)[]
   }
 
-@js(#{`nullable`:true}) @hoisted scalar QueryResult_rows_i_ap_v0_h5 extends string;
   
 
-@js(#{`nullable`:true}) @hoisted scalar QueryResult_rows_i_ap_v3_i_v0_h6 extends string;
   
-
-@hoisted union QueryResult_rows_i_ap_v3_i_h7 {QueryResult_rows_i_ap_v3_i_v0_h6, numeric, boolean}
 
 @js(#{
     `description`:"A string, a number, a boolean, null, or a list of those."
   }) @hoisted union QueryResult_rows_i_ap_h8 {
-    QueryResult_rows_i_ap_v0_h5,
+    String,
     numeric,
     boolean,
-    (QueryResult_rows_i_ap_v3_i_h7)[]
+    (StringOrNumericOrBoolean2)[]
   }
 
 @js(#{
@@ -306,22 +296,14 @@ namespace IyaSts.Api.Report {
     `truncated`?: boolean
   }
 
-@js(#{`nullable`:true}) @hoisted scalar ParameterBag_ap_v0_h10 extends string;
   
 
-@js(#{`nullable`:true}) @hoisted scalar ParameterBag_ap_v3_i_v0_h11 extends string;
   
-
-@hoisted union ParameterBag_ap_v3_i_h12 {ParameterBag_ap_v3_i_v0_h11, numeric, boolean}
-
-@js(#{
-    `description`:"A string, a number, a boolean, null, or a list of those."
-  }) @hoisted union ParameterBag_ap_h13 {ParameterBag_ap_v0_h10, numeric, boolean, (ParameterBag_ap_v3_i_h12)[]}
 
 @js(#{
     `nullable`:true,
     `description`:"Parameter name to the value the filter uses. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none."
-  }) @component model `ParameterBag` is Record<ParameterBag_ap_h13>;
+  }) @component model `ParameterBag` is Record<StringOrNumericOrBooleanEtc9>;
   
 
 @component model `DefinitionWrite` {

@@ -53,6 +53,7 @@ import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import validation = require('../common/validation');
 import siop = require('../oid4vc/siop');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -77,20 +78,9 @@ interface PortalSelfIssuedDeps {
   personDid?: () => Json;
 }
 
-const REMOVE_FORM = vz.object({
-  action: vt.opt(vt.oneOf(['remove', 'prefer', 'unprefer']))
-    .describe('`remove` (the default) takes the subject off; `prefer` ' +
-              'marks it as your preferred DID (#693), and `unprefer` ' +
-              'clears the mark.'),
-  subject: vz.string().max(2048)
-    .describe('The enrolled subject, from the list.')
-});
+const REMOVE_FORM = ModelZod.body('account', 'removeSelfIssued');
 
-const DID_QUERY = vz.object({
-  subject: vt.opt(vz.string().max(2048))
-    .describe('One of your enrolled self-issued subjects: a did:jwk or a ' +
-              'did:key. Left out, the page says to choose one.')
-});
+const DID_QUERY = ModelZod.query('account', 'getSelfIssuedDidDocument');
 
 // The methods whose DID document is the identifier itself, and so can be
 // shown with nothing fetched.
@@ -107,27 +97,10 @@ const SETTING_KEY = 'oid4vp.signInSelfIssued';
 const SETTING_ENV = 'OID4VP_SIGN_IN_SELF_ISSUED';
 const SETTING_PAGE = '/admin/vc#vc-tab-oid4vp';
 
-const SELF_ISSUED_QUERY = vz.object({
-  enrolled: vt.opt(vt.oneOf(['1']))
-    .describe('`1` when the wallet sign-in has just enrolled a subject.'),
-  did: vt.opt(vt.oneOf(['published', 'authorized', 'changed']))
-    .describe('A published DID\'s wallet act that has just finished ' +
-              '(#1291): `published`, `authorized` (the change\'s first ' +
-              'proof; prove the new key next) or `changed`.'),
-  rid: vt.opt(vz.string().regex(/^[A-Za-z0-9_-]{22}(?:[A-Za-z0-9_-]{12})?$/))
-    .describe('The published DID that act was about.')
-});
+const SELF_ISSUED_QUERY = ModelZod.query('account', 'getSelfIssued');
 
 // A published DID's acts (#1291), on its own POST.
-const DID_FORM = vz.object({
-  action: vt.oneOf(['publish', 'add-key', 'rotate-key', 'deactivate'])
-    .describe('`publish` a DID whose key this realm generates (`realm` ' +
-              'or `download` custody); `add-key` or `rotate-key` of a ' +
-              '`realm`-custody DID; `deactivate` one of your DIDs.'),
-  rid: vt.opt(vz.string().regex(/^[A-Za-z0-9_-]{22}(?:[A-Za-z0-9_-]{12})?$/))
-    .describe('The published DID\'s random id, from the list; every action ' +
-              'but `publish` names one.')
-});
+const DID_FORM = ModelZod.body('account', 'actOnPublishedDid');
 
 // The one-time pane's file name for a downloaded key.
 const KEY_FILE = 'did-private-key.jwk.json';

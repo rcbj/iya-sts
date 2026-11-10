@@ -112,23 +112,30 @@ model StsLdapEntries {
   created_at?: string;
   @column(#{sql: "text"})
   modified_at?: string;
-  @column(#{sql: "text", clauses: "GENERATED ALWAYS AS (CASE WHEN strpos(dn_key, ',') > 0 THEN substr(dn_key, strpos(dn_key, ',') + 1) ELSE '' END) STORED", generated: true})
+  // The directory's six generated lookup columns (#349, schema version 13).
+  // Adding a STORED generated column rewrites the table once and fills every
+  // existing row, which is the whole of the migration.
+  @column(#{sql: "text", clauses: "GENERATED ALWAYS AS (CASE WHEN strpos(dn_key, ',') > 0 THEN substr(dn_key, strpos(dn_key, ',') + 1) ELSE '' END) STORED", generated: true, added: true})
   parent_key?: string;
-  @column(#{sql: "text", clauses: "GENERATED ALWAYS AS (substr(split_part(dn_key, ',', 1), strpos(split_part(dn_key, ',', 1), '=') + 1)) STORED", generated: true})
+  @column(#{sql: "text", clauses: "GENERATED ALWAYS AS (substr(split_part(dn_key, ',', 1), strpos(split_part(dn_key, ',', 1), '=') + 1)) STORED", generated: true, added: true})
   rdn_value?: string;
-  @column(#{sql: "jsonb", clauses: "NOT NULL DEFAULT '[]'::jsonb", required: true, attributes: #["uid"]})
+  @column(#{sql: "jsonb", clauses: "NOT NULL DEFAULT '[]'::jsonb", required: true, attributes: #["uid"], added: true})
   name_keys: unknown;
-  @column(#{sql: "jsonb", clauses: "NOT NULL DEFAULT '[]'::jsonb", required: true, attributes: #["mail"]})
+  @column(#{sql: "jsonb", clauses: "NOT NULL DEFAULT '[]'::jsonb", required: true, attributes: #["mail"], added: true})
   mail_keys: unknown;
-  @column(#{sql: "jsonb", clauses: "NOT NULL DEFAULT '[]'::jsonb", required: true, attributes: #["entryUUID", "stsEntryUuidAlias"]})
+  @column(#{sql: "jsonb", clauses: "NOT NULL DEFAULT '[]'::jsonb", required: true, attributes: #["entryUUID", "stsEntryUuidAlias"], added: true})
   uuid_keys: unknown;
-  @column(#{sql: "jsonb", clauses: "NOT NULL DEFAULT '[]'::jsonb", required: true, attributes: #["objectClass"]})
+  @column(#{sql: "jsonb", clauses: "NOT NULL DEFAULT '[]'::jsonb", required: true, attributes: #["objectClass"], added: true})
   class_keys: unknown;
-  @column(#{sql: "jsonb", clauses: "NOT NULL DEFAULT '[]'::jsonb", required: true})
+  @column(#{sql: "jsonb", clauses: "NOT NULL DEFAULT '[]'::jsonb", required: true, added: true})
   value_keys: unknown;
-  @column(#{sql: "jsonb", clauses: "NOT NULL DEFAULT '[]'::jsonb", required: true})
+  @column(#{sql: "jsonb", clauses: "NOT NULL DEFAULT '[]'::jsonb", required: true, added: true})
   attr_names: unknown;
-  @column(#{sql: "jsonb"})
+  // The data keys an entry holds values under (#623, schema version 17).
+  // Nullable and with no default, so adding it rewrites nothing: every
+  // existing row reads NULL — keys not known — until `indexSealed()` reaches
+  // it or the entry is next written.
+  @column(#{sql: "jsonb", added: true})
   dek_keys?: unknown;
 }
 
@@ -180,7 +187,10 @@ model StsLdapCounts {
   base_key: string;
   @column(#{sql: "text", clauses: "NOT NULL", required: true, primaryKey: true})
   attribute: string;
-  @column(#{sql: "smallint", clauses: "NOT NULL DEFAULT 0", required: true, primaryKey: true})
+  // The counters' shard (#630, schema version 19). An existing row gets 0:
+  // what it held is shard 0's, and the sums are unchanged. The key that
+  // takes it in is SCHEMA_UPGRADES' (`*_shard_key`).
+  @column(#{sql: "smallint", clauses: "NOT NULL DEFAULT 0", required: true, primaryKey: true, added: true})
   shard: int16;
   @column(#{sql: "bigint", clauses: "NOT NULL DEFAULT 0", required: true})
   n: int64;
@@ -209,7 +219,7 @@ model StsLdapCountDeltas {
 model StsLdapDekCounts {
   @column(#{sql: "text", clauses: "NOT NULL", required: true, primaryKey: true})
   dek_id: string;
-  @column(#{sql: "smallint", clauses: "NOT NULL DEFAULT 0", required: true, primaryKey: true})
+  @column(#{sql: "smallint", clauses: "NOT NULL DEFAULT 0", required: true, primaryKey: true, added: true})
   shard: int16;
   @column(#{sql: "bigint", clauses: "NOT NULL DEFAULT 0", required: true})
   n: int64;
@@ -239,9 +249,10 @@ model StsRealms {
   created_at?: int64;
   @column(#{sql: "jsonb", clauses: "NOT NULL DEFAULT '{}'::jsonb", required: true})
   overrides: unknown;
-  @column(#{sql: "text"})
+  @column(#{sql: "text", added: true})
   domain?: string;
-  @column(#{sql: "bigint"})
+  // When the realm's removal began (#262, schema version 10), or NULL.
+  @column(#{sql: "bigint", added: true})
   retiring_at?: int64;
 }
 
@@ -340,9 +351,14 @@ model StsMinted {
   body: string;
   @column(#{sql: "timestamptz", clauses: "NOT NULL DEFAULT now()", required: true})
   written_at: utcDateTime;
-  @column(#{sql: "bigint"})
+  // A minted row's own expiry (#333, schema version 12). An existing row gets
+  // NULL — no expiry — and so falls under the write-age rule once, which is
+  // the whole of the migration.
+  @column(#{sql: "bigint", added: true})
   expires_at?: int64;
-  @column(#{sql: "text", clauses: "NOT NULL DEFAULT ''", required: true})
+  // A minted row's name, sealed, beside its digest in `key` (#222, schema
+  // version 14). An existing row gets '' — its key is its name, as before.
+  @column(#{sql: "text", clauses: "NOT NULL DEFAULT ''", required: true, added: true})
   key_sealed: string;
 }
 
@@ -422,7 +438,10 @@ model StsMintedIndex {
   index_key: string;
   @column(#{sql: "text", clauses: "NOT NULL", required: true, primaryKey: true})
   key: string;
-  @column(#{sql: "bigint"})
+  // A minted index row's sort value (#820, schema version 25). Nullable
+  // with no default, so adding it rewrites nothing: every existing index
+  // row reads NULL, which is what every row but a sort row holds anyway.
+  @column(#{sql: "bigint", added: true})
   sort_at?: int64;
 }
 
@@ -1058,9 +1077,10 @@ model StsRiskAssessments {
   error_code: string;
   @column(#{sql: "text", clauses: "NOT NULL DEFAULT ''", required: true})
   origin: string;
-  @column(#{sql: "text", clauses: "NOT NULL DEFAULT ''", required: true})
+  // What the person said about a sign-in (#62 P6, schema version 9).
+  @column(#{sql: "text", clauses: "NOT NULL DEFAULT ''", required: true, added: true})
   feedback: string;
-  @column(#{sql: "bigint", clauses: "NOT NULL DEFAULT 0", required: true})
+  @column(#{sql: "bigint", clauses: "NOT NULL DEFAULT 0", required: true, added: true})
   feedback_at: int64;
 }
 

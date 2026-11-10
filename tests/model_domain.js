@@ -105,10 +105,40 @@ function declarations(t) {
     'domain.d.ts'), 'utf8');
   t.check(committed === built, 'types/domain.generated.d.ts is what the ' +
     'model generates (tests/tools/regenerate-model-docs.sh)');
+  const classes = fs.readFileSync(path.join(ROOT, 'models', 'generated',
+    'domain_classes.txt'), 'utf8');
+  t.check(fs.readFileSync(path.join(ROOT, 'common', 'domain_classes.ts'),
+    'utf8') === classes, 'common/domain_classes.ts is what the model generates');
+  const api = fs.readFileSync(path.join(ROOT, 'models', 'generated', 'api.d.ts'),
+    'utf8');
+  t.check(fs.readFileSync(path.join(ROOT, 'types', 'api.generated.d.ts'),
+    'utf8') === api, 'types/api.generated.d.ts is what the model generates');
+  const Classes = require('../common/domain_classes');
+  t.equal(Classes.User.fromEntry({ uid: ['a'] }).username, 'a',
+    'a generated class makes its concept');
   t.check(/interface User \{/.test(built) &&
     !/interface User \{[^}]*password/i.test(built),
   'the User declaration has no password');
   log.debug("Leaving declarations().");
+}
+
+function projectionsAreReal(t) {
+  log.debug("Entering projectionsAreReal().");
+  const concepts = DomainMap.catalogue();
+  const rows = ModelTables.file('api.projections.json');
+  t.check(rows.length >= 15, 'published shapes are tied to concepts (' +
+    rows.length + ')');
+  rows.forEach(function (row) {
+    const fields = concepts.get(row.concept).fields.map(function (one) {
+      return one.name;
+    });
+    const shared = row.fields.filter(function (one) {
+      return fields.indexOf(one) >= 0;
+    });
+    t.check(shared.length >= 3, row.name + ' shares fields with ' +
+      row.concept, shared.join(','));
+  });
+  log.debug("Leaving projectionsAreReal().");
 }
 
 function catalogue(t) {
@@ -168,7 +198,7 @@ function mapping(t) {
     userPassword: 'x' }, { on: { operational: { entryUUID: 'u-1' } },
     derived: { realm: '' } });
   t.equal(JSON.stringify(user),
-    '{"entryUuid":"u-1","username":"alice","realm":""}',
+    '{"entryUuid":"u-1","username":"alice","realm":"","cn":["A"]}',
     'a User is its fields and no password, read across two objects');
   let threw = false;
   try {
@@ -244,6 +274,7 @@ async function run(t) {
     'domain_lib.mjs')).href);
   refusals(t, lib.checkDomains);
   catalogue(t);
+  projectionsAreReal(t);
   declarations(t);
   mapping(t);
   await records(t);

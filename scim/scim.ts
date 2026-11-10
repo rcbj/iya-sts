@@ -222,6 +222,7 @@ const SCIMMY: any = scimmyModule;
 
 import app = require('../common/app');
 import helpers = require('../common/helpers');
+import Classes = require('../common/domain_classes');
 import InstanceSlot = require('../common/instance_slot');
 
 // The input validator. A LEAF (rule 3): it registers no route and closes no
@@ -965,14 +966,11 @@ class Scim {
   private groupCnOf(entry: any, dn: string): string {
     const { log } = this.deps;
     log.debug("Entering Scim.groupCnOf().");
-    const attributes = (entry && entry.attributes) || {};
-    const key = Object.keys(attributes).filter(function (one) {
-      return one.toLowerCase() === 'cn';
-    })[0];
+    const group = Classes.Group.fromEntry((entry && entry.attributes) || {});
     const rdn = String(dn || '').split(',')[0] || '';
     log.debug("Leaving Scim.groupCnOf().");
-    return key ? String([].concat(attributes[key])[0] || '')
-               : rdn.slice(rdn.indexOf('=') + 1);
+    return group.name !== undefined ? group.name
+                                    : rdn.slice(rdn.indexOf('=') + 1);
   }
 
   private sendScimError(req: ScimRequest, res: any, info: CallInfo,
@@ -2028,13 +2026,11 @@ class Scim {
     // namespaced one scim_map.ts's egressPath() writes for the enterprise
     // members: scimmy's coercion of a multi-valued COMPLEX member keeps it
     // only there, and nothing here filters on it.
-    // The entry object carries canonical attribute names, so the member is
-    // found case-insensitively rather than by one spelling.
+    // The entry object carries canonical attribute names; the concept finds
+    // the member whatever its spelling (#1390).
     const attributes = entry.attributes || {};
-    const linkKey = Object.keys(attributes).filter(function (name) {
-      return name.toLowerCase() === 'federationlink';
-    })[0];
-    const links = [].concat(linkKey ? attributes[linkKey] : [])
+    const links = (Classes.PersonRecord.fromEntry(attributes).federationLink ||
+                   [])
       .map((value) => { return this.deps.fedLinks.parse(value); })
       .filter(Boolean)
       .map(function (one) {

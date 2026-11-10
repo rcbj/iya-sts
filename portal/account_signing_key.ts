@@ -56,12 +56,14 @@
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import Classes = require('../common/domain_classes');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import pki = require('../common/pki');
 import personAssertions = require('../common/person_assertions');
 import tlsClient = require('../common/tls_client_certificates');
 import validation = require('../common/validation');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -87,32 +89,7 @@ const SIGNING_KEY_PROFILES = [
 // somebody else's entry, which is a takeover rather than a leak.
 // `remove` (take off) left with #1290: a signing key pair is REVOKED, one
 // at a time, by `revoke` with its `handle`.
-const SIGNING_KEY_FORM = vz.object({
-  action: vt.opt(vt.oneOf(['generate', 'revoke',
-                          // A TLS client certificate (2026-09-13).
-                          'generate-tls-client', 'revoke-tls-client']))
-    .describe('`generate` a signing key pair (for `purpose`) or `revoke` ' +
-              'one of yours (by `handle`); `generate-tls-client` or ' +
-              '`revoke-tls-client` a TLS client certificate.'),
-  label: vz.string().max(80).optional()
-    .describe('For `generate`: what you call the key pair. For ' +
-              '`generate-tls-client`: what you call the device.'),
-  handle: vz.string().max(128).regex(/^[A-Za-z0-9_:-]*$/).optional()
-    .describe('For `revoke`: the key pair\'s `kid` (RFC 7523) or ' +
-              'certificate thumbprint (RFC 7522), one of yours.'),
-  key_alg: vt.opt(vt.oneOf(tlsClient.KEY_ALGS))
-    .describe('For `generate-tls-client`: the key algorithm.'),
-  serial: vz.string().max(80).regex(/^[0-9A-Fa-f:]*$/).optional()
-    .describe('For `revoke-tls-client`: the certificate\'s serial, one of ' +
-              'yours.'),
-  reason: vt.opt(vt.oneOf(tlsClient.REVOCATION_REASONS))
-    .describe('For `revoke` and `revoke-tls-client`: why.'),
-  // WHICH PROFILE (2026-09-13). Absent means `jwt`, which is what every form
-  // and client posted before the second profile existed.
-  purpose: vt.opt(vt.oneOf(['jwt', 'saml']))
-    .describe('For `generate` and `revoke`: RFC 7523\'s `jwt` key pairs ' +
-              '(the default) or RFC 7522\'s `saml` ones.')
-});
+const SIGNING_KEY_FORM = ModelZod.body('account', 'changeSigningKeys');
 
 interface AccountSigningKeyDeps {
   log: typeof helpers.log;
@@ -232,13 +209,9 @@ class AccountSigningKey {
       // No directory to ask: the certificate is issued with no address.
       entry = null;
     }
-    const attributes = (entry && entry.attributes) || {};
-    const key = Object.keys(attributes).filter(function (one) {
-      return one.toLowerCase() === 'mail';
-    })[0];
-    const values = key ? [].concat(attributes[key]) : [];
+    const user = Classes.User.fromEntry((entry && entry.attributes) || {});
     log.debug("Leaving AccountSigningKey.mailOf().");
-    return values.length ? String(values[0]) : '';
+    return user.email || '';
   }
 
   // THE TLS CLIENT CERTIFICATE CARD'S FACTS: the person's certificates, what
@@ -634,7 +607,7 @@ class AccountSigningKey {
     log.debug("Entering AccountSigningKey.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/signing-key',
-        operationId: 'getSigningKeys', access: 'person', query: vz.object({}),
+        operationId: 'getSigningKeys', access: 'person', query: ModelZod.query('account', 'getSigningKeys'),
         handler: function (req: Json, res: Json,
                            caller: AccountCaller): unknown {
           return ctx.json(res, 200, self.view(caller, ctx.baseUrlOf(req)));

@@ -55,6 +55,7 @@ import validation = require('../common/validation');
 import errorCodes = require('../common/error_codes');
 import audit = require('../common/audit');
 import claimsProviders = require('../oauth-oidc/claims_providers');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -98,21 +99,9 @@ interface PortalClaimSourcesDeps {
   pageLocale: () => Json;
 }
 
-const LINK_FORM = vz.object({
-  action: vt.oneOf(['link', 'unlink'])
-    .describe('`link` starts the provider\'s sign-in; `unlink` removes ' +
-              'the link.'),
-  id: vz.string().max(64).describe('The Claims Provider\'s id.')
-});
+const LINK_FORM = ModelZod.body('account', 'linkClaimSource');
 
-const PAGE_QUERY = vz.object({
-  page: vt.opt(vt.integer(1, 100000))
-    .describe('Which page of `providers`. Clamped to the last.'),
-  done: vz.string().max(200).optional()
-    .describe('What a finished link said, from the callback.'),
-  problem: vz.string().max(400).optional()
-    .describe('Why a link could not be finished, from the callback.')
-});
+const PAGE_QUERY = ModelZod.query('account', 'getClaimSources');
 
 const RETURN = vz.object({
   code: vz.string().max(4096).optional(),

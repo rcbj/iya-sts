@@ -77,6 +77,7 @@ import realms = require('../common/realms');
 // THE RECOVERY QUESTION (#724).
 import passkeyPolicy = require('../common/passkey_policy');
 import validation = require('../common/validation');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -92,20 +93,12 @@ const RESET_REFUSAL =
   'one on the "Forgot your password?" page where it is offered, or ask ' +
   'whoever manages your account.';
 
-const RESET_QUERY = vz.object({
-  user: vt.opt(vt.name).describe('The username the link names.')
-});
+const RESET_QUERY = ModelZod.query('account', 'getPasswordReset');
 
 // THE TOKEN RIDES IN THE BODY, for the activation form's reason: nobody is
 // signed in, so there is no session to carry it on, and a POST keeps it out
 // of a referer and an access log.
-const RESET_FORM = vz.object({
-  user: vt.opt(vt.name).describe('The username the link names.'),
-  token: vt.opt(vt.token).describe('The link\'s single-use secret.'),
-  password: vz.string().max(1024).optional().describe('The new password.'),
-  confirm: vz.string().max(1024).optional()
-    .describe('The new password again.')
-});
+const RESET_FORM = ModelZod.body('account', 'spendPasswordReset');
 
 // The response a request that FINISHED is marked with, so the claim on the
 // link is kept rather than given back (`holdLinkClaim()`).

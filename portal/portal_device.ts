@@ -47,6 +47,7 @@ import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import validation = require('../common/validation');
 import deviceAuthorization = require('../oauth-oidc/device_authorization');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -69,17 +70,9 @@ const WRONG_CODE_WINDOW_MS = 10 * 60 * 1000;
 // The size cap on the count, checked at the insert: the oldest goes.
 const WRONG_CODE_SESSIONS = 10000;
 
-const FORM = vz.object({
-  action: vt.oneOf(['approve', 'deny'])
-    .describe('`approve` signs you in on the device; `deny` refuses it.'),
-  user_code: vz.string().min(1).max(32)
-    .describe('The code the device shows.')
-});
+const FORM = ModelZod.body('account', 'answerDeviceRequest');
 
-const QUERY = vz.object({
-  user_code: vz.string().max(32).optional()
-    .describe('The code the device shows; brings up its request.')
-});
+const QUERY = ModelZod.query('account', 'getDeviceRequest');
 
 /**
  * `/portal/device`'s account API operations: RFC 8628's verification URI,

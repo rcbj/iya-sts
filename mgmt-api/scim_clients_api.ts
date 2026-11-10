@@ -258,20 +258,6 @@ class ScimClientsApi {
     const ROUTES = [
       { method: 'GET', path: BASE + '/scim/clients',
         tag: 'SCIM', operationId: 'getScimClients',
-        summary: 'This realm\'s outbound SCIM clients (#552)',
-        description: 'Everything Protocols → SCIM → Clients draws: each ' +
-          'client (an application entry declared for the scim-client ' +
-          'family) with its service provider, authentication, scope, ' +
-          'whether it is usable and why not, its queue counts (queued, ' +
-          'retrying, dead, sent) and its backoff pause. With `client`, that ' +
-          'client\'s page too: its retry queue and dead letters, what its ' +
-          'service provider\'s discovery said, and how many resources it ' +
-          'has linked. In a service deployed as cells (#553) each client ' +
-          'and the page carry `byCell`: every cell\'s counts, pause and ' +
-          '— ' +
-          'on the page, where the issuance policy releases them — queues, ' +
-          'a cell that cannot be reached listed `reachable: false`. NEVER a ' +
-          'credential.',
         mirrors: 'GET /admin/scim',
         parameters: [
           { name: 'client', in: 'query', required: false,
@@ -279,12 +265,6 @@ class ScimClientsApi {
                       examples: ['no-such-client'] },
             description: 'One client\'s identifier, for its page.' }
         ],
-        responseDescription: 'The clients.',
-        responseSchema: { type: 'object', additionalProperties: true,
-                          description: '`clients`, `choices`, ' +
-                                       '`httpAllowed`, and with `client` ' +
-                                       'the client\'s page (`client`, or ' +
-                                       '`missing`).' },
         handler: function (req: Req, res: Res): void {
           log.debug("Entering the management API SCIM clients endpoint.");
           // EVERY CELL'S QUEUES (#553): asked of the other cells, each
@@ -340,136 +320,17 @@ class ScimClientsApi {
           });
         },
         actions: [
-          { action: 'add-client', operationId: 'addScimClient',
-            summary: 'Add an outbound SCIM client',
-            description: 'Creates an application entry declared for the ' +
-              'scim-client family, with its service provider, its ' +
-              'authentication (credentials sealed and write-only), who and ' +
-              'which groups it pushes, and what deprovisioning means. ' +
-              'Refused for a base URI that is not https or carries a user ' +
-              'name or a query, a closed-set value outside its set, an LDAP ' +
-              'filter that does not parse, or certificates that do not. A ' +
-              'new client is off until `enabled` is true. Audited, without ' +
-              'a credential.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: Object.assign({ identifier: P.identifier },
-                                        pick(definition)),
-              required: ['identifier'],
-              examples: [{ identifier: 'partner-idp', name: 'Partner IdP',
-                           baseUrl: 'https://idp.example.com/scim/v2',
-                           authMethod: 'oauth2',
-                           tokenEndpoint: 'https://idp.example.com/token',
-                           oauthClientId: 'iya-sts',
-                           oauthClientSecret: '<a secret>',
-                           scopeMode: 'groups', scopeGroups: 'staff',
-                           groupMode: 'member-groups',
-                           deprovision: 'deactivate',
-                           reconcileMinutes: '1440', enabled: 'true' }],
-              additionalProperties: false
-            },
-            responseDescription: 'The client as the register now answers ' +
-                                 'it.' },
-          { action: 'update-client', operationId: 'updateScimClient',
-            summary: 'Change an outbound SCIM client',
-            description: 'The members given replace the client\'s; the ' +
-              'rest are kept, each credential included when none is given. ' +
-              'Checked as add-client is. Forgets this process\'s discovery ' +
-              'and token. Audited, without a credential.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: Object.assign({ id: P.id }, pick(definition)),
-              required: ['id'],
-              examples: [{ id: 'partner-idp', enabled: 'false' }],
-              additionalProperties: false
-            },
-            responseDescription: 'The client as the register now answers ' +
-                                 'it.' },
-          { action: 'remove-client', operationId: 'removeScimClient',
-            summary: 'Remove an outbound SCIM client',
-            description: 'Deletes its application entry, credentials and ' +
-              'all, with its queues, links and backoff state. Nothing at ' +
-              'the service provider changes. Audited.',
-            requestBodyRequired: true, requestBody: byId(),
-            responseDescription: 'What was removed.' },
+          { action: 'add-client', operationId: 'addScimClient' },
+          { action: 'update-client', operationId: 'updateScimClient' },
+          { action: 'remove-client', operationId: 'removeScimClient' },
           { action: 'issue-certificate',
-            operationId: 'issueScimClientCertificate',
-            summary: 'Issue the client a TLS client certificate',
-            description: 'Issues a clientAuth certificate from this realm\'s ' +
-              'tls-client Issuing CA to the client\'s application entry, ' +
-              'and makes it the certificate the client presents (source ' +
-              'issued). The private key is sealed on the entry and never ' +
-              'returned; the service provider must trust the service Root. ' +
-              'Audited.',
-            requestBodyRequired: true, requestBody: byId(),
-            responseDescription: 'The certificate\'s subject, serial and ' +
-                                 'expiry, and the service Root.' },
-          { action: 'test-connection', operationId: 'testScimClient',
-            summary: 'Read the service provider\'s configuration',
-            description: 'Reads /ServiceProviderConfig and /ResourceTypes ' +
-              'afresh and lists one User, with the client\'s own ' +
-              'authentication. Writes nothing there.',
-            requestBodyRequired: true, requestBody: byId(),
-            responseDescription: 'What discovery said, or a coded ' +
-                                 'refusal.' },
-          { action: 'reconcile', operationId: 'reconcileScimClient',
-            summary: 'Reconcile the client now',
-            description: 'Queues every person and group in the client\'s ' +
-              'scope, and every resource its service provider holds under ' +
-              'an externalId of this realm\'s that is no longer in scope; ' +
-              'then sends what is due. Audited. In a service deployed as ' +
-              'cells each cell reconciles the people homed there: `cell` ' +
-              'sends it to that cell, and without it every cell ' +
-              'reconciles, each cell\'s result listed in `cells` (#553).',
-            requestBodyRequired: true, requestBody: byIdInCell(),
-            responseDescription: 'How many users and groups were queued, ' +
-                                 'and how many to deprovision.' },
-          { action: 'deliver-now', operationId: 'deliverScimClientNow',
-            summary: 'Lift the client\'s pause and send its queue',
-            description: 'Ends the backoff pause and makes every queued ' +
-              'and retrying delivery due now. Use it once the service ' +
-              'provider is answering again. In a service deployed as cells ' +
-              'the pause is every cell\'s and is lifted for all; `cell` ' +
-              'sends the queue of that cell only (#553).',
-            requestBodyRequired: true, requestBody: byIdInCell(),
-            responseDescription: '`ok`.' },
-          { action: 'retry-delivery', operationId: 'retryScimDelivery',
-            summary: 'Retry one dead letter',
-            description: 'Queues one dead letter again, by its row id ' +
-              '(`<client>|User|<uuid>` or `<client>|Group|<uuid>`); it ' +
-              'sends the resource as it is now. Audited. In a service ' +
-              'deployed as cells the row is in the cell `cell` names; ' +
-              'without one every cell retries the row of that id it holds ' +
-              '(#553).',
-            requestBodyRequired: true,
-            requestBody: { type: 'object',
-                           properties: { id: { type: 'string', minLength: 1,
-                                               maxLength: 2048,
-                                               description: 'The delivery ' +
-                                                 'row\'s id.' },
-                                         cell: P.cell },
-                           required: ['id'],
-                           examples: [{ id: 'partner-idp|User|' +
-                             '9f0c3c1e-6a4e-4a8e-9d0b-3a5d2c4b7e10' }],
-                           additionalProperties: false },
-            responseDescription: '`ok`, or a coded refusal.' },
-          { action: 'retry-dead', operationId: 'retryScimDeadLetters',
-            summary: 'Retry every dead letter of a client',
-            description: 'Queues every dead letter of the client again. ' +
-              'Audited. In a service deployed as cells, in the cell ' +
-              '`cell` names, or in every cell (#553).',
-            requestBodyRequired: true, requestBody: byIdInCell(),
-            responseDescription: 'How many were queued.' },
-          { action: 'purge-dead', operationId: 'purgeScimDeadLetters',
-            summary: 'Purge a client\'s dead letters',
-            description: 'Deletes every dead letter of the client. The ' +
-              'next change to each resource, or a reconciliation, queues ' +
-              'it afresh. Audited. In a service deployed as cells, in the ' +
-              'cell `cell` names, or in every cell (#553).',
-            requestBodyRequired: true, requestBody: byIdInCell(),
-            responseDescription: 'How many were purged.' }
+            operationId: 'issueScimClientCertificate' },
+          { action: 'test-connection', operationId: 'testScimClient' },
+          { action: 'reconcile', operationId: 'reconcileScimClient' },
+          { action: 'deliver-now', operationId: 'deliverScimClientNow' },
+          { action: 'retry-delivery', operationId: 'retryScimDelivery' },
+          { action: 'retry-dead', operationId: 'retryScimDeadLetters' },
+          { action: 'purge-dead', operationId: 'purgeScimDeadLetters' }
         ] }
     ];
     log.debug("Leaving ScimClientsApi.buildRoutes().");

@@ -29,6 +29,18 @@ namespace IyaSts.Directory;
   container: "ou=applications",
   ownContainer: false,
   authored: true,
+  key: "appIdentifier",
+  naming: #{
+    attribute: "cn",
+    what: "The identifier, or app- plus twelve hex digits when the identifier is longer than 64 characters."
+  },
+  derived: #[#{
+    name: "subject",
+    what: "urn:sts:application:<appIdentifier>. Derived, not stored."
+  }],
+  registration: #["appRegistered", "appRegisteredBy"],
+  declaration: "appAllowedProtocol",
+  observation: "appProtocol",
   objectClasses: #[
     #{
       name: "top",

@@ -142,6 +142,13 @@ export function readDirectory(program) {
       personAttributes: [],
       relationships: []
     };
+    attributes.forEach(function (attribute) {
+      if (attribute.allowedFrom) {
+        attribute.allowed = attribute.allowedFrom.reduce(function (out, name) {
+          return out.concat(options.lists[name]);
+        }, []);
+      }
+    });
     if (options.onPerson) {
       object.personAttributes = attributes;
     } else {
@@ -239,6 +246,32 @@ export function schemaOf(object) {
   return schema;
 }
 
+// What an entry states as structure, kept out of its SCHEMA table because
+// that table's sentences are console prose and these are not.
+const FACT_KEYS = ['key', 'naming', 'derived', 'registration', 'declaration',
+  'observation', 'lists'];
+
+/**
+ * What each object states about itself beyond its rows.
+ *
+ * @param objects - objects from `readDirectory()`
+ * @returns the facts, by object id, for an object that has any
+ */
+export function factsOf(objects) {
+  log.debug("Entering factsOf().");
+  const out = {};
+  objects.forEach(function (object) {
+    FACT_KEYS.forEach(function (name) {
+      if (object[name] !== undefined) {
+        out[object.id] = out[object.id] || {};
+        out[object.id][name] = object[name];
+      }
+    });
+  });
+  log.debug("Leaving factsOf().");
+  return out;
+}
+
 /**
  * The directory's name lists.
  *
@@ -329,6 +362,8 @@ function tableOf(program, model, options) {
     columns.push({
       name: property.name,
       sqlType: column.sql,
+      added: column.added === true,
+      clauses: column.clauses || '',
       required: column.required === true,
       generated: column.generated === true,
       primaryKey: column.primaryKey === true,
@@ -382,6 +417,29 @@ function layout(rows) {
 }
 
 /**
+ * The statement giving an existing database each column added after its table
+ * first shipped.
+ *
+ * @param tables - the tables
+ * @returns one row per added column
+ */
+function addedColumns(tables) {
+  log.debug("Entering addedColumns().");
+  const out = [];
+  tables.forEach(function (table) {
+    table.columns.filter(function (column) {
+      return column.added;
+    }).forEach(function (column) {
+      out.push({ table: table.name, column: column.name, statement:
+        ['ALTER TABLE', table.name, 'ADD COLUMN IF NOT EXISTS', column.name,
+          column.sqlType, column.clauses].filter(Boolean).join(' ') });
+    });
+  });
+  log.debug("Leaving addedColumns().");
+  return out;
+}
+
+/**
  * The persistence namespace of a compiled program.
  *
  * @param program - the compiled program
@@ -427,7 +485,8 @@ export function readPersistence(program, engine) {
     tables: tables,
     objects: objects.map(function (one) {
       return one.object;
-    })
+    }),
+    added: addedColumns(tables)
   };
   log.debug("Leaving readPersistence().");
   return result;
