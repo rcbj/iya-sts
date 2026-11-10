@@ -82,6 +82,7 @@ import ModelTables = require('./model_tables');
 import helpers = require('./helpers');
 import errorCodes = require('./error_codes');
 import InstanceSlot = require('./instance_slot');
+import Classes = require('./domain_classes');
 
 const { log } = helpers;
 
@@ -187,51 +188,20 @@ interface ServiceAccountsDeps {
                              problems?: string[] };
 }
 
-// The first value of an attribute on any of the three shapes an entry is
-// handed around in here: a stored entry (`attributes`, lower-cased keys,
-// arrays), an `entryObject()` (`attributes`, spelt keys) or a flat object.
-function firstOf(entry: any, name: string): string {
-  log.debug("Entering firstOf(). " + name);
+// What an entry is, as the domain model says it means (#1390), on any of the
+// three shapes an entry is handed around in here: a stored entry
+// (`attributes`, lower-cased keys, arrays), an `entryObject()` (`attributes`,
+// spelt keys) or a flat object. One per read of an entry, not one per field.
+function conceptOf(entry: any, secrets?: string[]): IyaDomain.ServiceAccount {
+  log.debug("Entering conceptOf().");
   const bag = entry && typeof entry === 'object'
     ? (entry.attributes && typeof entry.attributes === 'object'
       ? entry.attributes : entry)
     : {};
-  let found = bag[name];
-  if (found === undefined) {
-    found = bag[name.toLowerCase()];
-  }
-  if (found === undefined) {
-    const wanted = name.toLowerCase();
-    const key = Object.keys(bag).filter(function (one) {
-      return one.toLowerCase() === wanted;
-    })[0];
-    found = key === undefined ? undefined : bag[key];
-  }
-  const value = Array.isArray(found) ? found[0] : found;
-  log.debug("Leaving firstOf().");
-  return value === undefined || value === null ? '' : String(value);
-}
-
-// Every value of an attribute, on the same three shapes `firstOf()` reads —
-// for the one list here, the owners (#600). Blank values are left out.
-function allOf(entry: any, name: string): string[] {
-  log.debug("Entering allOf(). " + name);
-  const bag = entry && typeof entry === 'object'
-    ? (entry.attributes && typeof entry.attributes === 'object'
-      ? entry.attributes : entry)
-    : {};
-  const wanted = name.toLowerCase();
-  const key = Object.keys(bag).filter(function (one) {
-    return one.toLowerCase() === wanted;
-  })[0];
-  const found = key === undefined ? [] : [].concat(bag[key]);
-  const out = found.map(function (one) {
-    return one === undefined || one === null ? '' : String(one).trim();
-  }).filter(function (one) {
-    return !!one;
-  });
-  log.debug("Leaving allOf(). " + out.length);
-  return out;
+  const held = Classes.ServiceAccount.fromEntry(bag,
+    secrets ? { secrets: secrets } : {});
+  log.debug("Leaving conceptOf().");
+  return held;
 }
 
 // THE OWNERS A CALLER GAVE (#600), as a list of the strings it named — or
@@ -372,7 +342,7 @@ class ServiceAccounts {
    */
   static isServiceAccount(entry: unknown): boolean {
     log.debug("Entering ServiceAccounts.isServiceAccount().");
-    const out = firstOf(entry, 'stsServiceAccount').toUpperCase() === 'TRUE';
+    const out = conceptOf(entry).serviceAccount === true;
     log.debug("Leaving ServiceAccounts.isServiceAccount(). " + out);
     return out;
   }
@@ -452,9 +422,9 @@ class ServiceAccounts {
     const { log } = this.deps;
     log.debug("Entering ServiceAccounts.policyReference().");
     const found = this.read(username);
-    const out = found && found.person &&
-                ServiceAccounts.isServiceAccount(found.values)
-      ? firstOf(found.values, 'stsServiceAccountPolicy').trim().toLowerCase()
+    const held = found && found.person ? conceptOf(found.values) : null;
+    const out = held && held.serviceAccount === true
+      ? (held.serviceAccountPolicy || '').trim().toLowerCase()
       : '';
     log.debug("Leaving ServiceAccounts.policyReference(). " + (out || 'none'));
     return out;
@@ -471,19 +441,23 @@ class ServiceAccounts {
     const { log } = this.deps;
     log.debug("Entering ServiceAccounts.of().");
     const found = this.read(username);
-    if (!found || !found.person ||
-        !ServiceAccounts.isServiceAccount(found.values)) {
+    // One concept for the whole answer: `list()` asks this of every account.
+    const held = found && found.person ? conceptOf(found.values) : null;
+    if (!held || held.serviceAccount !== true) {
       log.debug("Leaving ServiceAccounts.of(). Not a service account.");
       return null;
     }
-    const value = function (name: string): string {
-      return firstOf(found.values, name);
-    };
     // EVERY OWNER, resolved (#600). A value that no longer names a person or
     // a group — an owner deleted since — is kept with an empty kind, so the
     // page can say so and a Save can take it off; it is never dropped here.
     const self = this;
-    const owners = allOf(found.values, 'stsServiceAccountOwner')
+    const owners = (held.owners || [])
+      .map(function (one) {
+        return one.trim();
+      })
+      .filter(function (one) {
+        return !!one;
+      })
       .map(function (dn) {
         const resolved = self.directory &&
                          typeof self.directory.resolveOwner === 'function'
@@ -499,18 +473,18 @@ class ServiceAccounts {
       dn: found.dn,
       serviceAccount: true,
       owners: owners,
-      destination: value('stsSecretDestination'),
-      secretName: value('stsSecretName'),
-      rotatedAt: value('stsPasswordRotatedAt'),
+      destination: held.secretDestination || '',
+      secretName: held.secretName || '',
+      rotatedAt: held.passwordRotatedAt || '',
       previousPasswordExpires:
-        ServiceAccounts.timeFrom(value('stsPreviousPasswordExpires')),
+        ServiceAccounts.timeFrom(held.previousPasswordExpires),
       rotation: {
-        failures: ServiceAccounts.countFrom(value('stsRotationFailures')),
-        lastError: value('stsRotationLastError'),
-        lastAttempt: ServiceAccounts.timeFrom(value('stsRotationLastAttempt'))
+        failures: ServiceAccounts.countFrom(held.rotationFailures),
+        lastError: held.rotationLastError || '',
+        lastAttempt: ServiceAccounts.timeFrom(held.rotationLastAttempt)
       },
-      ownerProtected: value('stsOwnerProtected').toUpperCase() === 'TRUE',
-      policy: value('stsServiceAccountPolicy').trim().toLowerCase()
+      ownerProtected: held.ownerProtected === true,
+      policy: (held.serviceAccountPolicy || '').trim().toLowerCase()
     };
     log.debug("Leaving ServiceAccounts.of().");
     return out;
@@ -654,7 +628,7 @@ class ServiceAccounts {
     const onEntry = selfDn ? this.read(selfDn) : null;
     const reference = body.policy !== undefined && body.policy !== null
       ? String(body.policy)
-      : (onEntry ? firstOf(onEntry.values, 'stsServiceAccountPolicy') : '');
+      : (onEntry ? conceptOf(onEntry.values).serviceAccountPolicy || '' : '');
     if (!owners.length &&
         this.deps.requiresOwner(reference, String(selfDn || ''))) {
       log.debug("Leaving ServiceAccounts.check(). No owner.");
@@ -970,13 +944,14 @@ class ServiceAccounts {
     const { log } = this.deps;
     log.debug("Entering ServiceAccounts.previousPassword().");
     const found = this.read(username);
-    if (!found || !ServiceAccounts.isServiceAccount(found.values)) {
+    // The hash is the concept's secret, named where it is compared (#1390).
+    const held = found ? conceptOf(found.values, ['previousPassword']) : null;
+    if (!held || held.serviceAccount !== true) {
       log.debug("Leaving ServiceAccounts.previousPassword(). Not one.");
       return null;
     }
-    const hash = firstOf(found.values, 'stsPreviousPassword');
-    const expires = Number(firstOf(found.values,
-                                   'stsPreviousPasswordExpires')) || 0;
+    const hash = held.previousPassword || '';
+    const expires = Number(held.previousPasswordExpires) || 0;
     // THE EXPIRY IS ASKED HERE, AT THE READ (correctness, not housekeeping —
     // the root CLAUDE.md's rule): a hash the clean-up job has not reached yet
     // is never accepted after its time.
@@ -1050,13 +1025,13 @@ class ServiceAccounts {
     const { log } = this.deps;
     log.debug("Entering ServiceAccounts.clearExpiredPrevious().");
     const found = this.read(username);
-    if (!found || !ServiceAccounts.isServiceAccount(found.values)) {
+    const held = found ? conceptOf(found.values, ['previousPassword']) : null;
+    if (!held || held.serviceAccount !== true) {
       log.debug("Leaving ServiceAccounts.clearExpiredPrevious(). Not one.");
       return false;
     }
-    const hash = firstOf(found.values, 'stsPreviousPassword');
-    const expires = Number(firstOf(found.values,
-                                   'stsPreviousPasswordExpires')) || 0;
+    const hash = held.previousPassword || '';
+    const expires = Number(held.previousPasswordExpires) || 0;
     const now = nowMs === undefined ? Date.now() : nowMs;
     if (!hash && !expires) {
       log.debug("Leaving ServiceAccounts.clearExpiredPrevious(). None held.");

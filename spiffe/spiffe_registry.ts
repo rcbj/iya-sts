@@ -92,6 +92,7 @@
 // ---------------------------------------------------------------------------
 
 import ModelTables = require('../common/model_tables');
+import Classes = require('../common/domain_classes');
 import crypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
@@ -241,77 +242,34 @@ class SpiffeRegistry {
     return config.value('spiffe.maxAgents');
   }
 
-  // Every attribute lookup goes through here, because names arrive canonically
-  // spelled on the way OUT of the directory and lower-cased in the store. An
-  // index assuming either produces a record with an empty identifier rather
-  // than an error — the defect `applications.js` names in its own header.
+  // A concept holds what the entry says as text, so its LDAP booleans and
+  // integers are read here. The concept's own lookup is what makes a name
+  // arriving canonically spelled and one lower-cased in the store the same
+  // attribute (#1390), the defect `applications.js` names in its own header.
   /**
-   * Returns an attribute's values by its name, whatever case either side spells
-   * it in.
+   * Reads a concept's field as an LDAP boolean.
    *
-   * @param attributes - the entry's attributes
-   * @param name - the attribute's name
-   * @returns the values, or []
-   */
-  byLowerName(attributes, name) {
-    const { log } = this.deps;
-    log.debug("Entering SpiffeRegistry.byLowerName().");
-    if (!attributes) {
-      log.debug("Leaving SpiffeRegistry.byLowerName().");
-      return [];
-    }
-    const key = String(name).toLowerCase();
-    const found = attributes[key] !== undefined ? attributes[key] :
-                  attributes[name];
-    if (found === undefined) {
-      log.debug("Leaving SpiffeRegistry.byLowerName().");
-      return [];
-    }
-    log.debug("Leaving SpiffeRegistry.byLowerName().");
-    return Array.isArray(found) ? found : [found];
-  }
-
-  /**
-   * Returns an attribute's first value.
-   *
-   * @param attributes - the entry's attributes
-   * @param name - the attribute's name
-   * @returns the value, or ''
-   */
-  firstValue(attributes, name) {
-    const { log } = this.deps;
-    log.debug("Entering SpiffeRegistry.firstValue().");
-    const values = this.byLowerName(attributes, name);
-    log.debug("Leaving SpiffeRegistry.firstValue().");
-    return values.length ? String(values[0]) : '';
-  }
-
-  /**
-   * Reads an attribute as an LDAP boolean.
-   *
-   * @param attributes - the entry's attributes
-   * @param name - the attribute's name
+   * @param text - the field's value, if it has one
    * @returns whether it is TRUE
    */
-  boolValue(attributes, name) {
+  isTrue(text) {
     const { log } = this.deps;
-    log.debug("Entering SpiffeRegistry.boolValue().");
-    log.debug("Leaving SpiffeRegistry.boolValue().");
-    return /^true$/i.test(this.firstValue(attributes, name));
+    log.debug("Entering SpiffeRegistry.isTrue().");
+    log.debug("Leaving SpiffeRegistry.isTrue().");
+    return /^true$/i.test(text || '');
   }
 
   /**
-   * Reads an attribute as an integer.
+   * Reads a concept's field as an integer.
    *
-   * @param attributes - the entry's attributes
-   * @param name - the attribute's name
+   * @param text - the field's value, if it has one
    * @returns the integer, or 0
    */
-  intValue(attributes, name) {
+  intOf(text) {
     const { log } = this.deps;
-    log.debug("Entering SpiffeRegistry.intValue().");
-    const n = parseInt(this.firstValue(attributes, name), 10);
-    log.debug("Leaving SpiffeRegistry.intValue().");
+    log.debug("Entering SpiffeRegistry.intOf().");
+    const n = parseInt(text || '', 10);
+    log.debug("Leaving SpiffeRegistry.intOf().");
     return Number.isFinite(n) ? n : 0;
   }
 
@@ -472,28 +430,31 @@ class SpiffeRegistry {
       return null;
     }
     const a = entry.attributes || {};
+    // The entry as the domain model says it means (#1390), made once per
+    // entry: this runs for every entry of every Workload API answer.
+    const held = Classes.SpiffeRegistration.fromEntry(a);
     const record: Record<string, any> = {
-      id: this.firstValue(a, 'spiffeEntryId') || this.firstValue(a, 'cn'),
+      id: held.entryId || held.cn || '',
       dn: entry.dn,
-      spiffeId: this.firstValue(a, 'spiffeId'),
-      parentId: this.firstValue(a, 'spiffeParentId'),
-      selectors: this.byLowerName(a, 'spiffeSelector').map(function (s) {
+      spiffeId: held.id || '',
+      parentId: held.parentId || '',
+      selectors: (held.selector || []).map(function (s) {
         return self.parseSelector(s);
       }).filter(Boolean),
-      x509SvidTtl: this.intValue(a, 'spiffeX509SvidTtl'),
-      jwtSvidTtl: this.intValue(a, 'spiffeJwtSvidTtl'),
-      dnsNames: this.byLowerName(a, 'spiffeDnsName').map(String),
-      federatesWith: this.byLowerName(a, 'spiffeFederatesWith').map(String),
-      hint: this.firstValue(a, 'spiffeHint'),
-      admin: this.boolValue(a, 'spiffeAdmin'),
-      downstream: this.boolValue(a, 'spiffeDownstream'),
-      storeSvid: this.boolValue(a, 'spiffeStoreSvid'),
-      expiresAt: this.intValue(a, 'spiffeEntryExpiresAt'),
-      revisionNumber: this.intValue(a, 'spiffeRevisionNumber'),
-      origin: this.firstValue(a, 'spiffeOrigin') || 'unstated',
-      svidsIssued: this.intValue(a, 'spiffeSvidsIssued'),
-      lastSvidAt: this.firstValue(a, 'spiffeLastSvidAt'),
-      createdAt: this.firstValue(a, 'spiffeCreatedAt') || entry.createdAt || '',
+      x509SvidTtl: this.intOf(held.x509SvidTtl),
+      jwtSvidTtl: this.intOf(held.jwtSvidTtl),
+      dnsNames: held.dnsName || [],
+      federatesWith: held.federatesWith || [],
+      hint: held.hint || '',
+      admin: this.isTrue(held.admin),
+      downstream: this.isTrue(held.downstream),
+      storeSvid: this.isTrue(held.storeSvid),
+      expiresAt: this.intOf(held.entryExpiresAt),
+      revisionNumber: this.intOf(held.revisionNumber),
+      origin: held.origin || 'unstated',
+      svidsIssued: this.intOf(held.svidsIssued),
+      lastSvidAt: held.lastSvidAt || '',
+      createdAt: held.createdAt || entry.createdAt || '',
       modifiedAt: entry.modifiedAt || '',
       attributes: a
     };
@@ -518,21 +479,19 @@ class SpiffeRegistry {
     const { log } = this.deps;
     log.debug('Entering SpiffeRegistry.attributesFromRecord().');
     const now = this.generalizedTime();
-    const previous = existing || {};
+    const previous = Classes.SpiffeRegistration.fromEntry(existing || {});
     const attributes: Record<string, any> = {
       objectclass: ['top', 'applicationProcess', 'spiffeRegistrationEntry'],
       cn: [record.id],
       spiffeentryid: [record.id],
       spiffeid: [record.spiffeId],
       spiffeparentid: [record.parentId],
-      spiffecreatedat: [this.firstValue(previous, 'spiffeCreatedAt') || now],
-      spiffeorigin: [record.origin ||
-                     this.firstValue(previous, 'spiffeOrigin') ||
-                     'unstated'],
+      spiffecreatedat: [previous.createdAt || now],
+      spiffeorigin: [record.origin || previous.origin || 'unstated'],
       spifferevisionnumber: [String(record.revisionNumber || 0)],
       spiffesvidsissued: [String(record.svidsIssued || 0)],
       description: [record.description ||
-                    this.firstValue(previous, 'description') ||
+                    (previous.description || [])[0] ||
                     'A SPIFFE registration entry.']
     };
     const selectors = (record.selectors || []).map(this.selectorText.bind(this))
@@ -1294,21 +1253,24 @@ class SpiffeRegistry {
       return null;
     }
     const a = entry.attributes || {};
+    // An agent is the same concept as a registration entry (#1390): both are
+    // what `ou=spiffe` holds, and the agent's fields are its own.
+    const held = Classes.SpiffeRegistration.fromEntry(a);
     log.debug('Leaving SpiffeRegistry.agentFromEntry().');
     return {
-      id: this.firstValue(a, 'spiffeAgentId'),
+      id: held.agentId || '',
       dn: entry.dn,
-      attestationType: this.firstValue(a, 'spiffeAttestationType'),
-      selectors: this.byLowerName(a, 'spiffeAgentSelector')
+      attestationType: held.attestationType || '',
+      selectors: (held.agentSelector || [])
         .map(this.parseSelector.bind(this))
         .filter(Boolean),
-      banned: this.boolValue(a, 'spiffeAgentBanned'),
-      canReattest: this.boolValue(a, 'spiffeAgentCanReattest'),
-      svidHash: this.firstValue(a, 'spiffeAgentSvidHash'),
-      expiresAt: this.intValue(a, 'spiffeAgentExpiresAt'),
-      firstSeen: this.firstValue(a, 'spiffeFirstSeen'),
-      lastSeen: this.firstValue(a, 'spiffeLastSeen'),
-      attestations: this.intValue(a, 'spiffeAttestations'),
+      banned: this.isTrue(held.agentBanned),
+      canReattest: this.isTrue(held.agentCanReattest),
+      svidHash: held.agentSvidHash || '',
+      expiresAt: this.intOf(held.agentExpiresAt),
+      firstSeen: held.firstSeen || '',
+      lastSeen: held.lastSeen || '',
+      attestations: this.intOf(held.attestations),
       attributes: a
     };
   }
