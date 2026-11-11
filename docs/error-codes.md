@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5421** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5423** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -66,8 +66,8 @@ is an ordinary outcome.
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 434
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 754
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
-* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 70
-* [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 31
+* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 71
+* [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 32
 * [Federation (`STS-FED`)](#sts-fed) — 217
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 257
@@ -2733,6 +2733,7 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0068` | A Validate named a Kerberos token the acceptor did not accept, or that was not checked because wstrust.acceptKerberos is off (#658). | HTTP 200 RSTR with wst:Status invalid, WS-Trust 1.4 section 7 |
 | `STS-WSTRUST-0069` | A WS-Security signature's KeyInfo names a Kerberos token that the security header does not carry, by Reference or by its #Kerberosv5APREQSHA1 key identifier (#658). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0070` | A UsernameToken was refused without being checked: too many recent failures for that identity (#1448). | SOAP FailedAuthentication |
+| `STS-WSTRUST-0071` | A SOAP envelope /sts built — an RSTR, an RSTR collection or a Fault — does not match its model in models/ws/ (#1579): its root, an attribute, a fixed value, or a child element or its order, the SAML assertion inside held to models/saml/. The envelope is sent as it was built: the model describes the wire and does not reshape it, so this is a model gap to close. | none (recorded only; the envelope is unchanged) |
 
 ## STS-WSFED
 
@@ -2773,6 +2774,7 @@ Raised from: ws-federation/.
 | `STS-WSFED-0029` | An identity-provider-initiated sign-in back from its one step-up on risk (sts_risk_retry=1) was still denied on risk by the issuance policy, and was refused rather than sent round again (#712). | HTTP 403 error page |
 | `STS-WSFED-0030` | A wsignin1.0 named an EAP phishing-resistant class URI as wauth (phr, or only phrh) and the session still had not earned that class after the one trip to the sign-in screen. A page, because this profile has no status to carry. Two class URIs in one wauth stay the unknown-method refusal (#737). | HTTP 400 error page |
 | `STS-WSFED-0031` | A WS-Federation sign-in was refused because the person declined, on the consent screen, to sign in to the relying party (ASVS 5.0.0 7.6.2). | — |
+| `STS-WSFED-0032` | A WS-Federation sign-in response (the RSTR posted in wresult) or the metadata role this service built does not match its model in models/ws/ (#1579): its root, an attribute, a fixed value, or a child element or its order. It is sent as it was built: the model describes the wire and does not reshape it, so this is a model gap to close. | none (recorded only; the document is unchanged) |
 
 ## STS-FED
 

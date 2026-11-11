@@ -4,10 +4,13 @@
 // File: models/lib/saml_lib.mjs
 //
 // ---------------------------------------------------------------------------
-// THE SAML MODEL, READ FROM A COMPILED PROGRAM (#1579).
+// THE SAML MODEL, READ FROM A COMPILED PROGRAM (#1579) — AND EVERY OTHER
+// XML FAMILY WRITTEN WITH THESE DECORATORS.
 //
-// `readSaml()` turns the `@vocabulary`, `@message` and `@params` models into
-// the tables `models/generated/saml.json` holds: every vocabulary's terms
+// `readSaml()` turns the `@vocabulary`, `@message` and `@params` models of
+// one FAMILY (`FAMILIES`, by the prefix of each id) into the tables its
+// generated file holds — `models/generated/saml.json` for SAML 2.0 and 1.1,
+// `ws.json` for SOAP, WS-Trust and WS-Federation: every vocabulary's terms
 // with what this service does with each, every message's attributes and
 // child elements in the order the schema's sequence has them, and every
 // parameter set. `checkSaml()` refuses a model a reader or a writer could
@@ -36,6 +39,15 @@ const ELEMENT = Symbol.for('iya.saml.element');
 const PARAMS = Symbol.for('iya.saml.params');
 const PARAM = Symbol.for('iya.saml.param');
 
+// The families, each its generated file, by the prefixes of their ids. An id
+// no family claims is refused by `unclaimed()`, so a model cannot be written
+// that no file carries.
+export const FAMILIES = {
+  saml: ['saml2.', 'saml11.', 'md.'],
+  ws: ['soap11.', 'soap12.', 'soap.', 'wsa.', 'wsse.', 'wsu.', 'wsp.', 'wst.',
+       'wsfed.']
+};
+
 // The term flags, and the vocabularies (by the end of their id) each applies
 // to.
 const TERM_FLAGS = {
@@ -47,8 +59,31 @@ const TERM_FLAGS = {
   mfaDemand: ['.authnContext'],
   equivalent: ['.authnContext', '.authnMethod'],
   answered: ['.request'],
-  readOnly: ['']
+  readOnly: [''],
+  wauth: ['.wauth'],
+  aliasOf: ['.tokenType'],
+  shortForms: ['.tokenType'],
+  offered: ['.tokenType'],
+  display: ['.claim'],
+  description: ['.claim'],
+  invented: ['.claim']
 };
+
+/**
+ * Whether an id is one of a family's.
+ *
+ * @param family - the family's name in `FAMILIES`
+ * @param id - the id
+ * @returns true when one of its prefixes begins the id
+ */
+function ofFamily(family, id) {
+  log.debug("Entering ofFamily(). " + family + " " + id);
+  const out = (FAMILIES[family] || []).some(function (prefix) {
+    return String(id).indexOf(prefix) === 0;
+  });
+  log.debug("Leaving ofFamily(). " + out);
+  return out;
+}
 
 export const $decorators = {
   'IyaSts.SamlLib': {
@@ -98,22 +133,62 @@ function readingOf(type) {
 }
 
 /**
- * The SAML model a compiled program declares.
+ * The ids a compiled program declares that no family claims.
  *
  * @param program - the compiled program
+ * @returns the ids
+ */
+export function unclaimed(program) {
+  log.debug("Entering unclaimed().");
+  const out = [];
+  [VOCABULARY, MESSAGE, PARAMS].forEach(function (key) {
+    program.stateMap(key).forEach(function (options) {
+      const claimed = Object.keys(FAMILIES).some(function (family) {
+        return ofFamily(family, options.id);
+      });
+      if (!claimed) {
+        out.push(options.id);
+      }
+    });
+  });
+  log.debug("Leaving unclaimed(). " + out.length);
+  return out;
+}
+
+/**
+ * The model one family of a compiled program declares.
+ *
+ * @param program - the compiled program
+ * @param family - the family's name in `FAMILIES`; SAML's by default
  * @returns `{ vocabularies, messages, params }`
  */
-export function readSaml(program) {
-  log.debug("Entering readSaml().");
+export function readSaml(program, family) {
+  const which = family || 'saml';
+  log.debug("Entering readSaml(). " + which);
   const vocabularies = {};
+  // A term written as another vocabulary's property, by that property.
+  const idOfVocabulary = new Map();
   program.stateMap(VOCABULARY).forEach(function (options, model) {
+    idOfVocabulary.set(model, options.id);
+  });
+  program.stateMap(VOCABULARY).forEach(function (options, model) {
+    if (!ofFamily(which, options.id)) {
+      return;
+    }
     const terms = [];
     model.properties.forEach(function (property) {
       const one = program.stateMap(TERM).get(property) || {};
+      const type = property.type;
+      const referenced = type && type.kind === 'ModelProperty' ? type : null;
+      const literal = referenced ? referenced.type : type;
       const term = { name: property.name,
-                     value: property.type.kind === 'String'
-                       ? property.type.value : null,
+                     value: literal && literal.kind === 'String'
+                       ? literal.value : null,
                      cite: one.cite || '' };
+      if (referenced) {
+        term.same = (idOfVocabulary.get(referenced.model) || '?') + '.' +
+          referenced.name;
+      }
       Object.keys(TERM_FLAGS).forEach(function (flag) {
         if (one[flag] !== undefined) {
           term[flag] = Array.isArray(one[flag]) ? one[flag].slice(0)
@@ -126,10 +201,16 @@ export function readSaml(program) {
     if (options.prefix !== undefined) {
       out.prefix = options.prefix;
     }
+    if (options.relative === true) {
+      out.relative = true;
+    }
     vocabularies[options.id] = out;
   });
   const messages = {};
   program.stateMap(MESSAGE).forEach(function (options, model) {
+    if (!ofFamily(which, options.id)) {
+      return;
+    }
     const attributes = [];
     const elements = [];
     model.properties.forEach(function (property) {
@@ -155,7 +236,9 @@ export function readSaml(program) {
             program.stateMap(MESSAGE).has(held)) {
           one.message = program.stateMap(MESSAGE).get(held).id;
         }
-        ['or', 'written', 'signer', 'read'].forEach(function (key) {
+        ['or', 'written', 'signer', 'read', 'xmlns', 'anotherPartys',
+         'inSignedBody']
+          .forEach(function (key) {
           if (element[key] !== undefined) {
             one[key] = Array.isArray(element[key]) ? element[key].slice(0)
                                                    : element[key];
@@ -166,14 +249,23 @@ export function readSaml(program) {
         elements.push({ name: property.name, undecorated: true });
       }
     });
-    messages[options.id] = { cite: options.cite, model: model.name,
-                             element: options.element,
-                             xmlns: options.xmlns,
-                             direction: options.direction,
-                             attributes: attributes, elements: elements };
+    const message = { cite: options.cite, model: model.name,
+                      element: options.element,
+                      direction: options.direction,
+                      attributes: attributes, elements: elements };
+    if (options.xmlns !== undefined) {
+      message.xmlns = options.xmlns;
+    }
+    if (options.namespaces !== undefined) {
+      message.namespaces = options.namespaces;
+    }
+    messages[options.id] = message;
   });
   const params = {};
   program.stateMap(PARAMS).forEach(function (options, model) {
+    if (!ofFamily(which, options.id)) {
+      return;
+    }
     const list = [];
     model.properties.forEach(function (property) {
       const one = program.stateMap(PARAM).get(property) || {};
@@ -185,6 +277,11 @@ export function readSaml(program) {
       if (one.accepts !== undefined) {
         param.accepts = one.accepts.slice(0);
       }
+      ['use', 'refusedAs'].forEach(function (key) {
+        if (one[key] !== undefined) {
+          param[key] = one[key];
+        }
+      });
       list.push(param);
     });
     params[options.id] = { cite: options.cite, model: model.name,
@@ -222,6 +319,21 @@ export function checkSaml(saml) {
       }
       if (!term.cite) {
         problems.push(where + ' cites nothing');
+      }
+      if (vocabulary.relative && term.value &&
+          term.value.indexOf('/') !== 0) {
+        problems.push(where + ' is appended to a namespace and does not ' +
+                      'begin with /');
+      }
+      if (term.same && term.same.indexOf('?') === 0) {
+        problems.push(where + ' is another property, of no vocabulary');
+      }
+      if (term.aliasOf !== undefined &&
+          !vocabulary.terms.some(function (other) {
+            return other.name === term.aliasOf && other !== term;
+          })) {
+        problems.push(where + '\'s aliasOf ' + term.aliasOf + ' is no ' +
+                      'other term of ' + id);
       }
       if (vocabulary.prefix && term.value &&
           term.value.indexOf(vocabulary.prefix) !== 0 &&
@@ -264,6 +376,15 @@ export function checkSaml(saml) {
     if (!message.cite) {
       problems.push('the message ' + id + ' cites nothing');
     }
+    if ((message.xmlns === undefined) === (message.namespaces === undefined)) {
+      problems.push('the message ' + id + ' names its namespace by xmlns ' +
+                    'or by namespaces, and exactly one of them');
+    }
+    if (message.namespaces !== undefined &&
+        !saml.vocabularies[message.namespaces]) {
+      problems.push('the message ' + id + '\'s namespaces ' +
+                    message.namespaces + ' is no vocabulary of its family');
+    }
     const names = new Set();
     const xmls = new Set();
     message.attributes.forEach(function (one) {
@@ -293,11 +414,18 @@ export function checkSaml(saml) {
         return;
       }
       const where = id + '/' + one.xml;
-      if (names.has(one.name) || xmls.has(one.xml)) {
+      // Two children of one local name are told apart by their namespace.
+      const key = (one.xmlns ? '{' + one.xmlns + '}' : '') + one.xml;
+      if (names.has(one.name) || xmls.has(key) ||
+          (one.xmlns && xmls.has(one.xml)) ||
+          (!one.xmlns && Array.from(xmls).some(function (seen) {
+            return /^\{/.test(seen) && seen.replace(/^\{[^}]*\}/, '') ===
+              one.xml;
+          }))) {
         problems.push(where + ' is declared twice');
       }
       names.add(one.name);
-      xmls.add(one.xml);
+      xmls.add(key);
       if (!one.cite) {
         problems.push(where + ' cites nothing');
       }

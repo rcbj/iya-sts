@@ -1,7 +1,9 @@
 # ws-federation/
 
-WS-Federation 1.2, the passive requestor profile. One file. The mock relying
-party at `/wsfed/rp` was deleted by #592 (see the last section).
+WS-Federation 1.2, the passive requestor profile. One file; its model is
+read through `../ws-trust/ws_model.ts` (see *THE MESSAGES ARE THE MODEL'S*,
+at the end). The mock relying party at `/wsfed/rp` was deleted by #592 (see
+*The mock relying party — deleted*).
 
 4. **`wsfed.ts` must stay after `authn/authn.ts` in the require order**, and
    that is a dependency rather than a preference: it signs users in to the
@@ -433,3 +435,43 @@ stays: `tests/saml_signature_algorithms.js` and `tests/issuer_names.js` ask
 it whether an assertion this service signed verifies. The relying party a
 test needs is the test peer's (`tests/peer/peer_saml.js`, #586).
 `STS-WSFED-0016` is retired. `common/CLAUDE.md` 3cm has the whole record.
+
+## THE MESSAGES ARE THE MODEL'S (#1579, 2026-11-10)
+
+**`models/ws/wsfed.tsp` is the source of this profile's parameters, its
+vocabularies, and the order its sign-in response and metadata role are
+written in**, read through `../ws-trust/ws_model.ts` beside WS-Trust's and
+SAML's model (`../ws-trust/CLAUDE.md` has the mechanism, which is one).
+
+* **The parameters (`wsfed.passive`)**: every one section 13.2 defines,
+  with its `use` — `read` (`wa`, `wtrealm`, `wreply`, `wfresh`, `wauth`,
+  `wreq`), `recorded` and not enforced (`wct`, `whr`, `wp`, `wencoding`),
+  `refused` (`wreqptr`, `refusedAs` STS-WSFED-0001), `echoed` (`wctx`),
+  `written` (`wresult`), `ignored` (`wres`) — and the two non-spec ones,
+  `tokenType` and `trust` (whose `accepts` is `1.3`, else 2005/02).
+* **The vocabularies**: the `wa` actions (`answered: false` is the 501 of
+  `wattr1.0` and `wpseudo1.0`); the token types, which ARE SAML's two
+  assertion namespaces, written as those properties, with the short forms
+  the `tokenType` parameter takes and `offered` for the metadata; the
+  `wauth` values with the demand each is read as (`password`,
+  `multiFactor`, `hardware`) — four of the password ones, multipleauthn and
+  HardwareToken are SAML's own terms, written as properties, and the
+  refusal page lists them in the model's order; the claim types, with the
+  display name and the description the metadata offers in each mode
+  (`invented` is development's); the 2005/02 NoProofKey key type; and the
+  namespaces.
+* **The sign-in response**: `buildRstr()` joins the RSTR in AD FS's order,
+  which differs from `/sts`'s and is therefore its own message
+  (`wsfed.RequestSecurityTokenResponse`), and the 1.3 collection around it.
+  **The metadata role**: `roleDescriptor()` joins the
+  `fed:SecurityTokenServiceType` role from the model, its offered token and
+  claim types from the vocabularies. Both are held as they are built — the
+  role as a fragment whose `md:` the EntityDescriptor declares — a gap
+  logged under **STS-WSFED-0032**, the document unchanged.
+
+**Byte for byte** and **what stays in code**: `../ws-trust/CLAUDE.md`'s
+section of the same name; here what stays is the sign-in itself — the
+session, `wfresh`'s age, `wauth`'s step-up and the EAP classes
+(`../common/phishing_resistance.ts`), the registered `wreply`, the
+issuance policy — and the prose of the pages, which names the actions and
+parameters as words.
