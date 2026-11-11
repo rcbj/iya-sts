@@ -196,6 +196,7 @@ Scope: `admin:read`.
 | `attributes.rules[]` | string |  |  |
 | `attributes.schema` | object |  |  |
 | `attributes.schema.attributes` | list |  |  |
+| `attributes.schema.attributes[].kind` | one of `single`, `multi` |  |  |
 | `attributes.schema.attributes[].name` | string |  |  |
 | `attributes.schema.attributes[].what` | string |  |  |
 | `attributes.schema.container` | string |  |  |
@@ -204,6 +205,7 @@ Scope: `admin:read`.
 | `attributes.schema.objectClasses[].name` | string |  |  |
 | `attributes.schema.objectClasses[].what` | string |  |  |
 | `attributes.schema.personAttributes` | list |  |  |
+| `attributes.schema.personAttributes[].kind` | one of `single`, `multi` |  |  |
 | `attributes.schema.personAttributes[].name` | string |  |  |
 | `attributes.schema.personAttributes[].what` | string |  |  |
 | `attributes.selectors` | list |  |  |
@@ -364,6 +366,7 @@ Scope: `admin:read`.
 | `authn.rules[]` | string |  |  |
 | `authn.schema` | object |  |  |
 | `authn.schema.attributes` | list |  |  |
+| `authn.schema.attributes[].kind` | one of `single`, `multi` |  |  |
 | `authn.schema.attributes[].name` | string |  |  |
 | `authn.schema.attributes[].what` | string |  |  |
 | `authn.schema.container` | string |  |  |
@@ -372,6 +375,7 @@ Scope: `admin:read`.
 | `authn.schema.objectClasses[].name` | string |  |  |
 | `authn.schema.objectClasses[].what` | string |  |  |
 | `authn.schema.personAttributes` | list |  |  |
+| `authn.schema.personAttributes[].kind` | one of `single`, `multi` |  |  |
 | `authn.schema.personAttributes[].name` | string |  |  |
 | `authn.schema.personAttributes[].what` | string |  |  |
 | `authn.selectors` | list |  |  |
@@ -489,6 +493,7 @@ Scope: `admin:read`.
 | `locale.rules[]` | string |  |  |
 | `locale.schema` | object |  |  |
 | `locale.schema.attributes` | list |  |  |
+| `locale.schema.attributes[].kind` | one of `single`, `multi` |  |  |
 | `locale.schema.attributes[].name` | string |  |  |
 | `locale.schema.attributes[].what` | string |  |  |
 | `locale.schema.container` | string |  |  |
@@ -497,6 +502,7 @@ Scope: `admin:read`.
 | `locale.schema.objectClasses[].name` | string |  |  |
 | `locale.schema.objectClasses[].what` | string |  |  |
 | `locale.schema.personAttributes` | list |  |  |
+| `locale.schema.personAttributes[].kind` | one of `single`, `multi` |  |  |
 | `locale.schema.personAttributes[].name` | string |  |  |
 | `locale.schema.personAttributes[].what` | string |  |  |
 | `locale.selectors` | list |  |  |
@@ -678,6 +684,7 @@ Scope: `admin:read`.
 | `passkey.rules[]` | string |  |  |
 | `passkey.schema` | object |  |  |
 | `passkey.schema.attributes` | list |  |  |
+| `passkey.schema.attributes[].kind` | one of `single`, `multi` |  |  |
 | `passkey.schema.attributes[].name` | string |  |  |
 | `passkey.schema.attributes[].what` | string |  |  |
 | `passkey.schema.container` | string |  |  |
@@ -686,6 +693,7 @@ Scope: `admin:read`.
 | `passkey.schema.objectClasses[].name` | string |  |  |
 | `passkey.schema.objectClasses[].what` | string |  |  |
 | `passkey.schema.personAttributes` | list |  |  |
+| `passkey.schema.personAttributes[].kind` | one of `single`, `multi` |  |  |
 | `passkey.schema.personAttributes[].name` | string |  |  |
 | `passkey.schema.personAttributes[].what` | string |  |  |
 | `passkey.selectors` | list |  |  |
@@ -822,6 +830,7 @@ Scope: `admin:read`.
 | `password.rules[]` | string |  |  |
 | `password.schema` | object |  |  |
 | `password.schema.attributes` | list |  |  |
+| `password.schema.attributes[].kind` | one of `single`, `multi` |  |  |
 | `password.schema.attributes[].name` | string |  |  |
 | `password.schema.attributes[].what` | string |  |  |
 | `password.schema.container` | string |  |  |
@@ -830,6 +839,7 @@ Scope: `admin:read`.
 | `password.schema.objectClasses[].name` | string |  |  |
 | `password.schema.objectClasses[].what` | string |  |  |
 | `password.schema.personAttributes` | list |  |  |
+| `password.schema.personAttributes[].kind` | one of `single`, `multi` |  |  |
 | `password.schema.personAttributes[].name` | string |  |  |
 | `password.schema.personAttributes[].what` | string |  |  |
 | `password.selectors` | list |  |  |
@@ -943,6 +953,7 @@ Scope: `admin:read`.
 | `postLogin.rules[]` | string |  |  |
 | `postLogin.schema` | object |  |  |
 | `postLogin.schema.attributes` | list |  |  |
+| `postLogin.schema.attributes[].kind` | one of `single`, `multi` |  |  |
 | `postLogin.schema.attributes[].name` | string |  |  |
 | `postLogin.schema.attributes[].what` | string |  |  |
 | `postLogin.schema.container` | string |  |  |
@@ -951,6 +962,7 @@ Scope: `admin:read`.
 | `postLogin.schema.objectClasses[].name` | string |  |  |
 | `postLogin.schema.objectClasses[].what` | string |  |  |
 | `postLogin.schema.personAttributes` | list |  |  |
+| `postLogin.schema.personAttributes[].kind` | one of `single`, `multi` |  |  |
 | `postLogin.schema.personAttributes[].name` | string |  |  |
 | `postLogin.schema.personAttributes[].what` | string |  |  |
 | `postLogin.selectors` | list |  |  |
@@ -1086,6 +1098,7 @@ Scope: `admin:read`.
 | `serviceAccount.rules[]` | string |  |  |
 | `serviceAccount.schema` | object |  |  |
 | `serviceAccount.schema.attributes` | list |  |  |
+| `serviceAccount.schema.attributes[].kind` | one of `single`, `multi` |  |  |
 | `serviceAccount.schema.attributes[].name` | string |  |  |
 | `serviceAccount.schema.attributes[].what` | string |  |  |
 | `serviceAccount.schema.container` | string |  |  |
@@ -1094,6 +1107,7 @@ Scope: `admin:read`.
 | `serviceAccount.schema.objectClasses[].name` | string |  |  |
 | `serviceAccount.schema.objectClasses[].what` | string |  |  |
 | `serviceAccount.schema.personAttributes` | list |  |  |
+| `serviceAccount.schema.personAttributes[].kind` | one of `single`, `multi` |  |  |
 | `serviceAccount.schema.personAttributes[].name` | string |  |  |
 | `serviceAccount.schema.personAttributes[].what` | string |  |  |
 | `serviceAccount.selectors` | list |  |  |

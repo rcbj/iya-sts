@@ -241,11 +241,16 @@ function run(t) {
 
   t.equal(gapCount(first, 'no-schema', 'person'), 1, 'person has no SCHEMA');
   t.equal(gapCount(first, 'no-schema', 'group'), 1, 'group has no SCHEMA');
-  // A retired attribute nothing reads or writes, so nothing can say how
-  // many values it holds: it stays unspecified whatever else is stated.
-  t.check(gapCount(first, 'kind-unspecified', 'policy.postLogin',
-    'stsPostLoginNoPasskeyRole') >= 1,
-    'an attribute that omits kind stays unspecified');
+  // EVERY ATTRIBUTE STATES HOW MANY VALUES IT HOLDS (#1579, 2026-11-11):
+  // the model, or the standard that defines the name. A new attribute that
+  // states neither is a gap, and this is what reports it.
+  const unstated = first.gaps.filter(function (gap) {
+    return gap.code === 'kind-unspecified';
+  }).map(function (gap) {
+    return gap.object + '.' + gap.name;
+  });
+  t.equal(unstated.length, 0,
+    'every attribute states how many values it holds', unstated.join(', '));
   t.equal(gapCount(first, 'json-blob', 'attributeSource',
     'stsAttributeSourceData'), 1,
     'an attribute source is one JSON value');
@@ -354,16 +359,12 @@ function run(t) {
   const number = collector.parse(first, 'application',
     { appIdentifier: 1 });
   t.check(!number.ok, 'a number is not a single-valued string');
-  const postLogin = objectById(first, 'policy.postLogin');
-  const unspecified = postLogin.attributes.filter(function (row) {
-    return row.name === 'stsPostLoginNoPasskeyRole' &&
-      row.kind === 'unspecified';
-  })[0];
-  t.check(!!unspecified, 'a post-login policy attribute omits kind');
-  const loose = {};
-  loose[unspecified.name] = 1;
+  // A stated single-valued policy attribute is a string to the validator,
+  // as an application's is above.
+  const loose = { stsPostLoginNoPasskeyRole: 1 };
   const looseParsed = collector.parse(first, 'policy.postLogin', loose);
-  t.check(looseParsed.ok, 'unspecified kind accepts a non-string',
+  t.check(!looseParsed.ok,
+    'a single-valued policy attribute is not a number',
     looseParsed.errors.join(';'));
 
   const applicationClass = ModelEmit.directoryClass(application);
@@ -373,9 +374,10 @@ function run(t) {
     'the class parses with strictObject');
   t.check(applicationClass.indexOf('z.string()') >= 0,
     'a single attribute is a string');
-  const postLoginClass = ModelEmit.directoryClass(postLogin);
-  t.check(postLoginClass.indexOf('z.unknown()') >= 0,
-    'unspecified kind is unknown');
+  const postLoginClass = ModelEmit.directoryClass(
+    objectById(first, 'policy.postLogin'));
+  t.check(postLoginClass.indexOf('z.unknown()') < 0,
+    'every post-login attribute states its kind, so none is unknown');
   const passwordClass = ModelEmit.directoryClass(password);
   const onPerson = passwordClass.indexOf('class PolicyPasswordOnPerson');
   t.check(onPerson > passwordClass.indexOf('class PolicyPassword {'),

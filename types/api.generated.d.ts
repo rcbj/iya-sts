@@ -510,7 +510,7 @@ declare namespace IyaApi.Management {
   type WithConfigFileDefaultsFilePersistsAppconfig4 = Array<WithGroupSettingsConfigFile4>;
   type WithConfigFileDefaultsFilePersistsAppconfig5 = { "configFile"?: string | null; "defaultsFile"?: string | null; "persistsAppconfig"?: boolean; "persistsRealms"?: boolean; "persistenceMode"?: string; "inRealm"?: boolean; "realmId"?: string | null };
   type WithContainerDefinitionContainerObjectClasses = Array<WithKeyAttributeLabel>;
-  type WithContainerDefinitionContainerObjectClasses2 = { "container"?: string; "definitionContainer"?: string; "objectClasses"?: Array<{ "name"?: string; "what"?: string }>; "attributes"?: Array<{ "name"?: string; "what"?: string }>; "personAttributes"?: Array<{ "name"?: string; "what"?: string }> };
+  type WithContainerDefinitionContainerObjectClasses2 = { "container"?: string; "definitionContainer"?: string; "objectClasses"?: Array<{ "name"?: string; "what"?: string }>; "attributes"?: Array<{ "name"?: string; "what"?: string; "kind"?: "single" | "multi" }>; "personAttributes"?: Array<{ "name"?: string; "what"?: string; "kind"?: "single" | "multi" }> };
   type WithCrawlCrawlEverySJobOff = { "crawl"?: CrawlValue; "crawlEveryS"?: number; "jobOff"?: string };
   type WithCredentialsCredentialsetsState = Array<WithIdFormatMeta>;
   type WithCredentialsCredentialsetsState2 = { "credentials"?: WithCredentialsCredentialsetsState; "credential_sets"?: Array<{ "options"?: Array<Array<string>>; "required"?: boolean }> };

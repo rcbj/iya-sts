@@ -553,6 +553,10 @@ namespace IyaSts.Api.Common;
 
 @hoisted model WithNameWhat {`name`?: string; `what`?: string}
 
+// A policy's attribute as its SCHEMA row draws it: with how many values it
+// holds, `single` or `multi`, where the model states it (#1579).
+@hoisted model WithNameWhatKind {`name`?: string; `what`?: string; `kind`?: "single" | "multi"}
+
 @hoisted model WithDnOrigin {`dn`?: string; `origin`?: string}
 
 @hoisted model WithHrefWhat2 {`href`?: string; `what`?: string}

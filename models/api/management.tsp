@@ -9083,8 +9083,8 @@ namespace IyaSts.Api.Management {
     `container`?: string;
     `definitionContainer`?: string;
     `objectClasses`?: (WithNameWhat)[];
-    `attributes`?: (WithNameWhat)[];
-    `personAttributes`?: (WithNameWhat)[]
+    `attributes`?: (WithNameWhatKind)[];
+    `personAttributes`?: (WithNameWhatKind)[]
   }
 
 @component model `WithApplicationsGroupsPeople` {
