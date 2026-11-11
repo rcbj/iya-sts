@@ -103,12 +103,13 @@ For independent verification, refer to the official OpenID Foundation certificat
 
 ## Architecture
 
-[![iya-sts architecture](docs/iya-sts-architecture.jpeg)](docs/iya-sts-architecture.jpeg)
+[![iya-sts architecture](docs/architecture.svg)](docs/architecture.svg)
 
-One leader process owns every listener, and a request dispatcher hands work to
-three worker pools (crypto, admin and request). The protocol subsystems share
-one session model and one set of services over the embedded directory and the
-key material. [`docs/architecture.md`](docs/architecture.md) walks through each
+One front process owns every listener, and a request dispatcher hands work to
+two pools of worker threads (request and surface); one scheduler runs every
+periodic job. The protocol families and the hosted applications share one
+session model and one set of services over the embedded directory and the key
+material. [`docs/architecture.md`](docs/architecture.md) walks through each
 layer. Each source directory has a `CLAUDE.md` with the maintainer's notes for
 the modules in it.
 

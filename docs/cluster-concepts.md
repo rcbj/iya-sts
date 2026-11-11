@@ -16,7 +16,7 @@ Every diagram shows a three-node cluster: `node-a`, `node-b` and `node-c`.
 | Word | Meaning |
 |---|---|
 | **Node** | One container of the service. It is a member of the cluster, with a name (`cluster.nodeName`, or the host name). |
-| **Front process** | The node process that owns every listener of the node. [Architecture](architecture.md) calls it the *leader process*; it is not the scheduler's leader below. |
+| **Front process** | The node process that owns every listener of the node. It is not the scheduler's leader below. |
 | **Request worker** | A worker thread inside a node that answers requests the front process hands it ([Where a request waits](request-path.md)). It belongs to its node and has no membership of its own. |
 | **Store** | The one database every node reads and writes: PostgreSQL, or MariaDB ([Persistence](persistence.md)). Nothing else connects the nodes. |
 | **Change log** | A table in the store with one row for every change, written in the same transaction as the change. Every process reads it to find what the others wrote. |
