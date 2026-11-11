@@ -917,7 +917,8 @@ class DirectoryModel {
    * Provenance from the row's own flag first, then the spelling lists.
    * `standard: false` is this service's name even when a spelling list
    * also carries it. A STANDARD_NAMES citation of an RFC is `rfc`. A
-   * citation of SCHAC, draft-behera, PKCS or OASIS is `oasis-or-other`.
+   * citation of SCHAC, draft-behera, PKCS, OASIS or a Microsoft
+   * open specification ([MS-ADTS], [MS-ADA3]) is `oasis-or-other`.
    *
    * @param name - the attribute or class name
    * @param standard - the row's flag, when it has one
@@ -955,7 +956,7 @@ class DirectoryModel {
       log.debug("Leaving DirectoryModel.provenance(). RFC citation.");
       return 'rfc';
     }
-    if (/SCHAC|draft-behera|PKCS|OASIS/i.test(citation)) {
+    if (/SCHAC|draft-behera|PKCS|OASIS|MS-AD/i.test(citation)) {
       log.debug("Leaving DirectoryModel.provenance(). other citation.");
       return 'oasis-or-other';
     }

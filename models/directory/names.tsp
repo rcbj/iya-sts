@@ -112,7 +112,24 @@ namespace IyaSts.Directory;
   // names a group that does not list it back. NOTHING HERE MAINTAINS IT — that
   // page says so, and the spelling being conventional must not be read as the
   // attribute being managed.
-  "memberOf"
+  "memberOf",
+
+  // SCHAC, the SCHema for ACademia (REFEDS), whose OIDs are under
+  // 1.3.6.1.4.1.25178.1.2: a person's date of birth, nationalities, gender
+  // (an ISO/IEC 5218 code) and honorific, the attribute types the Identity
+  // Assurance claims are read from.
+  "schacDateOfBirth", "schacCountryOfCitizenship", "schacGender",
+  "schacPersonalTitle",
+
+  // [MS-ADA3] userPrincipalName: Active Directory's sign-in name of a
+  // person, read by certificate enrollment's smartcard-logon profile as the
+  // certificate's UPN.
+  "userPrincipalName",
+
+  // [MS-ADTS] 6.1.6.7: the six names of Active Directory's trustedDomain
+  // object, which a Kerberos trust entry mirrors for an `ldapsearch`.
+  "trustPartner", "flatName", "securityIdentifier", "trustDirection",
+  "trustAttributes", "trustType"
 ],
   own: #[
   // On the entries a TLS client certificate seeds. There is no standard
@@ -531,13 +548,10 @@ namespace IyaSts.Directory;
 
   // AND THE KERBEROS TRUST REGISTER'S (#430, 2026-10-19): the class of an
   // `ou=kerberosTrusts` entry, its record as one JSON value, and its keys
-  // (sealed where keys persist, and withheld, SECRET_ATTRIBUTES) — beside
-  // the six names of Active Directory's trustedDomain object ([MS-ADTS]
-  // 6.1.6.7) it mirrors for an `ldapsearch`. `kerberos/krb5_trusts.ts`
-  // writes them.
-  "stsKrb5Trust", "stsKrb5TrustData", "stsKrb5TrustKeys",
-  "trustPartner", "flatName", "securityIdentifier", "trustDirection",
-  "trustAttributes", "trustType"
+  // (sealed where keys persist, and withheld, SECRET_ATTRIBUTES).
+  // `kerberos/krb5_trusts.ts` writes them, beside the six Active Directory
+  // trustedDomain names in the standard list above.
+  "stsKrb5Trust", "stsKrb5TrustData", "stsKrb5TrustKeys"
 ],
   secret: #[
   "userpassword", "pwdhistory",
