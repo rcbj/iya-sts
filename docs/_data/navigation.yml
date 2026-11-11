@@ -122,6 +122,7 @@
     - { title: Abstract data model, url: /data-model.html }
     - { title: Directory models, url: /data-model-directory.html }
     - { title: Persistence models, url: /data-model-persistence.html }
+    - { title: "One model, every artifact", url: /data-model-migration.html }
     - { title: "Configuring LDAP", url: /configure-ldap.html }
     - { title: SCIM 2.0, url: /scim.html }
     - { title: "Configuring SCIM 2.0", url: /configure-scim.html }
