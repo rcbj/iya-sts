@@ -635,10 +635,10 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `account` | string |  |  |
-| `scope` | ``, or one of `global`, `selected` |  |  |
+| `scope` | empty, or one of `global`, `selected` |  |  |
 | `select` | list |  |  |
 | `select[]` | string |  |  |
-| `username` | ``, or string |  |  |
+| `username` | empty, or string |  |  |
 
 **200**: The answer.
 
@@ -1796,7 +1796,7 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `t` | ``, or string |  |  |
+| `t` | empty, or string |  |  |
 
 **200**: The answer.
 
@@ -3773,9 +3773,9 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `algorithms` | ``, or one of `classical` |  |  |
-| `key` | ``, or string |  |  |
-| `lane` | ``, or one of `classical`, `pqc` |  |  |
+| `algorithms` | empty, or one of `classical` |  |  |
+| `key` | empty, or string |  |  |
+| `lane` | empty, or one of `classical`, `pqc` |  |  |
 
 **200**: The answer.
 
@@ -5213,7 +5213,7 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `device_fp` | string |  |  |
-| `remember_browser` | ``, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  |  |
+| `remember_browser` | empty, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  |  |
 
 **200**: The answer.
 
@@ -5526,7 +5526,7 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `device_fp` | string |  |  |
-| `remember_browser` | ``, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  |  |
+| `remember_browser` | empty, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  |  |
 
 **200**: The answer.
 
@@ -5685,8 +5685,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `device_fp` | string |  |  |
 | `kind` | one of `code`, `link` | yes |  |
-| `remember_browser` | ``, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  |  |
-| `username` | ``, or string |  |  |
+| `remember_browser` | empty, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  |  |
+| `username` | empty, or string |  |  |
 
 **200**: The answer.
 
@@ -5906,7 +5906,7 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `credential` | string |  |  |
 | `device_fp` | string |  |  |
-| `remember_browser` | ``, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  |  |
+| `remember_browser` | empty, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  |  |
 
 **200**: The answer.
 
@@ -6186,10 +6186,10 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 |---|---|---|---|
 | `device_fp` | string |  |  |
 | `password` | string |  |  |
-| `remember_browser` | ``, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  |  |
-| `use_webauthn` | ``, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  |  |
-| `username` | ``, or string |  |  |
-| `webauthn_only` | ``, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  |  |
+| `remember_browser` | empty, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  |  |
+| `use_webauthn` | empty, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  |  |
+| `username` | empty, or string |  |  |
+| `webauthn_only` | empty, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  |  |
 
 **200**: The answer.
 
@@ -6639,13 +6639,13 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `authn` | ``, or string |  |  |
-| `did_act` | ``, or string |  |  |
-| `enrol` | ``, or one of `1` |  |  |
-| `login_hint` | ``, or string |  |  |
-| `mfa` | ``, or string |  |  |
-| `siop` | ``, or one of `1` |  |  |
-| `wallet` | ``, or string, uri |  |  |
+| `authn` | empty, or string |  |  |
+| `did_act` | empty, or string |  |  |
+| `enrol` | empty, or one of `1` |  |  |
+| `login_hint` | empty, or string |  |  |
+| `mfa` | empty, or string |  |  |
+| `siop` | empty, or one of `1` |  |  |
+| `wallet` | empty, or string, uri |  |  |
 
 **200**: The answer.
 
@@ -7537,9 +7537,9 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `authn` | ``, or string |  |  |
-| `enrol` | ``, or one of `1` |  |  |
-| `mfa` | ``, or string |  |  |
+| `authn` | empty, or string |  |  |
+| `enrol` | empty, or one of `1` |  |  |
+| `mfa` | empty, or string |  |  |
 | `response` | object, or string |  |  |
 | `response.data` | any JSON | yes |  |
 | `response.protocol` | string | yes |  |
@@ -8010,10 +8010,10 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `authn` | ``, or string |  |  |
-| `enrol` | ``, or one of `1` |  |  |
-| `mfa` | ``, or string |  |  |
-| `response_code` | ``, or string |  |  |
+| `authn` | empty, or string |  |  |
+| `enrol` | empty, or one of `1` |  |  |
+| `mfa` | empty, or string |  |  |
+| `response_code` | empty, or string |  |  |
 
 **200**: The answer.
 

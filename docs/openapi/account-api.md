@@ -507,16 +507,16 @@ The door of the portal's `POST /portal/activate`.
 | `code` | string |  | `totp`: the code the authenticator app shows. |
 | `confirm` | string |  | `setup`: the password again. |
 | `credential` | string |  | `key`: the browser's ceremony result, as JSON. |
-| `enrolment_id` | ``, or string |  | `key`: the pending registration. |
-| `key_role` | ``, or one of `none`, `primary`, `mfa` |  | Before #1135: `primary` or `mfa` registers a passkey, `none` does not; `passkey` says the same. |
-| `kind` | ``, or one of `passkey`, `security-key` |  | `setup`: where the passkey lives. |
-| `lane` | ``, or one of `classical`, `pqc` |  | `setup`: `classical` (the default) or `pqc`, where the realm offers a post-quantum passkey beside a classical one. |
-| `passkey` | ``, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  | `setup`: `1` registers a passkey. |
+| `enrolment_id` | empty, or string |  | `key`: the pending registration. |
+| `key_role` | empty, or one of `none`, `primary`, `mfa` |  | Before #1135: `primary` or `mfa` registers a passkey, `none` does not; `passkey` says the same. |
+| `kind` | empty, or one of `passkey`, `security-key` |  | `setup`: where the passkey lives. |
+| `lane` | empty, or one of `classical`, `pqc` |  | `setup`: `classical` (the default) or `pqc`, where the realm offers a post-quantum passkey beside a classical one. |
+| `passkey` | empty, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  | `setup`: `1` registers a passkey. |
 | `password` | string |  | `setup`: the password to set. |
-| `step` | ``, or one of `setup`, `key`, `totp` |  | Which step this answers. |
-| `token` | ``, or string |  | The link's single-use token. |
-| `totp` | ``, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  | `1`: set up an authenticator app too. |
-| `user` | ``, or string |  | The username the link names. |
+| `step` | empty, or one of `setup`, `key`, `totp` |  | Which step this answers. |
+| `token` | empty, or string |  | The link's single-use token. |
+| `totp` | empty, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  | `1`: set up an authenticator app too. |
+| `user` | empty, or string |  | The username the link names. |
 
 **200**: The answer.
 
@@ -904,12 +904,12 @@ Scope: `account:manage`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `action` | ``, or one of `create`, `revoke` |  | `create` makes one; `revoke` ends the one `id` names. |
-| `door_est` | ``, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  | Accept the new password at the est door. |
-| `door_ldap` | ``, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  | Accept the new password at the ldap door. |
-| `door_scim` | ``, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  | Accept the new password at the scim door. |
-| `door_ssf` | ``, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  | Accept the new password at the ssf door. |
-| `door_wstrust` | ``, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  | Accept the new password at the wstrust door. |
+| `action` | empty, or one of `create`, `revoke` |  | `create` makes one; `revoke` ends the one `id` names. |
+| `door_est` | empty, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  | Accept the new password at the est door. |
+| `door_ldap` | empty, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  | Accept the new password at the ldap door. |
+| `door_scim` | empty, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  | Accept the new password at the scim door. |
+| `door_ssf` | empty, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  | Accept the new password at the ssf door. |
+| `door_wstrust` | empty, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  | Accept the new password at the wstrust door. |
 | `id` | string |  | The id of the app password to revoke. |
 | `name` | string |  | What the new password is for, in your words. |
 
@@ -1197,7 +1197,7 @@ Scope: `account:manage`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `attribute` | string | yes | The custom attribute's name, one this realm's definition lets you edit on the portal. |
-| `values` | list, or `` |  |  |
+| `values` | list, or empty |  |  |
 | `values[]` | string |  |  |
 
 **200**: The answer.
@@ -1388,11 +1388,11 @@ Scope: `account:manage`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `action` | ``, or one of `create-eab`, `delete-eab`, `create-challenge`, `delete-challenge`, `revoke` |  | What to do. |
+| `action` | empty, or one of `create-eab`, `delete-eab`, `create-challenge`, `delete-challenge`, `revoke` |  | What to do. |
 | `id` | string |  | The challenge password to delete. |
 | `kid` | string |  | The account binding key to delete. |
-| `profile` | ``, or one of `tls-server`, `tls-client`, `tls-server-client`, `digital-signature`, `key-encipherment`, `code-signing`, `email`, `timestamping`, `smartcard-logon`, `device` |  | The profile a new SCEP challenge is for. |
-| `reason` | ``, or one of `unspecified`, `keyCompromise`, `affiliationChanged`, `superseded`, `cessationOfOperation` |  | The RFC 5280 reason for a revocation. |
+| `profile` | empty, or one of `tls-server`, `tls-client`, `tls-server-client`, `digital-signature`, `key-encipherment`, `code-signing`, `email`, `timestamping`, `smartcard-logon`, `device` |  | The profile a new SCEP challenge is for. |
+| `reason` | empty, or one of `unspecified`, `keyCompromise`, `affiliationChanged`, `superseded`, `cessationOfOperation` |  | The RFC 5280 reason for a revocation. |
 | `serial` | string |  | The serial of the certificate to revoke. |
 
 **200**: The answer.
@@ -2262,7 +2262,7 @@ Scope: `account:manage`.
 | `id` | string |  | The request's id. |
 | `right` | list, or string |  |  |
 | `right[]` | string |  |  |
-| `subject` | ``, or one of `yes` |  | Release your identity (GNAP). |
+| `subject` | empty, or one of `yes` |  | Release your identity (GNAP). |
 
 **200**: The answer.
 
@@ -2731,7 +2731,7 @@ Scope: `account:manage`.
 |---|---|---|---|
 | `action` | one of `scope`, `application` | yes | `scope`: withdraw one scope. `application`: withdraw everything one application holds. |
 | `client` | string | yes | The application's client_id. |
-| `page` | ``, or integer |  | The page of the list the form was on. |
+| `page` | empty, or integer |  | The page of the list the form was on. |
 | `scope` | string |  | The scope, for `action=scope`. |
 
 **200**: The answer.
@@ -2943,7 +2943,7 @@ Scope: `account:manage`.
 |---|---|---|---|
 | `configuration` | string | yes | The `credential_configuration_id` to offer, one of `GET /account-api/credentials/offerable`'s. |
 | `mode` | one of `cross-device`, `deferred` | yes | `cross-device` (Appendix H.2: issued as soon as the wallet asks) or `deferred` (H.3: the credential endpoint answers a `transaction_id` first). |
-| `page` | ``, or integer |  | Which page of `issued`, newest first. Clamped to the last. |
+| `page` | empty, or integer |  | Which page of `issued`, newest first. Clamped to the last. |
 | `signingAlg` | string |  | The algorithm the credential is signed with, one of the configuration's `signingAlgs`; left out or empty, the configured `oid4vci.credentialSigningAlgorithm`. |
 
 **200**: The answer.
@@ -3261,7 +3261,7 @@ Scope: `account:manage`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `id` | string | yes | An issuance's `id`, from `issued` in `GET /account-api/credentials/offerable`, which removes every copy of it; or one copy's, from its `copies`, which removes that copy alone. |
-| `page` | ``, or integer |  | Which page of `issued`, newest first. Clamped to the last. |
+| `page` | empty, or integer |  | Which page of `issued`, newest first. Clamped to the last. |
 
 **200**: The answer.
 
@@ -3533,7 +3533,7 @@ Scope: `account:manage`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `action` | ``, or one of `set`, `clear` |  | `set` names the delegate; `clear` removes it. |
+| `action` | empty, or one of `set`, `clear` |  | `set` names the delegate; `clear` removes it. |
 | `delegate` | string |  | The DN of a person or an application in this realm, for `action=set`. |
 
 **200**: The answer.
@@ -3965,7 +3965,7 @@ Scope: `account:manage`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `action` | ``, or one of `remove`, `challenge`, `prove`, `cancel-proof`, `link-begin`, `link-finish`, `link-cancel`, `remember-browser` |  | What to do; `remove` where none is named. |
+| `action` | empty, or one of `remove`, `challenge`, `prove`, `cancel-proof`, `link-begin`, `link-finish`, `link-cancel`, `remember-browser` |  | What to do; `remove` where none is named. |
 | `app_attest_key_id` | string |  | `prove`: an App Attest key id, beside its object. |
 | `app_attest_object` | string |  | `prove`: an App Attest attestation object. |
 | `challenge` | string |  | `prove`, `link-finish`: the challenge being answered. |
@@ -4556,9 +4556,9 @@ Scope: `account:manage`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `action` | ``, or one of `verify`, `preferences`, `change` |  | `verify` sends a link to the address on your entry; `change` sends one to `address`; `preferences` saves `notification`. |
+| `action` | empty, or one of `verify`, `preferences`, `change` |  | `verify` sends a link to the address on your entry; `change` sends one to `address`; `preferences` saves `notification`. |
 | `address` | string |  | The new address, for `change`. |
-| `notification` | ``, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  | `on` to be sent notifications, for `preferences`. |
+| `notification` | empty, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  | `on` to be sent notifications, for `preferences`. |
 
 **200**: The answer.
 
@@ -4906,7 +4906,7 @@ Scope: `account:manage`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `grant` | string | yes | The grant to end, from the list. |
-| `page` | ``, or integer |  | The page of the list the form was on. |
+| `page` | empty, or integer |  | The page of the list the form was on. |
 
 **200**: The answer.
 
@@ -5088,7 +5088,7 @@ Scope: `account:manage`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `action` | ``, or one of `keytab` |  | `keytab`, the one thing this page does. |
+| `action` | empty, or one of `keytab` |  | `keytab`, the one thing this page does. |
 | `current` | string |  | Your password: the keytab is derived from it, and it re-proves you. |
 
 **200**: The answer.
@@ -5360,13 +5360,13 @@ Scope: `account:manage`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `action` | ``, or one of `begin`, `finish`, `cancel` |  | `begin` mints a challenge, `finish` answers it, `cancel` drops it. |
-| `algorithms` | ``, or one of `classical` |  | `begin`: `classical` retries with the classical algorithms only, where `enrol.pending.fallback.classical` says the realm allows it. |
+| `action` | empty, or one of `begin`, `finish`, `cancel` |  | `begin` mints a challenge, `finish` answers it, `cancel` drops it. |
+| `algorithms` | empty, or one of `classical` |  | `begin`: `classical` retries with the classical algorithms only, where `enrol.pending.fallback.classical` says the realm allows it. |
 | `credential` | string |  | `finish`: the browser's ceremony result, as JSON. |
-| `enrolment_id` | ``, or string |  | `finish`: the pending enrolment the ceremony answers. |
-| `kind` | ``, or one of `passkey`, `security-key` |  | `begin`: which call to action was pressed. |
-| `lane` | ``, or one of `classical`, `pqc` |  | `begin`: `classical` (the default) or `pqc`, where the realm offers a post-quantum passkey beside a classical one. |
-| `role` | ``, or one of `primary`, `mfa` |  | Ignored since #1135: a passkey carries no role. |
+| `enrolment_id` | empty, or string |  | `finish`: the pending enrolment the ceremony answers. |
+| `kind` | empty, or one of `passkey`, `security-key` |  | `begin`: which call to action was pressed. |
+| `lane` | empty, or one of `classical`, `pqc` |  | `begin`: `classical` (the default) or `pqc`, where the realm offers a post-quantum passkey beside a classical one. |
+| `role` | empty, or one of `primary`, `mfa` |  | Ignored since #1135: a passkey carries no role. |
 
 **200**: The answer.
 
@@ -5621,7 +5621,7 @@ Scope: `account:manage`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `credentialId` | ``, or string |  | One of your own passkeys. |
+| `credentialId` | empty, or string |  | One of your own passkeys. |
 
 **200**: The answer.
 
@@ -5778,7 +5778,7 @@ Scope: `account:manage`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `credentialId` | ``, or string |  | One of your own passkeys. |
+| `credentialId` | empty, or string |  | One of your own passkeys. |
 | `label` | string |  | Its new name; empty puts the default back. |
 
 **200**: The answer.
@@ -6231,10 +6231,10 @@ Scope: `account:manage`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `action` | ``, or one of `start`, `confirm`, `remove`, `generate-codes`, `confirm-codes`, `discard-codes`, `email-factor-on`, `email-factor-off` |  | The step: `start` an authenticator app, `confirm` it with a code, `remove` it; `generate-codes`, `confirm-codes` or `discard-codes` a set of recovery codes; `email-factor-on` or `email-factor-off`. |
+| `action` | empty, or one of `start`, `confirm`, `remove`, `generate-codes`, `confirm-codes`, `discard-codes`, `email-factor-on`, `email-factor-off` |  | The step: `start` an authenticator app, `confirm` it with a code, `remove` it; `generate-codes`, `confirm-codes` or `discard-codes` a set of recovery codes; `email-factor-on` or `email-factor-off`. |
 | `code` | string |  | For `confirm`: the code the app shows. |
 | `handle` | string |  | For `confirm-codes` and `discard-codes`: the pending set's handle, from `generate-codes`'s answer. |
-| `kind` | ``, or one of `code`, `link` |  | For `email-factor-on`: a mailed `code` or a sign-in `link`. |
+| `kind` | empty, or one of `code`, `link` |  | For `email-factor-on`: a mailed `code` or a sign-in `link`. |
 
 **200**: The answer.
 
@@ -7297,7 +7297,7 @@ Scope: `account:manage`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `action` | ``, or one of `add`, `remove`, `cancel-pending` |  | `add` adds `value`; `remove` drops it; `cancel-pending` drops a name that is waiting for its link. |
+| `action` | empty, or one of `add`, `remove`, `cancel-pending` |  | `add` adds `value`; `remove` drops it; `cancel-pending` drops a name that is waiting for its link. |
 | `value` | string |  | The name, for `add` and `remove`. |
 
 **200**: The answer.
@@ -7497,8 +7497,8 @@ The door of the portal's `POST /portal/reset-password`.
 |---|---|---|---|
 | `confirm` | string |  | The new password again. |
 | `password` | string |  | The new password. |
-| `token` | ``, or string |  | The link's single-use secret. |
-| `user` | ``, or string |  | The username the link names. |
+| `token` | empty, or string |  | The link's single-use secret. |
+| `user` | empty, or string |  | The username the link names. |
 
 **200**: The answer.
 
@@ -7765,7 +7765,7 @@ Scope: `account:manage`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `action` | ``, or one of `remove`, `prefer`, `unprefer` |  | `remove` (the default) takes the subject off; `prefer` marks it as your preferred DID (#693), and `unprefer` clears the mark. |
+| `action` | empty, or one of `remove`, `prefer`, `unprefer` |  | `remove` (the default) takes the subject off; `prefer` marks it as your preferred DID (#693), and `unprefer` clears the mark. |
 | `subject` | string | yes | The enrolled subject, from the list. |
 
 **200**: The answer.
@@ -8045,7 +8045,7 @@ Scope: `account:manage`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `action` | one of `publish`, `add-key`, `rotate-key`, `deactivate` | yes | `publish` a DID whose key this realm generates (`realm` or `download` custody); `add-key` or `rotate-key` of a `realm`-custody DID; `deactivate` one of your DIDs. |
-| `rid` | ``, or string |  | The published DID's random id, from the list; every action but `publish` names one. |
+| `rid` | empty, or string |  | The published DID's random id, from the list; every action but `publish` names one. |
 
 **200**: The answer.
 
@@ -8354,20 +8354,20 @@ Scope: `account:manage`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `acr` | ``, or string |  | share: an optional authentication level the requesting party's session must meet. |
+| `acr` | empty, or string |  | share: an optional authentication level the requesting party's session must meet. |
 | `action` | one of `share`, `unshare`, `alfa`, `approve`, `refuse` | yes | share adds a share; unshare removes one; alfa replaces the whole document, where the realm allows it; approve and refuse answer a request waiting for you. |
-| `alfa` | ``, or string |  | alfa: the whole document, as ALFA. |
-| `askMe` | ``, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  | share: ask the owner each time. |
-| `claim` | ``, or string |  | share, recipientKind claim: the claim's name. |
-| `expires` | ``, or string |  | share: an optional date the share ends. |
-| `page` | ``, or integer |  | The page of the list the form was on. |
-| `pending` | ``, or string |  | approve, refuse: the waiting request's id, from the list. |
-| `recipient` | ``, or string |  | share: the username, the group's name, or the claim's value. |
-| `recipientKind` | ``, or one of `person`, `group`, `realm`, `claim` |  | share: who the share is with. |
-| `resource` | ``, or string |  | share: the resource's _id, one of yours. |
-| `scope` | list, or ``, or string |  |  |
+| `alfa` | empty, or string |  | alfa: the whole document, as ALFA. |
+| `askMe` | empty, or one of `0`, `1`, `true`, `false`, `on`, `off`, `yes`, `no` |  | share: ask the owner each time. |
+| `claim` | empty, or string |  | share, recipientKind claim: the claim's name. |
+| `expires` | empty, or string |  | share: an optional date the share ends. |
+| `page` | empty, or integer |  | The page of the list the form was on. |
+| `pending` | empty, or string |  | approve, refuse: the waiting request's id, from the list. |
+| `recipient` | empty, or string |  | share: the username, the group's name, or the claim's value. |
+| `recipientKind` | empty, or one of `person`, `group`, `realm`, `claim` |  | share: who the share is with. |
+| `resource` | empty, or string |  | share: the resource's _id, one of yours. |
+| `scope` | list, or empty, or string |  |  |
 | `scope[]` | string |  |  |
-| `share` | ``, or string |  | unshare: the share's id, from the list. |
+| `share` | empty, or string |  | unshare: the share's id, from the list. |
 
 **200**: The answer.
 
@@ -9133,12 +9133,12 @@ Scope: `account:manage`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `action` | ``, or one of `generate`, `revoke`, `generate-tls-client`, `revoke-tls-client` |  | `generate` a signing key pair (for `purpose`) or `revoke` one of yours (by `handle`); `generate-tls-client` or `revoke-tls-client` a TLS client certificate. |
+| `action` | empty, or one of `generate`, `revoke`, `generate-tls-client`, `revoke-tls-client` |  | `generate` a signing key pair (for `purpose`) or `revoke` one of yours (by `handle`); `generate-tls-client` or `revoke-tls-client` a TLS client certificate. |
 | `handle` | string |  | For `revoke`: the key pair's `kid` (RFC 7523) or certificate thumbprint (RFC 7522), one of yours. |
-| `key_alg` | ``, or one of `rsa-2048`, `rsa-3072`, `ec-p256`, `ec-p384` |  | For `generate-tls-client`: the key algorithm. |
+| `key_alg` | empty, or one of `rsa-2048`, `rsa-3072`, `ec-p256`, `ec-p384` |  | For `generate-tls-client`: the key algorithm. |
 | `label` | string |  | For `generate`: what you call the key pair. For `generate-tls-client`: what you call the device. |
-| `purpose` | ``, or one of `jwt`, `saml` |  | For `generate` and `revoke`: RFC 7523's `jwt` key pairs (the default) or RFC 7522's `saml` ones. |
-| `reason` | ``, or one of `cessationOfOperation`, `keyCompromise` |  | For `revoke` and `revoke-tls-client`: why. |
+| `purpose` | empty, or one of `jwt`, `saml` |  | For `generate` and `revoke`: RFC 7523's `jwt` key pairs (the default) or RFC 7522's `saml` ones. |
+| `reason` | empty, or one of `cessationOfOperation`, `keyCompromise` |  | For `revoke` and `revoke-tls-client`: why. |
 | `serial` | string |  | For `revoke-tls-client`: the certificate's serial, one of yours. |
 
 **200**: The answer.
@@ -9619,8 +9619,8 @@ The door of the portal's `POST /portal/verify-email`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `token` | ``, or string |  | The link's single-use secret. |
-| `user` | ``, or string |  | The username the link names. |
+| `token` | empty, or string |  | The link's single-use secret. |
+| `user` | empty, or string |  | The username the link names. |
 
 **200**: The answer.
 
@@ -9737,8 +9737,8 @@ The door of the portal's `POST /portal/verify-pseudonym`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `token` | ``, or string |  | The link's single-use secret. |
-| `user` | ``, or string |  | The username the link names. |
+| `token` | empty, or string |  | The link's single-use secret. |
+| `user` | empty, or string |  | The username the link names. |
 
 **200**: The answer.
 

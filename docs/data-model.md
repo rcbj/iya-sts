@@ -18,8 +18,11 @@ labels. So are people, groups, the registers that keep one JSON value, and the
 directory's lists of attribute spellings and of the attributes it withholds. The
 PostgreSQL and MariaDB tables and indexes are too, and they generate both the
 statements the service runs and the scripts an owner runs. So are all five
-OpenAPI documents. Each object switched only after what the model generated was
-shown to be the same as what was there.
+OpenAPI documents, and so is every protocol family's wire: what each endpoint
+of SCIM, OAuth 2.0 and OpenID Connect, GNAP, AuthZEN, Shared Signals, ACME,
+EST, SCEP, SPIFFE, SAML, WS-Trust and WS-Federation accepts and answers. Each
+object switched only after what the model generated was shown to be the same
+as what was there.
 
 [![The current state: code and SQL are read into TypeSpec, the compiler checks it, and what it generates is compared with the code and SQL it came from](data-model.svg)](data-model.svg)
 
@@ -34,6 +37,8 @@ shown to be the same as what was there.
 | Directory and table classes, with validators | Yes | Compiled and run | No |
 | Domain concept classes, and types for every API request and response | Yes | Compiled, and each concept held to real entries and records | **Yes** |
 | Request validators for the Account API and Authentication API | Yes, from the documents the service serves | The refusal and the document are one declaration | **Yes** |
+| Request validators for the Management API's console actions and the Reports API | Yes, from the same documents | The refusal and the document are one declaration | **Yes** |
+| Each protocol family's requests, answers, vocabularies and error codes: SCIM, OAuth 2.0 and OpenID Connect, GNAP, AuthZEN, Shared Signals, ACME, EST and SCEP, SPIFFE, SAML, WS-Trust and WS-Federation | Yes, and TypeSpec is the source | What each endpoint answered before its family switched, recorded and compared answer by answer | **Yes** |
 | PostgreSQL tables and indexes, and `postgres/schema.sql` | Yes, and TypeSpec is the source | The same statements as those they replaced | **Yes** |
 | MariaDB tables and indexes, and `mariadb/schema.sql` | Yes, and TypeSpec is the source | The same statements as those they replaced | **Yes** |
 | All five OpenAPI documents | Yes, and TypeSpec is the source | Equal to the documents they replaced | **Yes** |

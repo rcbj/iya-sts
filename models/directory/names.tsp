@@ -336,8 +336,7 @@ namespace IyaSts.Directory;
   // registered for them. An application carries the same two as
   // appAuthzenApplication and appAuthzenCallbackUri. Written by an
   // administrator only, through authzen/authzen_admin.ts; an `sts*` name is
-  // refused by every other door. Declared here on rcbj's decision on #1579
-  // (2026-11-11); until then both were written and read and declared nowhere.
+  // refused by every other door.
   "stsAuthzenApplication", "stsAuthzenCallbackUri",
 
   // THE CLIENT TRUSTSTORE'S DURABLE HALF (2026-09-12): one entry per anchor
