@@ -57,11 +57,15 @@ are the model's rows, and the code keeps only what each id DOES. The policies'
 per-mechanism and per-door settings are still built by the module from those
 rows (the `computed` argument of `ModelTables.fields()`), each taking its
 sentence from its attribute: that is a projection of model data, not a second
-writing. `generate.mjs` refuses a pairing whose value is in none of the lists
+writing, and they stay built in code (rcbj, #1579, 2026-11-11), since writing
+them out in TypeSpec would repeat each label. `generate.mjs` refuses a pairing whose value is in none of the lists
 it names, a key it says nothing of, and an id stated twice (`checkFacts()`).
 `tests/model_registers.js` holds each register to its behaviour: every id has a
 reader in the service source, and every literal at the named call sites is an
-id.
+id. **That source-reading test stands in for a handler table keyed by id, and
+is accepted as one** (rcbj, #1579, 2026-11-11): the behaviour of an id is
+spread across `authn.ts`, `credentials.ts`, `federation_sp.ts` and the door
+modules, and a real table would mean restructuring `authn.ts`.
 
 **What a console may change is each row's `editable`** (`set`, `multi`), under
 `@entry`'s `editing: true`, which gives every row of the table an `editable`,
