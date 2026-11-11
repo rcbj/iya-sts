@@ -3550,8 +3550,12 @@ function create(options) {
   // (`wal_writer_delay`, 200 ms); a crash of POSTGRES (not of this service)
   // can lose the last fraction of a second of them. What is lost is a few
   // attempts uncounted, or a statistic one sign-in short — rcbj's call on
-  // 2026-10-22. Sessions, codes, tokens, the directory and every minted row
-  // stay on `pool`, durable at commit. Small: these are single statements.
+  // 2026-10-22. Sessions, codes, tokens, every minted row, and a directory
+  // batch that changed anything but an application's authentication counts
+  // stay on `pool`, durable at commit. A directory batch that is ONLY those
+  // counts uses this pool (#878): the same crash can lose the last fraction
+  // of a second of `appAuthentications` and the session and user counts. A
+  // batch that also changed a record rides the durable transaction instead.
   // -------------------------------------------------------------------------
   const tallyPool = knexStore.openPool(
     Object.assign({}, clientOptions(),
@@ -4863,6 +4867,18 @@ function create(options) {
     });
   }
 
+  // A directory batch that is only counters (#878). Same retry as a
+  // transaction, on the tally pool: visible at once, durable at the WAL
+  // writer's next flush. MariaDB's tally pool has no asynchronous commit;
+  // the generation skip is the win there.
+  function tallyTransaction(fn) {
+    log.debug('Entering tallyTransaction().');
+    log.debug("Leaving tallyTransaction().");
+    return retryingConflicts('a tally transaction', function () {
+      return transactionOn(tallyPool, fn);
+    });
+  }
+
   // `once` run again on a deadlock or a serialization failure, as a whole
   // transaction always was (2026-10-02): a transaction that `once` runs,
   // or since 2026-10-22 (#820) ONE statement outside a transaction — the
@@ -5174,7 +5190,15 @@ function create(options) {
   function transactionOnce(fn) {
     log.debug('Entering transactionOnce().');
     log.debug("Leaving transactionOnce().");
-    return pool.connect().then(function (client) {
+    return transactionOn(pool, fn);
+  }
+
+  // `which` is `pool` or the tally pool (#878). The body is the one
+  // transaction either pool runs: BEGIN, the fence, `fn`, COMMIT.
+  function transactionOn(which, fn) {
+    log.debug('Entering transactionOn().');
+    log.debug("Leaving transactionOn().");
+    return which.connect().then(function (client) {
       const unguard = guardClient(client, 'a transaction');
       // THE CHANGE ROWS THIS TRANSACTION RECORDS, held until COMMIT returns —
       // see `written` above. Keyed by the client, which is what
@@ -5200,7 +5224,7 @@ function create(options) {
           announce(kinds, rows);
           unguard();
           client.release();
-          log.debug('Leaving transactionOnce(). Committed.');
+          log.debug('Leaving transactionOn(). Committed.');
           return result;
         });
       }).catch(function (err) {
@@ -5220,7 +5244,7 @@ function create(options) {
         }).then(function () {
           unguard();
           client.release(err);
-          log.debug('Leaving transactionOnce(). Rolled back.');
+          log.debug('Leaving transactionOn(). Rolled back.');
           if (err && err.fenced && typeof onFenced === 'function') {
             onFenced(err);
           } else if (err && err.fenced && err.reason === 'origin' &&
@@ -5926,8 +5950,12 @@ function create(options) {
     // then merged by `mergeLostRow()`, one transaction per row, in
     // primary-key order. That transaction locks only the row it merges.
     // -----------------------------------------------------------------------
-    saveDirectory: function (change) {
+    saveDirectory: function (change, how) {
       log.debug('Entering the postgres driver saveDirectory().');
+      // Counters only (#878). The body and the lost-row merges are one
+      // choice: a tally batch stays off the durable pool for both.
+      const transact = (how && how.tally) ? tallyTransaction :
+                       withTransaction;
       const outcomes = [];
       const pendingLost = [];
       const idOf = function (realm, key) {
@@ -5973,7 +6001,7 @@ function create(options) {
         let chain = Promise.resolve();
         ordered.forEach(function (row) {
           chain = chain.then(function () {
-            return withTransaction(function (client) {
+            return transact(function (client) {
               return directoryStore
                 ? directoryStore.mergeLostRow(client, row, outcomes)
                 : mergeLostRow(client, row, outcomes);
@@ -6003,7 +6031,7 @@ function create(options) {
           outcomes.length = 0;
           pendingLost.length = 0;
           try {
-            await withTransaction(transactionBody);
+            await transact(transactionBody);
             const merged = await mergeLostRows(pendingLost);
             log.debug("Leaving attempt().");
             return merged;

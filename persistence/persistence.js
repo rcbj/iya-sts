@@ -604,6 +604,12 @@ function enabled() {
 // ---------------------------------------------------------------------------
 let dirtyDns = new Set();
 let dirtyEverything = false;
+// Counter-only application sightings (#878). Not a generation: the barrier
+// does not wait, and when the batch is nothing else the flush writes them on
+// the tally pool. A DN already in `dirtyDns`, or a change that names no DN,
+// stays on the durable write. A crash of postgres can lose the last fraction
+// of a second of those counts, the same trade as the rate-limit windows.
+let observationDns = new Set();
 
 // ---------------------------------------------------------------------------
 // WRITE GENERATIONS FOR THE DIRECTORY, THE REALMS AND THE SETTINGS
@@ -901,20 +907,39 @@ function releaseClaimsAlone(list) {
 
 /**
  * Reports that a directory entry changed, and schedules a flush.
+ *
+ * `how.observation` is a counter on an entry that already exists (#878),
+ * the authentication counts on an application. It does not move the
+ * directory generation, so a response is not held for it. A DN already in
+ * the durable journal, or a change that names no DN, stays durable.
  * @param dn - the entry's DN; empty or undefined marks the whole directory
+ * @param how - `{ observation: true }` for a counter sighting
  */
-function directoryChanged(dn) {
+function directoryChanged(dn, how) {
   log.debug("Entering directoryChanged().");
   if (!enabled() || restoring) {
     log.debug("Leaving directoryChanged().");
     return;
   }
+  const named = !(dn === undefined || dn === null || dn === '');
+  const key = named ? String(dn) : '';
+  // A counter on a DN this flush does not already owe a durable write. An
+  // empty DN is the whole directory and is never a counter.
+  if (how && how.observation && named && !dirtyEverything &&
+      !dirtyDns.has(key)) {
+    observationDns.add(key);
+    schedule();
+    log.debug("Leaving directoryChanged(). A counter, not a generation.");
+    return;
+  }
   directoryDirty = true;
   dirGeneration += 1;
-  if (dn === undefined || dn === null || dn === '') {
+  if (!named || dirtyEverything) {
     dirtyEverything = true;
-  } else if (!dirtyEverything) {
-    dirtyDns.add(String(dn));
+    observationDns.clear();
+  } else {
+    dirtyDns.add(key);
+    observationDns.delete(key);
   }
   schedule();
   log.debug("Leaving directoryChanged().");
@@ -1703,6 +1728,96 @@ function applyDirectoryOutcomes(changes, outcomes) {
 }
 
 // ---------------------------------------------------------------------------
+// COUNTER SIGHTINGS, ON THE TALLY POOL WHEN THEY ARE THE WHOLE BATCH (#878).
+//
+// The directory generation did not move for these DNs, so the barrier has
+// already answered. This write still has to land, and another node still has
+// to see it: `saveDirectory(..., { tally: true })` is the driver's tally
+// transaction, `synchronous_commit = off` on postgres. A failure is retried
+// from here. It must not set `dirFailedAt` — that 503s the next writing
+// response for a count the last one was not held for.
+// ---------------------------------------------------------------------------
+function writeObservations(dns) {
+  log.debug("Entering writeObservations().");
+  const requeue = function (err) {
+    log.debug("Entering requeue().");
+    dns.forEach(function (dn) {
+      if (!dirtyEverything && !dirtyDns.has(dn)) {
+        observationDns.add(dn);
+      }
+    });
+    schedule();
+    log.error(errorCodes.tag('STS-STORE-0002') +
+              'persistence: a counter sighting could not be written to ' +
+              'the ' + activeMode + ' store: ' +
+              ((err && err.message) || err) + '. It is retried, and the ' +
+              'response is not held for it and is not answered 503. A ' +
+              'crash of postgres can lose the last fraction of a second ' +
+              'of these counts (#878).' +
+              (err && err instanceof TypeError ? ' ' + err.stack : ''));
+    log.debug("Leaving requeue().");
+  };
+  if (!dns || !dns.size || !driver ||
+      typeof driver.saveDirectory !== 'function') {
+    log.debug("Leaving writeObservations(). Nothing to write.");
+    return null;
+  }
+  log.debug("Leaving writeObservations().");
+  return Promise.resolve().then(function () {
+    // A durable write of one of these DNs arrived while this flush was
+    // already out. That write owns the DN: sending the live entry here
+    // would put a structural change on the tally pool, ahead of the
+    // transaction the response is waiting for.
+    if (dirtyEverything) {
+      return null;
+    }
+    const still = new Set();
+    dns.forEach(function (dn) {
+      if (!dirtyDns.has(dn)) {
+        still.add(dn);
+      }
+    });
+    if (!still.size) {
+      return null;
+    }
+    const changes = diff(null, still, []);
+    if (!changes.upserts.length && !changes.deletes.length &&
+        !changes.removedRealms.length) {
+      return null;
+    }
+    let live = null;
+    if (driver.name === 'ldif') {
+      live = new Map();
+      changes.touched.forEach(function (realmId) {
+        const rows = new Map();
+        (directory.realmEntries(realmId) || []).forEach(function (row) {
+          rows.set(row.key, row.entry);
+        });
+        live.set(realmId, rows);
+      });
+    }
+    changes.upserts.forEach(function (row) {
+      inFlightDirectory.set(row.realm + '\n' + row.key, row.json);
+    });
+    return driver.saveDirectory({
+      upserts: changes.upserts,
+      deletes: changes.deletes,
+      touched: changes.touched,
+      removedRealms: changes.removedRealms,
+      releaseClaims: [],
+      all: live
+    }, { tally: true }).then(function (result) {
+      advanceShadow(changes, changes.removedRealms);
+      applyDirectoryOutcomes(changes, result && result.outcomes);
+      return { written: true };
+    });
+  }).catch(function (err) {
+    requeue(err);
+    return null;
+  });
+}
+
+// ---------------------------------------------------------------------------
 // THE FLUSH. One at a time, and a second caller waits for the first rather than
 // starting a competing write — two transactions computing their diff against
 // the same shadow would each think they had to write everything.
@@ -1782,7 +1897,8 @@ function flush() {
     directoryDirty = true;
     dirGeneration += 1;
   }
-  if (!directoryDirty && !realmsDirty && !configDirty && !minted.dirty()) {
+  if (!directoryDirty && !realmsDirty && !configDirty && !minted.dirty() &&
+      observationDns.size === 0) {
     // Nothing in flight and nothing dirty: every generation has committed, or
     // its failure put a dirty bit back.
     dirCommittedAt = dirGeneration;
@@ -1806,6 +1922,22 @@ function flush() {
   const wantRealms = realmsDirty;
   const wantConfig = configDirty;
   const takenAt = dirGeneration;
+  // COUNTER SIGHTINGS (#878), taken now for the journal's reason: one that
+  // lands while this flush is out starts the next flush. A batch that also
+  // has a durable directory write carries them in that write — one
+  // transaction, which the barrier is already waiting on. A batch that is
+  // only these counts is written below, on the tally pool, and does not move
+  // `takenAt`. A full walk already covers them.
+  const observedNow = observationDns;
+  observationDns = new Set();
+  if (dirtyEverything) {
+    observedNow.clear();
+  } else if (wantDirectory) {
+    observedNow.forEach(function (dn) {
+      dirtyDns.add(dn);
+    });
+    observedNow.clear();
+  }
   // Cleared BEFORE the write rather than after it, so that a change made while
   // the write is in flight sets the bit again and gets its own flush. Clearing
   // afterwards would drop it.
@@ -2165,6 +2297,10 @@ function flush() {
         removedHere.delete(id);
       }
     });
+    // The counts, after the generation this flush took has been published.
+    // A failure here is swallowed: it must not look like this flush failed.
+    return observedNow.size ? writeObservations(observedNow) : null;
+  }).then(function () {
     // ---------------------------------------------------------------------
     // THE MINTED ROWS RIDE THE SAME SCHEDULE AND NOT THE SAME TRANSACTION.
     //

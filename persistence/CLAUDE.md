@@ -404,10 +404,26 @@ Such a write is visible at once and durable at the WAL writer's next flush.
 A crash of postgres itself can lose the last fraction of a second of them:
 an attempt uncounted, or a statistic one sign-in short.
 
+**An application's authentication counts are the same kind of write**
+(#878), when the sighting changed nothing else. `applications.seen()` on an
+authorization response increments `appAuthentications` and, for a new
+session or user, the session and user counts. The token endpoint does not
+read them. The directory generation does not move, so the response is not
+held, and when that batch is the whole directory flush it is written on
+this pool. A batch that also has a durable directory, realm or settings
+change carries the counts in that one transaction. A new application, or a
+new kind, protocol, name, note, scope, redirect, authorization server,
+grant type or observed return address, stays durable, and so does the
+password rehash. Another node still sees the counts: the change log is
+written in the tally transaction. On MariaDB the tally pool has no
+asynchronous commit, so skipping the generation is the whole win there.
+`tests/application_counter_commit.js` and `tests/postgres_tally_commit.js`
+(T4) cover it.
+
 Everything else stays on `pool`, durable at commit: sessions, codes, tokens,
-the directory, every minted row, and the risk engine's action claim (which
-stops an action being taken twice). `tests/postgres_tally_commit.js` covers
-this.
+every minted row, a directory batch that changed anything but those counts,
+and the risk engine's action claim (which stops an action being taken
+twice).
 
 ## The sentence this directory reverses
 

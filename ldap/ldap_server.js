@@ -1616,7 +1616,8 @@ function refuseNulValues(type, values) {
 // `after`, when the caller has it, is the entry now at `dn` (null for none):
 // the change-log applier of a windowed key holds the store's row and nothing
 // in the window. Left out, the entry is looked up where it is held.
-function touchDirectory(dn, after) {
+// `how.observation` asks persistence not to hold the response (#878).
+function touchDirectory(dn, after, how) {
   log.debug("Entering touchDirectory().");
   directoryVersion++;
   noteGroupsTouched(dn, after);
@@ -1670,7 +1671,12 @@ function touchDirectory(dn, after) {
   // `touchDirectory()` is called with everywhere, so it is converted here —
   // once, in the module that owns the key form — rather than trusted to
   // thirty callers.
-  persistence.directoryChanged(dn ? normalizeDn(dn) : undefined);
+  // `how.observation` (#878) is a counter on an entry that already exists:
+  // the application authentication counts. It does not move the directory
+  // generation. A caller that passes nothing — about thirty of them — stays
+  // a durable write, and so does a create.
+  persistence.directoryChanged(dn ? normalizeDn(dn) : undefined,
+    (how && how.observation) ? { observation: true } : undefined);
   log.debug("Leaving touchDirectory().");
 }
 
@@ -4727,7 +4733,10 @@ function putEntry(dn, attributes, options) {
     stored.attributes[PROVISIONED_BY] = [String(opts.provisionedBy)];
   }
   entries.set(normalizeDn(dn), stored);
-  touchDirectory(stored.dn);
+  // A counter sighting of an entry that already existed (#878). A create is
+  // never one: the next request reads the new entry.
+  touchDirectory(stored.dn, undefined,
+                 opts.observation ? { observation: true } : undefined);
   noteUsernameIndexPut(stored, hadNames, usernameIndexWasCurrent);
   // The group index needs no note: `touchDirectory()` above decided (#618).
   noteUuidIndexPut(stored, uuidIndexWasCurrent);
@@ -23089,9 +23098,12 @@ function writeApplication(identifier, attributes, options) {
   const written = existing
     ? withUnownedAttributes(existing, attributes, owned) : attributes;
   const created = existing ? existing.createdAt : generalizedTime();
-  const stored = putEntry(dn, written,
-                          { origin: existing ? existing.origin :
-                                    'application' });
+  const stored = putEntry(dn, written, {
+    origin: existing ? existing.origin : 'application',
+    // Only an entry that was already there. A create is the record the next
+    // request reads, and losing it is a client the token endpoint cannot find.
+    observation: !!(existing && options && options.observation)
+  });
   stored.createdAt = created;
   stored.attributes.createtimestamp = [created];
   stored.attributes.modifytimestamp = [generalizedTime()];

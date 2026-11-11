@@ -9200,8 +9200,11 @@ function save(record, how) {
   // WITH THE NAMES IT OWNS (#1230): the store replaces those and keeps
   // whatever else is on the entry. See ownedAttributeNames().
   const written = !!backing.writeApplication(record.identifier,
-                                             attributesFor(record),
-                                             { owned: ownedAttributeNames() });
+                                             attributesFor(record), {
+                                               owned: ownedAttributeNames(),
+                                               observation: !!(how &&
+                                                 how.observation)
+                                             });
   if (written && !(how && how.quiet)) {
     noteCredentialWrite(record, how);
   }
@@ -10007,6 +10010,18 @@ function seen(detail) {
   }
   const now = Date.now();
   let changed = !known;
+  // A COUNTER ON AN APPLICATION THAT ALREADY EXISTS IS NOT A RECORD THE NEXT
+  // REQUEST READS (#878). The authorization response's sighting increments
+  // appAuthentications and, when the session or the user is new, the session
+  // and user counts. The token endpoint does not read them. They are still
+  // written, and another node still sees them through the change log, but
+  // the response is not held for the commit: a crash of postgres can lose
+  // the last fraction of a second of them, the same trade as the rate-limit
+  // windows (#856). A new application, and a new kind, protocol, name, note
+  // or any other field — a scope, a redirect, an authorization server, a
+  // grant type, an observed return address — stays a durable write. The
+  // password rehash is not this and stays held.
+  let structural = !known;
 
   // ONE SIGHTING MAY NAME SEVERAL KINDS, and two protocols need it to. A
   // wtrealm handed a SAML 1.1 assertion is a WS-Federation application AND the
@@ -10023,17 +10038,27 @@ function seen(detail) {
                'given, which is how one application comes to be listed under ' +
                'two spellings — fix the caller or add a row to KINDS.');
     }
-    if (addTo(record.kinds, kind)) changed = true;
+    if (addTo(record.kinds, kind)) {
+      changed = true;
+      structural = true;
+    }
   });
-  if (info.protocol && addTo(record.protocols, info.protocol)) changed = true;
+  if (info.protocol && addTo(record.protocols, info.protocol)) {
+    changed = true;
+    structural = true;
+  }
   if (info.name) {
     const name = String(info.name);
     if (record.name !== name) {
       record.name = name;
       changed = true;
+      structural = true;
     }
   }
-  if (info.note && noteDescription(record, info.note)) changed = true;
+  if (info.note && noteDescription(record, info.note)) {
+    changed = true;
+    structural = true;
+  }
 
   // **A SIGHTING MAY NOT WRITE A RETURN ADDRESS WHERE ONLY A REGISTERED ONE IS
   // BELIEVED** (2026-09-12). A family's `redirectAttribute` — an ACS URL, a
@@ -10067,7 +10092,10 @@ function seen(detail) {
     }
     const isAddress = RETURN_ADDRESS_ATTRIBUTES.indexOf(name) >= 0;
     const before = isAddress ? valuesOf(record.fields[name]) : [];
-    if (setField(record, name, info.fields[name])) changed = true;
+    if (setField(record, name, info.fields[name])) {
+      changed = true;
+      structural = true;
+    }
     if (isAddress && markObservedAddresses(record, name, before)) {
       log.info('applications: a sighting of "' + identifier + '" wrote a new ' +
                name +
@@ -10075,6 +10103,7 @@ function seen(detail) {
                'product will refuse it until it is confirmed on the ' +
                'application\'s page.');
       changed = true;
+      structural = true;
     }
   });
 
@@ -10102,7 +10131,11 @@ function seen(detail) {
     log.debug("Leaving seen().");
     return record;
   }
-  if (!save(record) && store()) {
+  // Counter-only: the entry was already there and nothing but the counts
+  // moved. `appLastSession` and `appLastUser` travel with those counts.
+  const observation = known && !structural;
+  if (!save(record, observation ? { observation: true } : undefined) &&
+      store()) {
     // A directory is there and would not take the entry — the container is at
     // applications.max. Nothing else records it: the protocol exchange that
     // made this sighting goes on regardless, and the audit row below describes
