@@ -734,14 +734,15 @@ function create(options) {
     });
   };
 
-  driver.saveDirectory = function (change) {
+  driver.saveDirectory = function (change, how) {
     log.debug("Entering tiered saveDirectory().");
     const split = splitChange(change);
     log.debug("Leaving tiered saveDirectory().");
     // THE GLOBAL HALF FIRST: a group's definition before its members, and a
-    // failure there leaves the cell untouched for the retry.
-    return globalDriver.saveDirectory(split.toGlobal).then(function (g) {
-      return cellDriver.saveDirectory(split.toCell).then(function (c) {
+    // failure there leaves the cell untouched for the retry. `how` is the
+    // tally flag (#878); both halves use the pool the caller asked for.
+    return globalDriver.saveDirectory(split.toGlobal, how).then(function (g) {
+      return cellDriver.saveDirectory(split.toCell, how).then(function (c) {
         return indexPeople(split.toCell).then(function () {
           tellCellHooks(split);
           return { outcomes: joinOutcomes(split, g && g.outcomes,

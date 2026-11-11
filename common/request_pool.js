@@ -464,9 +464,9 @@ function dropSettledWaiter() {
 //   keys' writes reached ON OTHER WORKERS (sessionWanted()) — a write the
 //   chosen worker made itself is in its memory, lowestBlocking()'s argument.
 // * **A REQUEST WITH NO KEY KEEPS THE GLOBAL WAIT, UNCHANGED.** That is every
-//   back channel — a client's server redeeming a code at `/oauth2/token`, a
-//   refresh, SCIM, `/admin-api` with a bearer token and no cookie — so the
-//   code exchange still waits for the code, as it always did.
+//   back channel — a client's server redeeming a code at `/oauth2/token`,
+//   SCIM, `/admin-api` with a bearer token and no cookie. A refresh grant
+//   is the exception below: it is keyed by its token (#879).
 // * **A POOL PIN THE ROUTE DID NOT HONOUR IS NO KEY.** `p:<pid>` names a
 //   worker, shared by every client pinned there, and this service's own back
 //   channel (`oidc_rp.ts`) sends one to reach the worker that minted a code a
@@ -481,7 +481,8 @@ function dropSettledWaiter() {
 // writes only once the workers converge, half a second to a second. A
 // request that carried no key — a back channel, SCIM, an API call, a
 // dispatched LDAP operation — is everybody's write (SHARED_KEY, below), so
-// a browser waits for it. `global` is the old barrier, whole.
+// a browser waits for it. A refresh grant this process could read is not
+// one of those (#879). `global` is the old barrier, whole.
 //
 // BOUNDED WITHOUT A TIMER (the root CLAUDE.md, *Anything periodic is a
 // scheduler job*): at most CLIENT_KEYS_MAX keys, least recently used first;
@@ -502,8 +503,10 @@ const CLIENT_KEYS_MAX = 20000;
 // thirteen single-node jobs failed (sts_gnap_interaction, sts_siop,
 // sts_userinfo_protected, sts_consent_withdrawal, …). So such a request's
 // ticket is filed under SHARED_KEY as well, and every keyed request waits
-// for SHARED_KEY with its own keys: a browser waits for every back channel's
-// writes, and still not for another browser's.
+// for SHARED_KEY with its own keys: a browser waits for every keyless
+// write, and still not for another browser's. A refresh grant keyed by its
+// token is not filed there (#879, THE REFRESH GRANT, below), so neither a
+// browser nor the next refresh of a different token waits for it.
 const SHARED_KEY = '*';
 // How many of the oldest keys each dispatch looks at to drop.
 const CLIENT_KEYS_PRUNED_PER_DISPATCH = 4;
@@ -548,8 +551,8 @@ let globalDispatches = 0;
 //   all; it streams as before.
 // * **IT IS KEYED BY ITS CODE ONLY IF THE POOL KNOWS THAT CODE**: an
 //   `authorization_code` grant naming one `code` this pool holds state for
-//   (codeKeysOf()). A refresh grant stays global; its token was issued in a
-//   JSON body and is usually hours old.
+//   (codeKeysOf()). A refresh grant is keyed by its token instead (#879,
+//   below).
 // * **AN UNKNOWN CODE IS NEVER "WAIT FOR NOTHING"; IT IS THE GLOBAL WAIT,
 //   EXACTLY AS BEFORE.** The code may have come in a `form_post` body or a
 //   fragment, been minted by the front process, or come from another node.
@@ -577,6 +580,58 @@ const TOKEN_PATH = /^(?:\/realm\/[^/]+)?(?:\/[^/]+)?\/oauth2\/token$/;
 const settledCodes = new Set();
 let codeKeyedDispatches = 0;
 let codeKeysLearnt = 0;
+
+// ---------------------------------------------------------------------------
+// THE REFRESH GRANT, KEYED BY ITS TOKEN (2026-11-11, #879).
+//
+// About half of `/oauth2/token` in the soak is `grant_type=refresh_token`.
+// It carried no cookie, so once the barrier was per client it took the
+// global wait: every other browser's sign-in, and every other back channel.
+// The token in the body is usually hours old. The one write it must not
+// miss is a rotation of THAT token that this process has not finished with,
+// because a replay the worker cannot yet see is redeemed as a second use
+// and the family is revoked.
+//
+// * **A SMALL, PLAIN REFRESH GRANT IS KEYED BY `rt:<token>`** whether or
+//   not this process has seen that token before (refreshKeysOf()). The
+//   same body read as a code exchange. It waits for that key and for
+//   SHARED_KEY (a keyless write, which is where an issuance this process
+//   could not read is filed). It is NOT filed under SHARED_KEY, so the
+//   next refresh of another token does not wait for it, and neither does
+//   a browser.
+// * **AN ANSWER FROM THE TOKEN ENDPOINT WHOSE JSON CARRIES `refresh_token`
+//   FILES ITS TICKET UNDER `rt:<value>`** (learnRefreshToken()), inheriting
+//   the tickets and write generations outstanding under the request's own
+//   keys except SHARED_KEY (inheritIntoRefreshKey()). The client's next
+//   refresh of the new token waits for the response that minted it. The
+//   body is buffered only when it is a 200 JSON of a declared length of at
+//   most REFRESH_LEARN_MAX, and the same bytes are what the client is sent.
+// * **A TOKEN THIS PROCESS NEVER SAW IS THAT KEY, EMPTY.** Nothing
+//   outstanding under it means no rotation of it is unfinished here:
+//   pruning drops a key only once its tickets are gone and every other
+//   worker has passed its writes. That is "unknown = old". It is never
+//   "wait for nothing" while a write for it is still in the table, and a
+//   token response this process could not read (too large, unframed, not
+//   JSON) is filed under SHARED_KEY so the grant still waits for it
+//   (noteUnlearntRefresh()).
+// * **A GRANT THIS PROCESS CANNOT READ STAYS GLOBAL.** More than one
+//   refresh token, a token longer than REFRESH_TOKEN_MAX, a body over
+//   CODE_BODY_MAX, a chunked or encoded body, HTTP/2 with no length. The
+//   same rule as an unknown code.
+//
+// A sign-out is a browser's write, not this token's. The refresh grant
+// sees it when the workers converge, which is what `session` already gives
+// up for another client's write. 8081 was not re-measured.
+// ---------------------------------------------------------------------------
+// The largest token RESPONSE buffered to read `refresh_token` out of it.
+// The grant's own body stays at CODE_BODY_MAX; a token response also
+// carries the access token and the ID token.
+const REFRESH_LEARN_MAX = 64 * 1024;
+// The longest refresh token used as a key. A longer one stays the global
+// wait: the form that carries it is then past CODE_BODY_MAX anyway.
+const REFRESH_TOKEN_MAX = 12 * 1024;
+let refreshKeyedDispatches = 0;
+let refreshKeysLearnt = 0;
 
 /**
  * Returns a client key's state, most recently used from now.
@@ -816,12 +871,172 @@ function inheritIntoCodeKey(ticket, codeKey) {
             " key(s) inherited.");
 }
 
-// Whether a request might be a code exchange worth reading before the
-// barrier: a POST to the token endpoint with a small, plain form body of a
-// declared length. HTTP/2 may send no `content-length`; such a body is not
-// read first, and the request waits globally. A HOT PATH — every request
-// that would wait globally in `session` mode asks — so no Entering/Leaving
-// pair, for the reason route() has none.
+/**
+ * Files a token response's ticket under the refresh token it handed out,
+ * with everything outstanding under the request's own keys except
+ * SHARED_KEY. See THE REFRESH GRANT, KEYED BY ITS TOKEN.
+ *
+ * @param ticket - the token response's ticket
+ * @param refreshKey - `rt:<value>`
+ */
+function inheritIntoRefreshKey(ticket, refreshKey) {
+  log.debug("Entering inheritIntoRefreshKey().");
+  const info = ticketInfo.get(ticket);
+  if (!info) {
+    log.debug("Leaving inheritIntoRefreshKey(). No such ticket.");
+    return;
+  }
+  // SHARED_KEY is every keyless write. Copying it onto this token would
+  // make the next refresh of it wait for all of them twice, and would pin
+  // those tickets to a key that stands for one family.
+  const own = (info.keys || []).filter(function (k) {
+    return k !== refreshKey && k !== SHARED_KEY;
+  });
+  const state = clientStateFor(refreshKey, true);
+  refreshKeysLearnt++;
+  for (let i = 0; i < own.length; i++) {
+    const from = clientStates.get(own[i]);
+    if (!from) {
+      // Evicted, and so spilled: every keyed request waits for it already.
+      continue;
+    }
+    Array.from(from.tickets).forEach(function (t) {
+      fileTicketUnder(t, [refreshKey]);
+    });
+    from.writes.forEach(function (gen, pid) {
+      if (!((state.writes.get(pid) || 0) >= gen)) {
+        state.writes.set(pid, gen);
+      }
+    });
+  }
+  fileTicketUnder(ticket, [refreshKey]);
+  log.debug("Leaving inheritIntoRefreshKey(). " + own.length +
+            " key(s) inherited.");
+}
+
+/**
+ * Files a token response's ticket under the refresh token its JSON names.
+ *
+ * @param ticket - the token response's ticket
+ * @param buf - the response body, the bytes the client is also sent
+ * @returns whether the body was read as a token response. False means a
+ *   refresh token may have been issued and was not keyed, so the caller
+ *   files the ticket under SHARED_KEY.
+ */
+function learnRefreshToken(ticket, buf) {
+  log.debug("Entering learnRefreshToken().");
+  let parsed;
+  try {
+    parsed = JSON.parse(buf.toString('utf8'));
+  } catch (e) {
+    log.debug("Caught in learnRefreshToken(): " + ((e && e.message) || e));
+    log.debug("Leaving learnRefreshToken(). Not JSON.");
+    return false;
+  }
+  const token = parsed && parsed.refresh_token;
+  if (typeof token !== 'string' || token.length === 0) {
+    // A token response that names no refresh token issued none.
+    log.debug("Leaving learnRefreshToken(). No refresh token.");
+    return true;
+  }
+  if (token.length > REFRESH_TOKEN_MAX) {
+    log.debug("Leaving learnRefreshToken(). Too long to be a key.");
+    return false;
+  }
+  inheritIntoRefreshKey(ticket, 'rt:' + token);
+  log.debug("Leaving learnRefreshToken().");
+  return true;
+}
+
+// A token response this process could not read may still have issued a
+// refresh token. The next refresh waits for SHARED_KEY, so the ticket is
+// filed there. One already filed there gains nothing.
+function noteUnlearntRefresh(ticket) {
+  log.debug("Entering noteUnlearntRefresh().");
+  fileTicketUnder(ticket, [SHARED_KEY]);
+  log.debug("Leaving noteUnlearntRefresh().");
+}
+
+// Whether a token response is small enough to read `refresh_token` out of
+// before the client is sent it. Runs on every proxied answer, so no
+// Entering/Leaving pair, for the reason route() has none.
+function refreshAnswerCandidate(req, answer) {
+  if (!answer || !answer.headers || answer.statusCode !== 200) {
+    return false;
+  }
+  if (req.method !== 'POST') {
+    return false;
+  }
+  const path = String(req.originalUrl || req.url || '').split('?')[0];
+  if (!TOKEN_PATH.test(path)) {
+    return false;
+  }
+  const type = String(answer.headers['content-type'] || '').split(';')[0]
+    .trim().toLowerCase();
+  if (type !== 'application/json') {
+    return false;
+  }
+  if (answer.headers['content-encoding'] ||
+      answer.headers['transfer-encoding']) {
+    return false;
+  }
+  const declared = String(answer.headers['content-length'] === undefined
+    ? '' : answer.headers['content-length']).trim();
+  return /^[0-9]{1,7}$/.test(declared) && Number(declared) > 0 &&
+    Number(declared) <= REFRESH_LEARN_MAX;
+}
+
+/**
+ * Holds a token response's body, then sends the client those same bytes.
+ * `done` is called with the buffer when it was within REFRESH_LEARN_MAX,
+ * and with null when it was not, before the bytes are sent.
+ *
+ * @param answer - the worker's response
+ * @param res - the client's response
+ * @param done - called once with the buffer, or null
+ */
+function bufferRefreshAnswer(answer, res, done) {
+  log.debug("Entering bufferRefreshAnswer().");
+  const chunks = [];
+  let size = 0;
+  let over = false;
+  let settled = false;
+  const finishRead = function () {
+    log.debug("Entering finishRead().");
+    if (settled) {
+      log.debug("Leaving finishRead(). Already settled.");
+      return;
+    }
+    settled = true;
+    const buf = Buffer.concat(chunks);
+    done(over ? null : buf);
+    if (!res.destroyed && !res.writableEnded) {
+      res.end(buf);
+    }
+    log.debug("Leaving finishRead().");
+  };
+  // `end` before `data`. A body already buffered emits both in the turn
+  // `data` is attached, and an `end` listener registered after that has
+  // missed it: the client would never be sent the bytes, and the ticket
+  // would never be armed.
+  answer.on('end', finishRead);
+  answer.on('data', function (chunk) {
+    chunks.push(chunk);
+    size += chunk.length;
+    if (size > REFRESH_LEARN_MAX) {
+      over = true;
+    }
+  });
+  log.debug("Leaving bufferRefreshAnswer().");
+}
+
+// Whether a request might be a code exchange or a refresh grant worth
+// reading before the barrier: a POST to the token endpoint with a small,
+// plain form body of a declared length. HTTP/2 may send no
+// `content-length`; such a body is not read first, and the request waits
+// globally. A HOT PATH — every request that would wait globally in
+// `session` mode asks — so no Entering/Leaving pair, for the reason
+// route() has none.
 function codeExchangeCandidate(req) {
   if (req.method !== 'POST') {
     return false;
@@ -960,6 +1175,41 @@ function codeKeysOf(body) {
   }
   log.debug("Leaving codeKeysOf(). Unknown: global.");
   return null;
+}
+
+/**
+ * The keys a refresh grant is held to: `['rt:<token>']` when the body is a
+ * whole `refresh_token` grant naming one token short enough to be a key,
+ * else null for the global wait. An unknown token is still that key. See
+ * THE REFRESH GRANT, KEYED BY ITS TOKEN.
+ *
+ * @param body - what readCodeExchangeBody() handed over
+ * @returns the keys, or null
+ */
+function refreshKeysOf(body) {
+  log.debug("Entering refreshKeysOf().");
+  if (!body || !body.ended) {
+    log.debug("Leaving refreshKeysOf(). Not read whole.");
+    return null;
+  }
+  let form;
+  try {
+    form = new URLSearchParams(Buffer.concat(body.chunks).toString('utf8'));
+  } catch (e) {
+    log.debug("Caught in refreshKeysOf(): " + ((e && e.message) || e));
+    log.debug("Leaving refreshKeysOf(). Unreadable.");
+    return null;
+  }
+  const grants = form.getAll('grant_type');
+  const tokens = form.getAll('refresh_token');
+  if (grants.length !== 1 || grants[0] !== 'refresh_token' ||
+      tokens.length !== 1 || !tokens[0] ||
+      tokens[0].length > REFRESH_TOKEN_MAX) {
+    log.debug("Leaving refreshKeysOf(). Not one refresh token.");
+    return null;
+  }
+  log.debug("Leaving refreshKeysOf(). Held.");
+  return ['rt:' + tokens[0]];
 }
 
 // Remembers a pruned code key's name, so its exchange stays keyed; see THE
@@ -6729,10 +6979,24 @@ function middleware(options) {
           if (codeKeys) {
             codeKeyedDispatches++;
             pruneClientStates();
-          } else {
-            globalDispatches++;
+            // A code redemption is still a back channel's write: filed
+            // under SHARED_KEY as well as its code.
+            waitThenProxy(codeKeys, body, true);
+            return;
           }
-          waitThenProxy(codeKeys, body, true);
+          const refreshKeys = refreshKeysOf(body);
+          if (refreshKeys) {
+            refreshKeyedDispatches++;
+            pruneClientStates();
+            // NOT filed under SHARED_KEY. It waits for that key, so an
+            // issuance this process could not read still holds it, and
+            // the next refresh of another token does not wait for this
+            // one. See THE REFRESH GRANT, KEYED BY ITS TOKEN.
+            waitThenProxy(refreshKeys, body, false);
+            return;
+          }
+          globalDispatches++;
+          waitThenProxy(null, body, true);
         });
         return;
       }
@@ -7279,6 +7543,15 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
     if (ticket && readYourWriteMode() === 'session') {
       learnTicketKeys(ticket, answer);
     }
+    // A refresh token named in this answer is filed under its key BEFORE
+    // the client is sent the bytes, so the refresh that follows them waits
+    // for this ticket (#879). The read is below, after the status and the
+    // headers: a body already buffered emits `data` and `end` in the turn
+    // the listener is attached, and ending the response first would answer
+    // with no status and never arm the ticket.
+    let refreshLearnt = false;
+    const learnRefresh = ticket && readYourWriteMode() === 'session' &&
+      refreshAnswerCandidate(req, answer);
     // ------------------------------------------------------------------
     // THE SOCKETS THIS ANSWER SAYS TO CLOSE, CLOSED BEFORE IT GOES OUT.
     //
@@ -7365,9 +7638,13 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
         upstream.destroy();
       });
     }
-    answer.pipe(res);
-    answer.on('end', finish);
+    // Before the body is read. A token response that fails before its
+    // refresh token is learnt is filed under SHARED_KEY, so the next
+    // refresh still waits for it (#879).
     answer.on('error', function (err) {
+      if (learnRefresh && !refreshLearnt) {
+        noteUnlearntRefresh(ticket);
+      }
       if (clientGone) {
         // Ended by this process for a client that had gone. Not a fault.
         log.debug('request_pool: an answer from worker ' + entry.pid +
@@ -7380,6 +7657,22 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
       finish();
       res.destroy();
     });
+    if (learnRefresh) {
+      // Learns the token, arms the ticket, then sends the same bytes. When
+      // the body is already buffered all three happen before this turn
+      // yields, which is when the next refresh can follow the bytes.
+      bufferRefreshAnswer(answer, res, function (buf) {
+        if (buf && learnRefreshToken(ticket, buf)) {
+          refreshLearnt = true;
+        } else {
+          noteUnlearntRefresh(ticket);
+        }
+        finish();
+      });
+    } else {
+      answer.pipe(res);
+      answer.on('end', finish);
+    }
     log.debug("Leaving onAnswer().");
   };
 
@@ -8625,12 +8918,16 @@ function stats() {
     // `codeKeyed` counts code exchanges keyed by their code, `codesLearnt`
     // authorization code redirects learnt, and `settledCodes` the names kept
     // of code keys pruned once settled (THE CODE EXCHANGE, KEYED BY ITS
-    // CODE).
+    // CODE). `refreshKeyed` counts refresh grants keyed by their token, and
+    // `refreshLearnt` token responses whose refresh token was filed (THE
+    // REFRESH GRANT, KEYED BY ITS TOKEN, #879).
     sessionBarrier: { mode: readYourWriteMode(), session: sessionDispatches,
                      global: globalDispatches,
                      codeKeyed: codeKeyedDispatches,
                      codesLearnt: codeKeysLearnt,
                      settledCodes: settledCodes.size,
+                     refreshKeyed: refreshKeyedDispatches,
+                     refreshLearnt: refreshKeysLearnt,
                      keys: clientStates.size,
                      evicted: clientEvictions,
                      spilled: spilledTickets.size,
@@ -8709,6 +9006,8 @@ function reset() {
   settledCodes.clear();
   codeKeyedDispatches = 0;
   codeKeysLearnt = 0;
+  refreshKeyedDispatches = 0;
+  refreshKeysLearnt = 0;
   reaped = 0;
   // And what each write was and how it was sent (#626).
   lastSharedGeneration = 0;

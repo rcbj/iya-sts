@@ -672,6 +672,12 @@ CREATE TABLE IF NOT EXISTS sts_sessions (
 );
 
 CREATE INDEX IF NOT EXISTS sts_sessions_subject ON sts_sessions (realm, subject_key, last_seen_at) WHERE chosen AND subject_key <> '';
+-- One base64url first character of subject_key per session sweep (#876).
+-- COLLATE "C" is the order that range uses. The database collation does
+-- not partition base64url, and a range in that collation cannot use
+-- sts_sessions_subject. No new schema version: the owner runs this file
+-- again, and a start that cannot create the index is refused until then.
+CREATE INDEX IF NOT EXISTS sts_sessions_subject_band ON sts_sessions (realm, subject_key COLLATE "C") WHERE chosen AND subject_key <> '';
 CREATE INDEX IF NOT EXISTS sts_sessions_username ON sts_sessions (realm, username_key) WHERE username_key <> '';
 CREATE INDEX IF NOT EXISTS sts_sessions_expires ON sts_sessions (realm, expires_at) WHERE expires_at IS NOT NULL;
 CREATE INDEX IF NOT EXISTS sts_sessions_parent ON sts_sessions (realm, parent_key) WHERE parent_key <> '';
@@ -832,9 +838,11 @@ CREATE TABLE IF NOT EXISTS sts_cluster_secrets (
   created_at bigint NOT NULL
 );
 
--- A NAMED LOCK AS A ROW (#677, schema version 30): the portable cluster
--- statements lock a row here FOR UPDATE where the native ones take
--- pg_advisory_xact_lock. `persistence/cluster_portable.js` argues it.
+-- A NAMED LOCK AS A ROW (#677, schema version 30). The portable join lock
+-- is a row here, locked FOR UPDATE, where the native join takes
+-- pg_advisory_xact_lock (`persistence/cluster_portable.js`). Since #770
+-- every engine's fence share-locks a row here too, named with the lease
+-- token or the origin reservation (`cluster/CLAUDE.md`).
 CREATE TABLE IF NOT EXISTS sts_cluster_locks (
   name text PRIMARY KEY
 );

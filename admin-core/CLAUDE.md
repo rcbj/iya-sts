@@ -334,6 +334,26 @@ what it needs:**
   (STS-AUTHN-0410). The console's page and `?user=` still decorate a row at
   a time. `tests/users_page_rows_async.js` holds it.
 
+**The service-account roster and the people count are asked before the
+view (#798).** `usersListJson()` reads `serviceAccounts.names()`, which on
+a cold cache walks `stsServiceAccount` through `holders()` — a synchronous
+`withAttribute` per windowed container, and a synchronous `byKeys` per row
+the window does not hold. `usersJsonAsync()` and `mfaRosterJsonAsync()` ask
+`namesAsync()` beside the population (`serviceAccountNamesAsync()`,
+`holdersAsync()`) and hand the names in as `opts.serviceNames`, so the view
+does not ask again; an empty list is a list. The people count
+`secondFactorPopulation()` asks (`personCount()`, `recentCountUnder()`,
+held ten seconds) is asked the same way (`personCountAsync()`,
+`directoryPeopleCount()`) inside `buildPeopleAndCensusAsync()` and handed
+in as `directoryPeople`. A count of 0 is a count. A failure is recorded as
+`STS-AUTHN-0334` and the page draws no count. **`newUserContainer()` calls
+`usersDn()`.** It used to call `directoryReader('')`, which is
+`objectFor('')` and counts the realm — one synchronous `count` per
+windowed container — to learn a DN. The group index is not asked: the
+shown rows no longer call `mechanismsFor()`, which is what built it.
+`?user=` still decorates one row synchronously.
+`tests/users_population_async.js` P3 and P4 hold the questions.
+
 **The census interprets nothing in the directory.** `ldap_server.js` hands
 back raw attribute values; which values are keys, what a sealed TOTP record
 is, and when an emailed factor is held are still decided in

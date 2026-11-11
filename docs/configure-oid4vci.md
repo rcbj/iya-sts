@@ -396,8 +396,11 @@ carries `"cnf":{"kid":"did:jwk:…#0"}`, and a `jwt_vc_json` carries the DID as
 typed in (`STS-VC-0149`); somebody else's DID (`STS-VC-0150`); a DID enrolled
 for nobody, or removed since the offer (`STS-VC-0148`); a token this realm did
 not verify (`STS-VC-0146`); and a disabled account (`STS-VC-0147`). A
-`did:web` is refused as well (`STS-VC-0142`), because binding to a `did:web`
-is not built.
+`did:web` hosted anywhere else is refused (`STS-VC-0142`): a remote host can
+change its document between the proof and a later check. A `did:web` **this
+realm publishes for the person** is offered while `did.personPublishing` is
+on, and the credential names the version of the key it was bound to. See
+[Published DIDs](person-dids.md).
 
 **The cost.** Every copy, including every copy in a batch, carries the same
 DID, so any two of them can be linked. Only name a configuration whose

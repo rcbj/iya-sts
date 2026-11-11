@@ -1016,12 +1016,16 @@
     "text": "OIDC ID Token 的同類設定，覆寫 oauth2.idTokenTtlS。之所以與存取權杖分開，是因為兩者交給不同的讀者：ID Token 在登入時取用一次，存取權杖則在其效期內持續出示。"
   },
   "applications.schema.attributes.oauthRefreshTokenTtlS.what": {
-    "en": "47a623e69e617b6d",
-    "text": "重新整理權杖的同類設定，覆寫 oauth2.refreshTokenTtlS。等於或低於 oauthAccessTokenTtlS 的值是合法的，代表一個永遠無法有效更新的授權——/admin/token-lifetimes 會針對全服務的那一對設定回報此組合，而在此處同樣可能出現。"
+    "en": "019d39de89f62aaf",
+    "text": "重新整理權杖的同類設定，覆寫 oauth2.refreshTokenTtlS。等於或低於 oauthAccessTokenTtlS 的值是合法的，代表一個永遠無法有效更新的授權——/admin/token-lifetimes 會針對全服務的那一對設定回報此組合，而在此處同樣可能出現。 對於管理主控台、使用者入口和報表應用程式，實際生效的值是此處的正數與領域設定中較短的那個；這三項不能清空，0 會被拒絕，在儲存時確認一個不同的正數才是變更該界限的方式（#825）。"
   },
   "applications.schema.attributes.oauthRefreshIdleSeconds.what": {
-    "en": "37eeca0107443e0c",
-    "text": "「僅限 RFC 9700 模式」：重新整理鏈在被切斷前可閒置未用的時間，為此用戶端覆寫 oauth2.refreshIdleSeconds。它是從「鏈」中任何權杖最後一次被兌換的時間起算，而非從簽發時起算，因此忙碌的用戶端會保有授權，閒置的則不會。在 RFC 9700 模式之外沒有任何東西讀取它，這是該設定的特性，而非此屬性的特性。"
+    "en": "2fd2c72086342ab0",
+    "text": "「僅限 RFC 9700 模式」：重新整理鏈在被切斷前可閒置未用的時間，為此用戶端覆寫 oauth2.refreshIdleSeconds。它是從「鏈」中任何權杖最後一次被兌換的時間起算，而非從簽發時起算，因此忙碌的用戶端會保有授權，閒置的則不會。在 RFC 9700 模式之外沒有任何東西讀取它，這是該設定的特性，而非此屬性的特性。 對於管理主控台、使用者入口和報表應用程式，實際生效的值是此處的正數與領域設定中較短的那個；這三項不能清空，0 會被拒絕，在儲存時確認一個不同的正數才是變更該界限的方式（#825）。"
+  },
+  "applications.schema.attributes.oauthMaxAuthAgeS.what": {
+    "en": "c79eafa0090748ab",
+    "text": "此用戶端在多少秒以前完成過驗證之後，授權請求必須再次進行驗證，即使該請求沒有傳送 max_age，並覆寫 oauth2.maxAuthAgeS。0 或空值不增加此屬性自身的界限，一般用戶端隨後遵循領域設定，其預設值為 0。對於管理主控台、使用者入口和報表應用程式，實際生效的值是此處的正數與 authn.sessionLifetimeS 中較短的那個，因此提高領域的值永遠不會延長它們。這三項不能清空，0 會被拒絕，在儲存時確認一個不同的正數才是變更該界限的方式（#825）。"
   },
   "applications.schema.attributes.oauthClaimsAccessToken.what": {
     "en": "e284080e7c1bb9a6",
@@ -1227,6 +1231,10 @@
     "en": "00f7ceacfb9304e7",
     "text": "TRUE 或 FALSE：此身分識別提供者是否可以「開始」登入此服務提供者——從 /saml2/unsolicited 或 /launch/{app} 送出的未經請求 Response（saml-profiles-2.0-os section 4.1.5）——覆寫 saml2.idpInitiatedSso。僅對預期會收到這種 Response 的服務提供者設為 TRUE：Response 不攜帶 InResponseTo，因此服務提供者無法分辨它是發給自己的，還是被推入其瀏覽器的。"
   },
+  "applications.schema.attributes.saml2SsoConsent.what": {
+    "en": "f7ca67bc2031ec08",
+    "text": "TRUE 或 FALSE：在 SAML 2.0 以使用者既有的工作階段將其登入此應用程式之前，是否先詢問使用者一次，覆寫 saml2.ssoConsent（ASVS 5.0.0 7.6.2）。FALSE 適合領域內所有人都要使用的應用程式；項目上的全域同意代表所有人回答，並保留誰同意過的紀錄。"
+  },
   "applications.schema.attributes.saml2SpInitiatedSso.what": {
     "en": "1cab33aadc246c17",
     "text": "TRUE 或 FALSE：是否回應此服務提供者自己的 <samlp:AuthnRequest>，覆寫 saml2.spInitiatedSso。FALSE 以 RequestDenied 回應，使由身分識別提供者發起的登入成為唯一的進入方式。"
@@ -1234,6 +1242,10 @@
   "applications.schema.attributes.saml11IdpInitiatedSso.what": {
     "en": "6081871f6aca6a2f",
     "text": "TRUE 或 FALSE：登入此依賴方的 SAML 1.1 登入是否可以在此處「開始」——帶有 TARGET 而沒有 shire 的 /saml11/sso/{rp}，或 /launch/{app}——覆寫 saml11.idpInitiatedSso。"
+  },
+  "applications.schema.attributes.saml11SsoConsent.what": {
+    "en": "0cb7bbf2fb684481",
+    "text": "TRUE 或 FALSE：在 SAML 1.1 以使用者既有的工作階段將其登入此應用程式之前，是否先詢問使用者一次，覆寫 saml11.ssoConsent（ASVS 5.0.0 7.6.2）。FALSE 適合領域內所有人都要使用的應用程式；項目上的全域同意代表所有人回答，並保留誰同意過的紀錄。"
   },
   "applications.schema.attributes.saml11SpInitiatedSso.what": {
     "en": "2376052fceb025ab",
@@ -1258,6 +1270,10 @@
   "applications.schema.attributes.wsfedSpInitiatedSso.what": {
     "en": "d199b15200f6e9de",
     "text": "TRUE 或 FALSE：是否回應此依賴方自己的 wsignin1.0，覆寫 wsfed.spInitiatedSso。wsignin1.0 是未簽署的 URL，因此 FALSE 是把門關上，而不是證明是誰開的門。"
+  },
+  "applications.schema.attributes.wsfedSsoConsent.what": {
+    "en": "9a3541460bedfa45",
+    "text": "TRUE 或 FALSE：在 WS-Federation 以使用者既有的工作階段將其登入此應用程式之前，是否先詢問使用者一次，覆寫 wsfed.ssoConsent（ASVS 5.0.0 7.6.2）。FALSE 適合領域內所有人都要使用的應用程式；項目上的全域同意代表所有人回答，並保留誰同意過的紀錄。"
   },
   "applications.schema.attributes.wsfedSignOutUri.what": {
     "en": "677e7babd8d711d3",
@@ -2010,17 +2026,5 @@
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "PEP 註冊時對自己所做的任何說明。"
-  },
-  "applications.schema.attributes.saml2SsoConsent.what": {
-    "en": "f7ca67bc2031ec08",
-    "text": "TRUE 或 FALSE：在 SAML 2.0 以使用者既有的工作階段將其登入此應用程式之前，是否先詢問使用者一次，覆寫 saml2.ssoConsent（ASVS 5.0.0 7.6.2）。FALSE 適合領域內所有人都要使用的應用程式；項目上的全域同意代表所有人回答，並保留誰同意過的紀錄。"
-  },
-  "applications.schema.attributes.saml11SsoConsent.what": {
-    "en": "0cb7bbf2fb684481",
-    "text": "TRUE 或 FALSE：在 SAML 1.1 以使用者既有的工作階段將其登入此應用程式之前，是否先詢問使用者一次，覆寫 saml11.ssoConsent（ASVS 5.0.0 7.6.2）。FALSE 適合領域內所有人都要使用的應用程式；項目上的全域同意代表所有人回答，並保留誰同意過的紀錄。"
-  },
-  "applications.schema.attributes.wsfedSsoConsent.what": {
-    "en": "9a3541460bedfa45",
-    "text": "TRUE 或 FALSE：在 WS-Federation 以使用者既有的工作階段將其登入此應用程式之前，是否先詢問使用者一次，覆寫 wsfed.ssoConsent（ASVS 5.0.0 7.6.2）。FALSE 適合領域內所有人都要使用的應用程式；項目上的全域同意代表所有人回答，並保留誰同意過的紀錄。"
   }
 }

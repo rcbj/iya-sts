@@ -2368,7 +2368,7 @@
     "text": "Read-your-write entre workers de solicitudes"
   },
   "workers.readYourWrite|description": {
-    "en": "fb1bc46eaab84ce9",
+    "en": "232dadd8bb312926",
     "text": "Si un worker de solicitudes debe ponerse al día con las escrituras hechas a través de los otros workers antes de atender. La coordinación hace que los workers converjan en medio segundo a un segundo, y eso no es read-your-write. `session` (el valor predeterminado): una solicitud que lleva una cookie de sesión, la cookie del pool o un flujo de inicio de sesión en su dirección espera las escrituras de las solicitudes anteriores que llevaban lo mismo, todas las escrituras de una solicitud que no llevaba ninguna de ellas, y las escrituras propias del proceso frontal; una solicitud que no lleva ninguna de ellas, como una solicitud de token desde el servidor de un cliente, SCIM o una llamada a la API de gestión con un token bearer, espera todas las escrituras respondidas antes que ella. Así, un navegador ve de inmediato sus propias escrituras y las de cada canal de respaldo, y las de otro navegador solo cuando los workers convergen. `global`: cada solicitud espera todas las escrituras respondidas antes que ella, lo que cuesta decenas de milisegundos por solicitud bajo carga. `off`: ninguna solicitud espera, y un llamador puede no encontrar su propia escritura. `true` significa `session` y `false` significa `off`. No debe estar desactivado para un pool de superficies (workers.surfaceCount)."
   },
   "workers.socketDir|label": {
@@ -4439,6 +4439,14 @@
     "en": "c002260d32d033da",
     "text": "La vigencia ABSOLUTA de un token de actualización — el `exp` del propio token, aplicado en ambos modos por el grant de actualización. VEINTICUATRO HORAS de forma predeterminada, y eso ES UN CAMBIO: eran treinta días, así que un cliente que conservaba uno durante una ejecución de pruebas larga ahora recibe un invalid_grant donde antes no. Defínalo en 2592000 para obtener exactamente el comportamiento anterior. No es el mismo ajuste que oauth2.refreshIdleSeconds, que es el tiempo de INACTIVIDAD del modo RFC 9700 sobre una CADENA de actualización y se mide desde el último canje y no desde la emisión: este es un muro que una cadena no puede superar por muy activa que esté."
   },
+  "oauth2.maxAuthAgeS|label": {
+    "en": "ff5efd87e142a988",
+    "text": "Edad máxima de autenticación (s)"
+  },
+  "oauth2.maxAuthAgeS|description": {
+    "en": "5a37fced9d4d040e",
+    "text": "Cuánto tiempo hace que un cliente fue autenticado, en segundos, antes de que una solicitud de autorización deba autenticar de nuevo, aunque la solicitud no envíe max_age. 0, el valor predeterminado, no añade un límite propio, así que un cliente ordinario no cambia. Se lee en cada solicitud de autorización: no reescribe una sesión ya almacenada. La consola de administración (sts-admin-console), el portal de usuario (sts-user-portal) y la aplicación de informes (sts-report) llevan cada uno su propio valor y toman el más corto entre ese valor y authn.sessionLifetimeS, de modo que aumentar este ajuste o la vigencia de la sesión nunca alarga esos tres, y disminuir authn.sessionLifetimeS sigue acortándolos. La sustitución por cliente es oauthMaxAuthAgeS. No es una vigencia de token y no está en /admin/token-lifetimes (#825)."
+  },
   "oauth2.expiredTokenRetentionS|label": {
     "en": "4466b89054d69c81",
     "text": "Conservar un token caducado en /admin/tokens durante (segundos)"
@@ -5383,6 +5391,14 @@
     "en": "d5e8553e9978dfda",
     "text": "Indica si se rechaza un <samlp:AuthnRequest> SIN FIRMAR — y un <samlp:LogoutRequest> sin firmar de un proveedor de servicios. **`auto` está ACTIVADO en modo producto y DESACTIVADO en desarrollo.** `on` y `off` deciden independientemente del modo; a un proveedor de servicios cuyos metadatos consumidos dicen AuthnRequestsSigned=\"true\" se le exige aunque esto esté desactivado. También es lo que dice el WantAuthnRequestsSigned de los metadatos de este proveedor de identidad.\n\nUna firma PRESENTE se verifica en todo modo — la firma en la cadena de consulta del binding HTTP Redirect (sección 3.4.4.1) o la envuelta del binding HTTP POST — contra los certificados de firma REGISTRADOS del proveedor de servicios (samlSigningCertificate, de sus metadatos o definido en la página SAML 2.0), nunca contra el certificado que lleva la solicitud, y una firma que no se verifica se rechaza. Sin certificado registrado, una firma se registra como no verificada, lo que cuenta como SIN FIRMAR cuando esto está activado."
   },
+  "saml2.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Preguntar antes de iniciar la sesión de una persona"
+  },
+  "saml2.ssoConsent|description": {
+    "en": "1ddf528dcc7be0f8",
+    "text": "Indica si se pregunta a una persona, una vez por aplicación, antes de que SAML 2.0 inicie su sesión en ella desde una sesión que ya tiene (ASVS 5.0.0 7.6.2). Su respuesta se conserva, de modo que solo se le vuelve a preguntar si la retira; un consentimiento global en la aplicación responde por todos. Una solicitud pasiva se responde sin la pantalla, como una que no puede interactuar. ACTIVADO de forma predeterminada en modo producto, desactivado en desarrollo; saml2SsoConsent en la entrada de una aplicación lo reemplaza para esa aplicación."
+  },
   "saml2.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Inicio de sesión iniciado por el proveedor de identidad"
@@ -5543,6 +5559,14 @@
     "en": "2e68718a26d4706c",
     "text": "Crea una entrada de aplicación bajo ou=applications la primera vez que se nombra una parte que confía — al llegar un TARGET, al obtenerse un documento de metadatos o al resolverse un artefacto. Desactivado significa que los perfiles de navegador siguen funcionando y /admin/saml11 permanece vacío, que es lo que quiere quien ejecuta una prueba de carga y nadie más."
   },
+  "saml11.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Preguntar antes de iniciar la sesión de una persona"
+  },
+  "saml11.ssoConsent|description": {
+    "en": "53f104813a60ba25",
+    "text": "Indica si se pregunta a una persona, una vez por aplicación, antes de que SAML 1.1 inicie su sesión en ella desde una sesión que ya tiene (ASVS 5.0.0 7.6.2). Su respuesta se conserva, de modo que solo se le vuelve a preguntar si la retira; un consentimiento global en la aplicación responde por todos. Una solicitud pasiva se responde sin la pantalla, como una que no puede interactuar. ACTIVADO de forma predeterminada en modo producto, desactivado en desarrollo; saml11SsoConsent en la entrada de una aplicación lo reemplaza para esa aplicación."
+  },
   "saml11.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Inicio de sesión iniciado por el proveedor de identidad"
@@ -5654,6 +5678,14 @@
   "wsfed.idpInitiatedSso|description": {
     "en": "62f920d6663c4e4f",
     "text": "Indica si /wsfed/initiate/{rp} — y /launch/{app} para WS-Federation — inicia la sesión de una persona en una parte que confía que no lo pidió, enviando por POST a su wsfedReplyUrl registrada. DESACTIVADO de forma predeterminada; wsfedIdpInitiatedSso en la entrada de una aplicación lo anula para esa parte que confía. La parte que confía recibe una respuesta que no pidió, que no puede distinguir de una introducida en su navegador por otra persona."
+  },
+  "wsfed.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Preguntar antes de iniciar la sesión de una persona"
+  },
+  "wsfed.ssoConsent|description": {
+    "en": "b60b06fe1664cb06",
+    "text": "Indica si se pregunta a una persona, una vez por aplicación, antes de que WS-Federation inicie su sesión en ella desde una sesión que ya tiene (ASVS 5.0.0 7.6.2). Su respuesta se conserva, de modo que solo se le vuelve a preguntar si la retira; un consentimiento global en la aplicación responde por todos. Una solicitud pasiva se responde sin la pantalla, como una que no puede interactuar. ACTIVADO de forma predeterminada en modo producto, desactivado en desarrollo; wsfedSsoConsent en la entrada de una aplicación lo reemplaza para esa aplicación."
   },
   "wsfed.spInitiatedSso|label": {
     "en": "705a2297f2762532",
@@ -6788,8 +6820,8 @@
     "text": "Publicar un did:web para una persona"
   },
   "did.personPublishing|description": {
-    "en": "841dc751d16e1137",
-    "text": "Permite que una persona cree un did:web que este dominio publica para ella, en la página Self-issued IDs de su portal (#1291): did:web:<host>[:realm:<id>]:users:<rid>, donde <rid> son 128 bits aleatorios, de modo que nadie puede enumerar cuentas probando direcciones y no se pueden vincular dos DID de una misma persona. Su documento se sirve en /users/<rid>/did.json con todas las versiones conservadas, y puede ser el DID preferido de la persona. Activado, una configuración de credencial vinculada al DID (oid4vci.didHolderBinding) ofrece también did:web para un DID que este dominio aloja y que la persona demostró con una cartera. Desactivado: no se publica nada nuevo; un DID ya publicado se sigue sirviendo, desactivado o no, porque su dirección se conserva para siempre. En modo producto solo se publica un DID sobre un global.publicBaseUrl fijado."
+    "en": "291c209edc596dc6",
+    "text": "Permite que una persona cree un did:web que este dominio publica para ella, en la página Self-issued IDs de su portal (#1291): did:web:<host>[:realm:<id>]:users:<rid>, donde <rid> son 128 bits aleatorios, de modo que nadie puede enumerar cuentas probando direcciones y no se pueden vincular dos DID de una misma persona. Su documento se sirve en /users/<rid>/did.json con todas las versiones conservadas, y puede ser el DID preferido de la persona. Activado, una configuración de credencial vinculada al DID (oid4vci.didHolderBinding) ofrece también did:web para un DID que este dominio aloja y que la persona demostró con una cartera. Desactivado: no se publica nada nuevo; un DID ya publicado se sigue sirviendo, desactivado o no, porque su dirección se conserva para siempre. En modo producto solo se publica un DID sobre un global.publicBaseUrl fijado. Una clave ya registrada para el inicio de sesión no se publica (#775): la billetera demuestra una clave que no es uno de los sujetos de inicio de sesión de la persona, para que el documento no sea una copia pública de una clave de inicio de sesión. Cambiar global.publicBaseUrl, o la ruta del dominio, no reescribe un DID ya publicado; conserva el host y la ruta con los que se creó, y deja de resolverse si esa dirección ya no llega a este dominio."
   },
   "did.personCustody|label": {
     "en": "057d429ef011ffab",
@@ -12442,29 +12474,5 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "Solo para la escucha del depurador de protocolos: http.http2MaxConcurrentStreams. -1, el predeterminado, sigue a http.http2MaxConcurrentStreams; cualquier otro valor decide solo para esta escucha. Cuántas solicitudes puede tener abiertas a la vez una conexión HTTP/2 (SETTINGS_MAX_CONCURRENT_STREAMS); un flujo por encima se rechaza hasta que termine otro. 100, el predeterminado, es el valor más pequeño que recomienda RFC 9113; el propio de node no tiene límite, lo que permitiría a una sola conexión llevar el trabajo de miles. Limita el trabajo de una conexión como http.maxConnections limita las conexiones. Una conexión nueva sigue un cambio de inmediato, y a una abierta se le envía el nuevo valor."
-  },
-  "saml2.ssoConsent|label": {
-    "en": "0234bf3af48ea8a4",
-    "text": "Preguntar antes de iniciar la sesión de una persona"
-  },
-  "saml2.ssoConsent|description": {
-    "en": "1ddf528dcc7be0f8",
-    "text": "Indica si se pregunta a una persona, una vez por aplicación, antes de que SAML 2.0 inicie su sesión en ella desde una sesión que ya tiene (ASVS 5.0.0 7.6.2). Su respuesta se conserva, de modo que solo se le vuelve a preguntar si la retira; un consentimiento global en la aplicación responde por todos. Una solicitud pasiva se responde sin la pantalla, como una que no puede interactuar. ACTIVADO de forma predeterminada en modo producto, desactivado en desarrollo; saml2SsoConsent en la entrada de una aplicación lo reemplaza para esa aplicación."
-  },
-  "saml11.ssoConsent|label": {
-    "en": "0234bf3af48ea8a4",
-    "text": "Preguntar antes de iniciar la sesión de una persona"
-  },
-  "saml11.ssoConsent|description": {
-    "en": "53f104813a60ba25",
-    "text": "Indica si se pregunta a una persona, una vez por aplicación, antes de que SAML 1.1 inicie su sesión en ella desde una sesión que ya tiene (ASVS 5.0.0 7.6.2). Su respuesta se conserva, de modo que solo se le vuelve a preguntar si la retira; un consentimiento global en la aplicación responde por todos. Una solicitud pasiva se responde sin la pantalla, como una que no puede interactuar. ACTIVADO de forma predeterminada en modo producto, desactivado en desarrollo; saml11SsoConsent en la entrada de una aplicación lo reemplaza para esa aplicación."
-  },
-  "wsfed.ssoConsent|label": {
-    "en": "0234bf3af48ea8a4",
-    "text": "Preguntar antes de iniciar la sesión de una persona"
-  },
-  "wsfed.ssoConsent|description": {
-    "en": "b60b06fe1664cb06",
-    "text": "Indica si se pregunta a una persona, una vez por aplicación, antes de que WS-Federation inicie su sesión en ella desde una sesión que ya tiene (ASVS 5.0.0 7.6.2). Su respuesta se conserva, de modo que solo se le vuelve a preguntar si la retira; un consentimiento global en la aplicación responde por todos. Una solicitud pasiva se responde sin la pantalla, como una que no puede interactuar. ACTIVADO de forma predeterminada en modo producto, desactivado en desarrollo; wsfedSsoConsent en la entrada de una aplicación lo reemplaza para esa aplicación."
   }
 }

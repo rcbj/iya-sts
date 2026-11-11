@@ -275,6 +275,7 @@
   "oauthJwks": 271,
   "oauthJwksUri": 272,
   "oauthLogoUri": 273,
+  "oauthMaxAuthAgeS": 746,
   "oauthNativeSso": 274,
   "oauthNativeSsoGroup": 275,
   "oauthPermission": 276,

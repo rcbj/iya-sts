@@ -1135,6 +1135,7 @@ class Credentials {
   //     process), and the first `limit` names with whether there were more,
   //     so the roster neither lists everybody to cap the list nor reports
   //     the length of a capped list as the size of the directory.
+  //     `personCountAsync()` (#798) is that count for a caller that can wait.
   //
   // **THEY ARE REMEMBERED AGAINST THE DIRECTORY THEY CAME WITH.** A test that
   // installs a stub directory with `setDirectory()` and no census must not be
@@ -1148,8 +1149,8 @@ class Credentials {
   /**
    * Adds the population hooks to the directory slot already filled.
    *
-   * @param hooks - `credentialCensus`, `applicationMatcher`, `personCount`
-   *   and `personNamesUpTo`
+   * @param hooks - `credentialCensus`, `applicationMatcher`, `personCount`,
+   *   `personCountAsync` and `personNamesUpTo`
    * @returns true when added, false when no directory is installed
    */
   addDirectoryHooks(hooks) {
@@ -1802,12 +1803,17 @@ class Credentials {
   // ---------------------------------------------------------------------------
   // THE UPGRADE ON SIGN-IN (2026-10-22, #847).
   //
-  // A password that has just VERIFIED against the stored hash, where that
-  // hash is not the password policy's preferred algorithm AND parameters, is
-  // hashed again under the policy and written back. rcbj's decision 4: a
-  // parameter change within one algorithm counts as much as a change of
-  // algorithm. It is the only way an old hash can move — there is no bulk
-  // rehash, because the plaintext exists only at a sign-in.
+  // A password that has just VERIFIED against the stored hash is hashed again
+  // under the policy and written back when the stored hash is a different
+  // algorithm, or the same algorithm at a strictly lower cost (#872). rcbj's
+  // decision 4 on #847 still holds for an algorithm change and for a cost
+  // that goes up. A same-algorithm hash that is already at least the policy's
+  // cost is left, so a stronger stored hash is not rewritten down onto the
+  // new default. It is the only way an old hash can move — there is no bulk
+  // rehash, because the plaintext exists only at a sign-in. The one-time
+  // extra hash of each weaker password is still on this sign-in: the Kerberos
+  // keys are re-stamped inside the write, and the new hash has to be the one
+  // the caller sees when the promise resolves.
   //
   // Five rules, each a way to get it wrong:
   //
@@ -1827,9 +1833,10 @@ class Credentials {
   //     (`kerberos/krb5_person_keys.ts`), so the observer is told of a
   //     `rehash`, which re-stamps them at the SAME kvno: the password, and so
   //     every key, is the one it was.
-  //   * IT NEVER COSTS THE SIGN-IN. A hash or a write that fails is logged
-  //     (STS-AUTHN-0409) and the person is signed in as they would have been;
-  //     the next verified sign-in tries again.
+  //   * A FAILED UPGRADE NEVER COSTS THE SIGN-IN. A hash or a write that
+  //     fails is logged (STS-AUTHN-0409) and the person is signed in as they
+  //     would have been; the next verified sign-in tries again. A successful
+  //     one is awaited, for the reason above.
   // ---------------------------------------------------------------------------
   private rehashSpecFor(name, stored) {
     const { log, crypto, passwordPolicy } = this.deps;
@@ -1842,6 +1849,12 @@ class Credentials {
     const spec = passwordPolicy.hashSpec(passwordPolicy.profileFor(name));
     if (crypto.storedSecretMatchesSpec(stored, spec)) {
       log.debug('Leaving Credentials.rehashSpecFor(). Already in force.');
+      return null;
+    }
+    // Same algorithm and not strictly weaker (#872): left as stored. A
+    // different algorithm is weaker here, so it is still upgraded.
+    if (!crypto.storedSecretIsWeaker(stored, spec)) {
+      log.debug('Leaving Credentials.rehashSpecFor(). Not weaker.');
       return null;
     }
     log.debug('Leaving Credentials.rehashSpecFor(). Out of date.');
@@ -1896,8 +1909,8 @@ class Credentials {
 
   /**
    * Hashes a just-verified password again under the password policy and
-   * writes it back where the stored hash is not the policy's algorithm and
-   * parameters (#847). On this thread; never throws.
+   * writes it back where the stored hash is another algorithm, or the same
+   * one at a strictly lower cost (#847, #872). On this thread; never throws.
    *
    * @param name - the person
    * @param password - the password the stored hash just verified
@@ -6107,7 +6120,10 @@ class Credentials {
    * @param alsoKnown - names the caller has seen
    * @param opts - `limit`; `credentials.factorScanLimit` when omitted;
    *   `directoryFirst`, the `{ names, more }` a caller already asked for
-   *   (`directoryFirstNames()`, #616), so the directory is not asked again
+   *   (`directoryFirstNames()`, #616), so the directory is not asked again;
+   *   `directoryPeople`, the count already asked (`directoryPeopleCount()`,
+   *   #798) — null where it was asked and failed, and 0 a count, so a
+   *   missing count is omitted rather than passed as `undefined`
    * @returns `{ rows: [{ username, inDirectory, known }], scanned, capped,
    *   limit, directoryPeople, store, isApplication }`
    */
@@ -6173,7 +6189,12 @@ class Credentials {
       scanned = people.length;
       people.forEach((name) => { add(name, 'inDirectory'); });
     }
-    if (counter) {
+    if (options.directoryPeople !== undefined) {
+      // Asked already, asynchronously (#798): `directoryPeopleCount()`.
+      // Null means the count was asked and failed. 0 is a count, so this
+      // is not `options.directoryPeople || counter()`.
+      directoryPeople = options.directoryPeople;
+    } else if (counter) {
       try {
         directoryPeople = Number(counter()) || 0;
       } catch (e) {
@@ -6249,6 +6270,44 @@ class Credentials {
               (first ? (first.names || []).length + ' name(s).'
                 : 'No directory.'));
     return first || null;
+  }
+
+  // THE PEOPLE COUNT, ASKED WITHOUT HOLDING THE EVENT LOOP (#798).
+  // `secondFactorPopulation()` asks `personCount()` synchronously, and in a
+  // windowed process that is one `count` of `ou=users` on the worker that
+  // serves sign-ins. A caller that can wait asks this first and hands the
+  // answer over as `directoryPeople`. No hook means `undefined`, and the
+  // caller omits the option so the synchronous count still runs. A count
+  // of 0 is a count; a throw is null (the page draws no count) under the
+  // code the synchronous count already records.
+  /**
+   * How many people the realm defines, asked of the directory
+   * asynchronously.
+   *
+   * @returns a promise of the count, of null where the count threw, or of
+   *   undefined where the directory offers no asynchronous count
+   */
+  async directoryPeopleCount() {
+    const { log, errorCodes } = this.deps;
+    log.debug('Entering Credentials.directoryPeopleCount().');
+    const hook = this.directoryHook('personCountAsync');
+    if (!hook) {
+      log.debug('Leaving Credentials.directoryPeopleCount(). No count.');
+      return undefined;
+    }
+    let n: number | null = null;
+    try {
+      const raw = Number(await hook());
+      // `Number.isFinite` and not `raw || 0`: a count of 0 is a count.
+      n = Number.isFinite(raw) ? raw : 0;
+    } catch (e) {
+      log.error(errorCodes.tag('STS-AUTHN-0334') +
+                'credentials: counting this realm\'s people threw: ' +
+                ((e && e.message) || e));
+      n = null;
+    }
+    log.debug('Leaving Credentials.directoryPeopleCount(). ' + n);
+    return n;
   }
 
   /**
@@ -12681,6 +12740,7 @@ export = {
   // and count everybody in one pass — see `secondFactorPopulation()`.
   secondFactorPopulation: slot.forward('secondFactorPopulation'),
   directoryFirstNames: slot.forward('directoryFirstNames'),
+  directoryPeopleCount: slot.forward('directoryPeopleCount'),
   factorHolderRow: slot.forward('factorHolderRow'),
   factorHolderRowsAsync: slot.forward('factorHolderRowsAsync'),
   personDnsAsync: slot.forward('personDnsAsync'),

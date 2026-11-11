@@ -63,7 +63,7 @@ function fakeDatabase() {
   log.debug("Entering fakeDatabase().");
   const db = { now: 1000000, claims: new Map(), statements: [],
               flush: flushDouble.state(),
-              nodes: new Map() };
+              nodes: new Map(), locks: new Set() };
   const keyOf = function (scope, realm, key) {
     return scope + '|' + realm + '|' + key;
   };
@@ -162,6 +162,38 @@ function fakeDatabase() {
       const row = db.claims.get(keyOf(p[0], '', p[1]));
       const live = !!row && row.reservation === p[2] && row.expires > db.now;
       return Promise.resolve({ rowCount: live ? 1 : 0, rows: [] });
+    }
+    // THE FENCE'S SHARE LOCK (#770). The lock outlives a lapse; a takeover
+    // or a release removes it. BEGIN and the renewal's SET LOCAL are the
+    // bounded autocommit around a statement this fake already understands.
+    if (/^(BEGIN|COMMIT|ROLLBACK)$/.test(text) ||
+        /^SET LOCAL /.test(text)) {
+      return Promise.resolve({ rowCount: 0, rows: [] });
+    }
+    if (/^INSERT INTO sts_cluster_locks/.test(text)) {
+      db.locks.add(String(p[0]));
+      return Promise.resolve({ rowCount: 1, rows: [] });
+    }
+    if (/^DELETE FROM sts_cluster_locks/.test(text) ||
+        /sts:releaseClaim\.lock /.test(text)) {
+      if (/left\(/.test(text)) {
+        const prefix = String(p[0]);
+        const keep = String(p[1]);
+        Array.from(db.locks).forEach(function (name) {
+          if (name.indexOf(prefix) === 0 && name !== keep) {
+            db.locks.delete(name);
+          }
+        });
+      } else if (p.length) {
+        db.locks.delete(String(p[0]));
+      }
+      return Promise.resolve({ rowCount: 1, rows: [] });
+    }
+    if (/sts_cluster_locks/.test(text) && /FOR SHARE/i.test(text)) {
+      const name = String(p[0] || '');
+      const held = db.locks.has(name);
+      return Promise.resolve({ rowCount: held ? 1 : 0,
+                               rows: held ? [{ name: name }] : [] });
     }
     return Promise.resolve({ rowCount: 0, rows: [] });
   };

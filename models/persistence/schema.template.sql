@@ -589,6 +589,12 @@ ALTER TABLE sts_minted SET (fillfactor=80);
 --@table sts_sessions
 
 --@index sts_sessions_subject
+-- One base64url first character of subject_key per session sweep (#876).
+-- COLLATE "C" is the order that range uses. The database collation does
+-- not partition base64url, and a range in that collation cannot use
+-- sts_sessions_subject. No new schema version: the owner runs this file
+-- again, and a start that cannot create the index is refused until then.
+--@index sts_sessions_subject_band
 --@index sts_sessions_username
 --@index sts_sessions_expires
 --@index sts_sessions_parent
@@ -688,9 +694,11 @@ ALTER TABLE sts_changes SET (autovacuum_vacuum_scale_factor=0.02, autovacuum_vac
 
 --@table sts_cluster_secrets
 
--- A NAMED LOCK AS A ROW (#677, schema version 30): the portable cluster
--- statements lock a row here FOR UPDATE where the native ones take
--- pg_advisory_xact_lock. `persistence/cluster_portable.js` argues it.
+-- A NAMED LOCK AS A ROW (#677, schema version 30). The portable join lock
+-- is a row here, locked FOR UPDATE, where the native join takes
+-- pg_advisory_xact_lock (`persistence/cluster_portable.js`). Since #770
+-- every engine's fence share-locks a row here too, named with the lease
+-- token or the origin reservation (`cluster/CLAUDE.md`).
 --@table sts_cluster_locks
 
 -- A VALUE THAT ONLY GOES UP (#46 section 2): a WebAuthn signature counter and

@@ -2368,7 +2368,7 @@
     "text": "Read-your-write sa pagitan ng mga request worker"
   },
   "workers.readYourWrite|description": {
-    "en": "fb1bc46eaab84ce9",
+    "en": "232dadd8bb312926",
     "text": "Kung kailangang humabol ang isang request worker sa mga write na ginawa sa ibang mga worker bago ito sumagot. Pinapaabot ng coordination ang mga worker sa iisang estado sa loob ng kalahating segundo hanggang isang segundo, at hindi iyon read-your-write. `session` (ang default): ang isang request na may dalang session cookie, ang pool cookie o isang sign-in flow sa address nito ay naghihintay sa mga write ng mga naunang request na may dalang ganoon din, sa bawat write ng isang request na walang dala sa mga iyon, at sa sariling mga write ng front process; ang isang request na walang dala sa mga iyon, gaya ng token request mula sa server ng isang client, SCIM o isang tawag sa management API na may bearer token, ay naghihintay sa bawat write na nasagot bago ito. Kaya agad na nakikita ng isang browser ang sarili nitong mga write at ang sa bawat back channel, at ang sa ibang browser kapag nagkaisa na lamang ang mga worker. `global`: bawat request ay naghihintay sa bawat write na nasagot bago ito, na nagkakahalaga ng sampu-sampung millisecond bawat request kapag may load. `off`: walang request na naghihintay, at maaaring hindi makita ng isang tumatawag ang sarili nitong write. Ang `true` ay nangangahulugang `session` at ang `false` ay nangangahulugang `off`. Hindi ito dapat naka-off para sa isang surface pool (workers.surfaceCount)."
   },
   "workers.socketDir|label": {
@@ -4439,6 +4439,14 @@
     "en": "c002260d32d033da",
     "text": "Ang ABSOLUTE na tagal ng isang refresh token — ang `exp` sa mismong token, ipinapatupad sa parehong mode ng refresh grant. DALAWAMPU'T APAT NA ORAS bilang default, at PAGBABAGO IYON: tatlumpung araw ito dati, kaya ang client na humawak ng isa sa mahabang test run ay makakatagpo na ngayon ng invalid_grant kung saan hindi dati. Itakda ito sa 2592000 para sa eksaktong lumang gawi. Hindi ito kaparehong setting ng oauth2.refreshIdleSeconds, na siyang INACTIVITY timeout ng RFC 9700 mode sa isang refresh CHAIN at sinusukat mula sa huling pag-redeem sa halip na mula sa pag-isyu: ito ay isang pader na hindi malalampasan ng chain sa pag-refresh gaano man ito kaabala."
   },
+  "oauth2.maxAuthAgeS|label": {
+    "en": "ff5efd87e142a988",
+    "text": "Pinakamataas na edad ng pagpapatunay (s)"
+  },
+  "oauth2.maxAuthAgeS|description": {
+    "en": "5a37fced9d4d040e",
+    "text": "Kung gaano katagal ang nakalipas na na-authenticate ang isang client, sa segundo, bago dapat mag-authenticate muli ang isang authorization request, kahit na walang max_age ang ipinadala ng request. Ang 0, ang default, ay hindi nagdaragdag ng sariling hangganan, kaya ang ordinaryong client ay hindi nagbabago. Binabasa sa bawat authorization request: hindi nito sinusulat muli ang isang session na nakaimbak na. Ang admin console (sts-admin-console), ang user portal (sts-user-portal) at ang reports application (sts-report) ay may kanya-kanyang halaga at kinukuha ang mas maikli sa halagang iyon at sa authn.sessionLifetimeS, kaya ang pagpapahaba ng setting na ito o ng session lifetime ay hindi kailanman nagpapahaba sa tatlong ito, at ang pagpapaikli ng authn.sessionLifetimeS ay nagpapaikli pa rin sa kanila. Ang override ng bawat client ay oauthMaxAuthAgeS. Hindi ito token lifetime at wala ito sa /admin/token-lifetimes (#825)."
+  },
   "oauth2.expiredTokenRetentionS|label": {
     "en": "4466b89054d69c81",
     "text": "Itago ang expired na token sa /admin/tokens nang (segundo)"
@@ -5383,6 +5391,14 @@
     "en": "d5e8553e9978dfda",
     "text": "Kung tinatanggihan ang HINDI PINIRMAHANG <samlp:AuthnRequest> — at ang hindi pinirmahang <samlp:LogoutRequest> mula sa isang service provider. **Ang `auto` ay NAKA-ON sa product mode at NAKA-OFF sa development.** Ang `on` at `off` ay nagpapasya anuman ang mode; ang service provider na ang na-consume na metadata ay nagsasabing AuthnRequestsSigned=\"true\" ay pinanghahawakan doon kahit naka-off ito. Ito rin ang sinasabi ng WantAuthnRequestsSigned sa metadata ng identity provider na ito.\n\nVine-verify sa bawat mode ang pirmang NAROROON — ang query-string signature ng HTTP Redirect binding (section 3.4.4.1) o ang enveloped na pirma ng HTTP POST binding — laban sa mga NAKA-REGISTER na signing certificate ng service provider (samlSigningCertificate, mula sa metadata nito o itinakda sa pahinang SAML 2.0), hindi kailanman laban sa certificate na dala ng request, at tinatanggihan ang pirmang hindi nagve-verify. Kapag walang naka-register na certificate, nire-record ang pirma bilang hindi na-verify, na binibilang na HINDI PINIRMAHAN kapag naka-on ito."
   },
+  "saml2.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Magtanong bago i-sign in ang isang tao"
+  },
+  "saml2.ssoConsent|description": {
+    "en": "1ddf528dcc7be0f8",
+    "text": "Kung tinatanong ang isang tao, minsan bawat application, bago siya i-sign in ng SAML 2.0 dito mula sa isang session na mayroon na siya (ASVS 5.0.0 7.6.2). Iniingatan ang sagot niya, kaya tatanungin lang siya ulit kung babawiin niya ito; ang global na pahintulot sa application ay sumasagot para sa lahat. Ang passive na request ay sinasagot nang walang screen, bilang request na hindi makikipag-ugnayan. NAKA-ON bilang default sa product mode, naka-off sa development; ang saml2SsoConsent sa entry ng isang application ang nangingibabaw para sa application na iyon."
+  },
   "saml2.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Sign-in na sinimulan ng identity provider"
@@ -5543,6 +5559,14 @@
     "en": "2e68718a26d4706c",
     "text": "Gumawa ng application entry sa ilalim ng ou=applications sa unang pagkakataong mapangalanan ang isang relying party — sa pagdating ng TARGET, sa pagkuha ng metadata document, o sa pag-resolve ng artifact. Ang off ay nangangahulugang gumagana pa rin ang mga browser profile at nananatiling walang laman ang /admin/saml11, na siyang gusto ng taong nagpapatakbo ng load test at walang iba."
   },
+  "saml11.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Magtanong bago i-sign in ang isang tao"
+  },
+  "saml11.ssoConsent|description": {
+    "en": "53f104813a60ba25",
+    "text": "Kung tinatanong ang isang tao, minsan bawat application, bago siya i-sign in ng SAML 1.1 dito mula sa isang session na mayroon na siya (ASVS 5.0.0 7.6.2). Iniingatan ang sagot niya, kaya tatanungin lang siya ulit kung babawiin niya ito; ang global na pahintulot sa application ay sumasagot para sa lahat. Ang passive na request ay sinasagot nang walang screen, bilang request na hindi makikipag-ugnayan. NAKA-ON bilang default sa product mode, naka-off sa development; ang saml11SsoConsent sa entry ng isang application ang nangingibabaw para sa application na iyon."
+  },
   "saml11.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Sign-in na sinimulan ng identity provider"
@@ -5654,6 +5678,14 @@
   "wsfed.idpInitiatedSso|description": {
     "en": "62f920d6663c4e4f",
     "text": "Kung isina-sign in ng /wsfed/initiate/{rp} — at ng /launch/{app} para sa WS-Federation — ang isang tao sa relying party na hindi humingi, nagpo-post sa nakarehistrong wsfedReplyUrl nito. NAKA-OFF bilang default; nangingibabaw dito ang wsfedIdpInitiatedSso sa entry ng isang application para sa relying party na iyon. Tumatanggap ang relying party ng response na hindi nito hiningi, na hindi nito matutukoy mula sa itinulak sa browser nito ng ibang tao."
+  },
+  "wsfed.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Magtanong bago i-sign in ang isang tao"
+  },
+  "wsfed.ssoConsent|description": {
+    "en": "b60b06fe1664cb06",
+    "text": "Kung tinatanong ang isang tao, minsan bawat application, bago siya i-sign in ng WS-Federation dito mula sa isang session na mayroon na siya (ASVS 5.0.0 7.6.2). Iniingatan ang sagot niya, kaya tatanungin lang siya ulit kung babawiin niya ito; ang global na pahintulot sa application ay sumasagot para sa lahat. Ang passive na request ay sinasagot nang walang screen, bilang request na hindi makikipag-ugnayan. NAKA-ON bilang default sa product mode, naka-off sa development; ang wsfedSsoConsent sa entry ng isang application ang nangingibabaw para sa application na iyon."
   },
   "wsfed.spInitiatedSso|label": {
     "en": "705a2297f2762532",
@@ -6788,8 +6820,8 @@
     "text": "Maglathala ng did:web para sa isang tao"
   },
   "did.personPublishing|description": {
-    "en": "841dc751d16e1137",
-    "text": "Hayaang gumawa ang isang tao ng did:web na inilalathala ng realm na ito para sa kanya, sa Self-issued IDs na pahina ng kanyang portal (#1291): did:web:<host>[:realm:<id>]:users:<rid>, kung saan ang <rid> ay 128 random na bit, kaya walang makapag-iisa-isa ng mga account sa pagsubok ng mga address at hindi mapag-uugnay ang dalawang DID ng iisang tao. Inihahain ang dokumento nito sa /users/<rid>/did.json na iniingatan ang bawat bersyon, at maaari itong maging preferred DID ng tao. Kapag naka-on, nag-aalok din ang isang credential configuration na nakatali sa DID (oid4vci.didHolderBinding) ng did:web para sa isang DID na hino-host ng realm na ito at pinatunayan ng tao gamit ang isang wallet. Kapag naka-off: walang bagong inilalathala; inihahain pa rin ang DID na nailathala na, naka-deactivate man o hindi, dahil iniingatan ang address nito magpakailanman. Sa product mode, inilalathala lang ang isang DID sa isang naka-pin na global.publicBaseUrl."
+    "en": "291c209edc596dc6",
+    "text": "Hayaang gumawa ang isang tao ng did:web na inilalathala ng realm na ito para sa kanya, sa Self-issued IDs na pahina ng kanyang portal (#1291): did:web:<host>[:realm:<id>]:users:<rid>, kung saan ang <rid> ay 128 random na bit, kaya walang makapag-iisa-isa ng mga account sa pagsubok ng mga address at hindi mapag-uugnay ang dalawang DID ng iisang tao. Inihahain ang dokumento nito sa /users/<rid>/did.json na iniingatan ang bawat bersyon, at maaari itong maging preferred DID ng tao. Kapag naka-on, nag-aalok din ang isang credential configuration na nakatali sa DID (oid4vci.didHolderBinding) ng did:web para sa isang DID na hino-host ng realm na ito at pinatunayan ng tao gamit ang isang wallet. Kapag naka-off: walang bagong inilalathala; inihahain pa rin ang DID na nailathala na, naka-deactivate man o hindi, dahil iniingatan ang address nito magpakailanman. Sa product mode, inilalathala lang ang isang DID sa isang naka-pin na global.publicBaseUrl. Ang susing naka-enrol na para sa pag-sign-in ay hindi inilalathala (#775): pinapatunayan ng wallet ang isang susi na hindi isa sa mga sign-in subject ng tao, para ang dokumento ay hindi isang pampublikong kopya ng isang sign-in key. Ang pagbabago ng global.publicBaseUrl, o ng path ng realm, ay hindi nagsusulat muli ng isang DID na nailathala na; pinapanatili nito ang host at path kung saan ito ginawa, at hindi na ito mare-resolve kung ang address na iyon ay hindi na umaabot sa realm na ito."
   },
   "did.personCustody|label": {
     "en": "057d429ef011ffab",
@@ -12442,29 +12474,5 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "Para lang sa listener ng Protocol debugger: http.http2MaxConcurrentStreams. Ang -1, ang default, ay sumusunod sa http.http2MaxConcurrentStreams; ang anumang iba ay nagpapasya para sa listener na ito lang. Ilang request ang puwedeng sabay-sabay na bukas sa isang HTTP/2 connection (SETTINGS_MAX_CONCURRENT_STREAMS); tinatanggihan ang stream na lampas dito hanggang may matapos. Ang 100, ang default, ang pinakamaliit na halagang inirerekomenda ng RFC 9113; walang limit ang sa node mismo, kaya madadala ng iisang connection ang trabaho ng libu-libo. Nililimitahan nito ang trabaho sa isang connection gaya ng paglimita ng http.maxConnections sa mga connection. Sinusunod agad ng bagong connection ang pagbabago, at pinapadalhan ng bagong halaga ang bukas na."
-  },
-  "saml2.ssoConsent|label": {
-    "en": "0234bf3af48ea8a4",
-    "text": "Magtanong bago i-sign in ang isang tao"
-  },
-  "saml2.ssoConsent|description": {
-    "en": "1ddf528dcc7be0f8",
-    "text": "Kung tinatanong ang isang tao, minsan bawat application, bago siya i-sign in ng SAML 2.0 dito mula sa isang session na mayroon na siya (ASVS 5.0.0 7.6.2). Iniingatan ang sagot niya, kaya tatanungin lang siya ulit kung babawiin niya ito; ang global na pahintulot sa application ay sumasagot para sa lahat. Ang passive na request ay sinasagot nang walang screen, bilang request na hindi makikipag-ugnayan. NAKA-ON bilang default sa product mode, naka-off sa development; ang saml2SsoConsent sa entry ng isang application ang nangingibabaw para sa application na iyon."
-  },
-  "saml11.ssoConsent|label": {
-    "en": "0234bf3af48ea8a4",
-    "text": "Magtanong bago i-sign in ang isang tao"
-  },
-  "saml11.ssoConsent|description": {
-    "en": "53f104813a60ba25",
-    "text": "Kung tinatanong ang isang tao, minsan bawat application, bago siya i-sign in ng SAML 1.1 dito mula sa isang session na mayroon na siya (ASVS 5.0.0 7.6.2). Iniingatan ang sagot niya, kaya tatanungin lang siya ulit kung babawiin niya ito; ang global na pahintulot sa application ay sumasagot para sa lahat. Ang passive na request ay sinasagot nang walang screen, bilang request na hindi makikipag-ugnayan. NAKA-ON bilang default sa product mode, naka-off sa development; ang saml11SsoConsent sa entry ng isang application ang nangingibabaw para sa application na iyon."
-  },
-  "wsfed.ssoConsent|label": {
-    "en": "0234bf3af48ea8a4",
-    "text": "Magtanong bago i-sign in ang isang tao"
-  },
-  "wsfed.ssoConsent|description": {
-    "en": "b60b06fe1664cb06",
-    "text": "Kung tinatanong ang isang tao, minsan bawat application, bago siya i-sign in ng WS-Federation dito mula sa isang session na mayroon na siya (ASVS 5.0.0 7.6.2). Iniingatan ang sagot niya, kaya tatanungin lang siya ulit kung babawiin niya ito; ang global na pahintulot sa application ay sumasagot para sa lahat. Ang passive na request ay sinasagot nang walang screen, bilang request na hindi makikipag-ugnayan. NAKA-ON bilang default sa product mode, naka-off sa development; ang wsfedSsoConsent sa entry ng isang application ang nangingibabaw para sa application na iyon."
   }
 }

@@ -1729,10 +1729,14 @@ model Application {
   // THE OAUTH 2.0 / OIDC PER-CLIENT OVERRIDES, added 2026-08-27 in the same
   // change that generalised the SAML ten below.
   //
-  // Five settings a real authorization server varies per client and this one
+  // Six settings a real authorization server varies per client and this one
   // could not: how long each of the three tokens lives, how long a quiet
-  // refresh chain survives, and whether signing out kills the refresh token.
-  // Every one is a DEFAULT on /admin/token-lifetimes and an exception here.
+  // refresh chain survives, whether signing out kills the refresh token,
+  // and how old an authentication may be. The three token lifetimes, the
+  // idle limit and the revocation switch are DEFAULTS on
+  // /admin/token-lifetimes and exceptions here. The maximum authentication
+  // age is not a token lifetime and is not on that page (#825): it lives in
+  // the same per-client group, and the application page is where it is set.
   //
   // WHAT IS DELIBERATELY NOT HERE is as much of the point as what is.
   // `oauth2.issuer` and `oauth2.rfc9700` describe the authorization SERVER —
@@ -1766,7 +1770,7 @@ model Application {
     kind: "single",
     from: "by hand",
     overrides: "oauth2.refreshTokenTtlS",
-    what: "The same for the refresh token, overriding oauth2.refreshTokenTtlS. A value at or below oauthAccessTokenTtlS is legal and is a grant that can never usefully be renewed — /admin/token-lifetimes reports that combination for the service-wide pair, and it is just as reachable here."
+    what: "The same for the refresh token, overriding oauth2.refreshTokenTtlS. A value at or below oauthAccessTokenTtlS is legal and is a grant that can never usefully be renewed — /admin/token-lifetimes reports that combination for the service-wide pair, and it is just as reachable here. For the admin console, the user portal and the reports application the value in force is the shorter of a positive number here and the realm setting; those three cannot be cleared, 0 is refused, and a different positive number confirmed on the save is how it changes (#825)."
   })
   oauthRefreshTokenTtlS?: string;
   @attr(#{
@@ -1774,9 +1778,17 @@ model Application {
     kind: "single",
     from: "by hand",
     overrides: "oauth2.refreshIdleSeconds",
-    what: "RFC 9700 MODE ONLY: how long a refresh chain may sit unused before it is cut off, overriding oauth2.refreshIdleSeconds for this client. It is measured from the last time any token in the CHAIN was redeemed rather than from issuance, so a busy client keeps its grant and a quiet one does not. Outside RFC 9700 mode nothing reads it, which is a property of the setting rather than of this attribute."
+    what: "RFC 9700 MODE ONLY: how long a refresh chain may sit unused before it is cut off, overriding oauth2.refreshIdleSeconds for this client. It is measured from the last time any token in the CHAIN was redeemed rather than from issuance, so a busy client keeps its grant and a quiet one does not. Outside RFC 9700 mode nothing reads it, which is a property of the setting rather than of this attribute. For the admin console, the user portal and the reports application the value in force is the shorter of a positive number here and the realm setting; those three cannot be cleared, 0 is refused, and a different positive number confirmed on the save is how it changes (#825)."
   })
   oauthRefreshIdleSeconds?: string;
+  @attr(#{
+    editable: "set",
+    kind: "single",
+    from: "by hand",
+    overrides: "oauth2.maxAuthAgeS",
+    what: "How long ago this client was authenticated, in seconds, before an authorization request must authenticate again, even when the request sends no max_age, overriding oauth2.maxAuthAgeS. 0 or an empty value adds no bound of this attribute's own, and an ordinary client then follows the realm setting, whose default is 0. For the admin console, the user portal and the reports application the value in force is the shorter of a positive number here and authn.sessionLifetimeS, so raising the realm never lengthens them. Those three cannot be cleared, 0 is refused, and a different positive number confirmed on the save is how the bound changes (#825)."
+  })
+  oauthMaxAuthAgeS?: string;
   // AN APPLICATION'S OWN CUSTOM CLAIMS (rcbj, 2026-10-01), one JSON array
   // of rows per claim set, each row the realm's shape (`name` and `value`,
   // or `name`, `attribute`, `multi` and `type`). Added to the realm's set

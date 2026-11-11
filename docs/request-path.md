@@ -62,7 +62,7 @@ session. `workers.readYourWrite` decides what a request waits for:
 
 | Value | A request waits for |
 |---|---|
-| `session` (the default) | The writes of earlier requests that carried the same session cookie, pin cookie or flow, every write of a request that carried none of them (a relying party's server, an API caller, a dispatched LDAP operation), and the front process's own writes. It does not wait for another browser's writes. A code exchange at the token endpoint waits for its code's writes, as below. Any other request carrying none of them waits as in `global`. |
+| `session` (the default) | The writes of earlier requests that carried the same session cookie, pin cookie or flow, every write of a request that carried none of them (a relying party's server, an API caller, a dispatched LDAP operation), and the front process's own writes. It does not wait for another browser's writes. A code exchange at the token endpoint waits for its code's writes, and a refresh grant that names one refresh token waits for that token's writes, as below. Any other request carrying none of them waits as in `global`. |
 | `global` | Every write any request made before it, through any worker. |
 | `off` | Nothing. Use it only where every client is pinned to one worker. |
 
@@ -82,11 +82,23 @@ length is read before it waits, and passed to the worker unchanged. If it is
 an `authorization_code` grant for a code the pool learnt that way, it waits
 only for those writes.
 
+A refresh grant in that same small form, naming one refresh token, waits for
+that token instead of for every write (#879). The token response is read when
+it is a 200 JSON body of a declared length of at most 64 KiB, and the new
+refresh token is filed before those bytes are sent, so the refresh that
+follows waits for the write that minted it. A token this process has not seen
+waits only for that token's key — empty when no rotation of it is unfinished
+here — and for keyless writes. A token response this process could not read
+is one of those keyless writes. The refresh's own write is not a keyless one,
+so another refresh and a browser do not wait for it. 8081 was not re-measured.
+
 Everything else at the token endpoint waits as in `global`: a code the pool
 did not learn (one delivered by `form_post` or in a fragment, or minted on
-another node), the refresh grant, and a body that is larger, chunked or sent
-over HTTP/2 without a length. `stats().sessionBarrier.codeKeyed` counts the
-exchanges keyed by their code.
+another node), a refresh grant this process cannot read (more than one token,
+a token too long to be a key, or a body that is larger, chunked or sent over
+HTTP/2 without a length). `stats().sessionBarrier.codeKeyed` counts the
+exchanges keyed by their code, and `refreshKeyed` the refresh grants keyed by
+their token.
 
 ## Reading the `request phases` log line
 
@@ -132,10 +144,11 @@ request, and appear in the process that does the writing:
   causes; `workers.batch` keeps a bulk load in its own lane.
 * **`barrier` or `ticket` high.** Requests are waiting for other workers'
   writes. Check that `workers.readYourWrite` is `session`. At the token
-  endpoint, compare `stats().sessionBarrier.codeKeyed` with `global`: a code
-  exchange keyed by its code waits only for its code, and a refresh, an
-  unknown code or a large body still waits as in `global`, as described
-  above.
+  endpoint, compare `stats().sessionBarrier.codeKeyed` and `refreshKeyed`
+  with `global`: a code exchange keyed by its code waits only for its code, a
+  refresh grant keyed by its token waits for that token and for keyless
+  writes, and an unknown code or a large body still waits as in `global`, as
+  described above.
 * **`commit` high.** The database is slow to commit. Compare `COMMIT through`'s
   parts with the `FLUSH` lines: a part much longer than its flush is waiting
   for an earlier write to finish first.

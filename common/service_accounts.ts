@@ -135,6 +135,7 @@ interface DirectoryHooks {
                        changes: Record<string, string | string[] | null>):
     boolean;
   serviceAccountNames?(): string[];
+  serviceAccountNamesAsync?(): Promise<string[]>;
   resolveOwner?(value: string): { kind: string; dn: string; name: string };
   [hook: string]: unknown;
 }
@@ -525,6 +526,29 @@ class ServiceAccounts {
                 typeof this.directory.serviceAccountNames === 'function'
       ? this.directory.serviceAccountNames() : [];
     log.debug("Leaving ServiceAccounts.names(). " + out.length);
+    return out;
+  }
+
+  /**
+   * `names()`, asked of the directory asynchronously (#798). A directory
+   * without the asynchronous hook is asked `names()`'s question.
+   *
+   * @returns a promise of the usernames
+   */
+  async namesAsync(): Promise<string[]> {
+    const { log } = this.deps;
+    log.debug("Entering ServiceAccounts.namesAsync().");
+    const directory = this.directory;
+    if (directory &&
+        typeof directory.serviceAccountNamesAsync === 'function') {
+      const out = await directory.serviceAccountNamesAsync();
+      log.debug("Leaving ServiceAccounts.namesAsync(). " + out.length);
+      return out;
+    }
+    const out = directory &&
+                typeof directory.serviceAccountNames === 'function'
+      ? directory.serviceAccountNames() : [];
+    log.debug("Leaving ServiceAccounts.namesAsync(). " + out.length);
     return out;
   }
 
@@ -1086,6 +1110,7 @@ export = {
   policyReference: slot.forward('policyReference'),
   list: slot.forward('list'),
   names: slot.forward('names'),
+  namesAsync: slot.forward('namesAsync'),
   secretNameInUse: slot.forward('secretNameInUse'),
   check: slot.forward('check'),
   set: slot.forward('set'),

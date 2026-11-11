@@ -2368,7 +2368,7 @@
     "text": "Read-your-write över begärandearbetare"
   },
   "workers.readYourWrite|description": {
-    "en": "fb1bc46eaab84ce9",
+    "en": "232dadd8bb312926",
     "text": "Om en begäransarbetare måste komma ikapp med skrivningar som gjorts genom de andra arbetarna innan den svarar. Koordinering får arbetarna att konvergera på en halv sekund till en sekund, och det är inte read-your-write. `session` (standard): en begäran som bär en sessionskaka, poolkakan eller ett inloggningsflöde i sin adress väntar på skrivningarna från tidigare begäranden som bar samma sak, på varje skrivning från en begäran som inte bar något av dem, och på frontprocessens egna skrivningar; en begäran som inte bär något av dem, till exempel en tokenbegäran från en klients server, SCIM eller ett anrop till hanterings-API:t med en bearer-token, väntar på varje skrivning som besvarats före den. En webbläsare ser alltså direkt sina egna skrivningar och varje bakkanals, och en annan webbläsares först när arbetarna har konvergerat. `global`: varje begäran väntar på varje skrivning som besvarats före den, vilket kostar tiotals millisekunder per begäran under last. `off`: ingen begäran väntar, och en anropare kanske inte hittar sin egen skrivning. `true` betyder `session` och `false` betyder `off`. Den får inte vara avstängd för en ytpool (workers.surfaceCount)."
   },
   "workers.socketDir|label": {
@@ -4439,6 +4439,14 @@
     "en": "c002260d32d033da",
     "text": "Den ABSOLUTA livslängden för en uppdateringstoken — `exp` på själva token, som upprätthålls i båda lägena av refresh-grantet. TJUGOFYRA TIMMAR som standard, och det ÄR EN ÄNDRING: det var trettio dagar, så en klient som höll en under en lång testkörning möter nu ett invalid_grant där den inte gjorde det tidigare. Sätt detta till 2592000 för exakt det gamla beteendet. Det är inte samma inställning som oauth2.refreshIdleSeconds, som är RFC 9700-lägets INAKTIVITETSgräns för en förnyelseKEDJA och mäts från den senaste inlösen i stället för från utfärdandet: den här är en vägg som en kedja inte kan förnyas förbi hur aktiv den än är."
   },
+  "oauth2.maxAuthAgeS|label": {
+    "en": "ff5efd87e142a988",
+    "text": "Högsta autentiseringsålder (s)"
+  },
+  "oauth2.maxAuthAgeS|description": {
+    "en": "5a37fced9d4d040e",
+    "text": "Hur länge sedan en klient autentiserades, i sekunder, innan en auktoriseringsbegäran måste autentisera igen, även när begäran inte skickar max_age. 0, standardvärdet, lägger inte till någon egen gräns, så en vanlig klient är oförändrad. Läses vid varje auktoriseringsbegäran: den skriver inte om en session som redan är lagrad. Administratörskonsolen (sts-admin-console), användarportalen (sts-user-portal) och rapportprogrammet (sts-report) bär var sitt eget värde och tar det kortare av det och authn.sessionLifetimeS, så att höja den här inställningen eller sessionens livslängd förlänger aldrig de tre, och att sänka authn.sessionLifetimeS förkortar dem fortfarande. En överskridning per klient är oauthMaxAuthAgeS. Det här är inte en tokens livslängd och den finns inte på /admin/token-lifetimes (#825)."
+  },
   "oauth2.expiredTokenRetentionS|label": {
     "en": "4466b89054d69c81",
     "text": "Behåll en utgången token på /admin/tokens i (sekunder)"
@@ -5383,6 +5391,14 @@
     "en": "d5e8553e9978dfda",
     "text": "Om en OSIGNERAD <samlp:AuthnRequest> — och en osignerad <samlp:LogoutRequest> från en tjänsteleverantör — avvisas. **`auto` är PÅ i produktläge och AV i utvecklingsläge.** `on` och `off` avgör oavsett läge; en tjänsteleverantör vars inlästa metadata säger AuthnRequestsSigned=\"true\" hålls till det även när detta är avstängt. Det är också vad WantAuthnRequestsSigned i den här identitetsleverantörens metadata säger.\n\nEn signatur som FINNS verifieras i alla lägen — HTTP Redirect-bindningens frågesträngssignatur (avsnitt 3.4.4.1) eller HTTP POST-bindningens inneslutna — mot tjänsteleverantörens REGISTRERADE signeringscertifikat (samlSigningCertificate, från dess metadata eller angivet på SAML 2.0-sidan), aldrig mot certifikatet som begäran bär, och en signatur som inte verifieras avvisas. Utan registrerat certifikat registreras en signatur som inte verifierad, vilket räknas som OSIGNERAD när detta är påslaget."
   },
+  "saml2.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Fråga innan en person loggas in"
+  },
+  "saml2.ssoConsent|description": {
+    "en": "1ddf528dcc7be0f8",
+    "text": "Om en person tillfrågas, en gång per program, innan SAML 2.0 loggar in dem i det från en session de redan har (ASVS 5.0.0 7.6.2). Svaret sparas, så de tillfrågas igen bara om de drar tillbaka det; ett globalt samtycke på programmet svarar för alla. En passiv begäran besvaras utan skärmen, som en begäran som inte kan interagera. PÅ som standard i produktläge, av i utveckling; saml2SsoConsent på ett programs post åsidosätter den för det programmet."
+  },
   "saml2.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Inloggning initierad av identitetsleverantören"
@@ -5543,6 +5559,14 @@
     "en": "2e68718a26d4706c",
     "text": "Skapa en applikationspost under ou=applications första gången en förlitande part anges — genom att ett TARGET kommer in, genom att ett metadatadokument hämtas eller genom att en artefakt löses upp. Avstängt betyder att webbläsarprofilerna fortfarande fungerar och att /admin/saml11 förblir tom, vilket är vad någon som kör ett lasttest vill och ingen annan."
   },
+  "saml11.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Fråga innan en person loggas in"
+  },
+  "saml11.ssoConsent|description": {
+    "en": "53f104813a60ba25",
+    "text": "Om en person tillfrågas, en gång per program, innan SAML 1.1 loggar in dem i det från en session de redan har (ASVS 5.0.0 7.6.2). Svaret sparas, så de tillfrågas igen bara om de drar tillbaka det; ett globalt samtycke på programmet svarar för alla. En passiv begäran besvaras utan skärmen, som en begäran som inte kan interagera. PÅ som standard i produktläge, av i utveckling; saml11SsoConsent på ett programs post åsidosätter den för det programmet."
+  },
   "saml11.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Inloggning initierad av identitetsleverantören"
@@ -5654,6 +5678,14 @@
   "wsfed.idpInitiatedSso|description": {
     "en": "62f920d6663c4e4f",
     "text": "Om /wsfed/initiate/{rp} — och /launch/{app} för WS-Federation — loggar in en person till en förlitande part som inte bad om det, med POST till dess registrerade wsfedReplyUrl. AV som standard; wsfedIdpInitiatedSso i en applikations post åsidosätter det för den förlitande parten. Den förlitande parten tar emot ett svar som den inte bad om, och kan inte skilja det från ett som någon annan tryckt in i dess webbläsare."
+  },
+  "wsfed.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Fråga innan en person loggas in"
+  },
+  "wsfed.ssoConsent|description": {
+    "en": "b60b06fe1664cb06",
+    "text": "Om en person tillfrågas, en gång per program, innan WS-Federation loggar in dem i det från en session de redan har (ASVS 5.0.0 7.6.2). Svaret sparas, så de tillfrågas igen bara om de drar tillbaka det; ett globalt samtycke på programmet svarar för alla. En passiv begäran besvaras utan skärmen, som en begäran som inte kan interagera. PÅ som standard i produktläge, av i utveckling; wsfedSsoConsent på ett programs post åsidosätter den för det programmet."
   },
   "wsfed.spInitiatedSso|label": {
     "en": "705a2297f2762532",
@@ -6788,8 +6820,8 @@
     "text": "Publicera en did:web åt en person"
   },
   "did.personPublishing|description": {
-    "en": "841dc751d16e1137",
-    "text": "Låt en person skapa en did:web som den här sfären publicerar åt dem, på deras portals Self-issued IDs-sida (#1291): did:web:<host>[:realm:<id>]:users:<rid>, där <rid> är 128 slumpmässiga bitar, så att ingen kan räkna upp konton genom att pröva adresser och två DID:er för samma person inte kan kopplas ihop. Dess dokument tillhandahålls på /users/<rid>/did.json med alla versioner sparade, och den kan vara personens föredragna DID. När den är på erbjuder en DID-bunden credential-konfiguration (oid4vci.didHolderBinding) även did:web för en DID som den här sfären är värd för och som personen bevisat med en plånbok. Av: inget nytt publiceras; en DID som redan publicerats tillhandahålls fortfarande, avaktiverad eller inte, eftersom dess adress behålls för gott. I produktläge publiceras en DID bara på en fastlåst global.publicBaseUrl."
+    "en": "291c209edc596dc6",
+    "text": "Låt en person skapa en did:web som den här sfären publicerar åt dem, på deras portals Self-issued IDs-sida (#1291): did:web:<host>[:realm:<id>]:users:<rid>, där <rid> är 128 slumpmässiga bitar, så att ingen kan räkna upp konton genom att pröva adresser och två DID:er för samma person inte kan kopplas ihop. Dess dokument tillhandahålls på /users/<rid>/did.json med alla versioner sparade, och den kan vara personens föredragna DID. När den är på erbjuder en DID-bunden credential-konfiguration (oid4vci.didHolderBinding) även did:web för en DID som den här sfären är värd för och som personen bevisat med en plånbok. Av: inget nytt publiceras; en DID som redan publicerats tillhandahålls fortfarande, avaktiverad eller inte, eftersom dess adress behålls för gott. I produktläge publiceras en DID bara på en fastlåst global.publicBaseUrl. En nyckel som redan är registrerad för inloggning publiceras inte (#775): plånboken bevisar en nyckel som inte är ett av personens inloggningsämnen, så att dokumentet inte blir en offentlig kopia av en inloggningsnyckel. Att ändra global.publicBaseUrl, eller sfärens sökväg, skriver inte om ett DID som redan publicerats; det behåller den värd och den sökväg det skapades med, och slutar kunna slås upp om den adressen inte längre når den här sfären."
   },
   "did.personCustody|label": {
     "en": "057d429ef011ffab",
@@ -12442,29 +12474,5 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "Gäller bara protokollfelsökarens lyssnare: http.http2MaxConcurrentStreams. -1, standardvärdet, följer http.http2MaxConcurrentStreams; allt annat avgör bara för den här lyssnaren. Hur många begäranden en HTTP/2-anslutning får ha öppna samtidigt (SETTINGS_MAX_CONCURRENT_STREAMS); en ström utöver det avvisas tills en annan är klar. 100, standardvärdet, är det minsta värde RFC 9113 rekommenderar; nodes eget är obegränsat, vilket skulle låta en enda anslutning bära arbetet för tusentals. Det begränsar arbetet på en anslutning som http.maxConnections begränsar anslutningarna. En ny anslutning följer en ändring direkt, och en öppen skickas det nya värdet."
-  },
-  "saml2.ssoConsent|label": {
-    "en": "0234bf3af48ea8a4",
-    "text": "Fråga innan en person loggas in"
-  },
-  "saml2.ssoConsent|description": {
-    "en": "1ddf528dcc7be0f8",
-    "text": "Om en person tillfrågas, en gång per program, innan SAML 2.0 loggar in dem i det från en session de redan har (ASVS 5.0.0 7.6.2). Svaret sparas, så de tillfrågas igen bara om de drar tillbaka det; ett globalt samtycke på programmet svarar för alla. En passiv begäran besvaras utan skärmen, som en begäran som inte kan interagera. PÅ som standard i produktläge, av i utveckling; saml2SsoConsent på ett programs post åsidosätter den för det programmet."
-  },
-  "saml11.ssoConsent|label": {
-    "en": "0234bf3af48ea8a4",
-    "text": "Fråga innan en person loggas in"
-  },
-  "saml11.ssoConsent|description": {
-    "en": "53f104813a60ba25",
-    "text": "Om en person tillfrågas, en gång per program, innan SAML 1.1 loggar in dem i det från en session de redan har (ASVS 5.0.0 7.6.2). Svaret sparas, så de tillfrågas igen bara om de drar tillbaka det; ett globalt samtycke på programmet svarar för alla. En passiv begäran besvaras utan skärmen, som en begäran som inte kan interagera. PÅ som standard i produktläge, av i utveckling; saml11SsoConsent på ett programs post åsidosätter den för det programmet."
-  },
-  "wsfed.ssoConsent|label": {
-    "en": "0234bf3af48ea8a4",
-    "text": "Fråga innan en person loggas in"
-  },
-  "wsfed.ssoConsent|description": {
-    "en": "b60b06fe1664cb06",
-    "text": "Om en person tillfrågas, en gång per program, innan WS-Federation loggar in dem i det från en session de redan har (ASVS 5.0.0 7.6.2). Svaret sparas, så de tillfrågas igen bara om de drar tillbaka det; ett globalt samtycke på programmet svarar för alla. En passiv begäran besvaras utan skärmen, som en begäran som inte kan interagera. PÅ som standard i produktläge, av i utveckling; wsfedSsoConsent på ett programs post åsidosätter den för det programmet."
   }
 }

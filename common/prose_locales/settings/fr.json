@@ -2368,7 +2368,7 @@
     "text": "Read-your-write entre les workers de requêtes"
   },
   "workers.readYourWrite|description": {
-    "en": "fb1bc46eaab84ce9",
+    "en": "232dadd8bb312926",
     "text": "Indique si un worker de requêtes doit rattraper les écritures faites par les autres workers avant de servir. La coordination fait converger les workers en une demi-seconde à une seconde, et ce n'est pas du read-your-write. `session` (par défaut) : une requête qui porte un cookie de session, le cookie du pool ou un flux de connexion dans son adresse attend les écritures des requêtes antérieures qui portaient la même chose, toutes les écritures d'une requête qui n'en portait aucun, ainsi que les écritures propres du processus frontal ; une requête qui n'en porte aucun, comme une requête de jeton venant du serveur d'un client, SCIM ou un appel à l'API de gestion avec un jeton bearer, attend toutes les écritures auxquelles il a été répondu avant elle. Un navigateur voit donc immédiatement ses propres écritures et celles de chaque canal arrière, et celles d'un autre navigateur seulement une fois les workers convergés. `global` : chaque requête attend toutes les écritures auxquelles il a été répondu avant elle, ce qui coûte des dizaines de millisecondes par requête sous charge. `off` : aucune requête n'attend, et un appelant peut ne pas trouver sa propre écriture. `true` signifie `session` et `false` signifie `off`. Il ne doit pas être désactivé pour un pool de surfaces (workers.surfaceCount)."
   },
   "workers.socketDir|label": {
@@ -4439,6 +4439,14 @@
     "en": "c002260d32d033da",
     "text": "La durée de vie ABSOLUE d’un jeton d’actualisation — le `exp` du jeton lui-même, appliqué dans les deux modes par l’octroi d’actualisation. VINGT-QUATRE HEURES par défaut, et C’EST UN CHANGEMENT : c’était trente jours, si bien qu’un client qui en conservait un tout au long d’une longue série de tests rencontre désormais un invalid_grant là où il n’en rencontrait pas. Réglez-la à 2592000 pour retrouver exactement l’ancien comportement. Ce n’est pas le même paramètre que oauth2.refreshIdleSeconds, qui est le délai d’INACTIVITÉ du mode RFC 9700 sur une CHAÎNE d’actualisation et se mesure depuis la dernière utilisation plutôt que depuis l’émission : celui-ci est un mur au-delà duquel une chaîne ne peut pas être actualisée, si active soit-elle."
   },
+  "oauth2.maxAuthAgeS|label": {
+    "en": "ff5efd87e142a988",
+    "text": "Âge maximal d’authentification (s)"
+  },
+  "oauth2.maxAuthAgeS|description": {
+    "en": "5a37fced9d4d040e",
+    "text": "Depuis combien de temps un client a été authentifié, en secondes, avant qu’une demande d’autorisation doive authentifier de nouveau, même lorsque la demande n’envoie pas de max_age. 0, la valeur par défaut, n’ajoute aucune limite propre, si bien qu’un client ordinaire est inchangé. Lu à chaque demande d’autorisation : cela ne réécrit pas une session déjà enregistrée. La console d’administration (sts-admin-console), le portail utilisateur (sts-user-portal) et l’application de rapports (sts-report) portent chacun leur propre valeur et prennent la plus courte entre elle et authn.sessionLifetimeS, si bien qu’augmenter ce paramètre ou la durée de vie de la session n’allonge jamais ces trois-là, et diminuer authn.sessionLifetimeS les raccourcit encore. Le remplacement par client est oauthMaxAuthAgeS. Ce n’est pas une durée de vie de jeton et ce n’est pas sur /admin/token-lifetimes (#825)."
+  },
   "oauth2.expiredTokenRetentionS|label": {
     "en": "4466b89054d69c81",
     "text": "Conserver un jeton expiré dans /admin/tokens pendant (secondes)"
@@ -5383,6 +5391,14 @@
     "en": "d5e8553e9978dfda",
     "text": "Indique si une <samlp:AuthnRequest> NON SIGNÉE — et une <samlp:LogoutRequest> non signée provenant d’un fournisseur de services — est refusée. **`auto` est ACTIVÉ en mode produit et DÉSACTIVÉ en mode développement.** `on` et `off` décident quel que soit le mode ; un fournisseur de services dont les métadonnées consommées indiquent AuthnRequestsSigned=\"true\" y est tenu même lorsque ce paramètre est désactivé. C’est aussi ce qu’indique le WantAuthnRequestsSigned des métadonnées de ce fournisseur d’identité.\n\nUne signature PRÉSENTE est vérifiée dans tous les modes — la signature dans la chaîne de requête de la liaison HTTP Redirect (section 3.4.4.1) ou la signature enveloppée de la liaison HTTP POST — par rapport aux certificats de signature ENREGISTRÉS du fournisseur de services (samlSigningCertificate, issu de ses métadonnées ou défini sur la page SAML 2.0), jamais par rapport au certificat que porte la requête, et une signature qui ne se vérifie pas est refusée. Sans certificat enregistré, une signature est enregistrée comme non vérifiée, ce qui compte comme NON SIGNÉE lorsque ce paramètre est activé."
   },
+  "saml2.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Demander avant de connecter une personne"
+  },
+  "saml2.ssoConsent|description": {
+    "en": "1ddf528dcc7be0f8",
+    "text": "Indique si une personne est interrogée, une fois par application, avant que SAML 2.0 ne la connecte à celle-ci depuis une session qu’elle a déjà (ASVS 5.0.0 7.6.2). Sa réponse est conservée : on ne lui redemande que si elle la retire ; un consentement global sur l’application répond pour tout le monde. Une requête passive reçoit une réponse sans l’écran, comme une requête qui ne peut pas interagir. ACTIVÉ par défaut en mode produit, désactivé en développement ; saml2SsoConsent sur l’entrée d’une application le remplace pour cette application."
+  },
   "saml2.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Connexion initiée par le fournisseur d’identité"
@@ -5543,6 +5559,14 @@
     "en": "2e68718a26d4706c",
     "text": "Créer une entrée d’application sous ou=applications la première fois qu’une partie de confiance est nommée — par l’arrivée d’un TARGET, par la récupération d’un document de métadonnées ou par la résolution d’un artefact. Désactivé, les profils navigateur fonctionnent toujours et /admin/saml11 reste vide, ce que veut quelqu’un qui mène un test de charge et personne d’autre."
   },
+  "saml11.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Demander avant de connecter une personne"
+  },
+  "saml11.ssoConsent|description": {
+    "en": "53f104813a60ba25",
+    "text": "Indique si une personne est interrogée, une fois par application, avant que SAML 1.1 ne la connecte à celle-ci depuis une session qu’elle a déjà (ASVS 5.0.0 7.6.2). Sa réponse est conservée : on ne lui redemande que si elle la retire ; un consentement global sur l’application répond pour tout le monde. Une requête passive reçoit une réponse sans l’écran, comme une requête qui ne peut pas interagir. ACTIVÉ par défaut en mode produit, désactivé en développement ; saml11SsoConsent sur l’entrée d’une application le remplace pour cette application."
+  },
   "saml11.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "Connexion initiée par le fournisseur d’identité"
@@ -5654,6 +5678,14 @@
   "wsfed.idpInitiatedSso|description": {
     "en": "62f920d6663c4e4f",
     "text": "Indique si /wsfed/initiate/{rp} — et /launch/{app} pour WS-Federation — connecte une personne à une partie de confiance qui ne l’a pas demandé, par POST vers sa wsfedReplyUrl enregistrée. DÉSACTIVÉ par défaut ; wsfedIdpInitiatedSso sur l’entrée d’une application le remplace pour cette partie de confiance. La partie de confiance reçoit une réponse qu’elle n’a pas demandée, qu’elle ne peut pas distinguer d’une réponse poussée dans son navigateur par quelqu’un d’autre."
+  },
+  "wsfed.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Demander avant de connecter une personne"
+  },
+  "wsfed.ssoConsent|description": {
+    "en": "b60b06fe1664cb06",
+    "text": "Indique si une personne est interrogée, une fois par application, avant que WS-Federation ne la connecte à celle-ci depuis une session qu’elle a déjà (ASVS 5.0.0 7.6.2). Sa réponse est conservée : on ne lui redemande que si elle la retire ; un consentement global sur l’application répond pour tout le monde. Une requête passive reçoit une réponse sans l’écran, comme une requête qui ne peut pas interagir. ACTIVÉ par défaut en mode produit, désactivé en développement ; wsfedSsoConsent sur l’entrée d’une application le remplace pour cette application."
   },
   "wsfed.spInitiatedSso|label": {
     "en": "705a2297f2762532",
@@ -6788,8 +6820,8 @@
     "text": "Publier un did:web pour une personne"
   },
   "did.personPublishing|description": {
-    "en": "841dc751d16e1137",
-    "text": "Permet à une personne de créer un did:web que ce domaine publie pour elle, sur la page Self-issued IDs de son portail (#1291) : did:web:<host>[:realm:<id>]:users:<rid>, où <rid> fait 128 bits aléatoires, si bien que personne ne peut énumérer les comptes en sondant des adresses et que deux DID d'une même personne ne peuvent pas être reliés. Son document est servi à /users/<rid>/did.json avec toutes ses versions conservées, et il peut être le DID préféré de la personne. Activé, une configuration de credential liée au DID (oid4vci.didHolderBinding) propose aussi did:web pour un DID que ce domaine héberge et que la personne a prouvé avec un wallet. Désactivé : rien de nouveau n'est publié ; un DID déjà publié est toujours servi, désactivé ou non, car son adresse est conservée pour de bon. En mode produit, un DID n'est publié que sur un global.publicBaseUrl épinglé."
+    "en": "291c209edc596dc6",
+    "text": "Permet à une personne de créer un did:web que ce domaine publie pour elle, sur la page Self-issued IDs de son portail (#1291) : did:web:<host>[:realm:<id>]:users:<rid>, où <rid> fait 128 bits aléatoires, si bien que personne ne peut énumérer les comptes en sondant des adresses et que deux DID d'une même personne ne peuvent pas être reliés. Son document est servi à /users/<rid>/did.json avec toutes ses versions conservées, et il peut être le DID préféré de la personne. Activé, une configuration de credential liée au DID (oid4vci.didHolderBinding) propose aussi did:web pour un DID que ce domaine héberge et que la personne a prouvé avec un wallet. Désactivé : rien de nouveau n'est publié ; un DID déjà publié est toujours servi, désactivé ou non, car son adresse est conservée pour de bon. En mode produit, un DID n'est publié que sur un global.publicBaseUrl épinglé. Une clé déjà enregistrée pour la connexion n'est pas publiée (#775) : le portefeuille prouve une clé qui n'est pas l'un des sujets de connexion de la personne, afin que le document ne soit pas une copie publique d'une clé de connexion. Changer global.publicBaseUrl, ou le chemin du domaine, ne réécrit pas un DID déjà publié ; il conserve l'hôte et le chemin avec lesquels il a été créé, et il cesse d'être résolu si cette adresse n'atteint plus ce domaine."
   },
   "did.personCustody|label": {
     "en": "057d429ef011ffab",
@@ -12442,29 +12474,5 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "Pour l’écouteur du débogueur de protocoles uniquement : http.http2MaxConcurrentStreams. -1, la valeur par défaut, suit http.http2MaxConcurrentStreams ; toute autre valeur ne s’applique qu’à cet écouteur. Combien de requêtes une connexion HTTP/2 peut avoir ouvertes simultanément (SETTINGS_MAX_CONCURRENT_STREAMS) ; un flux au-delà est refusé jusqu’à ce qu’un autre se termine. 100, la valeur par défaut, est la plus petite valeur que recommande la RFC 9113 ; celle de node est illimitée, ce qui permettrait à une seule connexion de porter le travail de milliers. Elle borne le travail d’une connexion comme http.maxConnections borne les connexions. Une nouvelle connexion suit un changement immédiatement, et la nouvelle valeur est envoyée à une connexion ouverte."
-  },
-  "saml2.ssoConsent|label": {
-    "en": "0234bf3af48ea8a4",
-    "text": "Demander avant de connecter une personne"
-  },
-  "saml2.ssoConsent|description": {
-    "en": "1ddf528dcc7be0f8",
-    "text": "Indique si une personne est interrogée, une fois par application, avant que SAML 2.0 ne la connecte à celle-ci depuis une session qu’elle a déjà (ASVS 5.0.0 7.6.2). Sa réponse est conservée : on ne lui redemande que si elle la retire ; un consentement global sur l’application répond pour tout le monde. Une requête passive reçoit une réponse sans l’écran, comme une requête qui ne peut pas interagir. ACTIVÉ par défaut en mode produit, désactivé en développement ; saml2SsoConsent sur l’entrée d’une application le remplace pour cette application."
-  },
-  "saml11.ssoConsent|label": {
-    "en": "0234bf3af48ea8a4",
-    "text": "Demander avant de connecter une personne"
-  },
-  "saml11.ssoConsent|description": {
-    "en": "53f104813a60ba25",
-    "text": "Indique si une personne est interrogée, une fois par application, avant que SAML 1.1 ne la connecte à celle-ci depuis une session qu’elle a déjà (ASVS 5.0.0 7.6.2). Sa réponse est conservée : on ne lui redemande que si elle la retire ; un consentement global sur l’application répond pour tout le monde. Une requête passive reçoit une réponse sans l’écran, comme une requête qui ne peut pas interagir. ACTIVÉ par défaut en mode produit, désactivé en développement ; saml11SsoConsent sur l’entrée d’une application le remplace pour cette application."
-  },
-  "wsfed.ssoConsent|label": {
-    "en": "0234bf3af48ea8a4",
-    "text": "Demander avant de connecter une personne"
-  },
-  "wsfed.ssoConsent|description": {
-    "en": "b60b06fe1664cb06",
-    "text": "Indique si une personne est interrogée, une fois par application, avant que WS-Federation ne la connecte à celle-ci depuis une session qu’elle a déjà (ASVS 5.0.0 7.6.2). Sa réponse est conservée : on ne lui redemande que si elle la retire ; un consentement global sur l’application répond pour tout le monde. Une requête passive reçoit une réponse sans l’écran, comme une requête qui ne peut pas interagir. ACTIVÉ par défaut en mode produit, désactivé en développement ; wsfedSsoConsent sur l’entrée d’une application le remplace pour cette application."
   }
 }

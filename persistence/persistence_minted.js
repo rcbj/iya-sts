@@ -429,27 +429,52 @@ let restoring = false;
 // True once stop() has run, so a late flush cannot reach a closed pool.
 let stopped = false;
 
-// The flush whose write has not settled yet, or null. See flush()'s header:
-// ONE AT A TIME PER PROCESS, which is what makes commit order the same as the
-// order the values were read in.
-let flushInFlight = null;
+// At most two minted saves in flight per process (#877). The pool's floor
+// of four is one directory flush, these two, and the change-log pull.
+const MAX_MINTED_IN_FLIGHT = 2;
+// Saves already sent and not yet settled. `takenAt` is 0 unless that take
+// emptied the journal; `readAt` is the generation at the take either way.
+// `any[]`: null is the only starting value a checker would otherwise freeze,
+// and each element is the object finishFlight reads.
+let flights = /** @type {any[]} */ ([]);
+// The second flush, built and not yet sent. Same-turn callers whose keys
+// are free append here and share its promise; a microtask sends it once.
+// `any`: begun in beginOpenBatch, null when nothing is waiting to be sent.
+let openBatch = /** @type {any} */ (null);
+// One shared gate for every caller that found its keys already in a flush,
+// or found two saves already in flight. Waking it runs flush() once.
+let deferredWait = /** @type {any} */ (null);
+let deferredWake = /** @type {any} */ (null);
+// Bumped by reset() before any waiter is woken, so a save that was in
+// flight across the reset cannot move the new life's prefix or write into
+// the next driver's store.
+let flightLife = 0;
+// Covering takes that have settled and are still above committedAt.
+let settledCovers = /** @type {number[]} */ ([]);
+// A failed take's generation. The prefix must not pass it while the keys
+// it put back are still on the journal.
+let commitHole = 0;
+// Keys a take has reserved while it seals them, before the flight exists,
+// so a re-entrant flush cannot send the same key in a second transaction.
+let reserving = /** @type {Set<string>|null} */ (null);
 // ---------------------------------------------------------------------------
 // WRITE GENERATIONS, for the cluster barrier's commit hold (2026-09-14, #46).
 //
-// `generation` goes up on every key journalled; `takenAt` is the generation a
-// flush's journal take covered; `committedAt` is the highest `takenAt` whose
-// write has settled. So "everything journalled up to generation G has reached
-// the store" is `committedAt >= G`, which is what lets a response be held for
-// ITS writes rather than for whatever flush happens to be pending in the
-// process — see cluster/cluster_barrier.js for what that was costing.
+// `generation` goes up on every key journalled. `committedAt` is the
+// contiguous prefix of covering takes that have settled strictly below the
+// oldest take still in flight (#877): a later flush of other keys finishing
+// first releases its own caller and does not move the prefix past the older
+// open take. "Everything journalled up to generation G has reached the
+// store" is still `committedAt >= G`, which is what lets a response be held
+// for ITS writes — see cluster/cluster_barrier.js for what that was costing.
 // ---------------------------------------------------------------------------
 let generation = 0;
 let committedAt = 0;
-// True from a failed write until the next one succeeds (#351): the keys it
-// held are back on the journal and not in the store. `failing()` answers it
-// for `persistence.commitBacklog()`.
+// True from a failed write until a later success finds the journal empty
+// (#351): the keys it held are back on the journal and not in the store.
+// A disjoint success must not clear it while those keys are still there.
+// `failing()` answers it for `persistence.commitBacklog()`.
 let failedWrite = false;
-let inFlightTakenAt = 0;
 // ---------------------------------------------------------------------------
 // HOW MANY OF THOSE KEYS WERE AN OBSERVATION (2026-09-15, #46): a store
 // declared `observation: true` (common/realms.js) — a decision counter. The
@@ -1682,11 +1707,12 @@ function dirty() {
 // ---------------------------------------------------------------------------
 // THE FLUSH.
 //
-// Takes the journal, reads each named key out of the live store, seals what is
-// there and deletes what is not. The journal is CLEARED FIRST, for
-// `persistence.js`'s reason: a write made while this is in flight has to get
-// its own flush rather than being cleared away unwritten. On a failure the
-// keys go back, so nothing is lost by a database that blinked.
+// Takes the keys no flush already holds, reads each one out of the live
+// store, seals what is there and deletes what is not. Those keys leave the
+// journal as they are taken, for `persistence.js`'s reason: a write made
+// while this is in flight has to get its own flush rather than being cleared
+// away unwritten. On a failure the keys go back, so nothing is lost by a
+// database that blinked.
 //
 // ---------------------------------------------------------------------------
 // ONE FLUSH AT A TIME IN A PROCESS, AND THE LATER ONE WAITS (2026-09-13).
@@ -1722,16 +1748,23 @@ function dirty() {
 // wrong. Nor would the sign-out syncing to the latest change first, for the
 // same reason.
 //
-// So a call made while a flush is in flight waits for it and then takes the
-// journal itself. Commit order is then journal order within a process, and a
-// later value can never be overwritten by an earlier one. The waiting call
-// also picks up everything written while it waited, so a burst costs fewer
-// transactions rather than more. What it does not change is two DIFFERENT
-// processes writing one key, which is last-writer-wins by design and argued in
-// `persistence/CLAUDE.md`.
+// So a call made while a flush is in flight waits only when that flush holds
+// a key this call would write (#877). A second flush, of keys the in-flight
+// set does not hold, may start; at most two are in flight, which is what the
+// pool's floor of four was sized for (one directory flush, two minted, and
+// the change-log pull). A later value of the SAME key still waits, and is
+// never joined into a batch that already read the earlier value — the read
+// and the commit are not the same moment, which is the whole of the story
+// above. Commit order for one key is still journal order within a process.
+// Same-turn callers of keys that are free append to the unsent second batch,
+// so a burst is still one extra transaction rather than one each.
 //
-// `tests/minted_persistence.js` section 5b holds it with a store that commits
-// when told to.
+// What this does not change is two DIFFERENT processes writing one key,
+// which is last-writer-wins by design and argued in `persistence/CLAUDE.md`.
+//
+// `tests/minted_flush_order.js` holds the per-key order, and
+// `tests/cluster_barrier_throughput.js` the prefix, with a store that
+// commits when told to.
 // ---------------------------------------------------------------------------
 // #1347: builds the post-mortem descriptor for a batch dropped on a permanent
 // data error, records it in the bounded ring `/admin/persistence` shows, and
@@ -1821,221 +1854,552 @@ function applyCommitted(ups, dels, result) {
 }
 
 /**
- * Writes every journalled key to the store, sealed; deletes what is gone.
- *
- * One flush at a time per process: a call made while one is in flight waits
- * for it and then takes the journal itself. On failure the keys go back into
- * the journal. Resolves rather than rejects.
- * @returns a promise of `{ written, upserts, deletes }`, or `{ written:
- * false }` with `error` when nothing was written or the write failed
+ * How many saves of this life are still in flight.
+ * @returns the count
  */
-function flush() {
-  log.debug('Entering flush().');
-  if (flushInFlight) {
-    // THE LATER CALL WAITS, and re-enters rather than continuing here: the
-    // journal it must take is the one that exists AFTER the write in flight
-    // has settled, not the one that existed when it was called. Several
-    // waiters are harmless — the first takes everything and the rest find
-    // nothing and resolve.
-    const waitingFor = flushInFlight;
-    log.debug('Leaving flush(). One is in flight; waiting for it first.');
-    return waitingFor.then(function () {
-      // A SETTLED WRITE IS NEVER WAITED ON TWICE. The write clears its own
-      // marker before resolving, so this is belt and braces — but the braces
-      // matter: a marker left on a settled promise would make this re-entry
-      // wait on it again at once, for ever, in microtasks, which is a process
-      // that stops answering and then runs out of memory rather than one that
-      // is merely slow.
-      if (flushInFlight === waitingFor) {
-        flushInFlight = null;
-      }
-      return flush();
+function activeFlightCount() {
+  log.debug("Entering activeFlightCount().");
+  let n = 0;
+  flights.forEach(function (flight) {
+    if (flight.life === flightLife) {
+      n += 1;
+    }
+  });
+  log.debug("Leaving activeFlightCount().");
+  return n;
+}
+
+/**
+ * The keys a take must not send: they are already in a save, in the unsent
+ * batch, or reserved while an earlier take of this turn seals them.
+ * @returns the demand ids
+ */
+function heldIds() {
+  log.debug("Entering heldIds().");
+  const held = new Set();
+  flights.forEach(function (flight) {
+    if (flight.life !== flightLife) {
+      return;
+    }
+    flight.keys.forEach(function (id) {
+      held.add(id);
+    });
+  });
+  if (openBatch && openBatch.life === flightLife) {
+    openBatch.keys.forEach(function (id) {
+      held.add(id);
     });
   }
-  if (!enabled()) {
-    // The journal is cleared rather than kept. A process that is not
-    // persisting minted state must not accumulate the names of every session
-    // it has ever held — which is a memory leak whose size is the service's
-    // whole traffic.
-    journal.clear();
-    flushAsked = false;
-    committedAt = generation;
-    log.debug('Leaving flush(). Not persisting minted state.');
-    return Promise.resolve({ written: false });
+  if (reserving) {
+    reserving.forEach(function (id) {
+      held.add(id);
+    });
   }
-  if (!keystore.sealed() && typeof keystore.hasStarted === 'function' &&
-      !keystore.hasStarted()) {
-    // NOT YET IS NOT NEVER (#357). The store opens, and things are minted,
-    // before `keystore.start()` has read the key-encryption key — a network
-    // call to the secret store. This branch used to fall through to the one
-    // below, which CLEARS the journal: whatever was minted in that window was
-    // dropped, not deferred, and every process logged STS-STORE-0018 as it
-    // started. The journal is kept and nothing is committed; `restore()`,
-    // which runs once the keystore has started, keeps it too and asks for the
-    // flush that writes it.
-    flushAsked = false;
-    log.debug('Leaving flush(). The keystore has not started; deferred.');
-    return Promise.resolve({ written: false, deferred: true });
-  }
-  if (!keystore.sealed()) {
-    journal.clear();
-    flushAsked = false;
-    committedAt = generation;
-    lastError = 'no key-encryption key is available, so nothing minted can ' +
-                'be sealed';
-    // A PRODUCT-MODE REALM IN A PROCESS THAT IS NOT IN PRODUCT MODE IS NOT THE
-    // SAME FAILURE (2026-09-14). `enabled()` reads `global.mode` through the
-    // AMBIENT realm, and a flush scheduled from a request inherits that
-    // request's realm — so a development process with no key-encryption key,
-    // serving a realm somebody switched to product, reached this line on every
-    // flush that realm's traffic scheduled and logged an ERROR each time: 11
-    // lines in one postgres-mode suite run, about a configuration that is
-    // stated once and does not change. The process-level case is the one this
-    // line was written for — a product service whose keystore is not open —
-    // and it stays an error per flush. The realm-level case is said ONCE, as a
-    // warning, with the same code (the no-per-event-logs rule). `enabled()` is
-    // deliberately NOT narrowed to require a key: `restore()` reads it too, and
-    // a product process with no key must go on failing that fatally
-    // (STS-STORE-0022) rather than restoring nothing in silence.
-    if (processIsProduct()) {
-      log.error(errorCodes.tag('STS-STORE-0018') +
-                'persistence: ' + lastError + '. Minted state is not being ' +
-                'written down.');
-    } else if (!realmOnlyKeylessWarned) {
-      realmOnlyKeylessWarned = true;
-      log.warn(errorCodes.tag('STS-STORE-0018') +
-               'persistence: a trust realm in product mode wrote minted ' +
-               'state, and this process is in development mode with no ' +
-               'key-encryption key, so ' + lastError + '. That realm\'s ' +
-               'sessions, tokens and codes are held in memory only. Said ' +
-               'once per process.');
-    }
-    log.debug('Leaving flush(). Nothing to seal with.');
-    return Promise.resolve({ written: false, error: lastError });
-  }
+  log.debug("Leaving heldIds().");
+  return held;
+}
 
-  const taken = journal;
-  // Everything journalled so far is in `taken`: no flush is in flight here.
-  const takenAt = generation;
-  // WHERE A FLUSH'S TIME GOES (2026-10-22, #820): a request's commit hold
-  // was ~55 ms on 8081 while the flush's statements took a few. Taken here,
-  // before the rows are read and sealed.
-  const flushStartedAt = Date.now();
+/**
+ * Removes from the journal every key no in-flight flush holds.
+ *
+ * `covers` is frozen here, before the rows are read: a key noted while they
+ * are sealed is a later generation and must not pull `takenAt` forward to a
+ * batch that does not hold it. A non-covering take leaves `takenAt` at 0 so
+ * `flushThrough` will not treat it as covering.
+ * @returns `{ entries, covers, takenAt, readAt }`
+ */
+function takeDisjoint() {
+  log.debug("Entering takeDisjoint().");
+  const held = heldIds();
+  const entries = [];
+  Array.from(journal.keys()).forEach(function (handle) {
+    const byRealm = journal.get(handle);
+    if (!byRealm) {
+      return;
+    }
+    Array.from(byRealm.keys()).forEach(function (realmId) {
+      const keys = byRealm.get(realmId);
+      if (!keys) {
+        return;
+      }
+      const keep = new Set();
+      keys.forEach(function (key) {
+        const id = demandId(handle, realmId, key);
+        if (held.has(id)) {
+          keep.add(key);
+        } else {
+          entries.push({ handle: handle, realmId: realmId, key: key });
+        }
+      });
+      if (keep.size === 0) {
+        byRealm.delete(realmId);
+      } else {
+        byRealm.set(realmId, keep);
+      }
+    });
+    if (byRealm.size === 0) {
+      journal.delete(handle);
+    }
+  });
+  // A take that removed something, or that found nothing left, is the point
+  // the next note asks for a flush again. A take that removed nothing because
+  // every key is held leaves the ask in place: the deferred waiter is the
+  // flush, and a new note must not schedule a second one beside it.
+  if (entries.length > 0 || journal.size === 0) {
+    flushAsked = false;
+  }
+  const covers = journal.size === 0;
+  const readAt = generation;
+  log.debug("Leaving takeDisjoint(). " + entries.length + " key(s).");
+  return {
+    entries: entries,
+    covers: covers,
+    takenAt: covers ? readAt : 0,
+    readAt: readAt
+  };
+}
+
+/**
+ * The demand ids of a take, in the journal's own key order.
+ * @param {Array<{handle: string, realmId: string, key: string}>} entries
+ * @returns the ids
+ */
+function idsOf(entries) {
+  log.debug("Entering idsOf().");
+  const ids = new Set();
+  entries.forEach(function (entry) {
+    ids.add(demandId(entry.handle, entry.realmId, entry.key));
+  });
+  log.debug("Leaving idsOf().");
+  return ids;
+}
+
+/**
+ * Reads and seals a snapshotted take. A NUL key and a value that will not
+ * serialise are left out, as they were when this lived inside `flush()`.
+ * @param {Array<{handle: string, realmId: string, key: string}>} entries
+ * @returns `{ upserts, deletes, unsealable }`
+ */
+function rowsFrom(entries) {
+  log.debug("Entering rowsFrom().");
   const upserts = [];
   const deletes = [];
   let unsealable = 0;
-
-  taken.forEach(function (byRealm, handle) {
+  const missing = new Set();
+  entries.forEach(function (entry) {
+    const handle = entry.handle;
+    const realmId = entry.realmId;
+    const key = entry.key;
     const row = realms.handleFor(handle);
     if (!row) {
       // Unreachable unless a handle is journalled by something that is not a
       // declared store. Counted rather than thrown, for the reason every
-      // failure on this path is counted rather than thrown.
-      log.error(errorCodes.tag('STS-STORE-0019') +
-                'persistence: "' + handle + '" reported a write and is not a ' +
-                'declared store. Its rows cannot be written.');
+      // failure on this path is counted rather than thrown. Once per handle
+      // per take: the old loop visited each handle once.
+      if (!missing.has(handle)) {
+        missing.add(handle);
+        log.error(errorCodes.tag('STS-STORE-0019') +
+                  'persistence: "' + handle + '" reported a write and is ' +
+                  'not a declared store. Its rows cannot be written.');
+      }
       return;
     }
-    byRealm.forEach(function (keys, realmId) {
-      keys.forEach(function (key) {
-        // A KEY POSTGRESQL CANNOT HOLD IS LEFT OUT (2026-09-27). A NUL in a
-        // text column fails the WHOLE transaction ("invalid byte sequence
-        // for encoding UTF8: 0x00"), the catch below puts every key back on
-        // the journal, and the next flush fails the same way — for ever.
-        // `provider_commands.ts` keyed its remembered issuer '\u0000issuer'
-        // and a single-node run stopped persisting anything minted from the
-        // first command onward: 853 failed flushes, and every job after it
-        // that crossed workers failed. Nothing is lost that could have been
-        // written; the store keeps the value in memory. Said once per store.
-        if (String(key).indexOf('\u0000') >= 0 ||
-            String(realmId).indexOf('\u0000') >= 0) {
-          if (!nulKeyWarned.has(handle)) {
-            nulKeyWarned.add(handle);
-            log.error(errorCodes.tag('STS-STORE-0063') +
-                      'persistence: "' + handle + '" journalled a key ' +
-                      'holding a NUL character; PostgreSQL cannot store it, ' +
-                      'so that row is kept in memory only. Said once per ' +
-                      'store.');
-          }
-          return;
-        }
-        const present = row.read(realmId, key);
-        if (!present || !present.present) {
-          const gone = columnsFor(handle, realmId, storedKey(row, key));
-          deletes.push({ handle: handle, realm: realmId,
-                         key: gone.key, keySealed: gone.keySealed,
-                         // The key as the STORE knows it, for the retry — see
-                         // the catch below.
-                         journalKey: key,
-                         own: row.merge === 'own',
-                         // An ENDED key leaves a tombstone. See
-                         // ENDED ROWS below.
-                         tombstone: row.tombstone === true,
-                         // An on-demand store's index rows go with it (#820),
-                         // its sort row among them (2026-10-22).
-                         indexed: isIndexed(row) });
-          return;
-        }
-        // Of the plaintext about to be sealed, not of the ciphertext.
-        const indexed = indexColumns(row, present.value);
-        let body = null;
-        try {
-          // Under THIS ROW'S realm's data encryption key (#391), not the
-          // ambient realm's: a flush writes every realm's rows.
-          body = keystore.seal(JSON.stringify(present.value), 'minted-rows',
-                               tierOfHandle(handle), { realm: realmId });
-        } catch (e) {
-          // A value with a cycle in it, or a BigInt. Counted and skipped:
-          // failing the whole transaction because one store holds something
-          // unserialisable would stop every other store persisting too.
-          log.error(errorCodes.tag('STS-STORE-0020') +
-                    'persistence: "' + handle + '" holds a value under "' +
-                    key + '" that will not serialise: ' + e.message);
-        }
-        if (body === null) {
-          unsealable++;
-          return;
-        }
-        // Built first and merged into after: the merger writes the merged
-        // record's expiry back onto it. `any`, because `merge` is filled in.
-        const columns = columnsFor(handle, realmId, storedKey(row, key));
-        const upsert = /** @type {any} */ ({ handle: handle, realm: realmId,
-                       key: columns.key, keySealed: columns.keySealed,
-                       journalKey: key, body: body,
-                       // WHEN THE RECORD IS DEAD (#333), or null: what the
-                       // restore and the expiry purge read. See expiryOf().
-                       expiresAt: expiryOf(row, present.value, key, realmId),
-                       // Side-table columns, or null when there is no index.
-                       // The merge path replaces these from the merged row.
-                       index: indexed,
-                       // An on-demand store's index keys (#820), or null —
-                       // and null too when they are what this process last
-                       // committed for the key (`unchangedLookups()`).
-                       lookups: unchangedLookups(row, handle, realmId, key,
-                         indexKeysFor(row, handle, realmId, key,
-                                      present.value),
-                         sortAtFor(row, present.value, key)),
-                       // The number a console's newest-first list orders
-                       // this row by, or null (`sortBy`, 2026-10-22, #820):
-                       // written as one more index row while `lookups` is.
-                       sortAt: sortAtFor(row, present.value, key),
-                       // WHETHER A READER HAS TO WAIT FOR THIS ROW. An `own`
-                       // store is per-process fan-in — every process keeps its
-                       // own contribution and the console SUMS them when
-                       // somebody asks — so another worker does not need it
-                       // applied before it can answer. See the driver's
-                       // recordChanges() and replication's syncNow().
-                       own: row.merge === 'own',
-                       tombstone: row.tombstone === true,
-                       merge: undefined });
-        if (row.mergeRow) {
-          upsert.merge = mergerFor(row, handle, key, present.value, upsert,
-                                   realmId);
-        }
-        upserts.push(upsert);
-      });
-    });
+    // A KEY POSTGRESQL CANNOT HOLD IS LEFT OUT (2026-09-27). A NUL in a
+    // text column fails the WHOLE transaction ("invalid byte sequence
+    // for encoding UTF8: 0x00"), the catch below puts every key back on
+    // the journal, and the next flush fails the same way — for ever.
+    // `provider_commands.ts` keyed its remembered issuer '\u0000issuer'
+    // and a single-node run stopped persisting anything minted from the
+    // first command onward: 853 failed flushes, and every job after it
+    // that crossed workers failed. Nothing is lost that could have been
+    // written; the store keeps the value in memory. Said once per store.
+    if (String(key).indexOf('\u0000') >= 0 ||
+        String(realmId).indexOf('\u0000') >= 0) {
+      if (!nulKeyWarned.has(handle)) {
+        nulKeyWarned.add(handle);
+        log.error(errorCodes.tag('STS-STORE-0063') +
+                  'persistence: "' + handle + '" journalled a key ' +
+                  'holding a NUL character; PostgreSQL cannot store it, ' +
+                  'so that row is kept in memory only. Said once per ' +
+                  'store.');
+      }
+      return;
+    }
+    const present = row.read(realmId, key);
+    if (!present || !present.present) {
+      const gone = columnsFor(handle, realmId, storedKey(row, key));
+      deletes.push({ handle: handle, realm: realmId,
+                     key: gone.key, keySealed: gone.keySealed,
+                     // The key as the STORE knows it, for the retry — see
+                     // the catch below.
+                     journalKey: key,
+                     own: row.merge === 'own',
+                     // An ENDED key leaves a tombstone. See
+                     // ENDED ROWS below.
+                     tombstone: row.tombstone === true,
+                     // An on-demand store's index rows go with it (#820),
+                     // its sort row among them (2026-10-22).
+                     indexed: isIndexed(row) });
+      return;
+    }
+    // Of the plaintext about to be sealed, not of the ciphertext.
+    const indexed = indexColumns(row, present.value);
+    let body = null;
+    try {
+      // Under THIS ROW'S realm's data encryption key (#391), not the
+      // ambient realm's: a flush writes every realm's rows.
+      body = keystore.seal(JSON.stringify(present.value), 'minted-rows',
+                           tierOfHandle(handle), { realm: realmId });
+    } catch (e) {
+      // A value with a cycle in it, or a BigInt. Counted and skipped:
+      // failing the whole transaction because one store holds something
+      // unserialisable would stop every other store persisting too.
+      log.error(errorCodes.tag('STS-STORE-0020') +
+                'persistence: "' + handle + '" holds a value under "' +
+                key + '" that will not serialise: ' + e.message);
+    }
+    if (body === null) {
+      unsealable++;
+      return;
+    }
+    // Built first and merged into after: the merger writes the merged
+    // record's expiry back onto it. `any`, because `merge` is filled in.
+    const columns = columnsFor(handle, realmId, storedKey(row, key));
+    const upsert = /** @type {any} */ ({ handle: handle, realm: realmId,
+                   key: columns.key, keySealed: columns.keySealed,
+                   journalKey: key, body: body,
+                   // WHEN THE RECORD IS DEAD (#333), or null: what the
+                   // restore and the expiry purge read. See expiryOf().
+                   expiresAt: expiryOf(row, present.value, key, realmId),
+                   // Side-table columns, or null when there is no index.
+                   // The merge path replaces these from the merged row.
+                   index: indexed,
+                   // An on-demand store's index keys (#820), or null —
+                   // and null too when they are what this process last
+                   // committed for the key (`unchangedLookups()`).
+                   lookups: unchangedLookups(row, handle, realmId, key,
+                     indexKeysFor(row, handle, realmId, key,
+                                  present.value),
+                     sortAtFor(row, present.value, key)),
+                   // The number a console's newest-first list orders
+                   // this row by, or null (`sortBy`, 2026-10-22, #820):
+                   // written as one more index row while `lookups` is.
+                   sortAt: sortAtFor(row, present.value, key),
+                   // WHETHER A READER HAS TO WAIT FOR THIS ROW. An `own`
+                   // store is per-process fan-in — every process keeps its
+                   // own contribution and the console SUMS them when
+                   // somebody asks — so another worker does not need it
+                   // applied before it can answer. See the driver's
+                   // recordChanges() and replication's syncNow().
+                   own: row.merge === 'own',
+                   tombstone: row.tombstone === true,
+                   merge: undefined });
+    if (row.mergeRow) {
+      upsert.merge = mergerFor(row, handle, key, present.value, upsert,
+                               realmId);
+    }
+    upserts.push(upsert);
   });
+  log.debug("Leaving rowsFrom().");
+  return { upserts: upserts, deletes: deletes, unsealable: unsealable };
+}
+
+/**
+ * Remembers a take on an unsent batch and seals it now.
+ *
+ * The value is read here, not when the batch is sent: a later `set` of the
+ * same key updates the memory the send would otherwise seal into the older
+ * batch. Coverage only ever moves forward, and only from the take's own
+ * answer — a key noted during the seal is not part of this batch.
+ * @param {any} batch - the unsent batch
+ * @param {Array<{handle: string, realmId: string, key: string}>} entries
+ * @param {{covers: boolean, takenAt: number, readAt: number}} taken
+ */
+function sealInto(batch, entries, taken) {
+  log.debug("Entering sealInto().");
+  entries.forEach(function (entry) {
+    batch.keys.add(demandId(entry.handle, entry.realmId, entry.key));
+  });
+  if (taken.readAt > batch.readAt) {
+    batch.readAt = taken.readAt;
+  }
+  if (taken.covers) {
+    batch.covers = true;
+    if (taken.takenAt > batch.takenAt) {
+      batch.takenAt = taken.takenAt;
+    }
+  }
+  const built = rowsFrom(entries);
+  built.upserts.forEach(function (row) {
+    batch.upserts.push(row);
+  });
+  built.deletes.forEach(function (row) {
+    batch.deletes.push(row);
+  });
+  batch.unsealable += built.unsealable;
+  log.debug("Leaving sealInto().");
+}
+
+/**
+ * Opens the unsent second batch and sends it at the end of this turn.
+ *
+ * The first flush of a quiet process does not come through here: delaying
+ * it would let a same-key sign-in join a batch that already sealed the
+ * arrival. Callers in the same turn, of keys the first flush does not hold,
+ * share this promise, so five of them are one save rather than five.
+ * @param {{entries: Array<{handle: string, realmId: string, key: string}>,
+ *   covers: boolean, takenAt: number, readAt: number}} taken
+ * @param {number} startedAt - when the take began, for `FLUSH minted`
+ * @returns the batch
+ */
+function beginOpenBatch(taken, startedAt) {
+  log.debug("Entering beginOpenBatch().");
+  // `any`: an empty function freezes the binding at `() => void`, and the
+  // promise's resolve takes the batch's answer.
+  let resolveBatch = /** @type {any} */ (null);
+  const promise = new Promise(function (resolve) {
+    resolveBatch = resolve;
+  });
+  const batch = {
+    promise: promise,
+    resolve: resolveBatch,
+    keys: new Set(),
+    upserts: [],
+    deletes: [],
+    unsealable: 0,
+    life: flightLife,
+    covers: false,
+    takenAt: 0,
+    readAt: 0,
+    startedAt: startedAt,
+    sent: false
+  };
+  // Visible to heldIds before the seal, so a note during it cannot start a
+  // second save of a key this batch has already snapshotted.
+  openBatch = batch;
+  sealInto(batch, taken.entries, taken);
+  queueMicrotask(function () {
+    sendOpenBatch(batch);
+  });
+  log.debug("Leaving beginOpenBatch().");
+  return batch;
+}
+
+/**
+ * Sends the unsent batch once. A reset that already resolved it is a no-op.
+ * @param {any} batch - the unsent batch
+ */
+function sendOpenBatch(batch) {
+  log.debug("Entering sendOpenBatch().");
+  if (batch.sent || batch.life !== flightLife) {
+    log.debug("Leaving sendOpenBatch(). Already sent, or a reset.");
+    return;
+  }
+  batch.sent = true;
+  const settled = commitRows(batch.upserts, batch.deletes,
+    batch.unsealable, batch.takenAt, batch.covers, batch.readAt,
+    batch.startedAt, batch.keys);
+  if (openBatch === batch) {
+    openBatch = null;
+  }
+  settled.then(function (result) {
+    batch.resolve(result || { written: false });
+  }, function (err) {
+    log.debug("Caught in sendOpenBatch(): " + ((err && err.message) || err));
+    batch.resolve({ written: false,
+                    error: (err && err.message) || String(err) });
+  });
+  log.debug("Leaving sendOpenBatch().");
+}
+
+/**
+ * Moves the commit prefix. A cover at or past a failed take does not count
+ * while that take's keys are back on the journal; with nothing in flight and
+ * nothing left to write, the prefix catches up to the generation.
+ */
+function advanceCommitted() {
+  log.debug("Entering advanceCommitted().");
+  if (flights.length === 0 && !openBatch && journal.size === 0) {
+    commitHole = 0;
+    settledCovers = [];
+    if (generation > committedAt) {
+      committedAt = generation;
+    }
+    log.debug("Leaving advanceCommitted(). Caught up.");
+    return;
+  }
+  let oldest = Infinity;
+  flights.forEach(function (flight) {
+    if (flight.life !== flightLife) {
+      return;
+    }
+    // A non-covering save still read a generation. The prefix must not pass
+    // it while that save is open, or a later cover would claim those keys.
+    const mark = flight.takenAt > 0 ? flight.takenAt : flight.readAt;
+    if (mark > 0 && mark < oldest) {
+      oldest = mark;
+    }
+  });
+  let prefix = committedAt;
+  settledCovers.forEach(function (cover) {
+    if (cover <= prefix || cover >= oldest) {
+      return;
+    }
+    if (commitHole !== 0 && cover >= commitHole) {
+      return;
+    }
+    prefix = cover;
+  });
+  committedAt = prefix;
+  const kept = [];
+  settledCovers.forEach(function (cover) {
+    if (cover > committedAt) {
+      kept.push(cover);
+    }
+  });
+  settledCovers = kept;
+  log.debug("Leaving advanceCommitted().");
+}
+
+/**
+ * Records a covering take that settled, and drops the failure hole once
+ * nothing it was holding back is still on the journal.
+ * @param {number} takenAt - the generation the take covered
+ */
+function noteCover(takenAt) {
+  log.debug("Entering noteCover().");
+  if (takenAt > 0) {
+    settledCovers.push(takenAt);
+    if (commitHole !== 0 && takenAt >= commitHole && journal.size === 0) {
+      commitHole = 0;
+    }
+  }
+  log.debug("Leaving noteCover().");
+}
+
+/**
+ * Drops a settled save out of the in-flight list and wakes whoever was
+ * waiting on a key it held. A life that reset() has already left does neither.
+ * @param {any} flight - the save that just settled
+ * @param {boolean} ok - true when the batch committed
+ */
+function finishFlight(flight, ok) {
+  log.debug("Entering finishFlight().");
+  const at = flights.indexOf(flight);
+  if (at >= 0) {
+    flights.splice(at, 1);
+  }
+  if (flight.life !== flightLife) {
+    log.debug("Leaving finishFlight(). A reset forgot this flush.");
+    return;
+  }
+  if (ok && flight.covers && flight.takenAt > 0) {
+    noteCover(flight.takenAt);
+  } else if (!ok && journal.size > 0 && flight.readAt > commitHole) {
+    commitHole = flight.readAt;
+  }
+  // A later disjoint success must not clear a failure whose keys were put
+  // back. The journal is empty only when those keys are gone.
+  if (ok && journal.size === 0) {
+    failedWrite = false;
+  }
+  advanceCommitted();
+  wakeDeferred();
+  log.debug("Leaving finishFlight().");
+}
+
+/**
+ * Resolves the one shared gate. Cleared first, so the flush a waiter runs
+ * can arm another gate.
+ */
+function wakeDeferred() {
+  log.debug("Entering wakeDeferred().");
+  const wake = deferredWake;
+  deferredWait = null;
+  deferredWake = null;
+  if (wake) {
+    wake();
+  }
+  log.debug("Leaving wakeDeferred().");
+}
+
+/**
+ * One promise for every caller that cannot take a key yet. The follow-up
+ * flush runs once, and a reset() that bumped the life answers without
+ * writing into the next one.
+ * @returns a promise of `flush()`'s answer
+ */
+function deferUntilSlot() {
+  log.debug("Entering deferUntilSlot().");
+  if (!deferredWait) {
+    const born = flightLife;
+    // `any`, for the same reason as resolveBatch above.
+    let wake = /** @type {any} */ (null);
+    const gate = new Promise(function (resolve) {
+      wake = resolve;
+    });
+    deferredWake = wake;
+    deferredWait = gate.then(function () {
+      if (born !== flightLife) {
+        return { written: false };
+      }
+      return flush();
+    });
+  }
+  log.debug("Leaving deferUntilSlot().");
+  return deferredWait;
+}
+
+/**
+ * After a take that left keys on the journal, chains another flush so a
+ * caller of `flush()` — stop, the scheduler — has attempted them. A covering
+ * take does not come through here: its caller must not wait for the previous
+ * disjoint save. An error stops the chain; a second attempt is
+ * `retryAfterFailure()`'s.
+ * @param {Promise<{written: boolean, error?: string}>} promise
+ * @param {number} born - the life the take belonged to
+ * @returns the chained promise
+ */
+function continueDeferred(promise, born) {
+  log.debug("Entering continueDeferred().");
+  const chained = promise.then(function (result) {
+    if (born !== flightLife || (result && result.error) ||
+        journal.size === 0) {
+      return result;
+    }
+    return flush();
+  });
+  log.debug("Leaving continueDeferred().");
+  return chained;
+}
+
+/**
+ * Writes one taken batch and registers it in flight before returning, so a
+ * same-key note in this turn cannot join it. Resolves; it does not reject.
+ * @param {any[]} upserts
+ * @param {any[]} deletes
+ * @param {number} unsealable
+ * @param {number} takenAt - 0 unless the take emptied the journal
+ * @param {boolean} covers
+ * @param {number} readAt - the generation at the take
+ * @param {number} flushStartedAt - when the take began
+ * @param {Set<string>} keys - every key the take removed, sealed or not
+ * @returns the save's promise
+ */
+function commitRows(upserts, deletes, unsealable, takenAt, covers, readAt,
+                    flushStartedAt, keys) {
+  log.debug("Entering commitRows().");
+  const born = flightLife;
+  if (!upserts.length && !deletes.length) {
+    if (covers) {
+      noteCover(takenAt);
+    }
+    advanceCommitted();
+    wakeDeferred();
+    log.debug("Leaving commitRows(). Nothing survived the read.");
+    return Promise.resolve({ written: false });
+  }
+  log.debug("commitRows: sending the batch.");
 
   // ON-DEMAND KEYS IN FLIGHT (#820): an on-demand store reads a key it does
   // not hold from `sts_minted`, and until this flush commits that row is the
@@ -2050,20 +2414,6 @@ function flush() {
       inFlightDemand.set(id, (inFlightDemand.get(id) || 0) + 1);
     }
   });
-  // Cleared here, and only here: everything above read from `taken`, which is
-  // this same Map, so a write that lands during the loop is picked up by the
-  // loop and one that lands after it survives the clear below.
-  journal.clear();
-  flushAsked = false;
-
-  if (!upserts.length && !deletes.length) {
-    committedAt = Math.max(committedAt, takenAt);
-    log.debug('Leaving flush(). Nothing survived the read.');
-    return Promise.resolve({ written: false });
-  }
-
-  log.debug("Leaving flush().");
-
   // RE-JOURNAL A SET OF ROWS AND REPORT THE FAILURE (the non-permanent path,
   // #351). The keys go back so the next flush retries them; the key that goes
   // back is the JOURNAL's, not `storedKey()`'s (2026-09-12). Shared by the
@@ -2181,15 +2531,13 @@ function flush() {
                   "the split; re-journalling the unfinished rows.");
         return reJournalAndReport(plain, outcome.err);
       }
-      // ONLY NOW, as the ordinary failure path never does: `flushThrough()`
-      // takes a commit position past its target for "already committed", so
-      // advancing it with rows back on the journal would answer a waiting
-      // request success for a write the store does not hold.
-      committedAt = Math.max(committedAt, takenAt);
+      // The prefix moves in finishFlight, and only for a take that covered
+      // the journal. This path put nothing back; a split that stopped
+      // returned above (#1347). A later disjoint flush finishing first must
+      // not move the prefix past an older open take (#877).
       ensureTombstoneJob();
       writes++;
       lastWriteAt = new Date().toISOString();
-      failedWrite = false;
       lastError = droppedList.length
         ? droppedList[droppedList.length - 1].message : '';
       log.debug("Leaving isolatePermanent(). " + committed.ups + " written, " +
@@ -2207,9 +2555,17 @@ function flush() {
   let flushSentAt = 0;
   const saving = Promise.resolve(typeof keystore.settleDeks === 'function'
     ? keystore.settleDeks() : null).then(function () {
+    // reset() may have started a new life while the data keys settled.
+    // Writing now would land the forgotten batch in the next driver's store.
+    if (born !== flightLife) {
+      return { skipped: true };
+    }
     flushSentAt = Date.now();
     return driver.saveMinted(upserts, deletes);
   }).then(function (result) {
+    if (born !== flightLife || (result && result.skipped)) {
+      return { written: false };
+    }
     const doneAt = Date.now();
     requestPhases.record('FLUSH minted', {
       prepare: flushSealedAt - flushStartedAt,
@@ -2217,18 +2573,19 @@ function flush() {
       db: doneAt - flushSentAt,
       rows: upserts.length + deletes.length,
       total: doneAt - flushStartedAt });
-    committedAt = Math.max(committedAt, takenAt);
     applyCommitted(upserts, deletes, result);
     ensureTombstoneJob();
     writes++;
     lastWriteAt = new Date().toISOString();
     lastError = '';
-    failedWrite = false;
-    log.debug('Leaving flush(). ' + upserts.length + ' row(s) written, ' +
+    log.debug('commitRows: ' + upserts.length + ' row(s) written, ' +
               deletes.length + ' removed' +
               (unsealable ? ', ' + unsealable + ' unsealable' : '') + '.');
     return { written: true, upserts: upserts.length, deletes: deletes.length };
   }).catch(function (err) {
+    if (born !== flightLife) {
+      return { written: false };
+    }
     // A PERMANENT DATA ERROR IS ISOLATED BY A BISECT, NOT DROPPED WHOLE
     // (#1347, rcbj — "we can't have lost revoked certificates"). A value a
     // column can never hold — a bigint expiry past 9.22e18 (SQLSTATE 22003, or
@@ -2266,29 +2623,198 @@ function flush() {
     // row carries `journalKey` and `reJournalAndReport()` notes that.
     return reJournalAndReport(upserts.concat(deletes), err);
   });
-  // CLEARED BEFORE THE RESULT IS HANDED ON, so that a caller waiting on this
-  // promise finds nothing in flight when it re-enters. Cleared on either path:
-  // a handler above that threw must not leave every later flush waiting on a
-  // write that is over. Only if it is still THIS flush — `reset()` may have
-  // started a new life for the module while this one was out.
+  const flight = {
+    promise: null,
+    takenAt: takenAt,
+    covers: covers,
+    readAt: readAt,
+    life: born,
+    keys: new Set(keys)
+  };
   const settled = saving.then(function (result) {
-    landDemand(flying);
-    if (flushInFlight === settled) {
-      flushInFlight = null;
+    if (flight.life === flightLife) {
+      landDemand(flying);
     }
+    finishFlight(flight, !!(result && result.written));
     return result;
   }, function (err) {
-    log.debug("Caught in flush(): " + ((err && err.message) || err));
-    landDemand(flying);
-    if (flushInFlight === settled) {
-      flushInFlight = null;
+    log.debug("Caught in commitRows(): " + ((err && err.message) || err));
+    if (flight.life === flightLife) {
+      landDemand(flying);
     }
+    finishFlight(flight, false);
     lastError = (err && err.message) || String(err);
     return { written: false, error: lastError };
   });
-  flushInFlight = settled;
-  inFlightTakenAt = takenAt;
+  flight.promise = settled;
+  flights.push(flight);
+  log.debug("Leaving commitRows().");
   return settled;
+}
+
+/**
+ * Writes every journalled key to the store, sealed; deletes what is gone.
+ *
+ * One flush per key (#877): a call whose keys are already in a save waits,
+ * and a second save of any other keys may run beside it, at most two at a
+ * time. On failure the keys go back into the journal. Resolves rather than
+ * rejects.
+ * @returns a promise of `{ written, upserts, deletes }`, or `{ written:
+ * false }` with `error` when nothing was written or the write failed
+ */
+function flush() {
+  log.debug('Entering flush().');
+  if (!enabled()) {
+    // The journal is cleared rather than kept. A process that is not
+    // persisting minted state must not accumulate the names of every session
+    // it has ever held — which is a memory leak whose size is the service's
+    // whole traffic.
+    journal.clear();
+    flushAsked = false;
+    committedAt = generation;
+    log.debug('Leaving flush(). Not persisting minted state.');
+    return Promise.resolve({ written: false });
+  }
+  if (!keystore.sealed() && typeof keystore.hasStarted === 'function' &&
+      !keystore.hasStarted()) {
+    // NOT YET IS NOT NEVER (#357). The store opens, and things are minted,
+    // before `keystore.start()` has read the key-encryption key — a network
+    // call to the secret store. This branch used to fall through to the one
+    // below, which CLEARS the journal: whatever was minted in that window was
+    // dropped, not deferred, and every process logged STS-STORE-0018 as it
+    // started. The journal is kept and nothing is committed; `restore()`,
+    // which runs once the keystore has started, keeps it too and asks for the
+    // flush that writes it.
+    flushAsked = false;
+    log.debug('Leaving flush(). The keystore has not started; deferred.');
+    return Promise.resolve({ written: false, deferred: true });
+  }
+  if (!keystore.sealed()) {
+    journal.clear();
+    flushAsked = false;
+    committedAt = generation;
+    lastError = 'no key-encryption key is available, so nothing minted can ' +
+                'be sealed';
+    // A PRODUCT-MODE REALM IN A PROCESS THAT IS NOT IN PRODUCT MODE IS NOT THE
+    // SAME FAILURE (2026-09-14). `enabled()` reads `global.mode` through the
+    // AMBIENT realm, and a flush scheduled from a request inherits that
+    // request's realm — so a development process with no key-encryption key,
+    // serving a realm somebody switched to product, reached this line on every
+    // flush that realm's traffic scheduled and logged an ERROR each time: 11
+    // lines in one postgres-mode suite run, about a configuration that is
+    // stated once and does not change. The process-level case is the one this
+    // line was written for — a product service whose keystore is not open —
+    // and it stays an error per flush. The realm-level case is said ONCE, as a
+    // warning, with the same code (the no-per-event-logs rule). `enabled()` is
+    // deliberately NOT narrowed to require a key: `restore()` reads it too, and
+    // a product process with no key must go on failing that fatally
+    // (STS-STORE-0022) rather than restoring nothing in silence.
+    if (processIsProduct()) {
+      log.error(errorCodes.tag('STS-STORE-0018') +
+                'persistence: ' + lastError + '. Minted state is not being ' +
+                'written down.');
+    } else if (!realmOnlyKeylessWarned) {
+      realmOnlyKeylessWarned = true;
+      log.warn(errorCodes.tag('STS-STORE-0018') +
+               'persistence: a trust realm in product mode wrote minted ' +
+               'state, and this process is in development mode with no ' +
+               'key-encryption key, so ' + lastError + '. That realm\'s ' +
+               'sessions, tokens and codes are held in memory only. Said ' +
+               'once per process.');
+    }
+    log.debug('Leaving flush(). Nothing to seal with.');
+    return Promise.resolve({ written: false, error: lastError });
+  }
+
+  const born = flightLife;
+  if (journal.size === 0) {
+    if (openBatch && openBatch.life === flightLife && !openBatch.sent) {
+      log.debug('Leaving flush(). Waiting for the unsent batch.');
+      if (openBatch.covers) {
+        return openBatch.promise;
+      }
+      return continueDeferred(openBatch.promise, born);
+    }
+    const pending = flights.filter(function (flight) {
+      return flight.life === flightLife;
+    });
+    if (!pending.length && !openBatch) {
+      advanceCommitted();
+      log.debug('Leaving flush(). Nothing journalled.');
+      return Promise.resolve({ written: false });
+    }
+    // Nothing left to take. The saves already sent still hold what a
+    // drain — stop, the scheduler — has to see land or fail. A response
+    // does not come through here: flushThrough returns the covering save.
+    log.debug('Leaving flush(). Nothing journalled; waiting for the ' +
+              'saves already sent.');
+    return Promise.all(pending.map(function (flight) {
+      return flight.promise;
+    })).then(function () {
+      if (born !== flightLife) {
+        return { written: false };
+      }
+      if (journal.size > 0) {
+        return flush();
+      }
+      return { written: false };
+    });
+  }
+
+  if (openBatch && openBatch.life === flightLife && !openBatch.sent) {
+    const taken = takeDisjoint();
+    if (taken.entries.length) {
+      sealInto(openBatch, taken.entries, taken);
+      log.debug('Leaving flush(). Joined the unsent batch.');
+      if (openBatch.covers) {
+        return openBatch.promise;
+      }
+      return continueDeferred(openBatch.promise, born);
+    }
+    log.debug('Leaving flush(). Every remaining key is already batched.');
+    return deferUntilSlot();
+  }
+
+  if (activeFlightCount() >= MAX_MINTED_IN_FLIGHT) {
+    log.debug('Leaving flush(). Two flushes are already in flight.');
+    return deferUntilSlot();
+  }
+
+  const startedAt = Date.now();
+  const taken = takeDisjoint();
+  if (!taken.entries.length) {
+    log.debug('Leaving flush(). Every remaining key is in a flush.');
+    return deferUntilSlot();
+  }
+
+  if (activeFlightCount() >= 1) {
+    const batch = beginOpenBatch(taken, startedAt);
+    log.debug('Leaving flush(). A second flush starts this turn.');
+    if (batch.covers) {
+      return batch.promise;
+    }
+    return continueDeferred(batch.promise, born);
+  }
+
+  // Nothing is in flight. Send before returning, so a same-key note in
+  // this turn finds the key held and cannot join the value just sealed.
+  const ids = idsOf(taken.entries);
+  const previous = reserving;
+  reserving = ids;
+  let settled = null;
+  try {
+    const built = rowsFrom(taken.entries);
+    settled = commitRows(built.upserts, built.deletes, built.unsealable,
+      taken.takenAt, taken.covers, taken.readAt, startedAt, ids);
+  } finally {
+    reserving = previous;
+  }
+  if (taken.covers) {
+    log.debug('Leaving flush(). Sending.');
+    return settled;
+  }
+  log.debug('Leaving flush(). Sending, then the keys still held.');
+  return continueDeferred(settled, born);
 }
 
 // The generation every key journalled so far has reached, and the one whose
@@ -2330,18 +2856,19 @@ function committedGeneration() {
 // ---------------------------------------------------------------------------
 // A FLUSH THAT COVERS GENERATION `target`, AND NO MORE THAN IT NEEDS TO.
 //
-// Already committed: nothing to wait for. A flush in flight whose journal take
-// covered it: that flush, and not the one queued behind it — which is what
-// flush() would have returned, and under concurrent writers that is a SECOND
-// transaction the caller has no writes in. Otherwise flush(), which waits out
-// the one in flight and then takes the journal holding the target. Resolves
-// flush()'s answer; `error` set means the write did not land.
+// Already committed: nothing to wait for. Otherwise the earliest in-flight
+// save whose take covered the target — the one that holds this caller's
+// keys, which since #877 may be a second save running beside an older one
+// of other keys. Waiting for that older save is the queue the sign-in was
+// paying. A save that did not empty the journal is not covering. Otherwise
+// flush(), which takes what is free. Resolves flush()'s answer; `error` set
+// means the write did not land.
 // ---------------------------------------------------------------------------
 /**
  * Makes sure the writes up to a generation are in the store.
  *
- * Answers at once when already committed, returns the flush in flight when
- * its journal covered the target, and otherwise calls `flush()`.
+ * Answers at once when already committed, returns the earliest covering save
+ * when one is in flight or waiting to be sent, and otherwise calls `flush()`.
  * @param target - the generation to cover
  * @returns a promise of `flush()`'s answer; `error` set means the write did
  * not land
@@ -2352,9 +2879,24 @@ function flushThrough(target) {
     log.debug("Leaving flushThrough(). Already committed.");
     return Promise.resolve({ written: false });
   }
-  if (flushInFlight && inFlightTakenAt >= target) {
-    log.debug("Leaving flushThrough(). The flush in flight covers it.");
-    return flushInFlight;
+  let best = null;
+  flights.forEach(function (flight) {
+    if (flight.life !== flightLife || !flight.covers) {
+      return;
+    }
+    if (flight.takenAt >= target &&
+        (best === null || flight.takenAt < best.takenAt)) {
+      best = flight;
+    }
+  });
+  if (best) {
+    log.debug("Leaving flushThrough(). A flush in flight covers it.");
+    return best.promise;
+  }
+  if (openBatch && openBatch.life === flightLife && !openBatch.sent &&
+      openBatch.covers && openBatch.takenAt >= target) {
+    log.debug("Leaving flushThrough(). The unsent batch covers it.");
+    return openBatch.promise;
   }
   log.debug("Leaving flushThrough(). Flushing.");
   return flush();
@@ -2378,9 +2920,9 @@ function failing() {
 // down, replicated. Node B still held it in memory a moment behind and wrote
 // its copy back on the next request that touched it — `noteSessionUsed()` and
 // `touchArrivalSession()` stamp a field and re-set the row — so the session
-// somebody signed out of was live again on every node. `flushInFlight` above
-// fixed that ordering INSIDE one process; between processes the store simply
-// had no record that the key had ever been ended.
+// somebody signed out of was live again on every node. One flush per key
+// (#877) keeps that ordering INSIDE one process; between processes the
+// store simply had no record that the key had ever been ended.
 //
 // **AND A SIGN-IN WAS UNDONE, AND A RELYING PARTY WAS FORGOTTEN, THE SAME
 // WAY.** An arrival session upgraded to a sign-in on A was written back as the
@@ -4665,11 +5207,19 @@ function restore() {
  */
 function stop() {
   log.debug('Entering stop().');
+  // flush() attempts every key that was journalled, including a same-key
+  // leftover. Saves already in flight are waited on too: a covering second
+  // batch does not wait for the older disjoint one, and a shutdown must.
+  const pending = flights.slice();
   log.debug("Leaving stop().");
   return flush().then(function (result) {
-    stopped = true;
-    log.debug('Leaving stop().');
-    return result;
+    return Promise.all(pending.map(function (flight) {
+      return flight.promise;
+    })).then(function () {
+      stopped = true;
+      log.debug('Leaving stop().');
+      return result;
+    });
   });
 }
 
@@ -4733,6 +5283,27 @@ let sessionIndexFloor = null;
  */
 function reset() {
   log.debug("Entering reset().");
+  // Before the journal is dropped, and before any waiter runs: a save still
+  // in flight belongs to the life being forgotten. Its settlement must not
+  // move this one's prefix or start a write into the next driver.
+  flightLife += 1;
+  flights = [];
+  if (openBatch) {
+    const abandoned = openBatch;
+    openBatch = null;
+    abandoned.sent = true;
+    abandoned.resolve({ written: false });
+  }
+  const wake = deferredWake;
+  deferredWait = null;
+  deferredWake = null;
+  if (wake) {
+    wake();
+  }
+  settledCovers = [];
+  commitHole = 0;
+  reserving = null;
+  inFlightDemand.clear();
   journal.clear();
   scheduler = null;
   flushAsked = false;
@@ -4740,9 +5311,6 @@ function reset() {
   driver = null;
   stopped = false;
   restoring = false;
-  // A write left in flight by the previous test must not make the next one's
-  // first flush wait on a driver that is no longer installed.
-  flushInFlight = null;
   indexComplete.clear();
   indexBackfilled.clear();
   unheldAfterRefresh.clear();
@@ -4756,7 +5324,6 @@ function reset() {
   observational.clear();
   committedAt = 0;
   failedWrite = false;
-  inFlightTakenAt = 0;
   lastWriteAt = null;
   lastError = '';
   writes = 0;

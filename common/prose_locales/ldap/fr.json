@@ -1016,12 +1016,16 @@
     "text": "La même chose pour l’ID Token OIDC, en remplaçant oauth2.idTokenTtlS. Distinct de celui du jeton d’accès, car les deux vont à des lecteurs différents : un ID Token est consommé une fois à la connexion, tandis qu’un jeton d’accès est présenté aussi longtemps qu’il dure."
   },
   "applications.schema.attributes.oauthRefreshTokenTtlS.what": {
-    "en": "47a623e69e617b6d",
-    "text": "La même chose pour le jeton d’actualisation, en remplaçant oauth2.refreshTokenTtlS. Une valeur inférieure ou égale à oauthAccessTokenTtlS est légale et constitue un octroi qui ne peut jamais être utilement renouvelé — /admin/token-lifetimes signale cette combinaison pour la paire à l’échelle du service, et elle est tout aussi atteignable ici."
+    "en": "019d39de89f62aaf",
+    "text": "La même chose pour le jeton d’actualisation, en remplaçant oauth2.refreshTokenTtlS. Une valeur inférieure ou égale à oauthAccessTokenTtlS est légale et constitue un octroi qui ne peut jamais être utilement renouvelé — /admin/token-lifetimes signale cette combinaison pour la paire à l’échelle du service, et elle est tout aussi atteignable ici. Pour la console d’administration, le portail utilisateur et l’application de rapports, la valeur en vigueur est la plus courte entre un nombre positif ici et le paramètre du domaine ; ces trois-là ne peuvent pas être effacés, 0 est refusé, et un nombre positif différent confirmé à l’enregistrement est la façon dont la limite change (#825)."
   },
   "applications.schema.attributes.oauthRefreshIdleSeconds.what": {
-    "en": "37eeca0107443e0c",
-    "text": "MODE RFC 9700 UNIQUEMENT : combien de temps une chaîne d’actualisation peut rester inutilisée avant d’être coupée, en remplaçant oauth2.refreshIdleSeconds pour ce client. Ce délai est mesuré depuis la dernière fois qu’un jeton quelconque de la CHAÎNE a été utilisé, plutôt que depuis l’émission ; un client actif conserve donc son octroi et un client inactif non. Hors du mode RFC 9700, rien ne le lit, ce qui est une propriété du paramètre plutôt que de cet attribut."
+    "en": "2fd2c72086342ab0",
+    "text": "MODE RFC 9700 UNIQUEMENT : combien de temps une chaîne d’actualisation peut rester inutilisée avant d’être coupée, en remplaçant oauth2.refreshIdleSeconds pour ce client. Ce délai est mesuré depuis la dernière fois qu’un jeton quelconque de la CHAÎNE a été utilisé, plutôt que depuis l’émission ; un client actif conserve donc son octroi et un client inactif non. Hors du mode RFC 9700, rien ne le lit, ce qui est une propriété du paramètre plutôt que de cet attribut. Pour la console d’administration, le portail utilisateur et l’application de rapports, la valeur en vigueur est la plus courte entre un nombre positif ici et le paramètre du domaine ; ces trois-là ne peuvent pas être effacés, 0 est refusé, et un nombre positif différent confirmé à l’enregistrement est la façon dont la limite change (#825)."
+  },
+  "applications.schema.attributes.oauthMaxAuthAgeS.what": {
+    "en": "c79eafa0090748ab",
+    "text": "Depuis combien de temps ce client a été authentifié, en secondes, avant qu’une demande d’autorisation doive authentifier de nouveau, même lorsque la demande n’envoie pas de max_age, en remplaçant oauth2.maxAuthAgeS. 0 ou une valeur vide n’ajoute aucune limite propre à cet attribut, et un client ordinaire suit alors le paramètre du domaine, dont la valeur par défaut est 0. Pour la console d’administration, le portail utilisateur et l’application de rapports, la valeur en vigueur est la plus courte entre un nombre positif ici et authn.sessionLifetimeS, si bien qu’augmenter la valeur du domaine ne les allonge jamais. Ces trois-là ne peuvent pas être effacés, 0 est refusé, et un nombre positif différent confirmé à l’enregistrement est la façon dont la limite change (#825)."
   },
   "applications.schema.attributes.oauthClaimsAccessToken.what": {
     "en": "e284080e7c1bb9a6",
@@ -1227,6 +1231,10 @@
     "en": "00f7ceacfb9304e7",
     "text": "TRUE ou FALSE : ce fournisseur d’identité peut-il DÉMARRER une connexion à ce fournisseur de services — une Response non sollicitée (saml-profiles-2.0-os section 4.1.5) depuis /saml2/unsolicited ou /launch/{app} — en remplaçant saml2.idpInitiatedSso. TRUE uniquement pour un fournisseur de services qui en attend une : la Response ne porte pas d’InResponseTo, il ne peut donc pas distinguer une Response qui lui a été envoyée d’une Response poussée dans son navigateur."
   },
+  "applications.schema.attributes.saml2SsoConsent.what": {
+    "en": "f7ca67bc2031ec08",
+    "text": "TRUE ou FALSE : une personne est-elle interrogée, une fois, avant que SAML 2.0 ne la connecte à cette application depuis une session qu’elle a déjà, en remplaçant saml2.ssoConsent (ASVS 5.0.0 7.6.2). FALSE convient à une application que tout le monde dans le domaine doit utiliser ; un consentement global sur l’entrée répond pour tout le monde et garde la trace de qui a accepté."
+  },
   "applications.schema.attributes.saml2SpInitiatedSso.what": {
     "en": "1cab33aadc246c17",
     "text": "TRUE ou FALSE : la <samlp:AuthnRequest> propre à ce fournisseur de services reçoit-elle une réponse, en remplaçant saml2.spInitiatedSso. FALSE y répond par RequestDenied, ne laissant que la connexion initiée par le fournisseur d’identité comme moyen d’entrer."
@@ -1234,6 +1242,10 @@
   "applications.schema.attributes.saml11IdpInitiatedSso.what": {
     "en": "6081871f6aca6a2f",
     "text": "TRUE ou FALSE : une connexion SAML 1.1 à cette partie de confiance peut-elle DÉMARRER ici — /saml11/sso/{rp} avec un TARGET et sans shire, ou /launch/{app} — en remplaçant saml11.idpInitiatedSso."
+  },
+  "applications.schema.attributes.saml11SsoConsent.what": {
+    "en": "0cb7bbf2fb684481",
+    "text": "TRUE ou FALSE : une personne est-elle interrogée, une fois, avant que SAML 1.1 ne la connecte à cette application depuis une session qu’elle a déjà, en remplaçant saml11.ssoConsent (ASVS 5.0.0 7.6.2). FALSE convient à une application que tout le monde dans le domaine doit utiliser ; un consentement global sur l’entrée répond pour tout le monde et garde la trace de qui a accepté."
   },
   "applications.schema.attributes.saml11SpInitiatedSso.what": {
     "en": "2376052fceb025ab",
@@ -1258,6 +1270,10 @@
   "applications.schema.attributes.wsfedSpInitiatedSso.what": {
     "en": "d199b15200f6e9de",
     "text": "TRUE ou FALSE : le wsignin1.0 propre à cette partie de confiance reçoit-il une réponse, en remplaçant wsfed.spInitiatedSso. Un wsignin1.0 est une URL non signée ; FALSE ferme donc la porte plutôt que de prouver qui l’a ouverte."
+  },
+  "applications.schema.attributes.wsfedSsoConsent.what": {
+    "en": "9a3541460bedfa45",
+    "text": "TRUE ou FALSE : une personne est-elle interrogée, une fois, avant que WS-Federation ne la connecte à cette application depuis une session qu’elle a déjà, en remplaçant wsfed.ssoConsent (ASVS 5.0.0 7.6.2). FALSE convient à une application que tout le monde dans le domaine doit utiliser ; un consentement global sur l’entrée répond pour tout le monde et garde la trace de qui a accepté."
   },
   "applications.schema.attributes.wsfedSignOutUri.what": {
     "en": "677e7babd8d711d3",
@@ -2010,17 +2026,5 @@
   "xacmlPeps.schema.attributes.description.what": {
     "en": "3e047a4417e13ade",
     "text": "Ce que le PEP a dit de lui-même lors de son enregistrement."
-  },
-  "applications.schema.attributes.saml2SsoConsent.what": {
-    "en": "f7ca67bc2031ec08",
-    "text": "TRUE ou FALSE : une personne est-elle interrogée, une fois, avant que SAML 2.0 ne la connecte à cette application depuis une session qu’elle a déjà, en remplaçant saml2.ssoConsent (ASVS 5.0.0 7.6.2). FALSE convient à une application que tout le monde dans le domaine doit utiliser ; un consentement global sur l’entrée répond pour tout le monde et garde la trace de qui a accepté."
-  },
-  "applications.schema.attributes.saml11SsoConsent.what": {
-    "en": "0cb7bbf2fb684481",
-    "text": "TRUE ou FALSE : une personne est-elle interrogée, une fois, avant que SAML 1.1 ne la connecte à cette application depuis une session qu’elle a déjà, en remplaçant saml11.ssoConsent (ASVS 5.0.0 7.6.2). FALSE convient à une application que tout le monde dans le domaine doit utiliser ; un consentement global sur l’entrée répond pour tout le monde et garde la trace de qui a accepté."
-  },
-  "applications.schema.attributes.wsfedSsoConsent.what": {
-    "en": "9a3541460bedfa45",
-    "text": "TRUE ou FALSE : une personne est-elle interrogée, une fois, avant que WS-Federation ne la connecte à cette application depuis une session qu’elle a déjà, en remplaçant wsfed.ssoConsent (ASVS 5.0.0 7.6.2). FALSE convient à une application que tout le monde dans le domaine doit utiliser ; un consentement global sur l’entrée répond pour tout le monde et garde la trace de qui a accepté."
   }
 }

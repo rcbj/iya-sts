@@ -438,7 +438,8 @@ function checkTheVersionAgrees(t, sql) {
 
 // Schema 21 (#350): `sts_sessions` beside `sts_minted`, six partial indexes,
 // a nullable `expires_at`, and the primary key `(realm, key)`. Schema 22
-// (#754) adds the seventh, `sts_sessions_surface`.
+// (#754) adds the seventh, `sts_sessions_surface`. #876 adds the eighth,
+// `sts_sessions_subject_band`, without a new schema version.
 function checkTheSessionIndex(t, sql) {
   log.debug("Entering checkTheSessionIndex().");
   t.equal(driver.SCHEMA_VERSION, 31,
@@ -456,11 +457,12 @@ function checkTheSessionIndex(t, sql) {
       return statement.indexOf(name) >= 0;
     }), name + ' is in the driver\'s schema and in the script');
   });
-  const names = ['sts_sessions_subject', 'sts_sessions_username',
-                 'sts_sessions_expires', 'sts_sessions_parent',
-                 'sts_sessions_credential', 'sts_sessions_partner',
-                 'sts_sessions_surface'];
+  const names = ['sts_sessions_subject', 'sts_sessions_subject_band',
+                 'sts_sessions_username', 'sts_sessions_expires',
+                 'sts_sessions_parent', 'sts_sessions_credential',
+                 'sts_sessions_partner', 'sts_sessions_surface'];
   const predicates = [
+    'WHERE chosen AND subject_key <> \'\'',
     'WHERE chosen AND subject_key <> \'\'',
     'WHERE username_key <> \'\'',
     'WHERE expires_at IS NOT NULL',
@@ -483,6 +485,15 @@ function checkTheSessionIndex(t, sql) {
              statement.indexOf(predicates[i]) >= 0;
     }), 'postgres/schema.sql carries ' + name);
   });
+  const band = (driver.SCHEMA_OBJECTS || []).filter(function (one) {
+    return one.name === 'sts_sessions_subject_band';
+  })[0];
+  t.check(!!band && /COLLATE "C"/.test(band.statement) &&
+          script.some(function (statement) {
+            return statement.indexOf('sts_sessions_subject_band') >= 0 &&
+                   statement.indexOf('COLLATE "C"') >= 0;
+          }),
+          'sts_sessions_subject_band orders subject_key with COLLATE "C"');
   const table = (driver.SCHEMA_OBJECTS || []).filter(function (one) {
     return one.name === 'sts_sessions';
   })[0];

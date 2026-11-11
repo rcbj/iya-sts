@@ -404,10 +404,26 @@ Such a write is visible at once and durable at the WAL writer's next flush.
 A crash of postgres itself can lose the last fraction of a second of them:
 an attempt uncounted, or a statistic one sign-in short.
 
+**An application's authentication counts are the same kind of write**
+(#878), when the sighting changed nothing else. `applications.seen()` on an
+authorization response increments `appAuthentications` and, for a new
+session or user, the session and user counts. The token endpoint does not
+read them. The directory generation does not move, so the response is not
+held, and when that batch is the whole directory flush it is written on
+this pool. A batch that also has a durable directory, realm or settings
+change carries the counts in that one transaction. A new application, or a
+new kind, protocol, name, note, scope, redirect, authorization server,
+grant type or observed return address, stays durable, and so does the
+password rehash. Another node still sees the counts: the change log is
+written in the tally transaction. On MariaDB the tally pool has no
+asynchronous commit, so skipping the generation is the whole win there.
+`tests/application_counter_commit.js` and `tests/postgres_tally_commit.js`
+(T4) cover it.
+
 Everything else stays on `pool`, durable at commit: sessions, codes, tokens,
-the directory, every minted row, and the risk engine's action claim (which
-stops an action being taken twice). `tests/postgres_tally_commit.js` covers
-this.
+every minted row, a directory batch that changed anything but those counts,
+and the risk engine's action claim (which stops an action being taken
+twice).
 
 ## The sentence this directory reverses
 
@@ -777,7 +793,8 @@ like the LISTEN connection, opened on first use and again after it drops, with
 no timer — so write load cannot starve the lease that keeps a process writing.
 If it cannot be opened (a server at `max_connections`) the statement goes
 through the pool once rather than failing (STS-STORE-0070). A write's own
-fence checks stay inside its transaction. Each process now holds up to
+fence checks stay inside its transaction; what they share-lock is a row of
+`sts_cluster_locks` (#770, `cluster/CLAUDE.md`). Each process now holds up to
 `poolMax() + 2` connections; `POOL_FLOOR` stays 4, argued above it.
 
 **Key-row writes never hold the whole pool (#1590, 2026-11-10).**
@@ -1242,16 +1259,17 @@ to the flush's retry. The fuzz kit now reads `/admin-api/persistence` when a
 cell ends, and a store still failing fails the cell.
 `tests/unstorable_text.js` holds it.
 
-### ONE MINTED FLUSH AT A TIME PER PROCESS, OR THE OLDER VALUE CAN WIN (2026-09-13)
+### ONE MINTED FLUSH PER KEY, OR THE OLDER VALUE CAN WIN (2026-09-13; #877)
 
 **A flush READS a value when it takes the journal and WRITES it when its
-transaction commits.** `minted.flush()` had two callers that did not wait for
-each other — `persistence.js`'s scheduled flush and `request_worker.ts`'s
-commit announcement (`flushMinted()`) — so two transactions from ONE process
-could be open at once, a key written between their journal takes was in both
-with two different values, and `ON CONFLICT DO UPDATE` kept whichever COMMITTED
-last. Sorting the statements (above) stops a deadlock; it does not stop a wait,
-and a wait is exactly what reverses the order.
+transaction commits.** Until #877 `minted.flush()` had two callers that did
+not wait for each other — `persistence.js`'s scheduled flush and
+`request_worker.ts`'s commit announcement (`flushMinted()`) — so two
+transactions from ONE process could be open at once, a key written between
+their journal takes was in both with two different values, and
+`ON CONFLICT DO UPDATE` kept whichever COMMITTED last. Sorting the statements
+(above) stops a deadlock; it does not stop a wait, and a wait is exactly what
+reverses the order.
 
 **It is the whole of `sts_global_logout`'s intermittent `dispatch` failure.** A
 browser arriving at `/wsfed` gets an ARRIVAL session (`anonymous`,
@@ -1267,12 +1285,28 @@ the eighth authorising `prompt=none` at worker 34. **The read barrier worked**:
 worker 33 caught up correctly, to a store that was wrong. So neither a barrier
 change nor a sign-out that syncs first could have fixed it.
 
-`flush()` now keeps `flushInFlight`: a call made while one is in flight waits
-and then takes the journal itself, so within a process commit order is journal
-order. Waiters coalesce (the first takes everything written during the wait),
-`reset()` forgets a write in flight, and a waiter clears a marker left on a
-settled promise rather than spinning on it. **Two different processes writing
-one key is untouched** and is still last-writer-wins, as above.
+**The same key is still one flush at a time.** A second write of a key that is
+already in a save stays on the journal until that save settles, and the value
+is read then, so within a process the value that commits last for that key is
+the newer one. **A second flush of keys that save does not hold may start
+beside it** (#877). At most two minted saves are in flight: the pool's floor
+of four is the directory flush, these two, and the change-log pull. Callers
+in the same turn whose keys are still free join one unsent batch, so five
+disjoint flushes are one extra write, and that write starts while the first
+is still open. A key already snapshotted into a batch is never joined into it.
+
+**`committedAt` is the prefix below the oldest take still in flight.** A later
+flush of other keys that finishes first releases its own caller and does not
+move `committedGeneration()` past the older open take. A take that did not
+empty the journal is not covering (`takenAt` stays 0). When nothing is in
+flight, the journal is empty and no batch is waiting to be sent, the prefix
+catches up to the generation. `flushThrough(target)` returns the earliest
+in-flight covering save whose take is at or past the target, or the unsent
+batch when that one covers, and otherwise `flush()`. A response waits for the
+save that holds its keys. `stop()` still waits for every save already sent,
+including an older disjoint one a covering second batch did not.
+**Two different processes writing one key is untouched** and is still
+last-writer-wins, as above.
 
 **`stop()` WAITS TOO, AND THAT MOVED A TEST ORDERING.**
 `appconfig_persistence.js` calls `persistence.stop()` without awaiting it, and
@@ -1287,9 +1321,13 @@ absorb it.)
 and `at` in opposite orders from ONE origin — the query is
 `lag(at) over (partition by origin, kind, key order by seq) > at`. It found 18
 across a whole dispatched run, one of them a session.
-`tests/minted_flush_order.js` pins it with a store that commits when told to;
-four mutants caught, two recorded as equivalent (both clear the marker in a
-branch the waiter's own clear makes redundant).
+`tests/minted_flush_order.js` pins the same-key wait with a store that commits
+when told to, and that five disjoint keys become one write that starts while
+the head is still held. `tests/cluster_barrier_throughput.js` pins that a
+later flush finishing first does not move the commit position past the older
+open take. Four mutants of the same-key wait were caught when it was written,
+two recorded as equivalent (both clear a marker in a branch the waiter's own
+clear makes redundant).
 
 ### SEVERAL CONTAINERS, NOT ONLY SEVERAL PROCESSES (2026-09-14, #46)
 
@@ -1302,8 +1340,9 @@ containers against this store need, and three things changed here for it:
   node's rows for ever.
 * **`withTransaction()` checks the cluster fence first** when `cluster/cluster.js`
   has installed one — the node's membership, and any lease the write needs, under
-  `FOR SHARE` — and a fenced transaction calls back into cluster.js, which exits
-  the process or fails the one write.
+  `FOR SHARE` of a `sts_cluster_locks` row (#770, `cluster/CLAUDE.md`) — and a
+  fenced transaction calls back into cluster.js, which exits the process or
+  fails the one write.
 * **The pull no longer stops at a hole.** It applies everything visible above
   `highest`, remembers each hole, re-asks for them with `changesAt()` on every
   pull, and gives one up after ten minutes (`STS-STORE-0049`) instead of four
@@ -2147,8 +2186,10 @@ where it was:
   A live holder is waited out for 35 s — a crashed one's claim lapses in
   that time — and after that the process keeps a random origin
   (`STS-STORE-0060`), which is safe because the fan-in reads it. **Every
-  transaction checks the claim** (`checkOriginFence()`, under `FOR SHARE`,
-  before the cluster fence), so a process paused past its claim finds its
+  transaction checks the claim** (`checkOriginFence()`, under `FOR SHARE` of
+  its `sts_cluster_locks` row, #770, `cluster/CLAUDE.md`, before the cluster
+  fence; a lapse is extended by a bounded autocommit on the liveness
+  connection), so a process paused past its claim finds its
   writes refused rather than overwriting its successor's rows; outside a
   cluster it exits (`STS-STORE-0061`), inside one the cluster's fail-stop
   does. **LAPSED IS NOT TAKEN (2026-09-21)**: ownership is the RESERVATION
@@ -2738,8 +2779,10 @@ over, like every other index row. No migration: rows written before version
 ## A MINTED FLUSH IS ONE STATEMENT (2026-10-22, #820)
 
 **Why.** On 8081 every writing request holds its answer until its writes
-commit (#351), and a request worker runs one minted flush at a time. The
-`FLUSH minted` phase lines (#858) put `saveMinted()` at 23 ms at the median
+commit (#351). The lines below were read while a request worker ran one
+minted flush at a time. Since #877 two flushes of keys the other does not
+hold may overlap, and a response waits for the save that holds its own keys.
+The `FLUSH minted` phase lines (#858) put `saveMinted()` at 23 ms at the median
 for about ten rows, while `pg_stat_statements` counted about 5 ms of
 statements. The rest was about eleven round trips (BEGIN, the fence, the
 lock, seven writes, the change log, COMMIT), each an event-loop turn on a
@@ -2753,7 +2796,8 @@ parameters are the table `MINTED_FLUSH_LAYOUT`, and the text takes its `$n`
 from that table. Every parameter is present in every flush, so there is
 one statement text. The order inside it is made of data dependencies:
 
-1. `fence`: the origin claim and the leases FOR SHARE, and the membership.
+1. `fence`: the origin's and the leases' rows of `sts_cluster_locks` FOR
+   SHARE (#770, `cluster/CLAUDE.md`), and the membership.
 2. `lk`: every existing row locked FOR UPDATE in (handle, realm, key)
    order. `ok` reads its count, so it is read to the end.
 3. Every write reads `ok`; the side tables and the change log read `done`
@@ -3560,6 +3604,13 @@ no run of three ASCII letters or digits keeps `position()` — pg_trgm has no
 trigram for it. **On MariaDB a needle is still a bounded scan** of the
 parent: no substring index exists there (`mariadb/CLAUDE.md`).
 `ldap/CLAUDE.md` has the measurements and the page's rule.
+
+**`sts_sessions_subject_band` is the eighth index (#876), and it is not a
+schema version.** `session.overCapRows` groups one base64url first character
+of `subject_key` per sweep, in `COLLATE "C"`, which `sts_sessions_subject`
+cannot serve. The upgrade is still `schema.sql` run again as the owner;
+`sts_app` cannot build it and the driver refuses (`STS-STORE-0029`) until
+then. Why the sweep asks a band is in `authn/CLAUDE.md`.
 
 **`sts_sessions_surface` is the seventh index (#754, schema version 22).**
 `session.surface` — a hosted surface's relying-party sessions, which

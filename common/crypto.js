@@ -9625,16 +9625,17 @@ const ARGON2_LIMITS = Object.freeze({
   passes: Object.freeze({ min: 2, max: 16, dflt: 2 }),
   parallelism: Object.freeze({ min: 1, max: 16, dflt: 1 })
 });
-// THE DEFAULT IS THE PRE-#847 SCRYPT, 2^15 WITH r=8 AND p=1 (rcbj,
-// 2026-10-22, #820): every password already stored is that, so a default of
-// anything else rehashes the whole directory at its next sign-ins — on 8081
-// that was every sign-in of the load. It is below OWASP's table, which is
-// why OWASP's pairs are no longer a floor here; making OWASP's minimum the
-// default again is #872.
+// THE DEFAULT IS SCRYPT AT 2^15, r=8, p=3 (#872, 2026-11-11): one of OWASP's
+// pairs. #889 priced that pair at about 250 ms against the previous 2^15 p=1
+// at about 97 ms; 2^17 p=1 was measured at about 460 ms and was not chosen.
+// p's field minimum stays 1, so a stored hash at p=1 still verifies.
+// `passwordHashSpec()` raises a NEW write to the table. A directory that
+// already holds the cheaper hash pays one extra hash at the next verified
+// sign-in, and only where that hash is weaker (`credentials.ts`).
 const SCRYPT_PASSWORD_LIMITS = Object.freeze({
   logN: Object.freeze({ min: 13, max: 20, dflt: 15 }),
   r: Object.freeze({ min: 8, max: 16, dflt: 8 }),
-  p: Object.freeze({ min: 1, max: 16, dflt: 1 })
+  p: Object.freeze({ min: 1, max: 16, dflt: 3 })
 });
 // OWASP's scrypt table, by log2 N: the least p it lists at r=8. 2^17 and up
 // need p=1.
@@ -9683,8 +9684,8 @@ function argon2Available() {
  * ceilings above: the algorithm and its parameters.
  *
  * argon2id, when asked for, where this runtime has it, and scrypt otherwise
- * (said once, STS-KEYS-0155). An absent spec is scrypt at 2^15, r=8, p=1
- * (#820; #872 makes OWASP's minimum the default).
+ * (said once, STS-KEYS-0155). An absent spec is scrypt at 2^15, r=8, p=3
+ * (#872).
  *
  * @param spec - `{ algorithm, memory, passes, parallelism }` or
  *   `{ algorithm: 'scrypt', logN, r, p }`
@@ -9721,10 +9722,10 @@ function passwordHashSpec(spec) {
   const S = SCRYPT_PASSWORD_LIMITS;
   const logN = clampInt(asked.logN, S.logN.min, S.logN.max, S.logN.dflt);
   const r = clampInt(asked.r, S.r.min, S.r.max, S.r.dflt);
-  // p IS TAKEN AS ASKED (2026-10-22, #820): OWASP's floor
-  // (`scryptOwaspMinP()`) is off while the default is below it; #872 puts
-  // it back.
-  const p = clampInt(asked.p, S.p.min, S.p.max, S.p.dflt);
+  // Raised to OWASP's table for this N (#872). The field minimum stays 1,
+  // so a stored hash below the table still verifies; a new hash does not.
+  const askedP = clampInt(asked.p, S.p.min, S.p.max, S.p.dflt);
+  const p = Math.min(S.p.max, Math.max(askedP, scryptOwaspMinP(logN)));
   log.debug("Leaving passwordHashSpec(). scrypt.");
   return { algorithm: 'scrypt', logN: logN, r: r, p: p };
 }
@@ -9952,6 +9953,40 @@ function storedSecretMatchesSpec(stored, spec) {
       held.keylen === SCRYPT_KEYLEN;
   log.debug("Leaving storedSecretMatchesSpec(). " + same);
   return same;
+}
+
+/**
+ * Says whether a stored password hash costs strictly less than a new one
+ * under this spec, or names a different algorithm.
+ *
+ * Cost is N·r·p for scrypt and memory·passes for argon2id. An equal cost
+ * with different parameters is not weaker, and an unreadable value is not
+ * weaker. The upgrade on sign-in asks this when the parameters differ
+ * (#872): a stronger hash is not rewritten down, and a change of algorithm
+ * still is.
+ *
+ * @param stored - the stored form
+ * @param spec - the policy's hash spec
+ * @returns true when hashing again would raise the cost, or change algorithm
+ */
+function storedSecretIsWeaker(stored, spec) {
+  log.debug("Entering storedSecretIsWeaker().");
+  const held = storedSecretParameters(stored);
+  const want = passwordHashSpec(spec);
+  if (!held) {
+    log.debug("Leaving storedSecretIsWeaker(). Unreadable.");
+    return false;
+  }
+  if (held.algorithm !== want.algorithm) {
+    log.debug("Leaving storedSecretIsWeaker(). Another algorithm.");
+    return true;
+  }
+  const weaker = want.algorithm === 'argon2id'
+    ? held.memory * held.passes < want.memory * want.passes
+    : Math.pow(2, held.logN) * held.r * held.p <
+      Math.pow(2, want.logN) * want.r * want.p;
+  log.debug("Leaving storedSecretIsWeaker(). " + weaker);
+  return weaker;
 }
 
 /**
@@ -18507,6 +18542,7 @@ module.exports = {
   hashPasswordAsync: hashPasswordAsync,
   storedSecretParameters: storedSecretParameters,
   storedSecretMatchesSpec: storedSecretMatchesSpec,
+  storedSecretIsWeaker: storedSecretIsWeaker,
   // --- section 8: raw signatures and TPM 2.0 (#40) ---
   RAW_SIGNATURE_FAMILIES: RAW_SIGNATURE_FAMILIES,
   publicKeyFromSpki: publicKeyFromSpki,

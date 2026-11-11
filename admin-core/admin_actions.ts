@@ -5912,6 +5912,43 @@ class AdminActions {
       syncConfidential = true;
       changes.splice(changes.indexOf(confidentialChange), 1);
     }
+    // #825: a hosted session bound that this save would change is checked
+    // BEFORE any attribute is written. A later refusal must not leave the
+    // earlier fields of the same post already stored.
+    const config = this.deps.config;
+    const confirm = body && body.confirm;
+    const boundRefusals = [];
+    changes.forEach(function (change) {
+      const name = change.attribute;
+      if (modes[name] !== 'set' ||
+          !applications.isHostedSessionClient(identifier) ||
+          !applications.hostedBoundAttribute(name)) {
+        return;
+      }
+      const current = valuesOf(entry.fields[name]);
+      const wanted = change.values;
+      const same = current.length === wanted.length &&
+        current.every(function (one) { return wanted.indexOf(one) >= 0; });
+      if (same) {
+        return;
+      }
+      const refusal = applications.hostedSessionBoundRefusal(identifier,
+        name, wanted[0] || '', confirm, config);
+      if (refusal) {
+        boundRefusals.push(refusal);
+      }
+    });
+    if (boundRefusals.length) {
+      const code = boundRefusals.some(function (one) {
+        return one.code === 'STS-REG-0369';
+      }) ? 'STS-REG-0369' : 'STS-REG-0368';
+      log.debug("Leaving AdminActions.updateApplicationFields(). The " +
+                "hosted session bound was refused.");
+      return this.refused(code, { ok: false,
+        errors: boundRefusals.map(function (one) {
+          return one.errors[0];
+        }) });
+    }
     const changed = [];
     const errors = [];
     changes.forEach(function (change) {
@@ -5945,7 +5982,8 @@ class AdminActions {
           return;
         }
         const set = applications.updateApplication(identifier, {
-          mode: 'set', attribute: name, value: wanted[0] || '' });
+          mode: 'set', attribute: name, value: wanted[0] || '',
+          confirm: confirm });
         if (set.ok) {
           changed.push(name);
         } else {
@@ -6963,7 +7001,8 @@ class AdminActions {
       const result = applications.updateApplication(identifier, {
         mode: action,
         attribute: String(body.attribute || ''),
-        value: body.value === undefined ? '' : String(body.value)
+        value: body.value === undefined ? '' : String(body.value),
+        confirm: body.confirm
       });
       log.debug("Leaving AdminActions.applicationsAction(). " + action + " " +
                 (result.ok ? 'ok' : 'refused') + ".");

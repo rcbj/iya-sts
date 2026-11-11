@@ -30,6 +30,7 @@ const minted = require('../persistence/persistence_minted');
 const tiers = require('../persistence/tiers');
 const authn = require('../authn/authn');
 const sessionWindow = require('../authn/session_window');
+const sessionQueries = require('../persistence/session_queries');
 
 const log = require('bunyan').createLogger({ name: 'session_window',
   level: process.env.LOG_LEVEL || 'info' });
@@ -1126,6 +1127,38 @@ function cooledIndexCase(t) {
   log.debug("Leaving cooledIndexCase().");
 }
 
+function subjectBandCase(t) {
+  log.debug("Entering subjectBandCase().");
+  t.log.info('the shed walks one base64url band per sweep (#876)');
+  const alphabet = '-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_' +
+    'abcdefghijklmnopqrstuvwxyz';
+  let walk = '';
+  for (let i = 0; i < alphabet.length; i++) {
+    const band = sessionQueries.subjectCapBand(i * 30000, 30);
+    walk += band.lo;
+    t.equal(band.hi, String.fromCharCode(band.lo.charCodeAt(0) + 1),
+            'band ' + band.lo + ' ends at the next code point');
+  }
+  t.equal(walk, alphabet,
+          'sixty-four sweeps visit each base64url character once');
+  const again = sessionQueries.subjectCapBand(30000 * 64, 30);
+  t.equal(again.lo, '-', 'the sixty-fifth sweep is the hyphen again');
+  const pg = sessionQueries.build('session.overCapRows',
+    ['r', '-', '.', 32, 100]);
+  const maria = sessionQueries.build('session.overCapRows',
+    ['r', '-', '.', 32, 100], 'mariadb');
+  t.check(/COLLATE "C" >= \$2/.test(pg.text) &&
+          /COLLATE "C" < \$3/.test(pg.text) &&
+          /GROUP BY subject_key COLLATE "C"/.test(pg.text) &&
+          !/COLLATE/.test(maria.text) &&
+          /subject_key >= \?/.test(maria.text) &&
+          JSON.stringify(pg.values) === '["r","-",".",32,100]',
+          'PostgreSQL bounds the aggregate with COLLATE "C" and MariaDB ' +
+          'uses the same range without it',
+          JSON.stringify({ pg: pg.values, maria: maria.text.slice(0, 80) }));
+  log.debug("Leaving subjectBandCase().");
+}
+
 function shedErrorCase(t) {
   log.debug("Entering shedErrorCase().");
   t.log.info('on: a failed shed load ends nobody for that subject');
@@ -1134,8 +1167,8 @@ function shedErrorCase(t) {
   const older = 'digest-older';
   const newer = 'digest-newer';
   const reads = [];
-  // 2026-10-21: the shed asks the store for the over-cap subjects alone,
-  // with the cap and the sweep's budget, and pages nobody else.
+  // #876: the shed asks one subject-key band, with the cap and the sweep's
+  // budget, and pages nobody else.
   let overCapArgs = null;
   let pagedEverySession = false;
   queryFn = function (name, args) {
@@ -1170,15 +1203,23 @@ function shedErrorCase(t) {
     return emptyAnswer(name);
   };
   try {
+    const sweepS = Number(config.value('authn.sessionSweepS'));
+    const before = sessionQueries.subjectCapBand(Date.now(), sweepS);
     const ended = runSweep();
+    const after = sessionQueries.subjectCapBand(Date.now(), sweepS);
+    const lo = overCapArgs && overCapArgs[1];
+    const hi = overCapArgs && overCapArgs[2];
     t.equal(ended && ended.ended, 0, 'a failed load ends nobody');
     t.equal(reads.indexOf(newer), -1, 'the later live row is not read');
     t.equal(audits('session.end', 'shed-newer').length, 0,
             'the later row has no session.end');
-    t.check(!!overCapArgs && overCapArgs[1] === 1 && overCapArgs[2] >= 1 &&
+    t.check(!!overCapArgs && overCapArgs[3] === 1 &&
+            overCapArgs[4] >= 1 &&
+            (lo === before.lo || lo === after.lo) &&
+            hi === String.fromCharCode(String(lo).charCodeAt(0) + 1) &&
             !pagedEverySession,
-            'the shed asks for the over-cap subjects alone, with the cap ' +
-            'and its budget, and pages no other session (2026-10-21)',
+            'the shed asks one subject-key band, with the cap and its ' +
+            'budget, and pages no other session (#876)',
             JSON.stringify({ args: overCapArgs, paged: pagedEverySession }));
   } finally {
     config.clearOverride('authn.maxSessionsPerSubject');
@@ -1301,6 +1342,7 @@ async function onHalf(t) {
   zeroWaitCase(t);
   await bridgeWaitCase(t);
   cooledIndexCase(t);
+  subjectBandCase(t);
   shedErrorCase(t);
   await warmCase(t);
   middlewareCase(t);

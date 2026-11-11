@@ -1992,6 +1992,19 @@ class ApplicationsPage {
                              finds: (state && state.finds) || {},
                              // #488: the scope policy's warnings, by field.
                              fieldWarnings: config.fieldWarnings || {} }) +
+        // #825: the three hosted surfaces. The checkbox posts confirm=1.
+        // An unchanged bound does not need it; a changed one does, and the
+        // server refuses the whole save without it. The list matches
+        // HOSTED_SESSION_CLIENTS in common/applications.js. This bundle
+        // cannot require that module.
+        (group.id === 'oauth' &&
+         ApplicationsPage.hostedSessionClient(row.identifier)
+          ? kit.note(t.html('consoleApplications.a3.hostedBoundNote')) +
+            '<div class="formrow"><label>' +
+            '<input type="checkbox" name="confirm" value="1"> ' +
+            t.html('consoleApplications.a3.hostedBoundConfirm') +
+            '</label></div>'
+          : '') +
         saveButton(t.text('consoleApplications.a2.saveGroup',
                           { label: group.label })) + '</form>');
       // SAML'S TWO FAMILIES ARE DISTINCT VIEWS (#556): shared attributes
@@ -6007,10 +6020,25 @@ class ApplicationsPage {
 
   // AN APPLICATION'S TOKEN LIFETIMES (rcbj, 2026-10-01): the realm's Token
   // lifetimes page, for one application, at the head of its OAuth / OpenID
-  // Connect configuration tab. The four overrides were already fields on
-  // that tab (`oauthAccessTokenTtlS` and three more); this draws the value
-  // IN FORCE for each, where it came from, and the realm page's warnings
-  // over the application's own values. Clock skew stays realm-wide.
+  // Connect configuration tab. The four token overrides were already fields
+  // on that tab; the maximum authentication age (#825) is drawn with them
+  // and is not a row of /admin/token-lifetimes. This draws the value IN
+  // FORCE for each, where it came from, and the realm page's warnings over
+  // the application's own values. Clock skew stays realm-wide.
+  //
+  // The three hosted clients are recognised here by identifier. The same
+  // list is HOSTED_SESSION_CLIENTS in common/applications.js.
+  /**
+   * Whether the application is the console, the portal or reports.
+   *
+   * @param identifier - the application's identifier
+   * @returns whether it keeps a hosted session bound
+   */
+  static hostedSessionClient(identifier) {
+    return ['sts-admin-console', 'sts-user-portal', 'sts-report']
+      .indexOf(String(identifier || '')) >= 0;
+  }
+
   /**
    * Draws the token lifetimes in force for an application, with the realm
    * page's warnings.
@@ -6036,8 +6064,11 @@ class ApplicationsPage {
           (one.source === 'application'
             ? '<span class="state-valid">' +
               t.html('consoleApplications.a3.thisApplicationAttr') + '</span>'
-            : '<span class="state-none">' +
-              t.html('consoleApplications.a3.theRealmWord') + '</span>') +
+            : one.source === 'shipped'
+              ? '<span class="state-valid">' +
+                t.html('consoleApplications.a3.shippedBound') + '</span>'
+              : '<span class="state-none">' +
+                t.html('consoleApplications.a3.theRealmWord') + '</span>') +
           '</td><td>' +
           kit.esc(kit.humanSeconds(one.realmValue)) + '</td><td>' +
           '<code>' + kit.esc(one.attribute) + '</code></td></tr>';
@@ -6046,7 +6077,10 @@ class ApplicationsPage {
         byKey['oauth2.accessTokenTtlS'].value,
         byKey['oauth2.refreshTokenTtlS'].value, state.skew, t) +
       kit.note(t.html('consoleApplications.a3.lifetimesNote',
-                      { skew: kit.humanSeconds(state.skew) }));
+                      { skew: kit.humanSeconds(state.skew) })) +
+      (ApplicationsPage.hostedSessionClient(json.identifier)
+        ? kit.note(t.html('consoleApplications.a3.hostedBoundNote'))
+        : '');
     return html;
   }
 

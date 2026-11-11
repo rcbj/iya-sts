@@ -18,7 +18,10 @@
 //   T1. the shared rate-limit window count and clear go to that pool;
 //   T2. the risk engine's counts, assessments (recorded, settled, amended),
 //       subjects, session context and failures go to it;
-//   T3. a flush of minted rows, and the risk engine's action claim, do not.
+//   T3. a flush of minted rows, and the risk engine's action claim, do not;
+//   T4. a directory batch passed `{ tally: true }` does (#878); one that is
+//       not stays on the durable pool. The batch is an application's
+//       authentication counts, and nothing else.
 //
 // A `pg` double records the connection options each statement ran on
 // (`tests/tools/store_double.js`).
@@ -186,12 +189,48 @@ async function run(t) {
           JSON.stringify(durable.map(function (one) {
             return (one.options || 'sync') + ' ' + one.sql.slice(0, 40);
           })));
+
+  statements.length = 0;
+  const directoryChange = {
+    upserts: [{ realm: 'default', key: 'cn=app', entry: { dn: 'cn=app' },
+                json: '{}', base: null }],
+    deletes: [],
+    removedRealms: [],
+    releaseClaims: []
+  };
+  await settle(function () {
+    return driver.saveDirectory(directoryChange, { tally: true });
+  });
+  const tallyDir = statements.filter(function (one) {
+    return /sts_ldap_entries/.test(one.sql);
+  });
+  t.check(tallyDir.length > 0 && tallyDir.every(function (one) {
+    return one.options === ASYNC;
+  }), 'T4. a directory batch that is only counts commits asynchronously',
+          JSON.stringify(statements.map(function (one) {
+            return (one.options || 'sync') + ' ' + one.sql.slice(0, 60);
+          })));
+
+  statements.length = 0;
+  await settle(function () {
+    return driver.saveDirectory(directoryChange);
+  });
+  const durableDir = statements.filter(function (one) {
+    return /sts_ldap_entries/.test(one.sql);
+  });
+  t.check(durableDir.length > 0 && durableDir.every(function (one) {
+    return one.options !== ASYNC;
+  }), 'T4. a directory batch without the tally flag stays durable',
+          JSON.stringify(durableDir.map(function (one) {
+            return (one.options || 'sync') + ' ' + one.sql.slice(0, 60);
+          })));
   log.debug("Leaving run().");
 }
 
 module.exports = {
   name: 'postgres_tally_commit',
-  describe: 'rate-limit windows and risk tallies commit with ' +
-            'synchronous_commit off; records stay durable at commit (#820)',
+  describe: 'rate-limit windows, risk tallies and application counts ' +
+            'commit with synchronous_commit off; records stay durable (#820, ' +
+            '#878)',
   run: run
 };

@@ -373,7 +373,7 @@ model StsMinted {
 // `session.surface`, which `Authn.endRelyingPartySessions()` asks for
 // every signal a surface receives. Partial for the others' reason: a
 // sign-on session has no surface, and those are nearly every row.
-@table(#{name: "sts_sessions", head: "CREATE TABLE IF NOT EXISTS", constraints: #[#{at: 15, text: "PRIMARY KEY (realm, key)"}], driver: #{order: 28}, indexes: #[#{name: "sts_sessions_subject", text: "CREATE INDEX IF NOT EXISTS sts_sessions_subject ON sts_sessions (realm, subject_key, last_seen_at) WHERE chosen AND subject_key <> ''", driver: #{order: 29}}, #{name: "sts_sessions_username", text: "CREATE INDEX IF NOT EXISTS sts_sessions_username ON sts_sessions (realm, username_key) WHERE username_key <> ''", driver: #{order: 30}}, #{name: "sts_sessions_expires", text: "CREATE INDEX IF NOT EXISTS sts_sessions_expires ON sts_sessions (realm, expires_at) WHERE expires_at IS NOT NULL", driver: #{order: 31}}, #{name: "sts_sessions_parent", text: "CREATE INDEX IF NOT EXISTS sts_sessions_parent ON sts_sessions (realm, parent_key) WHERE parent_key <> ''", driver: #{order: 32}}, #{name: "sts_sessions_credential", text: "CREATE INDEX IF NOT EXISTS sts_sessions_credential ON sts_sessions (realm, credential_key) WHERE credential_key <> ''", driver: #{order: 33}}, #{name: "sts_sessions_partner", text: "CREATE INDEX IF NOT EXISTS sts_sessions_partner ON sts_sessions (realm, partner_relationship) WHERE partner_relationship <> ''", driver: #{order: 34}}, #{name: "sts_sessions_surface", text: "CREATE INDEX IF NOT EXISTS sts_sessions_surface ON sts_sessions (realm, rp_surface) WHERE rp_surface <> ''", driver: #{order: 35}}]})
+@table(#{name: "sts_sessions", head: "CREATE TABLE IF NOT EXISTS", constraints: #[#{at: 15, text: "PRIMARY KEY (realm, key)"}], driver: #{order: 28}, indexes: #[#{name: "sts_sessions_subject", text: "CREATE INDEX IF NOT EXISTS sts_sessions_subject ON sts_sessions (realm, subject_key, last_seen_at) WHERE chosen AND subject_key <> ''", driver: #{order: 29}}, #{name: "sts_sessions_username", text: "CREATE INDEX IF NOT EXISTS sts_sessions_username ON sts_sessions (realm, username_key) WHERE username_key <> ''", driver: #{order: 30}}, #{name: "sts_sessions_expires", text: "CREATE INDEX IF NOT EXISTS sts_sessions_expires ON sts_sessions (realm, expires_at) WHERE expires_at IS NOT NULL", driver: #{order: 31}}, #{name: "sts_sessions_parent", text: "CREATE INDEX IF NOT EXISTS sts_sessions_parent ON sts_sessions (realm, parent_key) WHERE parent_key <> ''", driver: #{order: 32}}, #{name: "sts_sessions_credential", text: "CREATE INDEX IF NOT EXISTS sts_sessions_credential ON sts_sessions (realm, credential_key) WHERE credential_key <> ''", driver: #{order: 33}}, #{name: "sts_sessions_partner", text: "CREATE INDEX IF NOT EXISTS sts_sessions_partner ON sts_sessions (realm, partner_relationship) WHERE partner_relationship <> ''", driver: #{order: 34}}, #{name: "sts_sessions_surface", text: "CREATE INDEX IF NOT EXISTS sts_sessions_surface ON sts_sessions (realm, rp_surface) WHERE rp_surface <> ''", driver: #{order: 35}}, #{name: "sts_sessions_subject_band", text: "CREATE INDEX IF NOT EXISTS sts_sessions_subject_band ON sts_sessions (realm, subject_key COLLATE \"C\") WHERE chosen AND subject_key <> ''", driver: #{order: 85}}]})
 model StsSessions {
   @column(#{sql: "text", clauses: "NOT NULL", required: true, primaryKey: true})
   realm: string;
@@ -639,7 +639,11 @@ model StsClusterSecrets {
 // `sts_cluster_locks` — A NAMED LOCK AS A ROW (#677, schema version 30).
 // The portable cluster statements lock a row here FOR UPDATE where the
 // native ones take `pg_advisory_xact_lock`: a row lock ends with its
-// transaction on every engine, and MariaDB's GET_LOCK() does not.
+// transaction on every engine, and MariaDB's GET_LOCK() does not. Since
+// #770 every engine's fence share-locks a row here too, named with the
+// lease token or the origin reservation. The sentence `postgres/schema.sql`
+// carries is the comment in `schema.template.sql`, which is what the
+// model emits.
 @table(#{name: "sts_cluster_locks", head: "CREATE TABLE IF NOT EXISTS", driver: #{order: 49}})
 model StsClusterLocks {
   @column(#{sql: "text", clauses: "PRIMARY KEY", required: true, primaryKey: true})

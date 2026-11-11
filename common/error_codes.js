@@ -18750,6 +18750,13 @@ const CODES = [
       'not be fetched from that cell over the inter-cell channel (#1291).',
     spec: 'HTTP 503 {error: temporarily_unavailable} at ' +
       '/users/{rid}/did.json' },
+  { code: 'STS-VC-0178',
+    summary: 'A key a wallet proved for a person\'s published DID was ' +
+      'refused because it is already enrolled for that person as a ' +
+      'sign-in key (#775). The document would have been a public copy ' +
+      'of a sign-in key. A published DID takes a key that is not ' +
+      'enrolled for sign-in.',
+    spec: 'HTTP 400 refusal at /authn-api/wallet' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',
@@ -27398,6 +27405,23 @@ const CODES = [
       'error code. Both are returned on every page that lists the ' +
       'permission, and a code is recorded rather than sent. At a create ' +
       'and at an attribute add (#1426).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  // #825: the console, the portal and the reports application keep a
+  // session bound of their own. A change is confirmed; a clear or a 0 is
+  // refused, so emptying the attribute cannot follow a longer realm.
+  { code: 'STS-REG-0368',
+    summary: 'A change to the admin console, the user portal or the ' +
+      'reports application\'s own session bound (oauthMaxAuthAgeS, ' +
+      'oauthRefreshTokenTtlS or oauthRefreshIdleSeconds) was not ' +
+      'confirmed. The save is refused and nothing is written (#825).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0369',
+    summary: 'The admin console, the user portal or the reports ' +
+      'application\'s own session bound was cleared, or set to 0 or to a ' +
+      'value the setting does not accept. Those three keep a positive ' +
+      'number, so a longer realm setting cannot lengthen them. An ' +
+      'attribute removed outside this door is restored at the next start ' +
+      '(#825).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +

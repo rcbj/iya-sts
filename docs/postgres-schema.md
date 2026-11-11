@@ -586,7 +586,7 @@ is not a column: `key` is the same keyed digest as the `sts_minted` row's.
 | `credential_key` | text | digest (SHA-256, truncated) | for an API client's session (SCIM, the SPIRE Server API, …), a fingerprint of the scheme and the client that authenticated, never the credential; `''` otherwise |
 | `partner_relationship` | text | clear | the federation relationship id, for a session that began at a federated partner; `''` otherwise |
 
-Primary key `(realm, key)`; seven partial indexes (see *Indexes*). A row is
+Primary key `(realm, key)`; eight partial indexes (see *Indexes*). A row is
 written only where the service holds a digest key.
 
 ### `sts_minted_index`: the index rows of on-demand stores
@@ -833,14 +833,15 @@ login name, which is in the clear.
 | `sts_minted_index_key` | `sts_minted_index` | `handle`, `realm`, `key` | B-tree | a row's own index rows, to replace or delete them with the row |
 | `sts_minted_index_sort` | `sts_minted_index` | `handle`, `realm`, `sort_at` descending, `key` descending | B-tree; partial: only sort rows (`sort_at` set) | the newest rows of a store, a page at a time (the console's token lists) |
 
-### `sts_sessions` (7)
+### `sts_sessions` (8)
 
-All seven are B-trees and partial: each holds only the sessions for which
+All eight are B-trees and partial: each holds only the sessions for which
 its question can be asked, which is a small share of all sessions.
 
 | Index | Over | Condition | What it answers |
 |---|---|---|---|
 | `sts_sessions_subject` | `realm`, `subject_key`, `last_seen_at` | chosen sessions with a subject | one person's sessions, oldest first (sign out everywhere, the per-person cap) |
+| `sts_sessions_subject_band` | `realm`, `subject_key` with collation `C` | chosen sessions with a subject | one sweep's share of the per-person cap: subject keys whose first character is one base64url character (#876) |
 | `sts_sessions_username` | `realm`, `username_key` | a username is set | the sessions of a username (the console's search, a password change) |
 | `sts_sessions_expires` | `realm`, `expires_at` | an expiry is set | the sessions that have expired, for the sweep |
 | `sts_sessions_parent` | `realm`, `parent_key` | the session derives from another | the relying-party sessions that end with a sign-on session |

@@ -18,11 +18,14 @@
 //      base, the cap), the document's address, type and no-store;
 //   2. `wallet` custody END TO END over the sign-in surface: a session, the
 //      wallet's round trip with `did_act=publish`, the DID signing its
-//      person in resolved from the realm's own history (nothing fetched);
+//      person in resolved from the realm's own history (nothing fetched).
+//      A key already enrolled for sign-in is not published (STS-VC-0178,
+//      #775), and neither is that published key a second time;
 //   3. THE TWO-PROOF CHANGE: a new key with no authorization refused at the
 //      start, an "authorization" signed only by the new key refused, then
 //      the authorization by the current key and the new key's proof — a
-//      new version, the pin following it — and an added key;
+//      new version, the pin following it — and an added key. A sign-in key
+//      proved as the new key is STS-VC-0178 and leaves the authorization;
 //   4. versions and their resolution: `?versionId=`, `?versionTime=`, the
 //      resolver's didDocumentMetadata, dereferencing a versioned DID URL;
 //   5. holder binding: the metadata offers did:web only where it should,
@@ -293,6 +296,18 @@ function childMain() {
     note(!viaWeb.ok && listOf(ALICE).length === 0,
          '2c. a did:web cannot prove the key a new DID is published with',
          viaWeb.code);
+    const enrolledKey = w.holderKey('ES256');
+    await w.inRealm(function () {
+      siop.enrol(ALICE, didJwkOf(enrolledKey), 'phone', SELF,
+                 { proof: 'wallet' });
+    });
+    const ownKey = await roundTrip(alice.who, enrolledKey,
+      didJwkOf(enrolledKey), didJwkOf(enrolledKey) + '#0',
+      { enrol: '1', did_act: 'publish' });
+    note(!ownKey.ok && ownKey.code === 'STS-VC-0178' &&
+         listOf(ALICE).length === 0,
+         '2cb. a key already enrolled for sign-in is not published, ' +
+         'STS-VC-0178 (#775)', ownKey.code);
     const published = await roundTrip(alice.who, k1, didJwkOf(k1),
       didJwkOf(k1) + '#0', { enrol: '1', did_act: 'publish' });
     const aliceDids = listOf(ALICE);
@@ -307,6 +322,12 @@ function childMain() {
          'whose version 1 names the key it proved, enrolled as a proved ' +
          '(wallet) self-issued subject', published.code + ' ' +
          published.location + ' ' + JSON.stringify(A).slice(0, 400));
+    const publishedAgain = await roundTrip(alice.who, k1, didJwkOf(k1),
+      didJwkOf(k1) + '#0', { enrol: '1', did_act: 'publish' });
+    note(!publishedAgain.ok && publishedAgain.code === 'STS-VC-0178' &&
+         listOf(ALICE).length === 1,
+         '2da. that key cannot publish a second DID: the published one ' +
+         'pinned it as a sign-in key, STS-VC-0178', publishedAgain.code);
     const aliceSubject = subjectRow(ALICE, A.did) || {};
     note(JSON.stringify(aliceSubject.pinnedKeys) ===
            JSON.stringify([thumb(k1)]),
@@ -353,6 +374,20 @@ function childMain() {
          listOf(ALICE)[0].pending.change === 'rotate',
          '3c. signed as the DID with version 1\'s key, the rotation is ' +
          'authorized and waits for the new key', authorized.code);
+    const signInKey = w.holderKey('ES256');
+    await w.inRealm(function () {
+      siop.enrol(ALICE, didJwkOf(signInKey), 'laptop', SELF,
+                 { proof: 'wallet' });
+    });
+    const asNew = await roundTrip(alice.who, signInKey,
+      didJwkOf(signInKey), didJwkOf(signInKey) + '#0',
+      { enrol: '1', did_act: 'key.' + A.rid });
+    const stillPending = listOf(ALICE)[0] || {};
+    note(!asNew.ok && asNew.code === 'STS-VC-0178' &&
+         stillPending.currentVersion === 1 && stillPending.pending &&
+         stillPending.pending.change === 'rotate',
+         '3ca. a sign-in key proved as the new key is refused, ' +
+         'STS-VC-0178, and the authorization stays', asNew.code);
     const sameKey = await roundTrip(alice.who, k1, didJwkOf(k1),
       didJwkOf(k1) + '#0', { enrol: '1', did_act: 'key.' + A.rid });
     note(!sameKey.ok && sameKey.code === 'STS-VC-0170',

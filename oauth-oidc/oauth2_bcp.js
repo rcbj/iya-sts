@@ -3756,6 +3756,9 @@ function grantMembersOf(familyId, alsoJti) {
 // How long a family revoked by a replay stays revoked: as long as any member
 // minted before the revocation could still be presented. The window is the
 // family bookkeeping's own, and the client's lifetime where it is longer.
+// settingFor() rather than hostedEffective() (#825): a token already issued
+// at the client's own lifetime must stay inside the revocation mark even
+// after the realm cap is lowered.
 function familyRevocationTtlMs(clientId) {
   log.debug("Entering familyRevocationTtlMs().");
   const perClient = Number(applications.settingFor(String(clientId || ''),
@@ -4174,7 +4177,10 @@ function checkRefreshRequest(opts) {
   // PER CLIENT: the presented client's own `oauthRefreshIdleSeconds` where it
   // has one. A deployment giving a background job a long idle window and a
   // browser client a short one is the ordinary case this serves.
-  const idleSeconds = applications.settingFor(presentedClient,
+  // #825: the console, the portal and the reports application take the
+  // shorter of their own bound and the realm, and an absent bound uses the
+  // shipped number rather than a realm idle of 0.
+  const idleSeconds = applications.hostedEffective(presentedClient,
                                              'oauth2.refreshIdleSeconds',
                                              config);
   if (idleSeconds > 0 && known && known.family) {

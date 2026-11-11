@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5427** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5430** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -78,7 +78,7 @@ is an ordinary outcome.
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 85
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 155
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 60
-* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 164
+* [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 165
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 141
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 54
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
@@ -97,7 +97,7 @@ is an ordinary outcome.
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 23
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 15
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 185
+* [Registries (`STS-REG`)](#sts-reg) — 187
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 * [Reporting (`STS-REPORT`)](#sts-report) — 59
 * [Audit export (`STS-AUDIT`)](#sts-audit) — 16
@@ -4112,6 +4112,7 @@ Raised from: oid4vc/.
 | `STS-VC-0175` | The private key of a realm-custody DID could not be sealed under the key-encryption key, so nothing was published or changed (#1291). | HTTP 400 refusal at /account-api |
 | `STS-VC-0176` | A person's published DID already has the most versions one DID keeps (50), so it takes no more key changes (#1291). | HTTP 400 refusal at /account-api or /authn-api/wallet |
 | `STS-VC-0177` | The DID document of a person re-homed to another cell could not be fetched from that cell over the inter-cell channel (#1291). | HTTP 503 {error: temporarily_unavailable} at /users/{rid}/did.json |
+| `STS-VC-0178` | A key a wallet proved for a person's published DID was refused because it is already enrolled for that person as a sign-in key (#775). The document would have been a public copy of a sign-in key. A published DID takes a key that is not enrolled for sign-in. | HTTP 400 refusal at /authn-api/wallet |
 
 ## STS-SSF
 
@@ -6059,6 +6060,8 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0365` | A logo_uri, policy_uri or tos_uri (oauthLogoUri, oauthPolicyUri, oauthTosUri) is not an absolute https URL with a host and no credentials: the sign-in and consent screens draw it (OpenID Connect Registration section 2, #1300). At registration, an RFC 7592 update, a create and an attribute write. | HTTP 400 {error: invalid_client_metadata} at registration; a console or management API refusal otherwise |
 | `STS-REG-0366` | A realm's custom attribute is named as a claim of the directory attribute catalogue is (a custom birthdate, say), so it is not offered to the claim sets: the catalogue's claim would be overwritten. An attribute claim can carry it under another name (#700). | log line; the attribute is absent from every claim set |
 | `STS-REG-0367` | An oauthPermission name or description contains an operator error code. Both are returned on every page that lists the permission, and a code is recorded rather than sent. At a create and at an attribute add (#1426). | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0368` | A change to the admin console, the user portal or the reports application's own session bound (oauthMaxAuthAgeS, oauthRefreshTokenTtlS or oauthRefreshIdleSeconds) was not confirmed. The save is refused and nothing is written (#825). | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0369` | The admin console, the user portal or the reports application's own session bound was cleared, or set to 0 or to a value the setting does not accept. Those three keep a positive number, so a longer realm setting cannot lengthen them. An attribute removed outside this door is restored at the next start (#825). | none (a console or management API refusal, HTTP 400) |
 
 ## STS-DBG
 

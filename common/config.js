@@ -5258,13 +5258,17 @@ const SETTINGS = [
                  'a sign-in flow in its address waits for the writes of ' +
                  'earlier requests that carried the same, for every write ' +
                  'of a request that carried none of them, and for the ' +
-                 'front process\'s own writes; a request carrying none of ' +
-                 'them, such as a token request from a client\'s server, ' +
-                 'SCIM or a management API call with a bearer token, waits ' +
-                 'for every write answered before it. So a browser sees its ' +
-                 'own writes and every back channel\'s at once, and another ' +
-                 'browser\'s only once the workers converge. `global`: ' +
-                 'every request ' +
+                 'front process\'s own writes. A request carrying none of ' +
+                 'them, such as SCIM or a management API call with a bearer ' +
+                 'token, waits for every write answered before it. A ' +
+                 'refresh grant in a small form that names one refresh ' +
+                 'token waits for that token\'s earlier writes and for ' +
+                 'keyless writes, and not for another browser\'s. A refresh ' +
+                 'token this process did not read out of a token response ' +
+                 'counts as one of those keyless writes. So a browser sees ' +
+                 'its own writes and the keyless writes at once, and ' +
+                 'another browser\'s, and another refresh token\'s, only ' +
+                 'once the workers converge. `global`: every request ' +
                  'waits for every write answered before it, which costs ' +
                  'tens of milliseconds a request under load. `off`: no ' +
                  'request waits, and a caller may not find its own write. ' +
@@ -9019,6 +9023,29 @@ const SETTINGS = [
                  'and is measured from the last redemption rather than from ' +
                  'issuance: this one is a wall a chain cannot be refreshed ' +
                  'past however busy it is.' },
+
+  // #825: not a token lifetime, and deliberately not on
+  // /admin/token-lifetimes. The page, its OpenAPI body and its catalogs say
+  // six token settings. This one is enforced at the authorization endpoint.
+  { key: 'oauth2.maxAuthAgeS', group: 'OAuth 2.0 / OIDC per-client',
+    label: 'Maximum authentication age (s)',
+    env: 'STS_OAUTH2_MAX_AUTH_AGE_S', type: 'int', dflt: 0,
+    min: 0, max: 2592000, step: 30, runtime: true,
+    description: 'How long ago a client was authenticated, in seconds, ' +
+                 'before an authorization request must authenticate again, ' +
+                 'even when the request sends no max_age. 0, the default, ' +
+                 'adds no bound of its own, so an ordinary client is ' +
+                 'unchanged. Read on each authorization request: it does ' +
+                 'not rewrite a session already stored. The admin console ' +
+                 '(sts-admin-console), the user portal (sts-user-portal) ' +
+                 'and the reports application (sts-report) each carry ' +
+                 'their own value and take the shorter of it and ' +
+                 'authn.sessionLifetimeS, so raising this setting or the ' +
+                 'session lifetime never lengthens those three, and ' +
+                 'lowering authn.sessionLifetimeS still shortens them. A ' +
+                 'per-client override is oauthMaxAuthAgeS. This is not a ' +
+                 'token lifetime and it is not on /admin/token-lifetimes ' +
+                 '(#825).' },
 
   // The fourth is not a lifetime, and it is deliberately NOT folded into
   // `oauth2.clientAssertionSkewS` beside it: that one is how far out a CLIENT'S
@@ -13323,7 +13350,15 @@ const SETTINGS = [
                  'with a wallet. Off: nothing new is published; a DID ' +
                  'already published is still served, deactivated or not, ' +
                  'because its address is kept for good. In product mode a ' +
-                 'DID is published only on a pinned global.publicBaseUrl.' },
+                 'DID is published only on a pinned global.publicBaseUrl. ' +
+                 'A key already enrolled for sign-in is not published ' +
+                 '(#775): the wallet proves a key that is not one of the ' +
+                 'person\'s sign-in subjects, so the document is not a ' +
+                 'public copy of a sign-in key. Changing ' +
+                 'global.publicBaseUrl, or the realm\'s path, does not ' +
+                 'rewrite a DID already published; it keeps the host and ' +
+                 'path it was minted on, and stops resolving if that ' +
+                 'address no longer reaches this realm.' },
   { key: 'did.personCustody', group: 'Person DIDs',
     label: 'Who holds the private key of a person\'s DID',
     env: 'STS_DID_PERSON_CUSTODY', type: 'enum',

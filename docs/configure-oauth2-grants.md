@@ -432,18 +432,25 @@ comes back still carries the whole grant.
 | `oauth2.refreshTokenRequireDpop` / `…RequireMtls` | `false` | Requires the refresh token to be sender-constrained. |
 | `oauth2.refreshRequiresConsent` | `true` | Requires a consent record for the refresh. |
 
-**Per-client overrides.** Each application can override the lifetimes. In
+**Per-client overrides.** Each application can override the lifetimes, and
+`oauthMaxAuthAgeS` overrides `oauth2.maxAuthAgeS` (how old an authentication
+may be before the authorization endpoint asks again, even when the request
+sends no `max_age`). That setting is not on the Token lifetimes tab. In
 the console they are fields of their own names: on the new-application form,
 and on the application's **Configuration** tab, **OAuth 2.0 / OpenID Connect**
 sub-tab, under **Show every field (advanced view)**. Empty a field to take the
-realm's value again. Through the API:
+realm's value again. That does not apply to `oauthMaxAuthAgeS`,
+`oauthRefreshTokenTtlS` or `oauthRefreshIdleSeconds` on the admin console, the
+user portal or the reports application: those three keep their own bound, the
+shorter of it and the realm, and a clear or a 0 is refused. A different number
+is written when the save confirms it. Through the API:
 
 ```bash
 api applications/set '{"application":"rv-a","attribute":"oauthRefreshTokenTtlS","value":"3600"}'
 ```
 
 The override attributes are `oauthAccessTokenTtlS`, `oauthIdTokenTtlS`,
-`oauthRefreshTokenTtlS`, `oauthRefreshIdleSeconds` and
+`oauthRefreshTokenTtlS`, `oauthRefreshIdleSeconds`, `oauthMaxAuthAgeS` and
 `oauthRevokeRefreshOnLogout` (`TRUE` or `FALSE`).
 
 ## Password (development only)

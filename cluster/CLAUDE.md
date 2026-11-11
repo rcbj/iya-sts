@@ -34,8 +34,10 @@ tables
 (`persistence/CLAUDE.md`). **Since #677 every coordination statement also has a
 portable form** (`persistence/cluster_portable.js`, used on an engine that is
 not PostgreSQL or with `persistence.sqlDialect=portable`), and the join lock
-is then a row of `sts_cluster_locks`; `persistence/CLAUDE.md` says what it
-covers.
+is then a row of `sts_cluster_locks`. **Since #770 the fence's share lock is
+a row of that table on every engine**, named with the lease token or the
+origin reservation (*Leases and the fence*). `persistence/CLAUDE.md` says
+what the portable statements cover.
 
 ## rcbj's decisions (2026-09-14)
 
@@ -243,9 +245,41 @@ so the front process's heartbeat renews it.
 
 `checkFence()` runs first in every `withTransaction()`: the membership row must
 be live (unlocked — only its own heartbeat renews it), and every lease the write
-needs must still be held at its token, **under `FOR SHARE` held to COMMIT**, so a
-takeover — an UPDATE of that row — waits for the transaction and cannot land
-between the check and the write. The error carries `reason: 'node' | 'lease'`:
+needs must still be held at its token. **The share lock is a row of
+`sts_cluster_locks`, not the lease or the claim (#770).** The name is
+`fence:lease:<name>:<token>`, and an origin claim's is
+`fence:origin:<key>:<reservation>`. The check locks that row `FOR SHARE`, held
+to COMMIT, and the next statement reads the lease or the claim with no lock of
+its own. READ COMMITTED rechecks only the locked row after a wait, so locking
+the data row in the same statement would keep a stale holder; the second
+statement takes a new snapshot, and a takeover deletes the name in the same
+transaction as it changes the token, so it waits for this one or the name is
+already gone. `MINTED_FLUSH` stays one statement and fails closed the same
+way: the name it share-locks contains the token, and a takeover's delete of
+that name makes the flush's `FOR SHARE` find nothing. Takeover, release and
+leave delete the row with the data change. The heartbeat and `renewOrigin()`
+update the data rows and do not touch the lock rows.
+
+**A heartbeat that waits is a node that fences itself (#770, observed
+2026-10-20).** On single-node 8081, under LDAP password writes and sign-ins,
+the heartbeat's `UPDATE` sat `Lock:transactionid` for the membership lifetime
+and the node exited (`STS-CLUSTER-0011`) with no `STS-CLUSTER-0003` and no
+`STS-CLUSTER-0025`. Nothing in a write sleeps that long. A lapsed origin
+claim was re-asserted by an `UPDATE` of the claim row inside the write, so
+the exclusive lock lasted as long as that write waited on anything else, the
+heartbeat queued behind it, and the next fence queued behind the heartbeat.
+`reassertOrigin()` is now a short bounded autocommit on the liveness
+connection. The heartbeat's own statement has `lock_timeout` and
+`statement_timeout` — a third of the lifetime, at most two seconds — and a
+timeout rejects (`55P03`, `57014`) instead of answering that the membership
+is dead. The next beat is armed when the previous fires, whether or not it
+has settled, and a beat that has not landed is `STS-CLUSTER-0003`; past the
+lifetime it is still `STS-CLUSTER-0004`. A fenced write can still last as
+long as it waits on other row locks. That wait no longer blocks the renewal.
+A single-node deployment has nothing else to fence against, and its own
+writes no longer cost it the process.
+
+The error carries `reason: 'node' | 'lease'`:
 a lost membership, or the service lease in active-passive mode, is fatal
 (`STS-CLUSTER-0011`); a lost role lease under active-active fails that one
 write and the node stays up. `withLease(name, fn)` is how a lease-guarded write
@@ -263,9 +297,10 @@ The heartbeat, `acquireLease()`, `releaseLease()`, `leaveCluster()` and the
 persistence origin's renewal run on the postgres driver's LIVENESS connection
 (`liveQuery()` in `persistence/persistence_postgres.js`), not the pool: on
 testidp a SCIM Bulk load held all four of a worker's pooled connections past
-the origin claim's 30 s, and the worker exited. The fence checks above are
-unchanged — they run inside the write's own transaction, on its client, which
-is the only place they mean anything. `persistence/CLAUDE.md` has the rest.
+the origin claim's 30 s, and the worker exited. The fence checks run inside
+the write's own transaction, on its client, and share-lock `sts_cluster_locks`
+rather than the rows this connection updates (*Leases and the fence*, #770).
+`persistence/CLAUDE.md` has the connection.
 
 ## The two modes
 

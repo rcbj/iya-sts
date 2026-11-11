@@ -1419,8 +1419,8 @@ PASSWORD* block:
    policy**: `passwordHashSpec()` clamps a spec to `ARGON2_LIMITS` and
    `SCRYPT_PASSWORD_LIMITS` and raises scrypt's p to OWASP's table for its N
    (`scryptOwaspMinP()`: 2^17 p=1, 2^16 p=2, 2^15 p=3, 2^14 p=5, 2^13
-   p=10), whatever reached it. A spec it is not given is argon2id at the
-   minimum.
+   p=10), whatever reached it. A spec it is not given is scrypt at 2^15,
+   r=8, p=3 (#872).
 4. **`storedSecretMatchesSpec()`** says whether a stored hash is already the
    spec's algorithm with every parameter equal — what the upgrade on sign-in
    asks (3ac).
@@ -1430,22 +1430,28 @@ about **35 ms**, scrypt at 2^15 (p=3) about **250 ms** and at 2^17 (p=1) about
 **460 ms**, `hashSecret()`'s scrypt at 2^15 p=1 about **97 ms** —
 `tests/password_argon2id.js` logs the figures every run.
 
-**THE DEFAULT IS scrypt AGAIN SINCE 2026-10-22 (#820), AND ARGON2ID IS AN
-OPTION.** rcbj: "Make the default scrypt hashes, but keep argon2id as a
-supported option. Restore the original defaults for now." #847's defaults
-rehashed every stored password at its next sign-in, and on the load host 8081
-sign-in went from about 206 ms to about 387 ms. So `passwordHashSpec()` with no
-spec, and the policy's `hashAlgorithm` default, are scrypt at N=2^15, r=8, p=1
-— the pre-#847 parameters every stored password there already has — and
-`PASSWORD_HASH_ALGORITHMS` lists scrypt first. Decision 3 is half undone for
-scrypt: **the p floor in `passwordHashSpec()` is off** (p is taken as asked;
-`scryptOwaspMinP()` is still exported) and so is the policy's OWASP
-cross-field check, because the default itself is below the table and a policy
-must be able to save its own default. argon2id's floors are unchanged. The
-rehash rule is unchanged too and stays "different from the policy": a person
-whose stored hash is argon2id is hashed again with scrypt at 2^15 at their
-next verified sign-in, once, at about 100 ms. **#872 makes one of OWASP's
-pairs the default and restores both checks.**
+**THE DEFAULT IS scrypt AT 2^15, r=8, p=3 SINCE 2026-11-11 (#872), AND
+ARGON2ID STAYS SELECTABLE.** #820 had put the default back to scrypt at
+N=2^15, r=8, p=1, because #847's argon2id default rehashed every stored
+password at its next sign-in and on the load host 8081 sign-in went from
+about 206 ms to about 387 ms. #889 priced this pair at about 250 ms against
+that 97 ms hash; 2^17 with p=1 was about 460 ms and was not chosen. 8081 was
+not measured again for #872. `passwordHashSpec()` with no spec, and the
+policy's `hashAlgorithm` default, are scrypt at N=2^15, r=8, p=3, and
+`PASSWORD_HASH_ALGORITHMS` lists scrypt first. Decision 3 stands in both
+modes: `passwordHashSpec()` raises scrypt's p to OWASP's table, and the
+policy refuses a save below it. Product also applies
+`mode.minScryptParallelism()` (at least 3) before that clamp, so a profile
+saved at 2^17 with p=1 is written at p=3 there and stays p=1 in development.
+The rehash rule is a strictly lower cost within one algorithm, or a change
+of algorithm. A same-algorithm hash already at least the policy's cost is
+left, so a stronger hash is not rewritten down onto the new default, and an
+equal cost with different parameters is left too. A person whose stored hash
+is argon2id is still hashed again with scrypt at the next verified sign-in.
+The plaintext exists only then, so there is no bulk rehash, and development
+mode never verifies, so the rewrite is product-only. The one-time extra hash
+of each weaker password stays on that awaited sign-in, because the Kerberos
+keys are re-stamped inside the write.
 
 ### The four scrypt functions are one implementation with two doors
 
@@ -2190,22 +2196,38 @@ each mode guarantees, exactly:
   content encoding, is read before the barrier and handed to the worker byte
   for byte. An `authorization_code` grant naming one code the pool holds
   state for, or pruned once settled (`settledCodes`), waits for that key
-  only. An unknown code, a refresh grant, a larger, chunked or unframed
-  (HTTP/2 with no length) body is the global wait, never "wait for nothing":
-  the code may have come by `form_post`, a fragment, the front process or
-  another node. `stats().sessionBarrier.codeKeyed` counts them. 8081 before
-  it: `POST /oauth2/token` 43 → 70 ms p50 waiting once the barrier went per
+  only. An unknown code, a larger, chunked or unframed (HTTP/2 with no
+  length) body is the global wait, never "wait for nothing": the code may
+  have come by `form_post`, a fragment, the front process or another node.
+  `stats().sessionBarrier.codeKeyed` counts them. 8081 before it:
+  `POST /oauth2/token` 43 → 70 ms p50 waiting once the barrier went per
   session.
+* **`session`, a refresh grant** (2026-11-11, #879): the same small form,
+  naming one `refresh_token` of at most 12 KiB, waits for `rt:<token>`
+  whether or not this process has seen that token, and for keyless writes,
+  and not for another browser or another token. A 200 JSON token response
+  of a declared length of at most 64 KiB files its ticket under the
+  `refresh_token` it names, before those bytes are sent. A response this
+  process could not read is filed under the keyless key, so the next
+  refresh still waits for it. A token this process never saw is that key,
+  empty: no rotation of it is unfinished here, which is "unknown = old",
+  never "wait for nothing". A grant this process cannot read (more than one
+  token, a longer token, a body over 16 KiB, chunked or unframed) stays the
+  global wait. The refresh's own ticket is not a keyless write, so a
+  browser and the next refresh of a different token do not wait for it.
+  `stats().sessionBarrier.refreshKeyed` counts them. 8081 was not
+  re-measured.
 * **`session`, a request with no key, or whose pool pin the route did not
   honour** — today's global wait, unchanged. That is every other back
-  channel. A pin not
+  channel, apart from a refresh grant this process could read. A pin not
   honoured is global because `oidc_rp.ts`'s back channel pins to the worker
   holding a code ANOTHER client (the browser) wrote, which only that worker is
   sure to hold.
 * **`global`** — every request waits for every write answered before it;
   **`off`** — nobody waits.
 * **What `session` gives up**: a request does not wait for another client's
-  write, and operations (LDAP, Kerberos, SPIFFE) carry no key. **A console
+  write, a refresh of one token does not wait for a refresh of another, and
+  operations (LDAP, Kerberos, SPIFFE) carry no key. **A console
   page now sees another session's writes — a SCIM create, a token another
   client redeemed, a KDC write, another administrator's change — only after
   the workers converge** (0.5–1 s). A suite job that writes as one client and
@@ -9583,10 +9605,11 @@ form. `tests/password_policy.js` holds all of it, eight mutants caught.
 Seven more rows: `hashAlgorithm` (`stsPwdHashAlgorithm`, `argon2id` or
 `scrypt`, an `enum` row), `argon2Memory` / `argon2Iterations` /
 `argon2Parallelism` (min 19456 KiB / 2 / 1) and `scryptLogN` /
-`scryptBlockSize` / `scryptParallelism` (min 13 / 8 / 1, with OWASP's N-and-p
-table as a cross-field rule until 2026-10-22: since then the default is
-scrypt at 2^15, r=8, p=1, below that table, and the rule is off until #872 —
-see *A person's password is argon2id*, above). **They are `optional`**: a save that leaves one
+`scryptBlockSize` / `scryptParallelism` (min 13 / 8 / 1). The default is
+scrypt at 2^15, r=8, p=3 (#872). OWASP's N-and-p table is a cross-field rule
+again, and `passwordHashSpec()` raises a new scrypt hash to it in both modes.
+Product also applies `minScryptParallelism()` (at least 3) before that clamp
+(see *A person's password is argon2id*, above). **They are `optional`**: a save that leaves one
 out keeps the value in force rather than being refused, because every caller
 written before them sends the six composition rows only.
 `hashSpec(profile)` answers them in `crypto.hashPassword()`'s shape, and
@@ -9597,8 +9620,9 @@ used only when it already matches the spec). Not mode-dependent.
 `upgradeHashAsync()`, after `verify()` and `verifyAsync()`): a password the
 CURRENT stored hash has just verified — never development's unchecked yes,
 never a service account's previous password — is hashed again and written
-back where the stored hash is not the profile's algorithm AND parameters
-(rcbj's decision 4: a parameter change counts). Compare and set: the entry's
+back where the stored hash is another algorithm, or the same algorithm at a
+strictly lower cost (#847's decision 4, narrowed by #872: a same-algorithm
+hash already at least that cost is left). Compare and set: the entry's
 hash is read again with no await before the write, and a hash changed
 meanwhile is not overwritten. The hash alone is written — no `pwdHistory`, no
 `pwdChangedTime`, no credential-change signal or mail — and the Kerberos
@@ -10608,6 +10632,12 @@ reach outside it and this is the index of them:
    until a restart**, with a refusal that names the entry — which is the seeding
    rule finally having an observable consequence. — *THERE ARE THREE OF THEM
    SINCE 2026-09-06* under `applications.js`, above
+   **The console, the portal and the reports application each keep a session
+   bound of their own (#825)**: maximum authentication age, refresh lifetime
+   and refresh idle, the shorter of the application's positive number and the
+   realm's matching limit (`authn.sessionLifetimeS` for the age). The debugger
+   is not one of them. The age is enforced at authorization even when the
+   request sends no `max_age`, and it is not on `/admin/token-lifetimes`.
 2. **THE BACK CHANNEL IS A REAL HTTP REQUEST AND IS THIS REPOSITORY'S FOURTH
    OUTBOUND ONE.** It dials ITSELF, at a loopback address it computes, on a port
    it is listening on, pinned to its own TLS certificate, carrying the BROWSER'S

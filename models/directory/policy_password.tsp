@@ -88,14 +88,15 @@ model PolicyPassword {
   // upgrade). OPTIONAL: a save written before these rows existed keeps them.
   // -------------------------------------------------------------------------
   //
-  // THE DEFAULT IS scrypt AT THE PRE-#847 PARAMETERS (rcbj, 2026-10-22,
-  // #820), which every stored password already is; argon2id is selectable.
-  // OWASP's scrypt pairs are reported, not enforced, until #872 makes
-  // OWASP's minimum the default.
+  // THE DEFAULT IS scrypt AT N=2^15, r=8, p=3 (rcbj, 2026-11-11, #872),
+  // one of OWASP's pairs. argon2id stays selectable. A parallelism below
+  // the pair for the chosen cost is refused, and a stored hash that is
+  // weaker, or in another algorithm, is hashed again at the next verified
+  // sign-in.
   // -------------------------------------------------------------------------
   @attr(#{
     kind: "single",
-    what: "The algorithm a newly stored password is hashed with: scrypt (RFC 7914), the default, or argon2id (RFC 9106, the OWASP Password Storage Cheat Sheet's first choice). A stored hash names its own algorithm and parameters and keeps verifying; one that is not in this algorithm with these parameters is hashed again at the person's next verified sign-in. Client secrets, activation tokens, recovery codes and app passwords are not passwords and stay scrypt.",
+    what: "The algorithm a newly stored password is hashed with: scrypt (RFC 7914), the default, or argon2id (RFC 9106, the OWASP Password Storage Cheat Sheet's first choice). A stored hash names its own algorithm and parameters and keeps verifying. One in another algorithm, or in the same algorithm at a strictly lower cost, is hashed again at the person's next verified sign-in. A same-algorithm hash already at least this cost is left. Client secrets, activation tokens, recovery codes and app passwords are not passwords and stay scrypt.",
     field: #{key: "hashAlgorithm", type: "enum", dflt: "scrypt", optional: true, label: "Password hash algorithm"}
   })
   stsPwdHashAlgorithm?: string;
@@ -119,7 +120,7 @@ model PolicyPassword {
   stsPwdArgon2Parallelism?: int32;
   @attr(#{
     kind: "single",
-    what: "scrypt's CPU and memory cost for a newly stored password while the algorithm is scrypt, as a power of two: 15 (the default) is N=32768. OWASP's table pairs it with the parallelism: 2^17 with p=1, 2^16 with p=2, 2^15 with p=3, 2^14 with p=5, or 2^13 with p=10. The default, 2^15 with p=1, is below it.",
+    what: "scrypt's CPU and memory cost for a newly stored password while the algorithm is scrypt, as a power of two: 15 (the default) is N=32768. OWASP's table pairs it with the parallelism: 2^17 with p=1, 2^16 with p=2, 2^15 with p=3, 2^14 with p=5, or 2^13 with p=10. The default is 2^15 with p=3, one of those pairs. A parallelism below the pair for the chosen cost is refused.",
     field: #{key: "scryptLogN", type: "int", optional: true, label: "scrypt cost (log2 of N)"}
   })
   stsPwdScryptLogN?: int32;
@@ -131,7 +132,7 @@ model PolicyPassword {
   stsPwdScryptBlockSize?: int32;
   @attr(#{
     kind: "single",
-    what: "scrypt's parallelism for a newly stored password while the algorithm is scrypt. Node computes it on one thread, so a higher value costs time rather than cores; the cost's description lists the pairs OWASP accepts.",
+    what: "scrypt's parallelism for a newly stored password while the algorithm is scrypt. Node computes it on one thread, so a higher value costs time rather than cores; the cost's description lists the pairs OWASP accepts. The default is 3. A value below OWASP's pair for the chosen cost is refused.",
     field: #{key: "scryptParallelism", type: "int", optional: true, label: "scrypt parallelism (p)"}
   })
   stsPwdScryptParallelism?: int32;
