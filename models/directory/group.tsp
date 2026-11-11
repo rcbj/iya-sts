@@ -47,39 +47,39 @@ namespace IyaSts.Directory;
   ]
 })
 model Group {
-  @attr(#{what: "Named on the Groups section."})
+  @attr(#{what: "The group's name, which names the entry (cn=<name>,ou=groups) and is what a roster or a role names the group by."})
   cn?: (string)[];
-  @attr(#{what: "Named on the Groups section."})
+  @attr(#{what: "The group's members, one DN per value. Deleting a person leaves their DN here: the directory keeps no referential integrity."})
   @link(#{to: "person", cardinality: "multi", owns: false, what: "The members, by DN."})
   member?: (string)[];
-  @attr(#{what: "Named on the Groups section."})
+  @attr(#{what: "What the group is for, as an administrator wrote it."})
   description?: (string)[];
-  @attr(#{what: "Named on the Groups section."})
+  @attr(#{what: "The members of a groupOfUniqueNames group, one DN per value, read as member is."})
   @link(#{to: "person", cardinality: "multi", owns: false, what: "The members, by DN."})
   uniqueMember?: (string)[];
-  @attr(#{what: "Named on the Groups section."})
+  @attr(#{what: "The members of a posixGroup (RFC 2307), one bare username per value, read beside member."})
   memberUid?: (string)[];
-  @attr(#{what: "SCIM's externalId of a Group, which /scim/v2 stores verbatim (models/scim/scim.tsp). The People section names it on people and groups."})
+  @attr(#{kind: "single", what: "SCIM's externalId of a Group, which /scim/v2 stores verbatim (models/scim/scim.tsp). The People section names it on people and groups."})
   scimExternalId?: string;
-  @attr(#{what: "Named on the Groups section."})
+  @attr(#{kind: "single", what: "The named passkey policy this group's members are held to, or `default`. Set on the group's page or with POST /admin-api/groups/set-policy, which accepts only a policy the realm holds."})
   @link(#{to: "policy.passkey", cardinality: "single", owns: false, what: "The named passkey policy of its members."})
   stsPasskeyPolicy?: string;
-  @attr(#{what: "Named on the Groups section."})
+  @attr(#{kind: "single", what: "The named locale policy this group's members are held to, or `default`. Set on the group's page or with POST /admin-api/groups/set-policy, which accepts only a policy the realm holds."})
   @link(#{to: "policy.locale", cardinality: "single", owns: false, what: "The named locale policy of its members."})
   stsLocalePolicy?: string;
-  @attr(#{what: "Named on the Groups section."})
+  @attr(#{kind: "single", what: "The named password policy this group's members are held to, or `default`. Set on the group's page or with POST /admin-api/groups/set-policy, which accepts only a policy the realm holds."})
   @link(#{to: "policy.password", cardinality: "single", owns: false, what: "The named password policy of its members."})
   stsPasswordPolicy?: string;
-  @attr(#{what: "Named on the Groups section."})
+  @attr(#{kind: "single", what: "The named authentication policy this group's members are held to, or `default`. Set on the group's page or with POST /admin-api/groups/set-policy, which accepts only a policy the realm holds."})
   @link(#{to: "policy.authn", cardinality: "single", owns: false, what: "The named authentication policy of its members."})
   stsAuthnPolicy?: string;
-  @attr(#{what: "Named on the Groups section."})
+  @attr(#{kind: "single", what: "The named post-login policy this group's members are held to, or `default`. Set on the group's page or with POST /admin-api/groups/set-policy, which accepts only a policy the realm holds."})
   @link(#{to: "policy.postLogin", cardinality: "single", owns: false, what: "The named post-login policy of its members."})
   stsPostLoginPolicy?: string;
-  @attr(#{what: "Named on the Groups section."})
+  @attr(#{kind: "single", what: "The named attribute policy this group's members are held to, or `default`. Set on the group's page or with POST /admin-api/groups/set-policy, which accepts only a policy the realm holds."})
   @link(#{to: "policy.attributes", cardinality: "single", owns: false, what: "The named attribute policy of its members."})
   stsAttributePolicy?: string;
-  @attr(#{what: "Named on the Groups section."})
+  @attr(#{kind: "multi", what: "On a group a federation relationship's group provisioning created: that relationship's id. A later sign-in through the relationship may add people only to groups carrying its mark."})
   @link(#{to: "federationRelationship", cardinality: "multi", owns: false, what: "The relationships this group is tied to."})
   federationRelationship?: (string)[];
   @attr(#{what: "The address a notice to the group is sent to (#989). The operator's to set; nothing verifies it."})
