@@ -43,6 +43,21 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import code_members  # noqa: E402
 import egress_routes  # noqa: E402
 
+# THE TWO ARCHIVE BODY TYPES ARE SENT AS BYTES, AS octet-stream IS (fuzz run
+# 14, 2026-11-11). POST /admin-api/risk/upload takes its file as
+# application/octet-stream, application/gzip or application/zip, and
+# Schemathesis 4.33 has a serializer for the first alone: every case drawing
+# either of the other two was rejected ("Can't serialize data to
+# `application/gzip`"), so about two draws in three were thrown away, neither
+# archive type ever reached the service, and in about one run in forty the
+# filter_too_much health check failed the operation -- fuzz-9700's admin-api
+# cell, with all 70521 of its cases passing. They are a file's bytes like any
+# other, which is what the octet-stream serializer sends, so it is reused for
+# them; no health check is suppressed and no operation is excluded. These are
+# the only request media types in models/api/*.tsp with no built-in serializer.
+schemathesis.serializer.alias(["application/gzip", "application/zip"],
+                              "application/octet-stream")
+
 # STS-<SUBSYSTEM>-<NNNN>: an uppercase subsystem and four digits. The audit and
 # log form; it must never appear in a response body.
 _ERROR_CODE = re.compile(rb"STS-[A-Z]+-[0-9]{4}")
@@ -126,6 +141,28 @@ def _action(case):
     return ""
 
 
+def _request_strings(case):
+    """Every string value this request sent -- its JSON or form body, at any
+    depth, its query and its path parameters -- for code_members.leaked's
+    `echoed`: a member answering one of them whole is the caller's own input.
+    Read defensively, as the other case accessors are."""
+    out = set()
+
+    def walk(value):
+        if isinstance(value, str):
+            out.add(value)
+        elif isinstance(value, (list, tuple)):
+            for one in value:
+                walk(one)
+        elif isinstance(value, dict):
+            for one in value.values():
+                walk(one)
+
+    for name in ("body", "query", "path_parameters"):
+        walk(getattr(case, name, None))
+    return frozenset(out)
+
+
 def _record_finding(kind, case, response, detail):
     """Append one finding -- kind, realm, surface, route, status, detail and a
     short body snippet -- as a JSON line to the file named by
@@ -207,7 +244,8 @@ def no_error_code_leak(ctx, response, case):
     except (TypeError, ValueError):
         status = None
     body = _body_bytes(response).decode("utf-8", "replace")
-    found = code_members.leaked(method, path, status, body)
+    found = code_members.leaked(method, path, status, body,
+                                _request_strings(case))
     if found:
         detail = ", ".join(sorted({code + " at " + member
                                    for member, code in found}))

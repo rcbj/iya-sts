@@ -276,6 +276,26 @@ function codeMemberSection(t) {
     ["an act on a read that draws recorded failures", 1,
      { method: "POST", path: "/admin-api/audit", status: 200,
        body: JSON.stringify({ errorCode: "STS-HTTP-0011" }) }],
+    // Fuzz run 14: the caller's own text, stored and answered back whole.
+    ["a description this request sent, answered back whole", 0,
+     { method: "POST", path: "/admin-api/authorization-servers/create",
+       status: 200, echoed: ["tenant1", CODE],
+       body: JSON.stringify({ ok: true, profile: { id: "tenant1",
+         description: CODE } }) }],
+    ["but a code beside the text this request sent", 1,
+     { method: "POST", path: "/admin-api/authorization-servers/create",
+       status: 200, echoed: ["note"],
+       body: JSON.stringify({ ok: true, profile: {
+         description: "note (" + CODE + ")" } }) }],
+    ["and the same answer when the request sent something else", 1,
+     { method: "POST", path: "/admin-api/authorization-servers/create",
+       status: 200, echoed: ["tenant1"],
+       body: JSON.stringify({ ok: true, profile: { id: "tenant1",
+         description: CODE } }) }],
+    ["and an echo in a refusal still fails", 1,
+     { method: "POST", path: "/admin-api/authorization-servers/create",
+       status: 400, echoed: [CODE],
+       body: JSON.stringify({ ok: false, errors: [CODE] }) }],
     ["an answer that is not JSON", 1,
      { method: "GET", path: "/admin-api/saml2", status: 200,
        body: "<p>" + CODE + "</p>" }]
@@ -333,9 +353,58 @@ function storeProblemSection(t) {
   t.log.debug("Leaving storeProblemSection().");
 }
 
+// EVERY REQUEST BODY TYPE THE MODELS DECLARE CAN BE SENT (fuzz run 14). A
+// media type Schemathesis 4.33 has no serializer for is rejected at every
+// draw that picks it: the type is never fuzzed, and an operation offering it
+// beside one that can be sent fails filter_too_much now and then
+// (`POST /admin-api/risk/upload`, application/gzip and application/zip). The
+// built-in serializers are JSON, text, form, multipart, YAML, XML, the
+// octet-stream bytes and the four image types; anything else is aliased in
+// sts_checks.py, and this reads that file's alias call.
+const BUILT_IN_BODY_TYPES = ["application/json", "application/octet-stream",
+  "image/gif", "image/jpeg", "image/png", "image/webp"];
+
+function bodyTypeSection(t) {
+  t.log.debug("Entering bodyTypeSection().");
+  const dir = path.join(__dirname, "..", "models", "api");
+  const declared = new Set();
+  fs.readdirSync(dir).filter(function (name) {
+    return /\.tsp$/.test(name);
+  }).forEach(function (name) {
+    const text = fs.readFileSync(path.join(dir, name), "utf8");
+    (text.match(/requestBody\/content\/[a-z0-9.+-]+~1[a-z0-9.+-]+/g) || [])
+      .forEach(function (one) {
+        declared.add(one.replace("requestBody/content/", "")
+          .replace("~1", "/"));
+      });
+  });
+  const hooks = fs.readFileSync(path.join(__dirname, "schemathesis",
+    "sts_checks.py"), "utf8");
+  const call = /schemathesis\.serializer\.alias\(\[([^\]]*)\],\s*"([^"]+)"\)/
+    .exec(hooks);
+  const aliased = call ? (call[1].match(/"[^"]+"/g) || [])
+    .map(function (one) {
+      return one.slice(1, -1);
+    }) : [];
+  t.check(!!call && BUILT_IN_BODY_TYPES.indexOf(call[2]) >= 0,
+    "sts_checks.py aliases its archive types to a built-in serializer",
+    call ? call[2] : "no alias call");
+  const unsendable = Array.from(declared).filter(function (one) {
+    return BUILT_IN_BODY_TYPES.indexOf(one) < 0 && aliased.indexOf(one) < 0;
+  });
+  t.check(declared.has("application/gzip") && declared.has("application/zip"),
+    "the models still declare the two archive types the alias is for",
+    Array.from(declared).join(", "));
+  t.equal(unsendable.length, 0,
+    "every request body type in models/api/*.tsp can be sent by the fuzzer (" +
+    unsendable.join(", ") + ")");
+  t.log.debug("Leaving bodyTypeSection().");
+}
+
 function run(t) {
   t.log.debug("Entering run().");
   codeMemberSection(t);
+  bodyTypeSection(t);
   egressRouteSection(t);
   storeProblemSection(t);
 
