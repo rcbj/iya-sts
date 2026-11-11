@@ -33,14 +33,29 @@ namespace IyaSts.Directory;
   ]
 })
 model SignerTrustAnchor {
-  @attr(#{})
+  @attr(#{
+    kind: "single",
+    what: "The certificate, PEM. A third party's certificate relied on under a signature, as an encryption recipient or in an attestation may chain to it, in this realm only."
+  })
   stsTrustAnchorCertificate?: string;
-  @attr(#{})
+  @attr(#{
+    kind: "single",
+    what: "The certificate's SHA-256 fingerprint, which also names the entry."
+  })
   stsTrustAnchorFingerprint?: string;
-  @attr(#{})
+  @attr(#{
+    kind: "single",
+    what: "Who added the certificate, from the console or the management API; empty where nobody is recorded."
+  })
   stsTrustAnchorAddedBy?: string;
-  @attr(#{})
+  @attr(#{
+    kind: "single",
+    what: "anchor, intermediate or accepted: what the certificate is in a path this store builds. Absent is anchor."
+  })
   stsSignerTrustAnchorKind?: string;
-  @attr(#{})
+  @attr(#{
+    kind: "multi",
+    what: "A use the certificate is trusted for, one per value. An entry naming no purpose serves every one."
+  })
   stsSignerTrustAnchorPurpose?: (string)[];
 }

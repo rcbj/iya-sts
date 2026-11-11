@@ -33,20 +33,44 @@ namespace IyaSts.Directory;
   ]
 })
 model KerberosTrust {
-  @attr(#{})
+  @attr(#{
+    kind: "single",
+    what: "The trust's whole record as one JSON value: the partner Kerberos realm, its NetBIOS name and domain SID, the type, the trust attributes and which keys are held. The attributes beside it mirror it for an ldapsearch. Written by the console and the management API."
+  })
   stsKrb5TrustData?: DirectoryJson;
-  @attr(#{})
+  @attr(#{
+    kind: "single",
+    what: "The trust's keys or shared passwords, as one JSON value sealed where keys persist. Withheld from every directory read."
+  })
   stsKrb5TrustKeys?: string;
-  @attr(#{})
+  @attr(#{
+    kind: "single",
+    what: "The partner Kerberos realm, lower-cased, as Active Directory's trustedDomain object names it ([MS-ADTS] 6.1.6.7). A mirror of the record, written with it."
+  })
   trustPartner?: string;
-  @attr(#{})
+  @attr(#{
+    kind: "single",
+    what: "The partner's NetBIOS domain name ([MS-ADTS] 6.1.6.7). A mirror of the record, written with it."
+  })
   flatName?: string;
-  @attr(#{})
+  @attr(#{
+    kind: "single",
+    what: "The partner domain's SID, where the trust names one ([MS-ADTS] 6.1.6.7). A mirror of the record, written with it."
+  })
   securityIdentifier?: string;
-  @attr(#{})
+  @attr(#{
+    kind: "single",
+    what: "1 inbound, 2 outbound, 3 both ([MS-ADTS] 6.1.6.7.12). Derived from which keys the trust holds: the incoming key accepts the partner's tickets, the outgoing key refers this realm's people to the partner."
+  })
   trustDirection?: DirectoryInteger;
-  @attr(#{})
+  @attr(#{
+    kind: "single",
+    what: "The trust's attribute bits as one integer ([MS-ADTS] 6.1.6.7.9). A mirror of the record, written with it."
+  })
   trustAttributes?: DirectoryInteger;
-  @attr(#{})
+  @attr(#{
+    kind: "single",
+    what: "2 where the partner is an Active Directory domain (the record names its SID), 3 for any other Kerberos realm ([MS-ADTS] 6.1.6.7.15). Derived, written with the record."
+  })
   trustType?: DirectoryInteger;
 }

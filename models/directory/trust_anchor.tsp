@@ -33,10 +33,19 @@ namespace IyaSts.Directory;
   ]
 })
 model TrustAnchor {
-  @attr(#{})
+  @attr(#{
+    kind: "single",
+    what: "The anchor's certificate, PEM. A client certificate presented at a TLS handshake may chain to it."
+  })
   stsTrustAnchorCertificate?: string;
-  @attr(#{})
+  @attr(#{
+    kind: "single",
+    what: "The certificate's SHA-256 fingerprint, which also names the entry."
+  })
   stsTrustAnchorFingerprint?: string;
-  @attr(#{})
+  @attr(#{
+    kind: "single",
+    what: "Who added the anchor, from the console or the management API; empty where nobody is recorded."
+  })
   stsTrustAnchorAddedBy?: string;
 }

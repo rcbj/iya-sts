@@ -241,8 +241,11 @@ function run(t) {
 
   t.equal(gapCount(first, 'no-schema', 'person'), 1, 'person has no SCHEMA');
   t.equal(gapCount(first, 'no-schema', 'group'), 1, 'group has no SCHEMA');
-  t.check(gapCount(first, 'kind-unspecified', 'role', 'roleName') >= 1,
-    'a role attribute that omits kind stays unspecified');
+  // A retired attribute nothing reads or writes, so nothing can say how
+  // many values it holds: it stays unspecified whatever else is stated.
+  t.check(gapCount(first, 'kind-unspecified', 'policy.postLogin',
+    'stsPostLoginNoPasskeyRole') >= 1,
+    'an attribute that omits kind stays unspecified');
   t.equal(gapCount(first, 'json-blob', 'attributeSource',
     'stsAttributeSourceData'), 1,
     'an attribute source is one JSON value');
@@ -351,14 +354,15 @@ function run(t) {
   const number = collector.parse(first, 'application',
     { appIdentifier: 1 });
   t.check(!number.ok, 'a number is not a single-valued string');
-  const role = objectById(first, 'role');
-  const unspecified = role.attributes.filter(function (row) {
-    return row.kind === 'unspecified';
+  const postLogin = objectById(first, 'policy.postLogin');
+  const unspecified = postLogin.attributes.filter(function (row) {
+    return row.name === 'stsPostLoginNoPasskeyRole' &&
+      row.kind === 'unspecified';
   })[0];
-  t.check(!!unspecified, 'a role attribute omits kind');
+  t.check(!!unspecified, 'a post-login policy attribute omits kind');
   const loose = {};
   loose[unspecified.name] = 1;
-  const looseParsed = collector.parse(first, 'role', loose);
+  const looseParsed = collector.parse(first, 'policy.postLogin', loose);
   t.check(looseParsed.ok, 'unspecified kind accepts a non-string',
     looseParsed.errors.join(';'));
 
@@ -369,8 +373,8 @@ function run(t) {
     'the class parses with strictObject');
   t.check(applicationClass.indexOf('z.string()') >= 0,
     'a single attribute is a string');
-  const roleClass = ModelEmit.directoryClass(role);
-  t.check(roleClass.indexOf('z.unknown()') >= 0,
+  const postLoginClass = ModelEmit.directoryClass(postLogin);
+  t.check(postLoginClass.indexOf('z.unknown()') >= 0,
     'unspecified kind is unknown');
   const passwordClass = ModelEmit.directoryClass(password);
   const onPerson = passwordClass.indexOf('class PolicyPasswordOnPerson');
