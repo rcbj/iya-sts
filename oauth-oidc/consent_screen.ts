@@ -412,7 +412,17 @@ class ConsentScreen {
    * @param id - the record's id
    * @returns the record, or null
    */
-  claimForBrowser(id: unknown, sessionId: string): boolean {
+  // ONLY THE PERSON IT WAS ASKED OF CLAIMS IT (2026-11-11, run 16's
+  // single-node mode). The first browser to ask about a consent was the one
+  // it was tied to (#1454), whoever that browser's session belonged to, so
+  // somebody else holding the id who asked first — and was refused — had
+  // claimed it on the way, and the person it was asked of was then refused
+  // their own consent as "started in another browser": a refusal that spent
+  // the record for its owner, which `sts_consent`'s last check exists to
+  // catch. An unclaimed record is claimed now only by a session that
+  // `answeredBy()` says is the person's; any other session is refused and
+  // claims nothing.
+  claimForBrowser(id: unknown, sessionId: string, req?: Req): boolean {
     const { log } = this.deps;
     log.debug("Entering ConsentScreen.claimForBrowser().");
     const record = pending.get(String(id || ''));
@@ -425,6 +435,11 @@ class ConsentScreen {
       return !record.browserSession;
     }
     if (!record.browserSession) {
+      if (req && !this.answeredBy(req, record).ok) {
+        log.debug("Leaving ConsentScreen.claimForBrowser(). Somebody " +
+                  "else's session, which claims nothing.");
+        return false;
+      }
       record.browserSession = sessionId;
       pending.set(String(id), record);
     }

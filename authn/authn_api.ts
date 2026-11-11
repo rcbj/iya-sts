@@ -1737,7 +1737,7 @@ class AuthnApi {
         const sid = String((found && found.id) || '');
         const held = kind === 'consent'
           ? require('../oauth-oidc/consent_screen')
-            .claimForBrowser(req.params.id, sid)
+            .claimForBrowser(req.params.id, sid, req)
           : authn.claimStepForBrowser(req.params.id, sid, kind);
         if (!held) {
           errorCodes.mark(res, 'STS-AUTHN-0552');
