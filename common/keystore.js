@@ -3318,9 +3318,33 @@ function refreshDekRows(opts) {
     return dekReloading;
   }
   dekReloadAt = Date.now();
-  dekReloading = Promise.resolve().then(function () {
-    return store.loadKeys();
-  }).then(async function (rows) {
+  // ---------------------------------------------------------------------
+  // THE DATA-KEY ROWS AND NOTHING ELSE (2026-11-11), where it read the whole
+  // of `sts_keys` and threw away everything but them. This runs before EVERY
+  // key-set and certificate-authority write where the store merges
+  // (`writeAfterDeks()`), and for every directory and minted row met under
+  // a data key not held yet, so its cost was the size of every realm's key
+  // set and hierarchy together — rows that grow with every realm and every
+  // rebuild (an issued register keeps a record per certificate it ever
+  // published) — and was paid once per write, in every process. In fuzz run
+  // 16's single-node stack (165 realms with a hierarchy, three of them
+  // rebuilt every twenty seconds) a builder's own writes queued behind it,
+  // and the change-log pull waiting for those writes (`applyStoredChange()`
+  // `afterOurWrite`) spent 2-26 s on one "keys" row, so read barriers gave
+  // up (STS-STORE-0039, STS-WORKER-0027). A driver that cannot select by
+  // prefix still answers `loadKeys()`, and the filter below holds either
+  // way. Measured against PostgreSQL 18 with a 71 MB `sts_keys` of 500 rows:
+  // the whole table 61 ms median, four at once 303 ms; the data-key rows
+  // alone 1 ms (tests/key_row_dek_reads.js holds the shape).
+  // ---------------------------------------------------------------------
+  const reading = typeof store.loadDekRows === 'function'
+    ? function () {
+      return store.loadDekRows();
+    }
+    : function () {
+      return store.loadKeys();
+    };
+  dekReloading = Promise.resolve().then(reading).then(async function (rows) {
     let adopted = 0;
     for (const row of rows || []) {
       if (String(row.realm || '').indexOf(DEK_ROW_PREFIX) === 0) {
