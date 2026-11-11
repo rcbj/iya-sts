@@ -94,7 +94,6 @@ spoke ·
 [Abstract data model](data-model.md) ·
 [Directory models](data-model-directory.md) ·
 [Persistence models](data-model-persistence.md) ·
-[One model, every artifact](data-model-migration.md): how the model came to be ·
 [Configuring LDAP](configure-ldap.md) ·
 [SCIM 2.0](scim.md) ·
 [Bulk directory import](bulk-import.md).
