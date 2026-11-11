@@ -264,8 +264,10 @@ function issued(t) {
   };
   const problems = [];
   // A registration that sent one member as a wrong JSON type and was
-  // accepted echoes it: the service's behaviour today, which the wire record
-  // holds and `oauth-oidc/CLAUDE.md` lists. Only that member may be off.
+  // accepted would echo it. Since rcbj's decision on #1579 (2026-11-11)
+  // every such registration is refused with invalid_client_metadata
+  // (STS-OAUTH-1007), so the wire record holds none: one found here is a
+  // member the refusal missed, and it is counted rather than hidden.
   const accepted = [];
   const hold = function (where, id, value, sentWrong) {
     OAuthModel.undeclared(id, restored(value)).forEach(function (one) {
@@ -336,10 +338,9 @@ function issued(t) {
           'C. every recorded answer, claim set and error code is the ' +
           'model\'s (' + JSON.stringify(counted) + ')',
           problems.slice(0, 20).join('\n'));
-  t.check(accepted.length > 0,
-          'C. a member of a wrong type a registration accepts is echoed, ' +
-          'and nothing else in its answer is off (' + accepted.join(', ') +
-          ')');
+  t.check(accepted.length === 0,
+          'C. no registration sending a member of a wrong type is accepted ' +
+          '(rcbj on #1579)', accepted.join(', '));
   ['openid-provider-metadata', 'token-response', 'error-response',
    'access-token', 'id-token', 'introspection-response',
    'registration-response', 'logout-token',
