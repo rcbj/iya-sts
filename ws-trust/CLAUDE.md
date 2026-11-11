@@ -1,7 +1,9 @@
 # ws-trust/
 
 WS-Trust 1.0 through 1.4, at `/sts` (with the signing certificate at
-`/sts/cert`). One file.
+`/sts/cert`). Two files: `wstrust.ts`, the endpoint, and `ws_model.ts`, the
+model as both this family and `../ws-federation/` read it — see *THE MESSAGES
+ARE THE MODEL'S*, at the end.
 
 **ONE PARSER ANSWERS ALL FOUR VERSIONS**, and that is not a simplification. The
 trust namespace alone has four versions in use, so `firstByLocal()` and
@@ -963,3 +965,78 @@ branch now shares. There is nothing to prepare: replay is the token's.
 Settings: `wstrust.acceptKerberos` (on) and `wstrust.issueKerberos` (off).
 `tests/kerberos_tokens.js` holds all of it in process, and
 `tests/protocol/sts_kerberos_tokens.js` over HTTP and TCP 88.
+
+## THE MESSAGES ARE THE MODEL'S (#1579, 2026-11-10)
+
+**`models/ws/soap.tsp`, `wstrust.tsp` and `wsfed.tsp` are the source of
+every value this family and WS-Federation write, of the RST's children as
+they are read, and of the order every envelope part is written in.** They
+are XML messages as SAML's are, so they are written with SAML's decorators
+(`../models/lib/saml_lib.tsp`) and read by the same class,
+`../common/xml_model.ts`; `models/lib/saml_lib.mjs` puts them in their own
+file, `models/generated/ws.json`, by the prefixes of their ids, and
+`ws_model.ts` (`WsModel`) reads it beside `saml.json`.
+
+* **The vocabularies.** The four trust namespaces (the answer echoes the
+  request's; `trust14` is `ActAs`'s alone), the request types, the actions,
+  the key types and a Validate's status values — each APPENDED to the
+  request's trust namespace, `relative: true`, so `WsModel.relative(...)`
+  is the one place one is built — the token types (`saml11Namespace` is the
+  SAML 1.1 assertion namespace an older client names the type by, its
+  `aliasOf` the SAML 1.1 token; `tokenTypeAsked()` reads it), the
+  section 11 fault codes (`soapFault()` asks the model for the one it is
+  handed, so a code it does not hold throws; the four `readOnly` are the
+  ones *Every refusal names its section 11 fault code* says are not used),
+  SOAP 1.1's and 1.2's fault codes, the WS-Addressing, WS-Policy and
+  WS-Security namespaces, the WSS value types, and #522's delegates
+  attribute. **SAML's terms are not copied**: a term that is one (the
+  SAML 1.1 assertion namespace, a WSS value type that is the JWT token
+  type) is written as that PROPERTY (`IyaSts.Saml11.Namespaces.assertion`),
+  the generated term carries `same`, and the URI is in the model once.
+  `PreviousSession` is now a term of `saml2.authnContext`, where it belongs.
+* **The RST, as it is read.** Every child, `read` for those the code acts
+  on. `anotherPartys` marks the five that hold somebody else's token —
+  `NOT_A_CREDENTIAL` is that list — and `inSignedBody` the ones #521 requires
+  inside a signed Body — `RST_PARTS` is the RST and that list, in the order
+  `0046`'s sentence names them. Each is still FOUND by its local name in the
+  whole document, by the code, for the reason this file opens with.
+* **The envelopes, as they are written.** `envelope()` is the one writer
+  of a SOAP envelope (`soapFault()` and `receiverFault()` hand it their
+  Body), its Header and Body joined by `WsModel.children()`, and so are the
+  Fault of each SOAP version, the RSTR collection, the RSTR — its parts in
+  THIS ENDPOINT'S order, because the schema makes it a sequence of `xs:any`
+  — its RequestedSecurityToken (a SAML 2.0 or 1.1 assertion told apart by
+  namespace, an EncryptedAssertion, a BinarySecurityToken), the proof
+  token, the AppliesTo, the Lifetime, the two references and the Status.
+  `WsModel.hold()` checks every envelope as it goes out — the assertion
+  inside against SAML's own model — logs a gap under **STS-WSTRUST-0071**,
+  and sends it unchanged.
+
+**What `/sts` does not serve, stated in the model**: no WSDL, no
+WS-MetadataExchange, no WS-Policy assertion — `GET /sts` answers text and
+`GET /sts/cert` the certificate — and no KET or BatchIssue of its own: a
+request type that is not Renew, Validate or Cancel is answered as an Issue,
+as it always was.
+
+**Byte for byte**: `tests/ws_model_wire.js` recorded `/sts` and `/wsfed`
+before the switch — every operation in each trust version on both SOAP
+versions, each refusal, WS-Federation's metadata, sign-in, refusals and
+sign-outs, in a development and a product realm — three runs identical, and
+the switched tree answers the same record, with every hold of the run heard
+and silent. `tests/model_ws.js` holds the build's refusals, no URI, fault
+code or list of the two directories written outside the model, the readers
+and writers, and every recorded envelope held with nothing to say.
+
+**What stays in code, and why.** XML parsing (`helpers.firstByLocal()`,
+local names with the namespace ignored), canonicalisation, signing,
+encryption and every WS-Security signature check (`../common/crypto.js`).
+Everything that needs state: a credential's verification, the delegation
+policy, a registered AppliesTo, the lifetime's clamp, a Kerberos token's
+acceptance. The Kerberos Token Profile's token and value types are
+`../kerberos/krb5_tokens.ts`'s. The text inside a part — a token, an
+address, a reason — is written where its value is, inside a part the model
+orders. **One gap recorded and not changed**: `Forwardable` and `Delegatable`
+(#658) are read off the whole document too and are not in `RST_PARTS`, so a
+signed request may carry them outside its signed Body; the model marks them
+`read` and not `inSignedBody`, as the code has them. Adding them is a
+behaviour change owed rcbj's decision.

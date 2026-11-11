@@ -16,7 +16,7 @@ provider for each of them**.
 | `return_address.ts` | **Where a response may be delivered**: anything in development, a registered address in product (2026-09-12). Shared with WS-Federation. Registers nothing. |
 | `person_attributes.ts` | **The persona facts an assertion carries**, invented in development and read off the directory entry (or omitted) in product (2026-09-12). Registers nothing. |
 | `saml_cells.ts` | **Where a SAML back-channel request is answered in a service deployed as cells** (#98 D10, 2026-09-28): the cell tag inside an artifact's handle, and the peer holding the session a query names (the `saml-session-holder` inter-cell operation). Registers no route. See *IN A SERVICE DEPLOYED AS CELLS*, at the end. |
-| `saml_model.ts` | **The SAML model, as both identity providers read it (#1579).** Every vocabulary term, the AuthnRequest's and LogoutRequest's attributes as they are read, the order every builder writes its attributes and children in, SAML 1.1's browser parameters, and the holding of every built message to its model. A leaf. See *THE MESSAGES ARE THE MODEL'S*, at the end. |
+| `saml_model.ts` | **The SAML model, as both identity providers read it (#1579).** Every vocabulary term, the AuthnRequest's and LogoutRequest's attributes as they are read, the order every builder writes its attributes and children in, SAML 1.1's browser parameters, and the holding of every built message to its model. One instance of `../common/xml_model.ts`, the reader WS-Trust and WS-Federation share (#1579). A leaf. See *THE MESSAGES ARE THE MODEL'S*, at the end. |
 | `listener_keys.ts` | **The certificate the back channel presents, as a metadata key** (#248): every leaf the main port presents — every live cluster node's — as a `use="signing"` KeyDescriptor for both profiles' metadata. Registers nothing; reaches `tls/tls_server.js` lazily. See *THE BACK CHANNEL'S TLS CERTIFICATE IS IN THE METADATA*, at the end. |
 
 ## THE TWO PROFILES ARE SEPARATE IMPLEMENTATIONS, NOT ONE WITH A VERSION FLAG — rule 4b
@@ -1901,6 +1901,20 @@ bundle (`web_saml.ts`) keeps the two profile URIs it labels**: a `web_*.ts` may 
 federation module reads a partner's SAML with its own reader**
 (`federation/federation_sp.ts`) and shares only `request_signature.ts` and
 `document_settings.ts`, which the switch did not change.
+
+**THE DECORATORS AND THE READER ARE NOT SAML'S ALONE (#1579, the WS
+families).** SOAP, WS-Trust and WS-Federation are XML messages too, and
+`models/ws/*.tsp` is written with `saml_lib.tsp`'s decorators;
+`saml_lib.mjs`'s `FAMILIES` reads each family into its own file by the
+prefixes of its ids (`saml.json`: `saml2.`, `saml11.`, `md.`). The code of
+`read()`, `attributes()`, `children()` and `hold()` is
+`../common/xml_model.ts`'s, and `SamlModel` is its instance over
+`saml.json`, its statics unchanged. What the WS families added to the
+decorators — `namespaces` (a message in the request's namespace), an
+element's `xmlns` (two children of one local name, a SAML 1.1 and a SAML
+2.0 Assertion), `anotherPartys`, `inSignedBody`, `relative`, a term written
+as another vocabulary's property — changes nothing of SAML's, and a term
+here they need is added here (`previousSession`), not copied there.
 
 **One reading the model records and does not change**: xs:boolean allows
 `1` for true, and `ForceAuthn="1"` / `IsPassive="1"` are read as false, as
