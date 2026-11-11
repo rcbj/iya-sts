@@ -530,8 +530,8 @@ docker compose up -d --wait
   volumes, and the next `up` comes back with the same directory, signing keys
   and sessions. `docker compose down -v` deletes it all.
 * **Which build.** `IYA_STS_TAG` picks the image tag: `latest` is the newest
-  build of `main`, the release's `M.N.O` (`1.0.0`) names the release build cut
-  for it, and the full `M.N.O.<build>` (`1.0.0.0`, or
+  build of `main`, the release's `M.N.O` (`1.0.0`) is the newest build of
+  `main` for that release, and the full `M.N.O.<build>` (`1.0.0.0`, or
   `1.0.0.20261104151200`) names exactly one build. `STS_PORT`,
   `PKI_PORT` and `KDC_PORT` move the published ports.
 * **Kerberos works from the start.** The KDC is published on 88 (TCP and
