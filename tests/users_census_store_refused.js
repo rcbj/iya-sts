@@ -18,9 +18,12 @@
 //       unknown and asks nobody on their own — synchronously and not;
 //   R2. a census that threw for any other reason is still answered one name
 //       at a time;
-//   R3. that one-at-a-time path reads no recovery codes;
+//   R3. that one-at-a-time path reads no recovery codes, including for a
+//       person who holds an authenticator app (recoveryAdvised's read);
 //   R4. a row none of whose names the census answered has no factors
-//       (unknown), not "no credential".
+//       (unknown), not "no credential";
+//   R5. where the directory offers no census, each name is still asked on
+//       its own and no recovery codes are read.
 //
 // In a child process: it replaces the directory's census hooks.
 // ===========================================================================
@@ -50,11 +53,13 @@ function child() {
     require(ROOT + '/ldap/ldap_server');
     const credentials = require(ROOT + '/common/credentials');
     const errorCodes = require(ROOT + '/common/error_codes');
+    const backupCodes = require(ROOT + '/common/backup_codes');
     const views = require(ROOT + '/admin-core/admin_views');
     const proto = credentials.Credentials.prototype;
-    const counts = { mechanisms: 0, recovery: 0 };
+    const counts = { mechanisms: 0, recovery: 0, codesOf: 0 };
     const realMechanisms = proto.mechanismsFor;
     const realRecovery = proto.backupCodeStatus;
+    const realCodesOf = proto.backupCodesOf;
     proto.mechanismsFor = function () {
       counts.mechanisms++;
       return realMechanisms.apply(this, arguments);
@@ -63,6 +68,21 @@ function child() {
       counts.recovery++;
       return realRecovery.apply(this, arguments);
     };
+    proto.backupCodesOf = function () {
+      counts.codesOf++;
+      return realCodesOf.apply(this, arguments);
+    };
+    // An authenticator enrolment makes `recoveryAdvised` true of a person
+    // who holds no recovery codes, which is the read `backupCodeStatus`
+    // does not cover (#786).
+    proto.totpStatusOf = function () {
+      return { enrolledAt: 1, algorithm: 'SHA1', digits: 6, period: 30,
+               sealed: false, unusable: false, why: '' };
+    };
+    note(typeof realCodesOf === 'function' && backupCodes.offered() === true,
+         'recovery codes are offered, and the census can reach the read',
+         'codesOf=' + typeof realCodesOf + ' offered=' +
+         backupCodes.offered());
     const names = ['ucr-a', 'ucr-b', 'ucr-c'];
     const refused = function () {
       return errorCodes.mark(new Error('this request has already waited ' +
@@ -80,7 +100,8 @@ function child() {
     const syncFacts = credentials.factorCensus(names);
     const asyncFacts = await credentials.factorCensusAsync(names);
     note(syncFacts.size === 0 && asyncFacts.size === 0 &&
-         counts.mechanisms === 0 && counts.recovery === 0,
+         counts.mechanisms === 0 && counts.recovery === 0 &&
+         counts.codesOf === 0,
          'R1. a census the store refused answers every name unknown and asks ' +
          'nobody on their own, synchronously and not',
          JSON.stringify({ sync: syncFacts.size, async: asyncFacts.size,
@@ -96,8 +117,9 @@ function child() {
          'R2. a census that threw for another reason is still answered one ' +
          'name at a time', JSON.stringify({ size: other.size,
                                             counts: counts }));
-    note(counts.recovery === 0,
-         'R3. and that one-at-a-time path reads no recovery codes',
+    note(counts.recovery === 0 && counts.codesOf === 0,
+         'R3. and that one-at-a-time path reads no recovery codes, including ' +
+         'for a person who holds an authenticator app',
          JSON.stringify(counts));
 
     // R4: the view's merge, over a census that answered nobody.
@@ -114,6 +136,19 @@ function child() {
          'R4. a row the census did not answer has no factors (unknown); one ' +
          'it answered keeps its facts', JSON.stringify([merged.get('ucr-a'),
            merged.get('ucr-b') && merged.get('ucr-b').password]));
+
+    const before = { mechanisms: counts.mechanisms,
+                     recovery: counts.recovery, codesOf: counts.codesOf };
+    credentials.addDirectoryHooks({});
+    const absent = credentials.factorCensus(names);
+    note(absent.size === 3 &&
+         counts.mechanisms === before.mechanisms + 3 &&
+         counts.recovery === before.recovery &&
+         counts.codesOf === before.codesOf,
+         'R5. where the directory offers no census, each name is still asked ' +
+         'on its own and no recovery codes are read',
+         JSON.stringify({ size: absent.size, before: before,
+                          counts: counts }));
     finish();
   })().catch(function (e) {
     note(false, 'the child threw', (e && e.stack) || e);
