@@ -5,6 +5,15 @@
 source ids. Change an operation or a schema there, and it reaches the served document
 and the response checks.
 
+**Every operation carries an `operationId` since #1579 (2026-11-11)**, named as
+the other four documents name theirs (`getDefinitions`, `createDefinition`,
+`replaceDefinition`, `runDefinition`, `queueJob`, `getJobResult`, …). It was the
+only document without them, so `IyaApi.Report.Operations` was keyed by
+`METHOD path`; it is keyed by the id now, and each serving function in
+`report_api.ts` is typed by `ReportRequest<'getJobs'>` /
+`ReportAnswering<'getJobs'>`. A new operation owes one, unique in the
+document: the generator refuses an operation without it.
+
 ## WHAT A REQUEST MAY NAME (#1483, `/admin-api`'s #1476 rule)
 
 `reportRoute()` asks `reportShapeRefused()` first, after the token: the

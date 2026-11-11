@@ -57,10 +57,10 @@ const SCOPE_CHALLENGE = 'report:use report:admin';
 
 let reportDeps: any = null;
 
-// THE MODEL'S OPERATIONS (#1579), by `METHOD path` — the Reports API's carry
-// no operationId — in `types/api.generated.d.ts`. Each function that serves
-// one is typed by it: its request (the body and query names it may read) and
-// its response (what `reportJson()` may answer at a literal 2xx status).
+// THE MODEL'S OPERATIONS (#1579), by operationId, in `types/api.generated.d.ts`.
+// Each function that serves one is typed by it: its request (the body and
+// query names it may read) and its response (what `reportJson()` may answer
+// at a literal 2xx status).
 type ReportOps = IyaApi.Report.Operations;
 type ReportRequest<K extends keyof ReportOps> = IyaApi.RequestTo<ReportOps[K]>;
 type ReportAnswering<K extends keyof ReportOps> =
@@ -1054,7 +1054,7 @@ function reportStoredHolds(row: any): boolean {
   return holds;
 }
 
-function reportServeIndex(res: ReportAnswering<'GET /report-api'>): void {
+function reportServeIndex(res: ReportAnswering<'getIndex'>): void {
   log.debug("Entering reportServeIndex().");
   reportJson(res, 200, {
     service: 'report',
@@ -1202,8 +1202,8 @@ function reportSchedulesView(who: any, query: any): any {
 }
 
 function reportServeSchedules(
-    req: ReportRequest<'GET /report-api/schedules'>,
-    res: ReportAnswering<'GET /report-api/schedules'>,
+    req: ReportRequest<'getSchedules'>,
+    res: ReportAnswering<'getSchedules'>,
     who: any): void {
   log.debug("Entering reportServeSchedules().");
   const view = reportSchedulesView(who, (req && req.query) || {});
@@ -1222,8 +1222,8 @@ function reportServeSchedules(
 // the realm's resident groups, each with its own address so the page can
 // say which groups a notice could reach.
 function reportServeGroups(
-    req: ReportRequest<'GET /report-api/groups'>,
-    res: ReportAnswering<'GET /report-api/groups'>): void {
+    req: ReportRequest<'getGroups'>,
+    res: ReportAnswering<'getGroups'>): void {
   log.debug("Entering reportServeGroups().");
   const query = (req && req.query) || {};
   reportJson(res, 200, sources.groupSearch(String(query.q || ''),
@@ -1239,7 +1239,7 @@ function reportServeGroups(
 // signs in with no directory view of its own, so this is the one thing it asks
 // about the person, and it answers only about the token's.
 function reportServeMe(
-    res: ReportAnswering<'GET /report-api/me'>,
+    res: ReportAnswering<'getMe'>,
     who: any): void {
   log.debug("Entering reportServeMe().");
   reportJson(res, 200, { photo: who && who.kind === 'user'
@@ -1249,8 +1249,8 @@ function reportServeMe(
 }
 
 function reportServeAnnouncements(
-    req: ReportRequest<'GET /report-api/announcements'>,
-    res: ReportAnswering<'GET /report-api/announcements'>): void {
+    req: ReportRequest<'getAnnouncements'>,
+    res: ReportAnswering<'getAnnouncements'>): void {
   log.debug("Entering reportServeAnnouncements().");
   const since = Number(((req && req.query) || {}).since || 0) || 0;
   reportJson(res, 200, require('../ssf/ssf_receivers')
@@ -1268,8 +1268,8 @@ function reportServeAnnouncements(
 const SIGNALS_PER_PAGE = 20;
 
 async function reportServeSignals(
-    req: ReportRequest<'GET /report-api/signals'>,
-    res: ReportAnswering<'GET /report-api/signals'>,
+    req: ReportRequest<'getSignals'>,
+    res: ReportAnswering<'getSignals'>,
     who: any): Promise<void> {
   log.debug("Entering reportServeSignals().");
   const signals = require('../ssf/ssf_receivers');
@@ -1319,14 +1319,14 @@ async function reportServeSignals(
 }
 
 function reportServeRealms(
-    res: ReportAnswering<'GET /report-api/realms'>): void {
+    res: ReportAnswering<'getRealms'>): void {
   log.debug("Entering reportServeRealms().");
   reportJson(res, 200, reportRealmsView());
   log.debug("Leaving reportServeRealms().");
 }
 
 function reportServeOpenApi(
-    res: ReportAnswering<'GET /report-api/openapi.json'>): void {
+    res: ReportAnswering<'getOpenApi'>): void {
   log.debug("Entering reportServeOpenApi().");
   // The catalog is the field reference. This document names the routes
   // and points at it, so a new field is not written twice.
@@ -1335,7 +1335,7 @@ function reportServeOpenApi(
 }
 
 function reportServeCatalog(
-    res: ReportAnswering<'GET /report-api/catalog'>): void {
+    res: ReportAnswering<'getCatalog'>): void {
   log.debug("Entering reportServeCatalog().");
   const catalog = new Catalog();
   reportJson(res, 200, {
@@ -1345,7 +1345,7 @@ function reportServeCatalog(
 }
 
 function reportServeSource(
-    res: ReportAnswering<'GET /report-api/catalog/{id}'>,
+    res: ReportAnswering<'getCatalogSource'>,
     id: string): void {
   log.debug("Entering reportServeSource().");
   const catalog = new Catalog();
@@ -1361,10 +1361,8 @@ function reportServeSource(
 }
 
 async function reportAcceptQuery(
-    req: ReportRequest<'POST /report-api/queries' | 'POST /report-api/jobs' |
-      'POST /report-api/definitions/{id}/run'>,
-    res: ReportAnswering<'POST /report-api/queries' | 'POST /report-api/jobs' |
-      'POST /report-api/definitions/{id}/run'>,
+    req: ReportRequest<'runQuery' | 'queueJob' | 'runDefinition'>,
+    res: ReportAnswering<'runQuery' | 'queueJob' | 'runDefinition'>,
     who: any,
     forceAsync: boolean,
     definition: any,
@@ -1548,8 +1546,8 @@ function reportDefinitionsView(who: any, query: any): any {
 }
 
 function reportServeDefinitions(
-    req: ReportRequest<'GET /report-api/definitions'>,
-    res: ReportAnswering<'GET /report-api/definitions'>,
+    req: ReportRequest<'getDefinitions'>,
+    res: ReportAnswering<'getDefinitions'>,
     who: any): void {
   log.debug("Entering reportServeDefinitions().");
   reportJson(res, 200, reportDefinitionsView(who, (req && req.query) || {}));
@@ -1557,10 +1555,8 @@ function reportServeDefinitions(
 }
 
 function reportCreateDefinition(
-    req: ReportRequest<'POST /report-api/definitions' |
-      'POST /report-api/definitions/{id}'>,
-    res: ReportAnswering<'POST /report-api/definitions' |
-      'POST /report-api/definitions/{id}'>,
+    req: ReportRequest<'createDefinition' | 'replaceDefinition'>,
+    res: ReportAnswering<'createDefinition' | 'replaceDefinition'>,
     who: any,
     id: string): void {
   log.debug("Entering reportCreateDefinition().");
@@ -1613,7 +1609,7 @@ function reportCreateDefinition(
 }
 
 function reportServeDefinition(
-    res: ReportAnswering<'GET /report-api/definitions/{id}'>,
+    res: ReportAnswering<'getDefinition'>,
     who: any,
     id: string): void {
   log.debug("Entering reportServeDefinition().");
@@ -1628,7 +1624,7 @@ function reportServeDefinition(
 }
 
 function reportDeleteDefinition(
-    res: ReportAnswering<'DELETE /report-api/definitions/{id}'>,
+    res: ReportAnswering<'deleteDefinition'>,
     who: any,
     id: string): void {
   log.debug("Entering reportDeleteDefinition().");
@@ -1649,8 +1645,8 @@ function reportDeleteDefinition(
 }
 
 function reportSharePosted(
-    req: ReportRequest<'POST /report-api/definitions/{id}/share'>,
-    res: ReportAnswering<'POST /report-api/definitions/{id}/share'>,
+    req: ReportRequest<'shareDefinition'>,
+    res: ReportAnswering<'shareDefinition'>,
     who: any, id: string): void {
   log.debug("Entering reportSharePosted().");
   const row = reportIdOk(id) ? stores.getDefinition(id) : null;
@@ -1695,8 +1691,8 @@ function reportSharePosted(
 }
 
 async function reportRunSaved(
-    req: ReportRequest<'POST /report-api/definitions/{id}/run'>,
-    res: ReportAnswering<'POST /report-api/definitions/{id}/run'>,
+    req: ReportRequest<'runDefinition'>,
+    res: ReportAnswering<'runDefinition'>,
     who: any,
     id: string): Promise<void> {
   log.debug("Entering reportRunSaved().");
@@ -1776,8 +1772,8 @@ function reportJobsView(who: any, query: any): any {
 }
 
 function reportServeJobs(
-    req: ReportRequest<'GET /report-api/jobs'>,
-    res: ReportAnswering<'GET /report-api/jobs'>,
+    req: ReportRequest<'getJobs'>,
+    res: ReportAnswering<'getJobs'>,
     who: any): void {
   log.debug("Entering reportServeJobs().");
   reportJson(res, 200, reportJobsView(who, (req && req.query) || {}));
@@ -1785,7 +1781,7 @@ function reportServeJobs(
 }
 
 function reportServeJob(
-    res: ReportAnswering<'GET /report-api/jobs/{id}'>,
+    res: ReportAnswering<'getJob'>,
     who: any,
     id: string): void {
   log.debug("Entering reportServeJob().");
@@ -1803,7 +1799,7 @@ function reportServeJob(
 }
 
 function reportStopPosted(
-    res: ReportAnswering<'POST /report-api/jobs/{id}/cancel'>,
+    res: ReportAnswering<'cancelJob'>,
     who: any,
     id: string): void {
   log.debug("Entering reportStopPosted().");
@@ -1834,7 +1830,7 @@ function reportExtent(format: string): string {
 }
 
 async function reportServeResult(
-    res: ReportAnswering<'GET /report-api/jobs/{id}/result'>,
+    res: ReportAnswering<'getJobResult'>,
     who: any, id: string): Promise<void> {
   log.debug("Entering reportServeResult().");
   const job = reportIdOk(id) ? stores.getJob(id) : null;
