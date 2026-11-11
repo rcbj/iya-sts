@@ -207,9 +207,9 @@ async function theActs(t) {
     person('ga-ann');
     const made = ldap.createGroup('ga-team', { origin: 'test' });
     const added = adminActions.groupsAction({ action: 'add-owner',
-      group: made.dn, owner: 'ga-ann', actor: 'an-operator' });
+      group: made.dn, owner: 'ga-ann' }, { actor: 'an-operator' });
     const removed = adminActions.groupsAction({ action: 'remove-owner',
-      group: made.dn, owner: dnOf('ga-ann'), actor: 'an-operator' });
+      group: made.dn, owner: dnOf('ga-ann') }, { actor: 'an-operator' });
     const refused = adminActions.groupsAction({ action: 'add-owner',
       group: made.dn, owner: 'ga-nobody' });
     const unknown = adminActions.groupsAction({ action: 'no-such' });

@@ -230,11 +230,13 @@ class SecretDestinationsApi {
           const body = Object.assign({}, parseBody(req),
                                      { action: String(req.params.action ||
                                                       '') });
+          // THE CALLER is the subject of the token the gate verified
+          // (#446), handed to the act beside the body and never in it
+          // (rcbj on #1579, 2026-11-11).
+          const caller = res.locals && res.locals.apiCaller;
+          const actor = String((caller && caller.name) || '');
           Promise.resolve().then(function (): Json {
-            // THE CALLER, which the route wrapper put in the body's
-            // `actor` after its schema passed (`nameActor()`, #446).
-            return loadDestinations().act(body, {
-              via: 'api', actor: String(body.actor || '') });
+            return loadDestinations().act(body, { via: 'api', actor: actor });
           }).then(function (result: Json): void {
             if (!result.ok) {
               // error-code: none — the act's own code, read off the result

@@ -1368,21 +1368,30 @@ is who did it.
   person's name, or the client's id on `client_credentials`.
 * **`callerNameOf(res)`** is what a handler passes as `actor`. It never reads
   the request.
-* **`nameActor(req, res)` sets a JSON body's `actor` member**, in the route
-  wrapper, after the body has passed its schema. Eighteen places in
-  `admin-core/admin_actions.ts` read `body.actor` for the row an action
-  writes — the console puts its signed-in user there — and this API gave them
-  nothing: a closed schema refuses the member (400, `STS-API-0009`), so those
-  rows named nobody. It is set AFTER the schema so that a caller's own `actor`
-  is still refused wherever the schema is closed, and replaced wherever it is
-  open. Every handler reads its own body with `parseBody(req)`, which parses
-  `req.body` each time, so the one place that reaches all of them is the text
-  they parse. A body that is not JSON, and one its handler owns (a streamed
-  upload), is left alone; the HTTP row names the caller either way. **It is
-  the one member an action reads that the model does not declare**, typed
-  `IyaApi.NamedActor` on the action (`types/api-handlers.d.ts`), because the
-  server sets it; the older spellings typed beside it were removed (rcbj on
-  #1579, 2026-11-11; `models/CLAUDE.md`).
+* **Every action is HANDED the caller, never through its body** (rcbj on
+  #1579, 2026-11-11). Each handler passes `callerNameOf(res)` as `actor` in
+  the action's context argument — `{ via: 'api', actor, … }`, the shape
+  `usersAction`, `applicationsAction`, `rolesAction`, `policiesAction`,
+  `rbacAction` and `mfaAction` already took — and so do `logoutAction`,
+  `permissionsAction`, `groupsAction`, `saml2Action` and `consentAction`
+  since #1579; the spread tables' acts (`scim_clients_api.ts`,
+  `secret_destinations_api.ts`, `passkey_report_api.ts`,
+  `post_login_activities_api.ts`, `branding_api.ts`) read
+  `res.locals.apiCaller` the same way, and `uma_api.ts` and `authzen_api.ts`
+  `req.adminApiCaller`. **Until #1579 the carrier was the body:**
+  `nameActor(req, res)` wrote the subject into a JSON body's `actor` member
+  after the schema had passed (#446), and the actions read `body.actor` — the
+  one member an action read that the model does not declare, typed
+  `IyaApi.NamedActor`. rcbj decided on #1579 that an action reads no body
+  member the model does not declare; `nameActor()`, `NamedActor` and every
+  `body.actor` read were deleted, and `tests/admin_api_action_actor.js` holds
+  one act of each family that took it from the body to a row naming the
+  caller. A caller's own `actor` is still refused by the closed schema (400,
+  `STS-API-0009`), like any member the model does not declare. One thing the
+  move changed: the context is the gate's answer whatever the body's media
+  type, so an act whose body is not JSON names the caller too, where the
+  body's carrier left it nobody; and with no token (development's open API)
+  an open schema's `actor` is no longer read, so nobody is named.
 * **`common/audit.js`'s HTTP row reads `res.locals.apiCaller` first**, before
   the sign-on cookie's resolver: the credential that let the call in is the
   token.
@@ -2385,8 +2394,9 @@ The register of secret push destinations and its four acts —
 into the table as the attribute source operations are; each handler calls
 `common/secret_destinations.ts`'s `view()` or `act()`, which is also what the
 static console's page sends its forms to (rule 7, `mirrors: POST
-/admin/secret-destinations`). The audit actor is the body's `actor`, which
-`nameActor()` sets. **`credential` is the one member here that is
+/admin/secret-destinations`). The audit actor is the gate's caller
+(`res.locals.apiCaller`), handed to `act()` beside the body (#1579).
+**`credential` is the one member here that is
 WRITE-ONLY**: taken by add and update (`writeOnly: true` in the schema), and
 in no answer of this resource or of `/applications`; `reveal-secret` refuses
 it. The provider and payload `enum`s are read off `common/secrets.js`'s

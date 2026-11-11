@@ -21,7 +21,8 @@
 // `client_credentials` one for `sts-api-client`:
 //
 //   1. a read with the person's token: the HTTP row names the person;
-//   2. a write whose action reads `body.actor` (a group create): the HTTP
+//   2. a write whose action writes a row of its own (a group create; the
+//      actor is handed to it in its context since #1579): the HTTP
 //      row and the action's own row name the person; and the same write sent
 //      with an `actor` of the caller's choosing is refused by the operation's
 //      schema, so no row names it;
@@ -189,7 +190,7 @@ function childMain() {
          '1. a read with the person\'s token: the HTTP row names the person',
          r.status + ' ' + JSON.stringify(row && row.actor));
 
-    // --- 2. a write whose action reads body.actor ---------------------------
+    // --- 2. a write whose action writes its own row --------------------------
     const G1 = 'aa-g1-' + stamp;
     r = await call(port, 'POST', '/admin-api/groups/create', person,
                    { group: G1 });

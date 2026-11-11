@@ -188,7 +188,12 @@ for the page and `/admin-api/scim` to assemble that block separately, which is
 the drift rule 7 exists to prevent.
 
 **THE REQUEST RULE IS NOT THE SAME FOR THE TWO HALVES.** An action is handed a
-parsed body and an actor and never sees the request. A view is parameterised by
+parsed body and an actor and never sees the request. The actor is an
+ARGUMENT — the `context` (`{ via, actor, … }`) beside the body — and never a
+member of the body: until rcbj's decision on #1579 (2026-11-11) the
+management API wrote it into the body as `actor` and nine actions read
+`body.actor`; now no action reads a body member the Management API model
+does not declare (`mgmt-api/CLAUDE.md`). A view is parameterised by
 the QUERY STRING — which page, which filter, which user — and reads
 `req.query`, exactly as it did on the console. Nothing else off the request:
 a header, a cookie or a body would not mean the same thing arriving at the API.

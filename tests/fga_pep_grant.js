@@ -87,8 +87,8 @@ function run(t) {
       log.debug("Leaving act().");
       return realms.run(made.realm, function () {
         return adminActions.applicationsAction({ action: action,
-                                                 application: APP,
-                                                 actor: 'test' });
+                                                 application: APP },
+                                               undefined, { actor: 'test' });
       });
     }
   };

@@ -178,7 +178,7 @@ class AuthzenApi {
           try {
             result = loadAdmin().act(body, {
               via: 'api',
-              actor: String(verified.name || body.actor || ''),
+              actor: String(verified.name || ''),
               roles: Array.isArray(verified.roles) ? verified.roles : [] });
           } catch (e) {
             log.error(errorCodes.tag('STS-AUTHZEN-0034') + 'authzen: an ' +

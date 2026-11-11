@@ -22,11 +22,12 @@
 // IN PROCESS, THROUGH THE HANDLERS. Both request schemas are closed
 // (`additionalProperties: false`), so a JSON body carrying `actor` is
 // refused (STS-API-0009) before the action — `tests/admin_api_actor.js`
-// holds that for a group create — and `nameActor` then forces a JSON
-// body's `actor` to the token subject. The hole is the action recording
+// holds that for a group create. The hole was the action recording
 // `body.actor` when `context.actor` and `body.actor` differ. Calling the
-// handler is how this file produces that: the schema and `nameActor` never
-// run.
+// handler is how this file produces that: the schema never runs. Since
+// #1579 (rcbj, 2026-11-11) no action reads `body.actor` at all — the
+// actor is the context's — and the route wrapper no longer writes one
+// (`nameActor()` was deleted); this file still holds the outcome.
 //
 // THE TOKEN SUBJECT is `res.locals.apiCaller`, which is what the gate
 // writes once it has allowed the call and what `callerNameOf` reads. For a

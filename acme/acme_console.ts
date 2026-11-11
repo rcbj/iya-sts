@@ -573,10 +573,9 @@ class AcmeConsole {
                           ACME_ACTIONS.join(', ') + '.');
     }
     // What the request carries beside the operation's body: the action (the
-    // path's), and the actor the management API names (#446).
+    // path's). Who acts is the context's, never a member (#1579).
     const fields = Object.assign({}, body || {});
     delete fields.action;
-    delete fields.actor;
     const parsed = SCHEMAS[action].safeParse(fields);
     if (!parsed.success) {
       const issue = (parsed.error.issues || [])[0] || {};

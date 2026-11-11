@@ -216,17 +216,17 @@ class BrandingApi {
   /**
    * Carries out `save` or `remove-logo`.
    *
-   * @param body - the request body, `action` and `actor` among it
+   * @param body - the request body, `action` among it
+   * @param actor - who is acting: the verified token's subject, never a
+   *   member of the body (rcbj on #1579, 2026-11-11)
    * @returns `{ ok, errors, … }`, a refusal marked with its code
    */
-  act(body: Json): Json {
+  act(body: Json, actor?: string): Json {
     const { log, loadBranding, errorCodes: codes } = this.deps;
     log.debug("Entering BrandingApi.act().");
     const b = Object.assign({}, body || {});
     const action = String(b.action || '');
-    const actor = String(b.actor || '');
     delete b.action;
-    delete b.actor;
     if (ACTIONS.indexOf(action) < 0) {
       log.debug("Leaving BrandingApi.act(). Unknown action.");
       return codes.mark({ ok: false, errors: ['Unknown action "' + action +
@@ -234,7 +234,7 @@ class BrandingApi {
         NAMED_ACTIONS.join(', ') + '.'] }, 'STS-API-0038');
     }
     if (action === 'remove-logo') {
-      const removed = loadBranding().removeLogo(actor);
+      const removed = loadBranding().removeLogo(String(actor || ''));
       log.debug("Leaving BrandingApi.act(). Removed " + removed.removed);
       return Object.assign({}, removed, {
         message: removed.removed ? 'The logo was removed.'
@@ -400,7 +400,7 @@ class BrandingApi {
             const body = Object.assign({}, parseBody(req),
                                        { action: String(req.params.action ||
                                                         '') });
-            const result = self.act(body);
+            const result = self.act(body, BrandingApi.callerOf(res));
             if (!result.ok) {
               // The refusal's own code, read off the marked result.
               codes.mark(res, codes.codeOf(result) || 'STS-API-0038');
