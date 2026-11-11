@@ -122,6 +122,50 @@ function openMap(map, where) {
   return out;
 }
 
+// THE DATA KEY ANOTHER PROCESS MADE A MOMENT AGO (2026-11-10). The first
+// seal of a realm's `setting-secret` class makes its data key there, and
+// every other process — another node, another worker — first meets that key
+// in the value it is reading. `open()` is synchronous and answers null for a
+// key it does not hold, so `openMap()` alone dropped the value (STS-STORE-0071)
+// on every process but the writer's, and the setting fell back to its
+// configured value there until somebody set it again: run 14's cluster mode
+// set `scim.digestPassword` on one node and was refused its reset on the
+// other ("no runtime override to reset"). The writer commits the data-key
+// row before the settings row (`common/keystore.js`, applyStoredChange), so
+// a FRESH read of the data-key rows adopts it; three reads, half a second
+// apart, cover a row still committing. Only then is a value that does not
+// open dropped.
+function unheld(map) {
+  log.debug("Entering unheld().");
+  const ks = keystore();
+  const crypto = require('../common/crypto');
+  const out = Object.keys(map || {}).some(function (key) {
+    const value = map[key];
+    return typeof value === 'string' && crypto.isEncryptedWithKek(value) &&
+      typeof ks.namesUnheldDek === 'function' && ks.namesUnheldDek(value);
+  });
+  log.debug("Leaving unheld(). " + out);
+  return out;
+}
+
+async function adoptDataKeysFor(maps) {
+  log.debug("Entering adoptDataKeysFor().");
+  const ks = keystore();
+  for (let tries = 0; tries < 3 && maps.some(unheld); tries += 1) {
+    if (tries > 0) {
+      await new Promise(function (resolve) {
+        setTimeout(resolve, 500);
+      });
+    }
+    try {
+      await ks.refreshDekRows({ fresh: true });
+    } catch (e) {
+      log.debug("Caught in adoptDataKeysFor(): " + ((e && e.message) || e));
+    }
+  }
+  log.debug("Leaving adoptDataKeysFor().");
+}
+
 /**
  * Wraps a persistence driver's four settings methods so that secret settings
  * are sealed on the way in and opened on the way out. The driver is changed
@@ -157,7 +201,9 @@ function wrap(driver) {
       log.debug("Leaving sealed loadOverrides().");
       return Promise.resolve(loadOverrides.apply(driver, arguments))
         .then(function (saved) {
-          return saved ? openMap(saved, 'the service settings') : saved;
+          return adoptDataKeysFor([saved]).then(function () {
+            return saved ? openMap(saved, 'the service settings') : saved;
+          });
         });
     };
   }
@@ -185,6 +231,14 @@ function wrap(driver) {
       log.debug("Entering sealed loadRealms().");
       log.debug("Leaving sealed loadRealms().");
       return Promise.resolve(loadRealms.apply(driver, arguments))
+        .then(function (rows) {
+          return adoptDataKeysFor(Array.isArray(rows) ? rows.map(
+            function (row) {
+              return (row && row.overrides) || {};
+            }) : []).then(function () {
+            return rows;
+          });
+        })
         .then(function (rows) {
           return Array.isArray(rows) ? rows.map(function (row) {
             return row ? Object.assign({}, row, {
