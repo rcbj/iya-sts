@@ -6479,11 +6479,15 @@ member's type — in `common/applications.js`'s `*MetadataProblem()` and
 `OAuthModel.memberFits()` / `itemFits()` (`registrationTypeFits()` there)
 and keeps its own words and code; the problems that read a value's meaning
 (an algorithm this service signs with, an https URL, a delivery mode, the
-RFC 8705 subject grammar in `certificate_subject.js`) stay code. **Several
-members of a wrong type are accepted today** — `jwks: "x"`, `client_name: 5`,
-`contacts: "x"`, `client_uri: 42`, `software_id: 5`, the two
-`*_logout_session_required: "yes"`, `token_endpoint_auth_method: 5`, and
-`grant_types` / `response_types` as a string — and the wire record holds
-that. A registration and an RFC 7592 update are held to the set and each
-such member is recorded under `STS-OAUTH-1005`; refusing them would change
-the endpoint, which is rcbj's decision.
+RFC 8705 subject grammar in `certificate_subject.js`) stay code. **Every
+other member of a wrong JSON type is refused** (rcbj's decision on #1579,
+2026-11-11): `registrationTypeProblem()` is the LAST check of a
+registration, an RFC 7592 update and an OpenID Federation automatic
+registration, so a member a specific refusal tests keeps its words, and the
+rest — `jwks: "x"`, `client_name: 5`, `contacts: "x"`, `client_uri: 42`,
+`software_id: 5`, the two `*_logout_session_required: "yes"`,
+`token_endpoint_auth_method: 5`, `grant_types` / `response_types` as a
+string, an array holding a non-string — are `invalid_client_metadata`
+(RFC 7591 section 3.2.2), `STS-OAUTH-1007`. Until then each was recorded
+under `STS-OAUTH-1005` and accepted. A member the model does not name is
+still ignored, as section 2 says.

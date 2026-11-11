@@ -179,6 +179,25 @@ class OAuthModel {
   }
 
   /**
+   * A member's JSON types as words a refusal can say: `a string`,
+   * `an array or an object`.
+   *
+   * @param types - from the model
+   * @returns the words
+   */
+  static typeWords(types: string[]): string {
+    log.debug("Entering OAuthModel.typeWords().");
+    const words = types.map(function (type) {
+      if (type === 'any') {
+        return 'any value';
+      }
+      return (/^[aeiou]/.test(type) ? 'an ' : 'a ') + type;
+    }).join(' or ');
+    log.debug("Leaving OAuthModel.typeWords().");
+    return words;
+  }
+
+  /**
    * One named member of a set.
    *
    * @param id - the member set's id

@@ -6281,7 +6281,7 @@
    "step": "register, jwks \"x\"",
    "method": "POST",
    "path": "/oauth2/register",
-   "status": 201,
+   "status": 400,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -6293,24 +6293,8 @@
     "x-frame-options": "DENY"
    },
    "body": {
-    "redirect_uris": [
-     "https://rp.wire.example/cb"
-    ],
-    "jwks": "x",
-    "token_endpoint_auth_method": "client_secret_basic",
-    "grant_types": [
-     "authorization_code"
-    ],
-    "response_types": [
-     "code"
-    ],
-    "application_type": "web",
-    "client_id": "<client>",
-    "client_id_issued_at": "<epoch>",
-    "client_secret": "<client_secret>",
-    "client_secret_expires_at": "<client_secret_expires_at>",
-    "registration_access_token": "<registration_access_token>",
-    "registration_client_uri": "http://<port>/oauth2/register/<client>"
+    "error": "invalid_client_metadata",
+    "error_description": "RFC 7591 section 2: jwks must be an object."
    }
   },
   {
@@ -6780,7 +6764,7 @@
    "step": "register, backchannel_logout_session_required \"yes\"",
    "method": "POST",
    "path": "/oauth2/register",
-   "status": 201,
+   "status": 400,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -6792,24 +6776,8 @@
     "x-frame-options": "DENY"
    },
    "body": {
-    "redirect_uris": [
-     "https://rp.wire.example/cb"
-    ],
-    "backchannel_logout_session_required": "yes",
-    "token_endpoint_auth_method": "client_secret_basic",
-    "grant_types": [
-     "authorization_code"
-    ],
-    "response_types": [
-     "code"
-    ],
-    "application_type": "web",
-    "client_id": "<client>",
-    "client_id_issued_at": "<epoch>",
-    "client_secret": "<client_secret>",
-    "client_secret_expires_at": "<client_secret_expires_at>",
-    "registration_access_token": "<registration_access_token>",
-    "registration_client_uri": "http://<port>/oauth2/register/<client>"
+    "error": "invalid_client_metadata",
+    "error_description": "RFC 7591 section 2: backchannel_logout_session_required must be a boolean."
    }
   },
   {
@@ -6817,7 +6785,7 @@
    "step": "register, frontchannel_logout_session_required \"yes\"",
    "method": "POST",
    "path": "/oauth2/register",
-   "status": 201,
+   "status": 400,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -6829,24 +6797,8 @@
     "x-frame-options": "DENY"
    },
    "body": {
-    "redirect_uris": [
-     "https://rp.wire.example/cb"
-    ],
-    "frontchannel_logout_session_required": "yes",
-    "token_endpoint_auth_method": "client_secret_basic",
-    "grant_types": [
-     "authorization_code"
-    ],
-    "response_types": [
-     "code"
-    ],
-    "application_type": "web",
-    "client_id": "<client>",
-    "client_id_issued_at": "<epoch>",
-    "client_secret": "<client_secret>",
-    "client_secret_expires_at": "<client_secret_expires_at>",
-    "registration_access_token": "<registration_access_token>",
-    "registration_client_uri": "http://<port>/oauth2/register/<client>"
+    "error": "invalid_client_metadata",
+    "error_description": "RFC 7591 section 2: frontchannel_logout_session_required must be a boolean."
    }
   },
   {
@@ -7043,7 +6995,7 @@
    "step": "register, token_endpoint_auth_method 5",
    "method": "POST",
    "path": "/oauth2/register",
-   "status": 201,
+   "status": 400,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -7055,23 +7007,8 @@
     "x-frame-options": "DENY"
    },
    "body": {
-    "redirect_uris": [
-     "https://rp.wire.example/cb"
-    ],
-    "token_endpoint_auth_method": "5",
-    "grant_types": [
-     "authorization_code"
-    ],
-    "response_types": [
-     "code"
-    ],
-    "application_type": "web",
-    "client_id": "<client>",
-    "client_id_issued_at": "<epoch>",
-    "client_secret": "<client_secret>",
-    "client_secret_expires_at": "<client_secret_expires_at>",
-    "registration_access_token": "<registration_access_token>",
-    "registration_client_uri": "http://<port>/oauth2/register/<client>"
+    "error": "invalid_client_metadata",
+    "error_description": "RFC 7591 section 2: token_endpoint_auth_method must be a string."
    }
   },
   {
@@ -7079,7 +7016,7 @@
    "step": "register, grant_types \"x\"",
    "method": "POST",
    "path": "/oauth2/register",
-   "status": 201,
+   "status": 400,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -7091,23 +7028,8 @@
     "x-frame-options": "DENY"
    },
    "body": {
-    "redirect_uris": [
-     "https://rp.wire.example/cb"
-    ],
-    "grant_types": [
-     "authorization_code"
-    ],
-    "token_endpoint_auth_method": "client_secret_basic",
-    "response_types": [
-     "code"
-    ],
-    "application_type": "web",
-    "client_id": "<client>",
-    "client_id_issued_at": "<epoch>",
-    "client_secret": "<client_secret>",
-    "client_secret_expires_at": "<client_secret_expires_at>",
-    "registration_access_token": "<registration_access_token>",
-    "registration_client_uri": "http://<port>/oauth2/register/<client>"
+    "error": "invalid_client_metadata",
+    "error_description": "RFC 7591 section 2: grant_types must be an array."
    }
   },
   {
@@ -7115,7 +7037,7 @@
    "step": "register, response_types \"x\"",
    "method": "POST",
    "path": "/oauth2/register",
-   "status": 201,
+   "status": 400,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -7127,23 +7049,8 @@
     "x-frame-options": "DENY"
    },
    "body": {
-    "redirect_uris": [
-     "https://rp.wire.example/cb"
-    ],
-    "response_types": [
-     "code"
-    ],
-    "token_endpoint_auth_method": "client_secret_basic",
-    "grant_types": [
-     "authorization_code"
-    ],
-    "application_type": "web",
-    "client_id": "<client>",
-    "client_id_issued_at": "<epoch>",
-    "client_secret": "<client_secret>",
-    "client_secret_expires_at": "<client_secret_expires_at>",
-    "registration_access_token": "<registration_access_token>",
-    "registration_client_uri": "http://<port>/oauth2/register/<client>"
+    "error": "invalid_client_metadata",
+    "error_description": "RFC 7591 section 2: response_types must be an array."
    }
   },
   {
@@ -7151,7 +7058,7 @@
    "step": "register, client_name 5",
    "method": "POST",
    "path": "/oauth2/register",
-   "status": 201,
+   "status": 400,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -7163,24 +7070,8 @@
     "x-frame-options": "DENY"
    },
    "body": {
-    "redirect_uris": [
-     "https://rp.wire.example/cb"
-    ],
-    "client_name": 5,
-    "token_endpoint_auth_method": "client_secret_basic",
-    "grant_types": [
-     "authorization_code"
-    ],
-    "response_types": [
-     "code"
-    ],
-    "application_type": "web",
-    "client_id": "<client>",
-    "client_id_issued_at": "<epoch>",
-    "client_secret": "<client_secret>",
-    "client_secret_expires_at": "<client_secret_expires_at>",
-    "registration_access_token": "<registration_access_token>",
-    "registration_client_uri": "http://<port>/oauth2/register/<client>"
+    "error": "invalid_client_metadata",
+    "error_description": "RFC 7591 section 2: client_name must be a string."
    }
   },
   {
@@ -7188,7 +7079,7 @@
    "step": "register, contacts \"x\"",
    "method": "POST",
    "path": "/oauth2/register",
-   "status": 201,
+   "status": 400,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -7200,24 +7091,8 @@
     "x-frame-options": "DENY"
    },
    "body": {
-    "redirect_uris": [
-     "https://rp.wire.example/cb"
-    ],
-    "contacts": "x",
-    "token_endpoint_auth_method": "client_secret_basic",
-    "grant_types": [
-     "authorization_code"
-    ],
-    "response_types": [
-     "code"
-    ],
-    "application_type": "web",
-    "client_id": "<client>",
-    "client_id_issued_at": "<epoch>",
-    "client_secret": "<client_secret>",
-    "client_secret_expires_at": "<client_secret_expires_at>",
-    "registration_access_token": "<registration_access_token>",
-    "registration_client_uri": "http://<port>/oauth2/register/<client>"
+    "error": "invalid_client_metadata",
+    "error_description": "RFC 7591 section 2: contacts must be an array."
    }
   },
   {
@@ -7246,7 +7121,7 @@
    "step": "register, client_uri 42",
    "method": "POST",
    "path": "/oauth2/register",
-   "status": 201,
+   "status": 400,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -7258,24 +7133,8 @@
     "x-frame-options": "DENY"
    },
    "body": {
-    "redirect_uris": [
-     "https://rp.wire.example/cb"
-    ],
-    "client_uri": 42,
-    "token_endpoint_auth_method": "client_secret_basic",
-    "grant_types": [
-     "authorization_code"
-    ],
-    "response_types": [
-     "code"
-    ],
-    "application_type": "web",
-    "client_id": "<client>",
-    "client_id_issued_at": "<epoch>",
-    "client_secret": "<client_secret>",
-    "client_secret_expires_at": "<client_secret_expires_at>",
-    "registration_access_token": "<registration_access_token>",
-    "registration_client_uri": "http://<port>/oauth2/register/<client>"
+    "error": "invalid_client_metadata",
+    "error_description": "RFC 7591 section 2: client_uri must be a string."
    }
   },
   {
@@ -7346,7 +7205,7 @@
    "step": "register, software_id 5",
    "method": "POST",
    "path": "/oauth2/register",
-   "status": 201,
+   "status": 400,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -7358,24 +7217,8 @@
     "x-frame-options": "DENY"
    },
    "body": {
-    "redirect_uris": [
-     "https://rp.wire.example/cb"
-    ],
-    "software_id": 5,
-    "token_endpoint_auth_method": "client_secret_basic",
-    "grant_types": [
-     "authorization_code"
-    ],
-    "response_types": [
-     "code"
-    ],
-    "application_type": "web",
-    "client_id": "<client>",
-    "client_id_issued_at": "<epoch>",
-    "client_secret": "<client_secret>",
-    "client_secret_expires_at": "<client_secret_expires_at>",
-    "registration_access_token": "<registration_access_token>",
-    "registration_client_uri": "http://<port>/oauth2/register/<client>"
+    "error": "invalid_client_metadata",
+    "error_description": "RFC 7591 section 2: software_id must be a string."
    }
   },
   {
@@ -7383,7 +7226,7 @@
    "step": "register, software_version 5",
    "method": "POST",
    "path": "/oauth2/register",
-   "status": 201,
+   "status": 400,
    "headers": {
     "cache-control": "no-store",
     "content-security-policy": "default-src 'none'; script-src 'none'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
@@ -7395,24 +7238,8 @@
     "x-frame-options": "DENY"
    },
    "body": {
-    "redirect_uris": [
-     "https://rp.wire.example/cb"
-    ],
-    "software_version": 5,
-    "token_endpoint_auth_method": "client_secret_basic",
-    "grant_types": [
-     "authorization_code"
-    ],
-    "response_types": [
-     "code"
-    ],
-    "application_type": "web",
-    "client_id": "<client>",
-    "client_id_issued_at": "<epoch>",
-    "client_secret": "<client_secret>",
-    "client_secret_expires_at": "<client_secret_expires_at>",
-    "registration_access_token": "<registration_access_token>",
-    "registration_client_uri": "http://<port>/oauth2/register/<client>"
+    "error": "invalid_client_metadata",
+    "error_description": "RFC 7591 section 2: software_version must be a string."
    }
   },
   {
@@ -7661,7 +7488,7 @@
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
    },
-   "body": "<!doctype html><html lang=\"en\" dir=\"ltr\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>This sign-out request could not be read</title><style>body{font-family:system-ui,-apple-system,\"Segoe UI\",Roboto,sans-serif;margin:2rem auto;max-width:46rem;padding:0 1rem;line-height:1.5;color:#222;background:#fff}h1{font-size:1.5rem;margin:.4rem 0 1rem}code{font-family:ui-monospace,Menlo,monospace;font-size:.85rem;background:#f4f4f8;padding:.1rem .25rem;border-radius:3px;word-break:break-all}.warn{background:#fff8e1;border:1px solid #ffe082;padding:.7rem .9rem;border-radius:4px;margin:1rem 0}.warn .error{display:block;font-weight:600;margin-bottom:.2rem}details.prose{margin:1rem 0;color:#444}details.prose>summary{cursor:pointer;color:#1f4fa3}details.prose>summary:hover{color:#2c5cc5}details.prose>div{margin:.5rem 0 0 1rem;font-size:.92rem}.next{margin:1.2rem 0}.next a.portal{display:inline-block;margin-top:.5rem;padding:.35rem .8rem;border:1px solid #1f4fa3;border-radius:4px;color:#1f4fa3;text-decoration:none}.next a.portal:hover{background:#eef3fc}button.as-link{background:none;border:0;padding:0;font:inherit;color:#00e;color:LinkText;text-decoration:underline;cursor:pointer}section.diagnostics{margin:2rem 0 1rem;padding:.6rem .9rem;border:1px solid #ddd;border-radius:4px;background:#fafafa;font-size:.82rem;color:#555}section.diagnostics h2{font-size:.85rem;margin:0 0 .4rem;text-transform:uppercase;letter-spacing:.04em;color:#666}section.diagnostics dl{display:grid;grid-template-columns:max-content 1fr;gap:.15rem .9rem;margin:0}section.diagnostics dt{color:#666}section.diagnostics dd{margin:0;min-width:0}section.diagnostics dd code{font-size:.8rem}.sub{color:#666;font-size:.92rem}details.language-row{float:right;margin:0 0 .5rem 1rem}details.language-row{font-size:.85em;position:relative}details.language-row>summary{cursor:pointer;list-style:none;padding:2px 6px;border-radius:6px;white-space:nowrap}details.language-row>summary::-webkit-details-marker{display:none}details.language-row>summary::before{content:\"\\25B8\\00A0\"}details.language-row[open]>summary::before{content:\"\\25BE\\00A0\"}details.language-row .lr-label{opacity:.7}details.language-row .lr-current{font-weight:600}details.language-row form.language-chooser{float:none;display:flex;align-items:center;gap:6px;margin:0;position:absolute;right:0;top:100%;z-index:30;white-space:nowrap;background:#fff;color:#222;border:1px solid #c9cad6;border-radius:8px;padding:8px 10px;box-shadow:0 4px 14px rgba(0,0,0,.14)}</style></head><body><details class=\"language-row\"><summary><span class=\"lr-label\">Language</span> <span class=\"lr-current\" lang=\"en\">English</span></summary><form class=\"language-chooser\" method=\"post\" action=\"/authn/language\"><input type=\"hidden\" name=\"return\" value=\"/oauth2/logout?client_id=wire-conf&amp;post_logout_redirect_uri=javascript%3Aalert%281%29\"><label for=\"sts-language\">Language</label> <select id=\"sts-language\" name=\"lang\"><option value=\"en\" lang=\"en\" selected>English</option><option value=\"fr-FR\" lang=\"fr-FR\">Français (France)</option><option value=\"fr-CA\" lang=\"fr-CA\">Français (Canada)</option><option value=\"es-MX\" lang=\"es-MX\">Español (México)</option><option value=\"es-PA\" lang=\"es-PA\">Español (Panamá)</option><option value=\"es-ES\" lang=\"es-ES\">Español (España)</option><option value=\"zh-CN\" lang=\"zh-CN\">简体中文（中国）</option><option value=\"zh-HK\" lang=\"zh-HK\">繁體中文（香港）</option><option value=\"zh-TW\" lang=\"zh-TW\">繁體中文（台灣）</option><option value=\"fil-PH\" lang=\"fil-PH\">Filipino (Pilipinas)</option><option value=\"sv-SE\" lang=\"sv-SE\">Svenska (Sverige)</option></select> <button type=\"submit\">Change</button></form></details><h1>This sign-out request could not be read</h1><div class=\"warn\" role=\"alert\">This sign-out request is malformed: one of its parameters is not valid. The diagnostics below say which.</div><p>Nothing has been done: you are still signed in.</p><div class=\"next\"><p>Close this tab and start again from the application you were using. If this happens again, send the diagnostics below to whoever runs that application.</p><a class=\"portal\" href=\"/portal\">Go to your account</a></div><section class=\"diagnostics\" aria-labelledby=\"diagnostics-heading\"><h2 id=\"diagnostics-heading\">Diagnostics</h2><dl><dt>Time (UTC)</dt><dd><code><time></code></dd><dt>Incident ID</dt><dd><code>336</code></dd><dt>Detail</dt><dd><code>the query parameter &quot;post_logout_redirect_uri&quot; is not acceptable: must be an http or https URL, or a native application&#39;s private-use scheme named for a domain in reverse order, such as com.example.app:/callback (RFC 8252 section 7.1; a scheme with no period, like &quot;javascript:&quot;, is refused).</code></dd></dl></section></body></html>"
+   "body": "<!doctype html><html lang=\"en\" dir=\"ltr\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>This sign-out request could not be read</title><style>body{font-family:system-ui,-apple-system,\"Segoe UI\",Roboto,sans-serif;margin:2rem auto;max-width:46rem;padding:0 1rem;line-height:1.5;color:#222;background:#fff}h1{font-size:1.5rem;margin:.4rem 0 1rem}code{font-family:ui-monospace,Menlo,monospace;font-size:.85rem;background:#f4f4f8;padding:.1rem .25rem;border-radius:3px;word-break:break-all}.warn{background:#fff8e1;border:1px solid #ffe082;padding:.7rem .9rem;border-radius:4px;margin:1rem 0}.warn .error{display:block;font-weight:600;margin-bottom:.2rem}details.prose{margin:1rem 0;color:#444}details.prose>summary{cursor:pointer;color:#1f4fa3}details.prose>summary:hover{color:#2c5cc5}details.prose>div{margin:.5rem 0 0 1rem;font-size:.92rem}.next{margin:1.2rem 0}.next a.portal{display:inline-block;margin-top:.5rem;padding:.35rem .8rem;border:1px solid #1f4fa3;border-radius:4px;color:#1f4fa3;text-decoration:none}.next a.portal:hover{background:#eef3fc}button.as-link{background:none;border:0;padding:0;font:inherit;color:#00e;color:LinkText;text-decoration:underline;cursor:pointer}section.diagnostics{margin:2rem 0 1rem;padding:.6rem .9rem;border:1px solid #ddd;border-radius:4px;background:#fafafa;font-size:.82rem;color:#555}section.diagnostics h2{font-size:.85rem;margin:0 0 .4rem;text-transform:uppercase;letter-spacing:.04em;color:#666}section.diagnostics dl{display:grid;grid-template-columns:max-content 1fr;gap:.15rem .9rem;margin:0}section.diagnostics dt{color:#666}section.diagnostics dd{margin:0;min-width:0}section.diagnostics dd code{font-size:.8rem}.sub{color:#666;font-size:.92rem}details.language-row{float:right;margin:0 0 .5rem 1rem}details.language-row{font-size:.85em;position:relative}details.language-row>summary{cursor:pointer;list-style:none;padding:2px 6px;border-radius:6px;white-space:nowrap}details.language-row>summary::-webkit-details-marker{display:none}details.language-row>summary::before{content:\"\\25B8\\00A0\"}details.language-row[open]>summary::before{content:\"\\25BE\\00A0\"}details.language-row .lr-label{opacity:.7}details.language-row .lr-current{font-weight:600}details.language-row form.language-chooser{float:none;display:flex;align-items:center;gap:6px;margin:0;position:absolute;right:0;top:100%;z-index:30;white-space:nowrap;background:#fff;color:#222;border:1px solid #c9cad6;border-radius:8px;padding:8px 10px;box-shadow:0 4px 14px rgba(0,0,0,.14)}</style></head><body><details class=\"language-row\"><summary><span class=\"lr-label\">Language</span> <span class=\"lr-current\" lang=\"en\">English</span></summary><form class=\"language-chooser\" method=\"post\" action=\"/authn/language\"><input type=\"hidden\" name=\"return\" value=\"/oauth2/logout?client_id=wire-conf&amp;post_logout_redirect_uri=javascript%3Aalert%281%29\"><label for=\"sts-language\">Language</label> <select id=\"sts-language\" name=\"lang\"><option value=\"en\" lang=\"en\" selected>English</option><option value=\"fr-FR\" lang=\"fr-FR\">Français (France)</option><option value=\"fr-CA\" lang=\"fr-CA\">Français (Canada)</option><option value=\"es-MX\" lang=\"es-MX\">Español (México)</option><option value=\"es-PA\" lang=\"es-PA\">Español (Panamá)</option><option value=\"es-ES\" lang=\"es-ES\">Español (España)</option><option value=\"zh-CN\" lang=\"zh-CN\">简体中文（中国）</option><option value=\"zh-HK\" lang=\"zh-HK\">繁體中文（香港）</option><option value=\"zh-TW\" lang=\"zh-TW\">繁體中文（台灣）</option><option value=\"fil-PH\" lang=\"fil-PH\">Filipino (Pilipinas)</option><option value=\"sv-SE\" lang=\"sv-SE\">Svenska (Sverige)</option></select> <button type=\"submit\">Change</button></form></details><h1>This sign-out request could not be read</h1><div class=\"warn\" role=\"alert\">This sign-out request is malformed: one of its parameters is not valid. The diagnostics below say which.</div><p>Nothing has been done: you are still signed in.</p><div class=\"next\"><p>Close this tab and start again from the application you were using. If this happens again, send the diagnostics below to whoever runs that application.</p><a class=\"portal\" href=\"/portal\">Go to your account</a></div><section class=\"diagnostics\" aria-labelledby=\"diagnostics-heading\"><h2 id=\"diagnostics-heading\">Diagnostics</h2><dl><dt>Time (UTC)</dt><dd><code><time></code></dd><dt>Incident ID</dt><dd><code>266</code></dd><dt>Detail</dt><dd><code>the query parameter &quot;post_logout_redirect_uri&quot; is not acceptable: must be an http or https URL, or a native application&#39;s private-use scheme named for a domain in reverse order, such as com.example.app:/callback (RFC 8252 section 7.1; a scheme with no period, like &quot;javascript:&quot;, is refused).</code></dd></dl></section></body></html>"
   },
   {
    "mode": "development",
@@ -7689,7 +7516,7 @@
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
    },
-   "body": "<!doctype html><html lang=\"en\" dir=\"ltr\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Sign-out request partly refused</title><style>body{font-family:system-ui,-apple-system,\"Segoe UI\",Roboto,sans-serif;margin:2rem auto;max-width:52rem;padding:0 1rem;line-height:1.5;color:#111}h1{font-size:1.4rem}h2{font-size:1.1rem;margin-top:1.6rem}.sub{color:#555;font-size:.9rem}.ok{background:#e8f5e9;border-left:4px solid #2e7d32;padding:.6rem .8rem;margin:1rem 0}.warn{background:#fff8e1;border-left:4px solid #b26a00;padding:.6rem .8rem;margin:1rem 0}table{border-collapse:collapse;width:100%;margin:.6rem 0}th,td{text-align:left;padding:.4rem .6rem;border-bottom:1px solid #ddd;vertical-align:top}code{background:#f4f4f4;padding:.05rem .25rem;border-radius:3px;word-break:break-all}details.language-row{float:right;margin:0 0 .5rem 1rem}.next{margin:1.2rem 0}.next a.portal{display:inline-block;margin-top:.5rem;padding:.35rem .8rem;border:1px solid #1f4fa3;border-radius:4px;color:#1f4fa3;text-decoration:none}.next a.portal:hover{background:#eef3fc}button.as-link{background:none;border:0;padding:0;font:inherit;color:#00e;color:LinkText;text-decoration:underline;cursor:pointer}section.diagnostics{margin:2rem 0 1rem;padding:.6rem .9rem;border:1px solid #ddd;border-radius:4px;background:#fafafa;font-size:.82rem;color:#555}section.diagnostics h2{font-size:.85rem;margin:0 0 .4rem;text-transform:uppercase;letter-spacing:.04em;color:#666}section.diagnostics dl{display:grid;grid-template-columns:max-content 1fr;gap:.15rem .9rem;margin:0}section.diagnostics dt{color:#666}section.diagnostics dd{margin:0;min-width:0}section.diagnostics dd code{font-size:.8rem}details.language-row{font-size:.85em;position:relative}details.language-row>summary{cursor:pointer;list-style:none;padding:2px 6px;border-radius:6px;white-space:nowrap}details.language-row>summary::-webkit-details-marker{display:none}details.language-row>summary::before{content:\"\\25B8\\00A0\"}details.language-row[open]>summary::before{content:\"\\25BE\\00A0\"}details.language-row .lr-label{opacity:.7}details.language-row .lr-current{font-weight:600}details.language-row form.language-chooser{float:none;display:flex;align-items:center;gap:6px;margin:0;position:absolute;right:0;top:100%;z-index:30;white-space:nowrap;background:#fff;color:#222;border:1px solid #c9cad6;border-radius:8px;padding:8px 10px;box-shadow:0 4px 14px rgba(0,0,0,.14)}</style></head><body><details class=\"language-row\"><summary><span class=\"lr-label\">Language</span> <span class=\"lr-current\" lang=\"en\">English</span></summary><form class=\"language-chooser\" method=\"post\" action=\"/authn/language\"><input type=\"hidden\" name=\"return\" value=\"/\"><label for=\"sts-language\">Language</label> <select id=\"sts-language\" name=\"lang\"><option value=\"en\" lang=\"en\" selected>English</option><option value=\"fr-FR\" lang=\"fr-FR\">Français (France)</option><option value=\"fr-CA\" lang=\"fr-CA\">Français (Canada)</option><option value=\"es-MX\" lang=\"es-MX\">Español (México)</option><option value=\"es-PA\" lang=\"es-PA\">Español (Panamá)</option><option value=\"es-ES\" lang=\"es-ES\">Español (España)</option><option value=\"zh-CN\" lang=\"zh-CN\">简体中文（中国）</option><option value=\"zh-HK\" lang=\"zh-HK\">繁體中文（香港）</option><option value=\"zh-TW\" lang=\"zh-TW\">繁體中文（台灣）</option><option value=\"fil-PH\" lang=\"fil-PH\">Filipino (Pilipinas)</option><option value=\"sv-SE\" lang=\"sv-SE\">Svenska (Sverige)</option></select> <button type=\"submit\">Change</button></form></details><h1>Sign-out request partly refused</h1><div class=\"warn\" role=\"alert\" id=\"logout-return-refused\"><strong>This sign-out request is not valid as sent: its post_logout_redirect_uri is not one this client registered, so it is not followed.</strong> The request named <code>https://evil.example/</code> (RP-Initiated Logout 1.0 section 3).</div><div class=\"ok\">There was no session to end.</div><div class=\"next\"><p>Close this tab and start again from the application you were using. If this happens again, send the diagnostics below to whoever runs that application.</p><a class=\"portal\" href=\"/portal\">Go to your account</a></div><section class=\"diagnostics\" aria-labelledby=\"diagnostics-heading\"><h2 id=\"diagnostics-heading\">Diagnostics</h2><dl><dt>Time (UTC)</dt><dd><code><time></code></dd><dt>Incident ID</dt><dd><code>338</code></dd><dt>Application (client_id)</dt><dd><code>wire-conf</code></dd><dt>Requested post_logout_redirect_uri</dt><dd><code>https://evil.example/</code></dd><dt>Detail</dt><dd><code>RP-Initiated Logout 1.0 section 3: &quot;https://evil.example/&quot; is not a post-logout redirect URI this client registered.</code></dd></dl></section></body></html>"
+   "body": "<!doctype html><html lang=\"en\" dir=\"ltr\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Sign-out request partly refused</title><style>body{font-family:system-ui,-apple-system,\"Segoe UI\",Roboto,sans-serif;margin:2rem auto;max-width:52rem;padding:0 1rem;line-height:1.5;color:#111}h1{font-size:1.4rem}h2{font-size:1.1rem;margin-top:1.6rem}.sub{color:#555;font-size:.9rem}.ok{background:#e8f5e9;border-left:4px solid #2e7d32;padding:.6rem .8rem;margin:1rem 0}.warn{background:#fff8e1;border-left:4px solid #b26a00;padding:.6rem .8rem;margin:1rem 0}table{border-collapse:collapse;width:100%;margin:.6rem 0}th,td{text-align:left;padding:.4rem .6rem;border-bottom:1px solid #ddd;vertical-align:top}code{background:#f4f4f4;padding:.05rem .25rem;border-radius:3px;word-break:break-all}details.language-row{float:right;margin:0 0 .5rem 1rem}.next{margin:1.2rem 0}.next a.portal{display:inline-block;margin-top:.5rem;padding:.35rem .8rem;border:1px solid #1f4fa3;border-radius:4px;color:#1f4fa3;text-decoration:none}.next a.portal:hover{background:#eef3fc}button.as-link{background:none;border:0;padding:0;font:inherit;color:#00e;color:LinkText;text-decoration:underline;cursor:pointer}section.diagnostics{margin:2rem 0 1rem;padding:.6rem .9rem;border:1px solid #ddd;border-radius:4px;background:#fafafa;font-size:.82rem;color:#555}section.diagnostics h2{font-size:.85rem;margin:0 0 .4rem;text-transform:uppercase;letter-spacing:.04em;color:#666}section.diagnostics dl{display:grid;grid-template-columns:max-content 1fr;gap:.15rem .9rem;margin:0}section.diagnostics dt{color:#666}section.diagnostics dd{margin:0;min-width:0}section.diagnostics dd code{font-size:.8rem}details.language-row{font-size:.85em;position:relative}details.language-row>summary{cursor:pointer;list-style:none;padding:2px 6px;border-radius:6px;white-space:nowrap}details.language-row>summary::-webkit-details-marker{display:none}details.language-row>summary::before{content:\"\\25B8\\00A0\"}details.language-row[open]>summary::before{content:\"\\25BE\\00A0\"}details.language-row .lr-label{opacity:.7}details.language-row .lr-current{font-weight:600}details.language-row form.language-chooser{float:none;display:flex;align-items:center;gap:6px;margin:0;position:absolute;right:0;top:100%;z-index:30;white-space:nowrap;background:#fff;color:#222;border:1px solid #c9cad6;border-radius:8px;padding:8px 10px;box-shadow:0 4px 14px rgba(0,0,0,.14)}</style></head><body><details class=\"language-row\"><summary><span class=\"lr-label\">Language</span> <span class=\"lr-current\" lang=\"en\">English</span></summary><form class=\"language-chooser\" method=\"post\" action=\"/authn/language\"><input type=\"hidden\" name=\"return\" value=\"/\"><label for=\"sts-language\">Language</label> <select id=\"sts-language\" name=\"lang\"><option value=\"en\" lang=\"en\" selected>English</option><option value=\"fr-FR\" lang=\"fr-FR\">Français (France)</option><option value=\"fr-CA\" lang=\"fr-CA\">Français (Canada)</option><option value=\"es-MX\" lang=\"es-MX\">Español (México)</option><option value=\"es-PA\" lang=\"es-PA\">Español (Panamá)</option><option value=\"es-ES\" lang=\"es-ES\">Español (España)</option><option value=\"zh-CN\" lang=\"zh-CN\">简体中文（中国）</option><option value=\"zh-HK\" lang=\"zh-HK\">繁體中文（香港）</option><option value=\"zh-TW\" lang=\"zh-TW\">繁體中文（台灣）</option><option value=\"fil-PH\" lang=\"fil-PH\">Filipino (Pilipinas)</option><option value=\"sv-SE\" lang=\"sv-SE\">Svenska (Sverige)</option></select> <button type=\"submit\">Change</button></form></details><h1>Sign-out request partly refused</h1><div class=\"warn\" role=\"alert\" id=\"logout-return-refused\"><strong>This sign-out request is not valid as sent: its post_logout_redirect_uri is not one this client registered, so it is not followed.</strong> The request named <code>https://evil.example/</code> (RP-Initiated Logout 1.0 section 3).</div><div class=\"ok\">There was no session to end.</div><div class=\"next\"><p>Close this tab and start again from the application you were using. If this happens again, send the diagnostics below to whoever runs that application.</p><a class=\"portal\" href=\"/portal\">Go to your account</a></div><section class=\"diagnostics\" aria-labelledby=\"diagnostics-heading\"><h2 id=\"diagnostics-heading\">Diagnostics</h2><dl><dt>Time (UTC)</dt><dd><code><time></code></dd><dt>Incident ID</dt><dd><code>268</code></dd><dt>Application (client_id)</dt><dd><code>wire-conf</code></dd><dt>Requested post_logout_redirect_uri</dt><dd><code>https://evil.example/</code></dd><dt>Detail</dt><dd><code>RP-Initiated Logout 1.0 section 3: &quot;https://evil.example/&quot; is not a post-logout redirect URI this client registered.</code></dd></dl></section></body></html>"
   },
   {
    "mode": "development",
@@ -7800,7 +7627,7 @@
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY"
    },
-   "body": "<!doctype html><html lang=\"en\" dir=\"ltr\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>This sign-out request could not be read</title><style>body{font-family:system-ui,-apple-system,\"Segoe UI\",Roboto,sans-serif;margin:2rem auto;max-width:46rem;padding:0 1rem;line-height:1.5;color:#222;background:#fff}h1{font-size:1.5rem;margin:.4rem 0 1rem}code{font-family:ui-monospace,Menlo,monospace;font-size:.85rem;background:#f4f4f8;padding:.1rem .25rem;border-radius:3px;word-break:break-all}.warn{background:#fff8e1;border:1px solid #ffe082;padding:.7rem .9rem;border-radius:4px;margin:1rem 0}.warn .error{display:block;font-weight:600;margin-bottom:.2rem}details.prose{margin:1rem 0;color:#444}details.prose>summary{cursor:pointer;color:#1f4fa3}details.prose>summary:hover{color:#2c5cc5}details.prose>div{margin:.5rem 0 0 1rem;font-size:.92rem}.next{margin:1.2rem 0}.next a.portal{display:inline-block;margin-top:.5rem;padding:.35rem .8rem;border:1px solid #1f4fa3;border-radius:4px;color:#1f4fa3;text-decoration:none}.next a.portal:hover{background:#eef3fc}button.as-link{background:none;border:0;padding:0;font:inherit;color:#00e;color:LinkText;text-decoration:underline;cursor:pointer}section.diagnostics{margin:2rem 0 1rem;padding:.6rem .9rem;border:1px solid #ddd;border-radius:4px;background:#fafafa;font-size:.82rem;color:#555}section.diagnostics h2{font-size:.85rem;margin:0 0 .4rem;text-transform:uppercase;letter-spacing:.04em;color:#666}section.diagnostics dl{display:grid;grid-template-columns:max-content 1fr;gap:.15rem .9rem;margin:0}section.diagnostics dt{color:#666}section.diagnostics dd{margin:0;min-width:0}section.diagnostics dd code{font-size:.8rem}.sub{color:#666;font-size:.92rem}details.language-row{float:right;margin:0 0 .5rem 1rem}details.language-row{font-size:.85em;position:relative}details.language-row>summary{cursor:pointer;list-style:none;padding:2px 6px;border-radius:6px;white-space:nowrap}details.language-row>summary::-webkit-details-marker{display:none}details.language-row>summary::before{content:\"\\25B8\\00A0\"}details.language-row[open]>summary::before{content:\"\\25BE\\00A0\"}details.language-row .lr-label{opacity:.7}details.language-row .lr-current{font-weight:600}details.language-row form.language-chooser{float:none;display:flex;align-items:center;gap:6px;margin:0;position:absolute;right:0;top:100%;z-index:30;white-space:nowrap;background:#fff;color:#222;border:1px solid #c9cad6;border-radius:8px;padding:8px 10px;box-shadow:0 4px 14px rgba(0,0,0,.14)}</style></head><body><details class=\"language-row\"><summary><span class=\"lr-label\">Language</span> <span class=\"lr-current\" lang=\"en\">English</span></summary><form class=\"language-chooser\" method=\"post\" action=\"/authn/language\"><input type=\"hidden\" name=\"return\" value=\"/oauth2/logout?state=a&amp;state=b\"><label for=\"sts-language\">Language</label> <select id=\"sts-language\" name=\"lang\"><option value=\"en\" lang=\"en\" selected>English</option><option value=\"fr-FR\" lang=\"fr-FR\">Français (France)</option><option value=\"fr-CA\" lang=\"fr-CA\">Français (Canada)</option><option value=\"es-MX\" lang=\"es-MX\">Español (México)</option><option value=\"es-PA\" lang=\"es-PA\">Español (Panamá)</option><option value=\"es-ES\" lang=\"es-ES\">Español (España)</option><option value=\"zh-CN\" lang=\"zh-CN\">简体中文（中国）</option><option value=\"zh-HK\" lang=\"zh-HK\">繁體中文（香港）</option><option value=\"zh-TW\" lang=\"zh-TW\">繁體中文（台灣）</option><option value=\"fil-PH\" lang=\"fil-PH\">Filipino (Pilipinas)</option><option value=\"sv-SE\" lang=\"sv-SE\">Svenska (Sverige)</option></select> <button type=\"submit\">Change</button></form></details><h1>This sign-out request could not be read</h1><div class=\"warn\" role=\"alert\">This sign-out request is malformed: one of its parameters is not valid. The diagnostics below say which.</div><p>Nothing has been done: you are still signed in.</p><div class=\"next\"><p>Close this tab and start again from the application you were using. If this happens again, send the diagnostics below to whoever runs that application.</p><a class=\"portal\" href=\"/portal\">Go to your account</a></div><section class=\"diagnostics\" aria-labelledby=\"diagnostics-heading\"><h2 id=\"diagnostics-heading\">Diagnostics</h2><dl><dt>Time (UTC)</dt><dd><code><time></code></dd><dt>Incident ID</dt><dd><code>343</code></dd><dt>Detail</dt><dd><code>the parameter &quot;state&quot; was given 2 times and this endpoint takes it once. It is refused rather than resolved to one of them, because choosing silently is how two readers of the same request come to disagree.</code></dd></dl></section></body></html>"
+   "body": "<!doctype html><html lang=\"en\" dir=\"ltr\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>This sign-out request could not be read</title><style>body{font-family:system-ui,-apple-system,\"Segoe UI\",Roboto,sans-serif;margin:2rem auto;max-width:46rem;padding:0 1rem;line-height:1.5;color:#222;background:#fff}h1{font-size:1.5rem;margin:.4rem 0 1rem}code{font-family:ui-monospace,Menlo,monospace;font-size:.85rem;background:#f4f4f8;padding:.1rem .25rem;border-radius:3px;word-break:break-all}.warn{background:#fff8e1;border:1px solid #ffe082;padding:.7rem .9rem;border-radius:4px;margin:1rem 0}.warn .error{display:block;font-weight:600;margin-bottom:.2rem}details.prose{margin:1rem 0;color:#444}details.prose>summary{cursor:pointer;color:#1f4fa3}details.prose>summary:hover{color:#2c5cc5}details.prose>div{margin:.5rem 0 0 1rem;font-size:.92rem}.next{margin:1.2rem 0}.next a.portal{display:inline-block;margin-top:.5rem;padding:.35rem .8rem;border:1px solid #1f4fa3;border-radius:4px;color:#1f4fa3;text-decoration:none}.next a.portal:hover{background:#eef3fc}button.as-link{background:none;border:0;padding:0;font:inherit;color:#00e;color:LinkText;text-decoration:underline;cursor:pointer}section.diagnostics{margin:2rem 0 1rem;padding:.6rem .9rem;border:1px solid #ddd;border-radius:4px;background:#fafafa;font-size:.82rem;color:#555}section.diagnostics h2{font-size:.85rem;margin:0 0 .4rem;text-transform:uppercase;letter-spacing:.04em;color:#666}section.diagnostics dl{display:grid;grid-template-columns:max-content 1fr;gap:.15rem .9rem;margin:0}section.diagnostics dt{color:#666}section.diagnostics dd{margin:0;min-width:0}section.diagnostics dd code{font-size:.8rem}.sub{color:#666;font-size:.92rem}details.language-row{float:right;margin:0 0 .5rem 1rem}details.language-row{font-size:.85em;position:relative}details.language-row>summary{cursor:pointer;list-style:none;padding:2px 6px;border-radius:6px;white-space:nowrap}details.language-row>summary::-webkit-details-marker{display:none}details.language-row>summary::before{content:\"\\25B8\\00A0\"}details.language-row[open]>summary::before{content:\"\\25BE\\00A0\"}details.language-row .lr-label{opacity:.7}details.language-row .lr-current{font-weight:600}details.language-row form.language-chooser{float:none;display:flex;align-items:center;gap:6px;margin:0;position:absolute;right:0;top:100%;z-index:30;white-space:nowrap;background:#fff;color:#222;border:1px solid #c9cad6;border-radius:8px;padding:8px 10px;box-shadow:0 4px 14px rgba(0,0,0,.14)}</style></head><body><details class=\"language-row\"><summary><span class=\"lr-label\">Language</span> <span class=\"lr-current\" lang=\"en\">English</span></summary><form class=\"language-chooser\" method=\"post\" action=\"/authn/language\"><input type=\"hidden\" name=\"return\" value=\"/oauth2/logout?state=a&amp;state=b\"><label for=\"sts-language\">Language</label> <select id=\"sts-language\" name=\"lang\"><option value=\"en\" lang=\"en\" selected>English</option><option value=\"fr-FR\" lang=\"fr-FR\">Français (France)</option><option value=\"fr-CA\" lang=\"fr-CA\">Français (Canada)</option><option value=\"es-MX\" lang=\"es-MX\">Español (México)</option><option value=\"es-PA\" lang=\"es-PA\">Español (Panamá)</option><option value=\"es-ES\" lang=\"es-ES\">Español (España)</option><option value=\"zh-CN\" lang=\"zh-CN\">简体中文（中国）</option><option value=\"zh-HK\" lang=\"zh-HK\">繁體中文（香港）</option><option value=\"zh-TW\" lang=\"zh-TW\">繁體中文（台灣）</option><option value=\"fil-PH\" lang=\"fil-PH\">Filipino (Pilipinas)</option><option value=\"sv-SE\" lang=\"sv-SE\">Svenska (Sverige)</option></select> <button type=\"submit\">Change</button></form></details><h1>This sign-out request could not be read</h1><div class=\"warn\" role=\"alert\">This sign-out request is malformed: one of its parameters is not valid. The diagnostics below say which.</div><p>Nothing has been done: you are still signed in.</p><div class=\"next\"><p>Close this tab and start again from the application you were using. If this happens again, send the diagnostics below to whoever runs that application.</p><a class=\"portal\" href=\"/portal\">Go to your account</a></div><section class=\"diagnostics\" aria-labelledby=\"diagnostics-heading\"><h2 id=\"diagnostics-heading\">Diagnostics</h2><dl><dt>Time (UTC)</dt><dd><code><time></code></dd><dt>Incident ID</dt><dd><code>273</code></dd><dt>Detail</dt><dd><code>the parameter &quot;state&quot; was given 2 times and this endpoint takes it once. It is refused rather than resolved to one of them, because choosing silently is how two readers of the same request come to disagree.</code></dd></dl></section></body></html>"
   },
   {
    "mode": "development",

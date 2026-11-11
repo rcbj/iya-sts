@@ -21939,6 +21939,56 @@ class OAuth2Server {
   }
 
   // ---------------------------------------------------------------------------
+  // A MEMBER OF THE WRONG JSON TYPE IS REFUSED (rcbj on #1579, 2026-11-11).
+  // `RegistrationRequest` in `models/oauth/oauth_members.tsp` gives every
+  // member this service reads its JSON type, and an array member the type of
+  // its items. Until this date a member no other refusal tested was recorded
+  // under STS-OAUTH-1005 and the registration went on: `grant_types: "x"`,
+  // `jwks: "x"`, `client_name: 5` and the rest were accepted. RFC 7591
+  // section 3.2.2 has the answer, `invalid_client_metadata`. It is asked
+  // LAST in each chain (a registration, an RFC 7592 update, an OpenID
+  // Federation automatic registration), so a member a specific refusal
+  // already tests keeps that refusal's words and code. A member the model
+  // does not name is not this check's business: section 2 says a server
+  // ignores what it does not understand, and the set is open.
+  // ---------------------------------------------------------------------------
+  private registrationTypeProblem(metadata: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.registrationTypeProblem().");
+    const set = OAuthModel.members('registration-request');
+    const problems: string[] = [];
+    set.list.forEach(function (member: Json) {
+      const value = (metadata || {})[member.name];
+      if (value === undefined) {
+        return;
+      }
+      if (!OAuthModel.fits(value, member.types)) {
+        problems.push(member.name + ' must be ' +
+                      OAuthModel.typeWords(member.types));
+        return;
+      }
+      if (member.items && Array.isArray(value) &&
+          !value.every(function (item: unknown) {
+            return OAuthModel.fits(item, member.items);
+          })) {
+        problems.push('every member of ' + member.name + ' must be ' +
+                      OAuthModel.typeWords(member.items));
+      }
+    });
+    if (problems.length === 0) {
+      log.debug("Leaving OAuth2Server.registrationTypeProblem(). None.");
+      return null;
+    }
+    log.debug("Leaving OAuth2Server.registrationTypeProblem(). " +
+              problems.length);
+    return {
+      error: 'invalid_client_metadata',
+      errorCode: 'STS-OAUTH-1007',
+      description: 'RFC 7591 section 2: ' + problems.join('; ') + '.'
+    };
+  }
+
+  // ---------------------------------------------------------------------------
   // RFC 7591 SECTION 2's `scope` AT REGISTRATION (#110, 2026-09-22). The member
   // is written to `oauthAllowedScope` — the list the client may be issued —
   // so a registration naming this service's own protected scopes would be a
@@ -22067,7 +22117,8 @@ class OAuth2Server {
       applications.mtlsMetadataProblem(metadata) ||
       self.mtlsRegistrationProblem(metadata) ||
       applications.authorizationDetailsMetadataProblem(metadata) ||
-      self.registeredScopeProblem(metadata);
+      self.registeredScopeProblem(metadata) ||
+      self.registrationTypeProblem(metadata);
     if (problem) {
       log.debug("Leaving OAuth2Server.registerFederatedClient(). " +
                 problem.description);
@@ -22213,10 +22264,6 @@ class OAuth2Server {
       return self.statementRefused(res, resolved);
     }
     const metadata = resolved.metadata;
-    // THE REQUEST HELD TO THE MODEL (#1579): a member of a JSON type its
-    // definition does not allow, which no refusal below tests, is recorded
-    // and the registration goes on as it always did.
-    self.holdToModel('registration-request', metadata);
     if (metadata.redirect_uris &&
         !OAuthModel.memberFits('registration-request', 'redirect_uris',
                                metadata.redirect_uris)) {
@@ -22257,7 +22304,8 @@ class OAuth2Server {
       applications.mtlsMetadataProblem(metadata) ||
       self.mtlsRegistrationProblem(metadata) ||
       applications.authorizationDetailsMetadataProblem(metadata) ||
-      self.registeredScopeProblem(metadata);
+      self.registeredScopeProblem(metadata) ||
+      self.registrationTypeProblem(metadata);
     if (addressProblem) {
       log.debug("Leaving the client registration endpoint. An unusable " +
                 "address or introspection response algorithm.");
@@ -22436,8 +22484,6 @@ class OAuth2Server {
       return self.statementRefused(res, bound);
     }
     const metadata = resolved.metadata;
-    // Held to the model, as a registration is (#1579).
-    self.holdToModel('registration-request', metadata);
     // RFC 7592 SECTION 2.2 (#120): the update carries the client's own
     // client_id, and a client_secret only if it is the one issued — either
     // was overwritten silently until this date.
@@ -22492,7 +22538,8 @@ class OAuth2Server {
       applications.mtlsMetadataProblem(metadata) ||
       self.mtlsRegistrationProblem(metadata) ||
       applications.authorizationDetailsMetadataProblem(metadata) ||
-      self.registeredScopeProblem(metadata, record.client_id);
+      self.registeredScopeProblem(metadata, record.client_id) ||
+      self.registrationTypeProblem(metadata);
     if (addressProblem) {
       log.debug("Leaving the client update endpoint. An unusable address.");
       errorCodes.mark(res, addressProblem.errorCode || 'STS-REG-0070');

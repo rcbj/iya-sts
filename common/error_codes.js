@@ -11573,6 +11573,15 @@ const CODES = [
       'The response is sent as it was built; the code is to be declared, ' +
       'with the document that defines it.',
     spec: 'none (recorded only; the response is unchanged)' },
+  { code: 'STS-OAUTH-1007',
+    summary: 'A dynamic client registration, an RFC 7592 update or an ' +
+      'OpenID Federation automatic registration carried a member of a JSON ' +
+      'type models/oauth/oauth_members.tsp\'s RegistrationRequest does not ' +
+      'allow (grant_types as a string, client_name as a number, an array ' +
+      'holding a non-string) that no more specific refusal tested (rcbj on ' +
+      '#1579). Until 2026-11-11 it was recorded under STS-OAUTH-1005 and ' +
+      'accepted.',
+    spec: 'invalid_client_metadata (HTTP 400), RFC 7591 section 3.2.2' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
