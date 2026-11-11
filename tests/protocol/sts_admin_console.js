@@ -7400,9 +7400,10 @@ async function theRolesArePressedAndEnforced(driver, created) {
         "the control a directory of thousands made unusable, which the " +
         "search replaced.");
       assert.ok(forms.typed >= 0,
-        "and one that takes a TYPED name, for somebody who has never signed " +
-        "in — a roster that can only name people the directory already knows " +
-        "cannot be used to let the first administrator in. It draws none.");
+        "and one that takes a TYPED name, for a person in the directory " +
+        "the search's pages do not reach (since 2026-11-11 the name must " +
+        "have an entry: STS-ADMIN-0920 refuses one that has none). It " +
+        "draws none.");
     });
 
     await fillAndPress(driver, forms.typed,

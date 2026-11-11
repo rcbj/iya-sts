@@ -365,6 +365,11 @@ async function aRealmAdministratorIsConfined() {
   // OPENS (#103, 2026-09-22), so the realm's roster is given them — through
   // the realm's own API, which is a grant in that realm and nowhere else.
   if (!roster.body.openToAnyone) {
+    // A CONSOLE ROLE IS GRANTED ONLY TO SOMEBODY WHO EXISTS (rcbj,
+    // 2026-11-11, STS-ADMIN-0920), so the account the sign-in below would
+    // make is made first; the sign-in finds it and sets the same password.
+    await consoleSignIn.ensureConsoleAccount(base + R, REALM_PERSON,
+                                             log.info.bind(log));
     const grant = await api("POST", R + "/admin-api/rbac/grant",
                             { username: REALM_PERSON, role: "write" });
     assert.strictEqual(grant.status, 200, "granting " + REALM_PERSON +
@@ -469,6 +474,11 @@ async function theServiceAdministratorIsNot() {
   let granted = false;
   try {
     if (!open) {
+      // A CONSOLE ROLE IS GRANTED ONLY TO SOMEBODY WHO EXISTS (rcbj,
+      // 2026-11-11, STS-ADMIN-0920), so the account the sign-in below would
+      // make is made first; the sign-in finds it and sets the same password.
+      await consoleSignIn.ensureConsoleAccount(base, SERVICE_PERSON,
+                                               log.info.bind(log));
       const grant = await api("POST", "/admin-api/rbac/grant",
                               { username: SERVICE_PERSON, role: "write" });
       assert.strictEqual(grant.status, 200, "granting Admin Write answered " +

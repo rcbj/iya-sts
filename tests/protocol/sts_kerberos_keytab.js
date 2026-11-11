@@ -587,6 +587,11 @@ async function theConsolesForm() {
   let granted = false;
   try {
     if (!open) {
+      // A CONSOLE ROLE IS GRANTED ONLY TO SOMEBODY WHO EXISTS (rcbj,
+      // 2026-11-11, STS-ADMIN-0920), so the account the sign-in below would
+      // make is made first; the sign-in finds it and sets the same password.
+      await consoleSignIn.ensureConsoleAccount(base, ADMIN,
+                                               log.info.bind(log));
       const grant = await apiPost("/rbac/grant",
                                   { username: ADMIN, role: "write" });
       assert.strictEqual(grant.status, 200, "granting Admin Write answered " +

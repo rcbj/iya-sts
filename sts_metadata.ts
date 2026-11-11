@@ -5981,9 +5981,11 @@ const ENDPOINTS: EndpointEntry[] = [
           '2026-09-09, and the consequence was worth stating and is now ' +
           'closed: anybody who could reach this port could grant themselves ' +
           'both roles. Granting a role somebody already holds, or revoking ' +
-          'one they do not, answers 200 with changed:false. A person who ' +
-          'does not exist CAN be granted a role: the membership dangles ' +
-          'until they first sign in. Mirrors POST /admin/rbac.' },
+          'one they do not, answers 200 with changed:false. A role is ' +
+          'granted only to a person who exists: a name with no directory ' +
+          'entry is refused and nothing is written, so that a person ' +
+          'created later under that name inherits nothing. Mirrors POST ' +
+          '/admin/rbac.' },
   { path: '/admin-api/sessions', group: 'Management API', name: 'Live sessions',
     specs: ['openapi', 'oidc', 'rfc4120', 'rfc4511'],
     what: 'NON-SPEC. Every session this service is holding right now, across ' +
