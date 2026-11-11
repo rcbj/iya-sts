@@ -147,7 +147,10 @@ function typeWords(schema) {
   if (schema.const !== undefined) {
     said = '`' + JSON.stringify(schema.const).replace(/^"|"$/g, '') + '`';
   }
-  if (types.indexOf('null') >= 0) {
+  // A nullable enumeration lists null among its values (JSON Schema 2020-12
+  // asks `enum` apart from `type`), and the list already says it.
+  const listed = !!schema.enum && schema.enum.indexOf(null) >= 0;
+  if (types.indexOf('null') >= 0 && !listed) {
     said += (said ? ', or ' : '') + 'null';
   }
   log.debug("Leaving typeWords().");

@@ -341,18 +341,27 @@ function reportIdOk(id: string): boolean {
 }
 
 // WHAT A DEFINITION, A SHARE AND A RUN'S PARAMETERS MAY HOLD (#1579) is the
-// model's `DefinitionWrite`, `ShareWrite` and `ParameterBag`: the body is held
+// model's `DefinitionWrite`, `ShareWrite` and `RunParameters`: the body is held
 // to it here, at the door, and `jobs.ts` asks only what one body cannot
-// answer — a schedule's cron grammar, the catalog, a group's existence, a
-// parameter name's length. A document inside a definition is the model's too,
-// and `Query` reports what is wrong with it, so its own issues are left to it.
+// answer — a schedule's cron grammar, the catalog, a group's existence. A
+// document inside a definition is the model's too, and `Query` reports what
+// is wrong with it, so its own issues are left to it.
+//
+// A SAVED PARAMETER'S NAME (1 to 64 characters) is the model's as well since
+// the document became OpenAPI 3.1.0 (`propertyNames`, rcbj, #1579,
+// 2026-11-11), but its refusal is not made here. `jobs.ts` asked it by hand
+// after the definition was found, its schedule parsed and its document
+// validated, so a request wrong in one of those too was answered for that;
+// rcbj's decision was that no caller sees a change. So the door finds the
+// issue and `jobs.save()` refuses it where the hand check stood
+// (`tests/report_parameter_names.js` holds the order).
 let reportWrites: Record<string, any> | null = null;
 
 function reportWriteShape(name: string): any {
   log.debug("Entering reportWriteShape().");
   if (!reportWrites) {
     reportWrites = {};
-    ['DefinitionWrite', 'ShareWrite', 'ParameterBag'].forEach(
+    ['DefinitionWrite', 'ShareWrite', 'RunParameters'].forEach(
       function (one: string): void {
         reportWrites[one] = ModelZod.component('report', one,
                                                { typed: true });
@@ -371,13 +380,25 @@ function reportWriteIssues(name: string, posted: any): any[] {
   return held.success ? [] : held.error.issues;
 }
 
+// True for the model's issue with a saved parameter's name: refused later,
+// where `jobs.ts` asked it (above).
+function reportParameterNameIssue(one: any): boolean {
+  log.debug("Entering reportParameterNameIssue().");
+  const out = one.path.length === 2 && one.path[0] === 'parameters' &&
+    !!(one.params && one.params.propertyNames);
+  log.debug("Leaving reportParameterNameIssue().");
+  return out;
+}
+
 // The sentence for what is wrong with a posted definition, or ''.
 function reportDefinitionProblem(posted: any): string {
   log.debug("Entering reportDefinitionProblem().");
   const issues = reportWriteIssues('DefinitionWrite', posted)
     .filter(function (one: any): boolean {
-      // The query document's own issues are `Query`'s to name.
-      return !(one.path[0] === 'document' && one.path.length > 1);
+      // The query document's own issues are `Query`'s to name, and a
+      // parameter's name is `jobs.save()`'s to refuse.
+      return !(one.path[0] === 'document' && one.path.length > 1) &&
+        !reportParameterNameIssue(one);
     });
   const at = function (key: string): boolean {
     return issues.some(function (one: any): boolean {
@@ -1543,7 +1564,9 @@ function reportCreateDefinition(
     schedule: posted.schedule,
     scheduleEnabled: posted.scheduleEnabled,
     notify: posted.notify,
-    parameters: posted.parameters
+    parameters: posted.parameters,
+    parameterNamesRefused: reportWriteIssues('DefinitionWrite', posted)
+      .some(reportParameterNameIssue)
   });
   if (!saved.ok) {
     reportApplyRefusal(res, who, saved, null, '');
@@ -1659,7 +1682,7 @@ async function reportRunSaved(
     log.debug("Leaving reportRunSaved(). Bad JSON.");
     return;
   }
-  if (reportWriteIssues('ParameterBag', posted).length) {
+  if (reportWriteIssues('RunParameters', posted).length) {
     reportSend(res, reportHttpStatus('STS-REPORT-0004'),
       'STS-REPORT-0004', 'invalid_query',
       'Parameters are names and values.');

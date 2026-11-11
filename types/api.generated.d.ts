@@ -1608,9 +1608,9 @@ declare namespace IyaApi.Management {
 }
 
 declare namespace IyaApi.Report {
-  type AnnouncementPage = { "now"?: number; "everyMs"?: number; "announcements"?: Array<{ "id"?: string; "at"?: string; "message"?: string }> };
+  type AnnouncementPage = { "now"?: number; "everyMs"?: number | null; "announcements"?: Array<{ "id"?: string; "at"?: string; "message"?: string }> };
   type Catalog = { "sources"?: Array<Source> };
-  type Definition = { "id"?: string; "name"?: string; "owner"?: string; "ownerName"?: string; "schedule"?: string; "scheduleEnabled"?: boolean; "nextRunAt"?: string; "lastSlotAt"?: string; "notify"?: boolean; "editable"?: boolean; "createdAt"?: string; "modifiedAt"?: string; "document"?: QueryDocument; "parameters"?: ParameterBag; "groups"?: Array<string>; "failures"?: Array<{ "at"?: number; "description"?: string }> };
+  type Definition = { "id"?: string; "name"?: string; "owner"?: string; "ownerName"?: string; "schedule"?: string; "scheduleEnabled"?: boolean; "nextRunAt"?: string | null; "lastSlotAt"?: string | null; "notify"?: boolean; "editable"?: boolean; "createdAt"?: string | null; "modifiedAt"?: string | null; "document"?: QueryDocument; "parameters"?: ParameterBag; "groups"?: Array<string>; "failures"?: Array<{ "at"?: number; "description"?: string }> };
   type DefinitionEnvelope = { "definition"?: Definition };
   type DefinitionList = { "definitions"?: Array<Definition>; "page"?: number; "pages"?: number; "per"?: number; "total"?: number };
   type DefinitionWrite = { "name": string; "document": QueryDocument; "parameters"?: ParameterBag; "schedule"?: string; "scheduleEnabled"?: boolean; "notify"?: boolean };
@@ -1618,27 +1618,28 @@ declare namespace IyaApi.Report {
   type Error = { "error"?: string; "error_description"?: string };
   type Field = { "id"?: string; "type"?: "string" | "number" | "boolean" | "timestamp"; "meaning"?: string; "filter"?: boolean; "sort"?: boolean; "group"?: boolean; "operators"?: Array<string>; "indexed"?: Array<string>; "indexedValues"?: Array<string>; "values"?: Array<string> };
   type Filter = FilterLogical | FilterNot | FilterIsNull | FilterValue | FilterIn | FilterParam;
-  type FilterIn = { "op": "in"; "field": string; "value": Array<string | number | boolean> };
-  type FilterIsNull = { "op": "isNull"; "field": string };
-  type FilterLogical = { "op": "and" | "or"; "args": Array<Filter> };
-  type FilterNot = { "op": "not"; "arg": Filter };
-  type FilterParam = { "op": "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "contains" | "startsWith" | "in"; "field": string; "param": string };
-  type FilterValue = { "op": "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "contains" | "startsWith"; "field": string; "value": string | number | boolean };
+  type FilterIn = { "op": "in"; "field": string; "value": Array<string | null | number | boolean> } | null;
+  type FilterIsNull = { "op": "isNull"; "field": string } | null;
+  type FilterLogical = { "op": "and" | "or"; "args": Array<Filter> } | null;
+  type FilterNot = { "op": "not"; "arg": Filter } | null;
+  type FilterParam = { "op": "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "contains" | "startsWith" | "in"; "field": string; "param": string } | null;
+  type FilterValue = { "op": "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "contains" | "startsWith"; "field": string; "value": string | null | number | boolean } | null;
   type Group = { "dn"?: string; "name"?: string; "mail"?: string };
   type GroupPage = { "q"?: string; "page"?: number; "pages"?: number; "per"?: number; "total"?: number; "groups"?: Array<Group> };
   type Index = { "service"?: string; "catalog"?: string; "realms"?: string; "version"?: { "version"?: string; "stamped"?: boolean; "buildInfo"?: string } };
-  type Job = { "id"?: string; "status"?: "queued" | "running" | "completed" | "failed" | "cancelled" | "expired"; "format"?: string; "submittedAt"?: string; "completedAt"?: string; "byteSize"?: number; "error"?: string; "definitionId"?: string; "definitionName"?: string; "source"?: string; "fields"?: Array<string>; "queuedBecause"?: "every-person" | "asked" | "limit" | "source" | "run" | "schedule" | null; "query"?: QueryDocument };
+  type Job = { "id"?: string; "status"?: "queued" | "running" | "completed" | "failed" | "cancelled" | "expired"; "format"?: string; "submittedAt"?: string | null; "completedAt"?: string | null; "byteSize"?: number | null; "error"?: string | null; "definitionId"?: string | null; "definitionName"?: string | null; "source"?: string; "fields"?: Array<string>; "queuedBecause"?: "every-person" | "asked" | "limit" | "source" | "run" | "schedule" | null; "query"?: QueryDocument };
   type JobEnvelope = { "job"?: Job };
-  type JobList = { "jobs"?: Array<Job>; "next"?: string; "page"?: number; "pages"?: number; "per"?: number; "total"?: number };
+  type JobList = { "jobs"?: Array<Job>; "next"?: string | null; "page"?: number; "pages"?: number; "per"?: number; "total"?: number };
   type Me = { "photo"?: string };
   type OpenApiDocument = { "openapi"?: string; "info"?: { "title"?: string; "version"?: string; "description"?: string }; "paths"?: unknown; "components"?: unknown };
-  type ParameterBag = Record<string, unknown>;
-  type QueryDocument = { "source": string; "select"?: Array<string>; "where"?: Filter; "orderBy"?: Array<{ "field": string; "dir": "asc" | "desc" }>; "limit"?: number; "format"?: "json" | "csv" | "pdf"; "mode"?: "auto" | "sync" | "async"; "locale"?: string; "aggregate"?: "count" | null; "groupBy"?: Array<string> };
-  type QueryResult = { "source"?: string; "fields"?: Array<string>; "rows"?: Array<Record<string, unknown>>; "truncated"?: boolean };
+  type ParameterBag = Record<string, unknown> | null;
+  type QueryDocument = { "source": string; "select"?: Array<string> | null; "where"?: Filter; "orderBy"?: Array<{ "field": string; "dir": "asc" | "desc" }> | null; "limit"?: number; "format"?: "json" | "csv" | "pdf"; "mode"?: "auto" | "sync" | "async"; "locale"?: string | null; "aggregate"?: "count" | null; "groupBy"?: Array<string> | null };
+  type QueryResult = { "source"?: string; "fields"?: Array<string>; "rows"?: Array<Record<string, unknown> | null>; "truncated"?: boolean };
   type Realm = { "id"?: string; "name"?: string; "prefix"?: string };
-  type Realms = { "current"?: Realm; "realms"?: Array<Realm> };
-  type Schedule = { "definition"?: { "id"?: string; "name"?: string; "owner"?: string; "ownerName"?: string; "schedule"?: string; "scheduleEnabled"?: boolean; "notify"?: boolean; "nextRunAt"?: string; "lastSlotAt"?: string; "failures"?: Array<{ "at"?: string; "description"?: string }> }; "jobs"?: Array<Job>; "jobCount"?: number };
-  type SchedulePage = { "scope"?: "mine" | "realm"; "owner"?: string; "page"?: number; "pages"?: number; "per"?: number; "total"?: number; "schedules"?: Array<Schedule> };
+  type Realms = { "current"?: Realm; "realms"?: Array<Realm> | null };
+  type RunParameters = Record<string, unknown> | null;
+  type Schedule = { "definition"?: { "id"?: string; "name"?: string; "owner"?: string; "ownerName"?: string; "schedule"?: string; "scheduleEnabled"?: boolean; "notify"?: boolean; "nextRunAt"?: string | null; "lastSlotAt"?: string | null; "failures"?: Array<{ "at"?: string | null; "description"?: string }> }; "jobs"?: Array<Job>; "jobCount"?: number };
+  type SchedulePage = { "scope"?: "mine" | "realm"; "owner"?: string | null; "page"?: number; "pages"?: number; "per"?: number; "total"?: number; "schedules"?: Array<Schedule> };
   type ShareWrite = { "groups": Array<string> };
   type SignalPage = { "scope"?: "realm" | "own"; "receiving"?: boolean; "why"?: Array<string>; "total"?: number; "page"?: number; "pages"?: number; "per"?: number; "rows"?: Array<{ "at"?: string; "name"?: string; "vocabulary"?: string; "type"?: string; "subject"?: string; "verified"?: boolean; "reactions"?: Array<{ "failed"?: boolean; "skipped"?: string; "observed"?: boolean; "ended"?: number; "revoked"?: number }> }> };
   type Source = { "id"?: string; "anchored"?: boolean; "bounded"?: boolean; "retention"?: string; "paging"?: "limit"; "relationships"?: Array<string>; "fields"?: Array<Field>; "presets"?: Array<{ "id"?: string; "name"?: string; "document"?: QueryDocument }> };
@@ -1653,7 +1654,7 @@ declare namespace IyaApi.Report {
     "DELETE /report-api/definitions/{id}": { method: "DELETE"; path: "/report-api/definitions/{id}"; body: {}; query: {}; answers: { 200: Deleted } };
     "GET /report-api/definitions/{id}": { method: "GET"; path: "/report-api/definitions/{id}"; body: {}; query: {}; answers: { 200: DefinitionEnvelope } };
     "POST /report-api/definitions/{id}": { method: "POST"; path: "/report-api/definitions/{id}"; body: DefinitionWrite; query: {}; answers: { 200: DefinitionEnvelope } };
-    "POST /report-api/definitions/{id}/run": { method: "POST"; path: "/report-api/definitions/{id}/run"; body: ParameterBag; query: {}; answers: { 202: JobEnvelope } };
+    "POST /report-api/definitions/{id}/run": { method: "POST"; path: "/report-api/definitions/{id}/run"; body: RunParameters; query: {}; answers: { 202: JobEnvelope } };
     "POST /report-api/definitions/{id}/share": { method: "POST"; path: "/report-api/definitions/{id}/share"; body: ShareWrite; query: {}; answers: { 200: DefinitionEnvelope } };
     "GET /report-api/groups": { method: "GET"; path: "/report-api/groups"; body: {}; query: { "q"?: string; "page"?: number }; answers: { 200: GroupPage } };
     "GET /report-api/jobs": { method: "GET"; path: "/report-api/jobs"; body: {}; query: { "page"?: number; "per"?: number; "after"?: string; "limit"?: number }; answers: { 200: JobList } };

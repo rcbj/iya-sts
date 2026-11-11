@@ -546,7 +546,36 @@ function projections(t) {
   }
 
   const spec = OpenApi.document(catalog);
-  t.equal(spec.openapi, '3.0.3', 'the document is OpenAPI 3.0.3');
+  t.equal(spec.openapi, '3.1.0', 'the document is OpenAPI 3.1.0 (#1579)');
+  t.equal(JSON.stringify(spec).indexOf('"nullable"'), -1,
+    'no schema says OpenAPI 3.0\'s nullable: a nullable value is a type list');
+  const schemas = spec.components.schemas;
+  t.equal(JSON.stringify(schemas.ParameterBag.propertyNames),
+    JSON.stringify({ type: 'string', minLength: 1, maxLength: 64 }),
+    'a saved parameter\'s name is 1 to 64 characters, the model\'s ' +
+    'propertyNames');
+  t.equal(schemas.RunParameters.propertyNames, undefined,
+    'a run\'s parameter names are not bounded: a run stores nothing');
+  const ModelZod = require('../common/model_zod');
+  const bag = ModelZod.component('report', 'ParameterBag', { typed: true });
+  t.check(!bag.safeParse({ ['p'.repeat(65)]: 1 }).success,
+    'the model refuses a 65-character name');
+  t.check(!bag.safeParse({ '': 1 }).success,
+    'the model refuses an empty name');
+  t.check(bag.safeParse({ ['p'.repeat(64)]: 1 }).success,
+    'the model accepts a 64-character name');
+  t.check(bag.safeParse(null).success,
+    'the model takes null, a definition with no parameters');
+  const long = bag.safeParse({ ['p'.repeat(65)]: 1 });
+  const issue = long.error ? long.error.issues[0] : null;
+  t.check(issue && issue.path.length === 1 && issue.params &&
+    issue.params.propertyNames === true,
+    'the issue is at the member and says it is the name',
+    JSON.stringify(issue));
+  const runBag = ModelZod.component('report', 'RunParameters',
+                                    { typed: true });
+  t.check(runBag.safeParse({ ['p'.repeat(65)]: 1, '': 2 }).success,
+    'a run\'s bag takes a 65-character and an empty name');
   const paths = [
     '/report-api',
     '/report-api/openapi.json',
