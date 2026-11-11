@@ -66,7 +66,7 @@ and `docs/configuration.md`.
 | File | What it is |
 |---|---|
 | `report_app.ts` | The shell, the script and the stylesheet. A non-GET is 404 with `STS-REPORT-0033`. |
-| `report_api.ts` | `/report-api`. Every route, including the catalog and the OpenAPI document, takes the token below. A definition, a share and a run's parameters are held to the model's `DefinitionWrite`, `ShareWrite` and `ParameterBag` here, at the door (#1579). |
+| `report_api.ts` | `/report-api`. Every route, including the catalog and the OpenAPI document, takes the token below. A definition, a share and a run's parameters are held to the model's `DefinitionWrite`, `ShareWrite` and `RunParameters` here, at the door (#1579). A saved parameter's name (1 to 64 characters) is the model's `ParameterBag` `propertyNames` since the document became OpenAPI 3.1.0 (rcbj, #1579, 2026-11-11), and the hand check in `jobs.ts` is gone; the door finds the issue and `jobs.save()` refuses it where that check stood, so a request wrong in its definition id, schedule or document as well is still answered for those first. A run's parameters are `RunParameters`, whose names were never bounded (a run stores nothing). `tests/report_parameter_names.js` holds both. |
 | `web_report.ts`, `web_report_pages.ts` | The browser runtime and the four pages (catalog, query, definitions, jobs). |
 | `catalog.ts` | The seventeen sources and their fields, which operators the store indexes (`indexed`, #985), and a source's predefined queries (`presets`, #1110). Credential attribute ids are absent, so they cannot be named. |
 | `passkey_ceremonies.ts` | The `passkeyCeremonies` source's projection of the ceremony audit rows (#1107). A library; reaches `authn/webauthn_ceremonies` lazily. |

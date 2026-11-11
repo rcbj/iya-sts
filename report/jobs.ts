@@ -228,31 +228,6 @@ function reportParameterNames(document: any): string[] {
   return names;
 }
 
-// The caller's values, or false when the bag is not one this service stores.
-// A dummy used only to type-check a save is not this function. What a value
-// may hold, and how many there are, is the model's `ParameterBag`, which the
-// door (`report_api.ts`) holds the body to; a name's length is the one bound
-// OpenAPI 3.0.3 cannot state, so it is asked here.
-function reportStoredParameters(given: any): any {
-  log.debug("Entering reportStoredParameters().");
-  if (given == null) {
-    log.debug("Leaving reportStoredParameters(). None.");
-    return null;
-  }
-  const keys = Object.keys(given);
-  const bag: any = {};
-  for (let i = 0; i < keys.length; i++) {
-    const key = keys[i];
-    if (!key || key.length > 64) {
-      log.debug("Leaving reportStoredParameters(). A name.");
-      return false;
-    }
-    bag[key] = stores.copy(given[key]);
-  }
-  log.debug("Leaving reportStoredParameters().");
-  return bag;
-}
-
 function reportDummy(type: string): any {
   log.debug("Entering reportDummy().");
   let value: any = 'x';
@@ -380,13 +355,18 @@ function reportSave(spec: any): any {
   if (spec.parameters === undefined) {
     parameters = previous && previous.parameters ?
       stores.copy(previous.parameters) : null;
-  } else {
-    parameters = reportStoredParameters(spec.parameters);
-    if (parameters === false) {
-      log.debug("Leaving reportSave(). Parameters.");
-      return reportRefuse('STS-REPORT-0030', 'invalid_query',
-        'Parameters are names and values.');
-    }
+  } else if (spec.parameterNamesRefused) {
+    // A NAME OF 1 TO 64 CHARACTERS is the model's `ParameterBag`
+    // (`propertyNames`, #1579), found at the door; it is refused here, where
+    // the hand check stood, so that the order of refusals a caller sees did
+    // not change (`report_api.ts`).
+    log.debug("Leaving reportSave(). Parameters.");
+    return reportRefuse('STS-REPORT-0030', 'invalid_query',
+      'Parameters are names and values.');
+  } else if (spec.parameters !== null) {
+    // What a value may hold, and how many there are, is the model's too,
+    // held at the door.
+    parameters = stores.copy(spec.parameters);
   }
   const row = {
     id: previous ? previous.id : stores.newId(),

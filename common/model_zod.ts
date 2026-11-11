@@ -19,9 +19,14 @@
 // What it understands grew with #1579, when the last hand-written validators
 // in front of modelled operations went: `oneOf` (exactly one option holds),
 // `patternProperties` (a member whose name matches is held to that schema),
-// `uniqueItems`, `maxProperties`, OpenAPI 3.0's `nullable` (and a `null`
-// among an `enum`'s values), and a `$ref` to one of the document's
-// components, recursive ones included. `component()` is a component's own
+// `uniqueItems`, `maxProperties`, a nullable value (and a `null` among an
+// `enum`'s values), and a `$ref` to one of the document's components,
+// recursive ones included. A nullable value is JSON Schema 2020-12's type
+// list, `["string", "null"]`, since the Reports API OpenAPI document became
+// OpenAPI 3.1.0 like the other four (rcbj, #1579, 2026-11-11); OpenAPI 3.0's
+// `nullable` is a keyword no document uses any more, and is refused like any
+// other this does not understand. `propertyNames` came with it: a member's
+// name held to a string schema. `component()` is a component's own
 // validator, which is how the Reports API holds a query document that arrives
 // inside a definition as well as on its own.
 //
@@ -106,7 +111,7 @@ class ModelZod {
   static onlyKnown(schema: Json, known: string[]): void {
     log.debug("Entering ModelZod.onlyKnown().");
     Object.keys(schema).forEach(function (key) {
-      if (known.indexOf(key) < 0 && key !== 'nullable' && !annotation(key)) {
+      if (known.indexOf(key) < 0 && !annotation(key)) {
         log.debug("Leaving ModelZod.onlyKnown(). Refused.");
         throw new TypeError('No validator can be generated for the keyword ' +
           key + ' in ' + JSON.stringify(schema).slice(0, 200));
@@ -137,7 +142,7 @@ class ModelZod {
     } else if (schema.const !== undefined) {
       out = z.literal(schema.const);
     } else if (schema.enum) {
-      // OpenAPI 3.0 lists null among a nullable value's values; `of()`
+      // A nullable enumeration lists null among its values; `build()`
       // makes the value nullable, so it is not one of the strings.
       const values = schema.enum.filter(function (one: unknown) {
         return one !== null;
@@ -202,7 +207,8 @@ class ModelZod {
   static objectOf(schema: Json, context: Context): any {
     log.debug("Entering ModelZod.objectOf().");
     ModelZod.onlyKnown(schema, ['type', 'properties', 'required',
-      'additionalProperties', 'patternProperties', 'maxProperties']);
+      'additionalProperties', 'patternProperties', 'maxProperties',
+      'propertyNames']);
     const required: string[] = schema.required || [];
     const shape: Json = {};
     Object.keys(schema.properties || {}).forEach(function (name) {
@@ -235,8 +241,45 @@ class ModelZod {
         }
       });
     }
+    if (schema.propertyNames !== undefined) {
+      out = ModelZod.namedOf(out, schema.propertyNames, context);
+    }
     log.debug("Leaving ModelZod.objectOf().");
     return out;
+  }
+
+  /**
+   * `propertyNames`: every member's name held to a string schema. The issue
+   * is at the member, marked `propertyNames`, so a caller can tell a name
+   * that is wrong from a value that is.
+   *
+   * @param out - the object's zod schema
+   * @param names - the schema a name is held to
+   * @param context - the build
+   * @returns the zod schema
+   */
+  static namedOf(out: any, names: Json, context: Context): any {
+    log.debug("Entering ModelZod.namedOf().");
+    if (!names || typeof names !== 'object' ||
+        (names.type !== undefined && names.type !== 'string')) {
+      log.debug("Leaving ModelZod.namedOf(). Refused.");
+      throw new TypeError('No validator can be generated for ' +
+        'propertyNames ' + JSON.stringify(names).slice(0, 200));
+    }
+    const check = ModelZod.build(Object.assign({ type: 'string' }, names),
+                                 context);
+    const held = out.superRefine(function (value: Json, ctx: any) {
+      Object.keys(value).forEach(function (name: string) {
+        if (!check.safeParse(name).success) {
+          ctx.addIssue({ code: 'custom', path: [name],
+                         params: { propertyNames: true },
+                         message: 'A member\'s name is not one the ' +
+                           'schema allows' });
+        }
+      });
+    });
+    log.debug("Leaving ModelZod.namedOf().");
+    return held;
   }
 
   /**
@@ -411,8 +454,25 @@ class ModelZod {
    * @param context - the build
    * @returns the zod schema
    */
-  static build(schema: Json, context: Context): any {
+  static build(given: Json, context: Context): any {
     log.debug("Entering ModelZod.build().");
+    // A TYPE LIST NAMING NULL is a nullable value of the one other type.
+    // Several other types is a union JSON Schema allows and this does not
+    // build, so it is refused rather than read as one of them.
+    let schema = given;
+    let nullable = false;
+    if (Array.isArray(given.type)) {
+      const types = given.type.filter(function (one: string) {
+        return one !== 'null';
+      });
+      if (types.length !== 1) {
+        log.debug("Leaving ModelZod.build(). A type list.");
+        throw new TypeError('No validator can be generated for the type ' +
+          'list ' + JSON.stringify(given.type));
+      }
+      nullable = types.length < given.type.length;
+      schema = Object.assign({}, given, { type: types[0] });
+    }
     let out: any;
     if (schema.$ref) {
       ModelZod.onlyKnown(schema, ['$ref']);
@@ -443,7 +503,7 @@ class ModelZod {
       throw new TypeError('No validator can be generated for ' +
         JSON.stringify(schema).slice(0, 200));
     }
-    if (schema.nullable === true) {
+    if (nullable) {
       out = out.nullable();
     }
     if (schema.description) {

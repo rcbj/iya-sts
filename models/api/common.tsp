@@ -410,7 +410,7 @@ namespace IyaSts.Api.Common;
 
 @js(#{`maxLength`:8192}) @hoisted scalar StringMax8192 extends string;
 
-@js(#{`nullable`:true}) @hoisted scalar String extends string;
+@js(#{`$types`:#["string","null"]}) @hoisted scalar String extends string;
 
 @hoisted union EmptyTextOrIntegerFrom1To100000 { EmptyText, IntegerFrom1To100000 }
 

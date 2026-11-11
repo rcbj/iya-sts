@@ -32,12 +32,15 @@
 // refusal in `report_api.ts` is, through `reportSend()`), and a report's own
 // answer declares each of its three media types.
 //
-// **IT STAYS OPENAPI 3.0.3**, which `tests/report_query.js` pins, so a nullable
-// value is `nullable: true`, and two things follow from how the validator reads
-// that. An enumerated nullable value has to list null itself, since `enum` is
-// asked apart from `type`. And `nullable` cannot stand beside a `$ref`, so a
-// schema that may be null where it is used says so itself: `Filter` and
-// `ParameterBag`.
+// **IT IS OPENAPI 3.1.0 SINCE rcbj's DECISION ON #1579 (2026-11-11)**, as the
+// other four documents are. It was 3.0.3 until then, which has no
+// `propertyNames`, so a saved parameter's name length was asked by hand in
+// `report/jobs.ts`; the model states it now (`ParameterBag`). A nullable value
+// is a type list (`["string", "null"]`), JSON Schema 2020-12's form, and an
+// enumerated one lists null among its values as well. A schema that may be
+// null where it is used still says so itself — `Filter`'s six forms,
+// `ParameterBag` and `RunParameters` — so that every use of it is the plain
+// `$ref`.
 //
 // **KEYS THAT ARE DATA ARE A TYPED MAP**: a result row's (the fields the query
 // selected) and a parameter bag's (the names the filter uses). What a field
@@ -62,7 +65,7 @@ using IyaSts.Api.Common;
 
 @apiDocument(#{
   `x-iya-every-operation`:#[#{`name`:"DPoP",`in`:"header",`required`:false,`schema`:#{`type`:"string"},`description`:"RFC 9449: the proof of possession for the DPoP-bound access token, which Authorization: DPoP <token> requires."},#{`name`:"X-Requested-With",`in`:"header",`required`:false,`schema`:#{`type`:"string"},`description`:"Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it."}],
-  `openapi`:"3.0.3",
+  `openapi`:"3.1.0",
   `info`:#{
     `title`:"IYA STS reports",
     `version`:"1",
@@ -111,7 +114,7 @@ namespace IyaSts.Api.Report {
     @js(#{`description`:"The realm's path prefix; empty for the default realm."}) `prefix`?: string
   }
 
-@component model `Realms` {`current`?: `Realm`; @js(#{`nullable`:true}) `realms`?: (`Realm`)[]}
+@component model `Realms` {`current`?: `Realm`; @js(#{`$types`:#["array","null"]}) `realms`?: (`Realm`)[]}
 
 @component model `Me` {
     @js(#{`description`:"The path of the person's own photo, or empty."}) `photo`?: string
@@ -121,7 +124,7 @@ namespace IyaSts.Api.Report {
     @js(#{
       `description`:"This service's clock, in milliseconds: the `since` of the next ask."
     }) `now`?: numeric;
-    @js(#{`nullable`:true}) `everyMs`?: numeric;
+    @js(#{`$types`:#["number","null"]}) `everyMs`?: numeric;
     `announcements`?: (WithIdAtMessage)[]
   }
 
@@ -159,9 +162,9 @@ namespace IyaSts.Api.Report {
       `schedule`?: string;
       `scheduleEnabled`?: boolean;
       `notify`?: boolean;
-      @js(#{`nullable`:true}) `nextRunAt`?: string;
-      @js(#{`nullable`:true}) `lastSlotAt`?: string;
-      `failures`?: ({@js(#{`nullable`:true}) `at`?: string; `description`?: string})[]
+      @js(#{`$types`:#["string","null"]}) `nextRunAt`?: string;
+      @js(#{`$types`:#["string","null"]}) `lastSlotAt`?: string;
+      `failures`?: ({@js(#{`$types`:#["string","null"]}) `at`?: string; `description`?: string})[]
     };
     @js(#{
       `description`:"The most recent scheduled jobs, newest first, at most five."
@@ -171,7 +174,7 @@ namespace IyaSts.Api.Report {
 
 @component model `SchedulePage` {
     `scope`?: "mine" | "realm";
-    @js(#{`nullable`:true}) `owner`?: string;
+    @js(#{`$types`:#["string","null"]}) `owner`?: string;
     `page`?: integer;
     `pages`?: integer;
     `per`?: integer;
@@ -245,20 +248,20 @@ namespace IyaSts.Api.Report {
 @js(#{`minLength`:1}) @hoisted scalar FieldId extends string;
 
 @js(#{
-    `nullable`:true,
+    `$types`:#["object","null"],
     `description`:"and or or over between 1 and 16 filters."
   }) @component model `FilterLogical` {
     `op`: "and" | "or";
     @js(#{`minItems`:1,`maxItems`:16}) `args`: (`Filter`)[]
   }
 
-@js(#{`nullable`:true,`description`:"not over one filter."}) @component model `FilterNot` {
+@js(#{`$types`:#["object","null"],`description`:"not over one filter."}) @component model `FilterNot` {
     `op`: "not";
     `arg`: `Filter`
   }
 
 @js(#{
-    `nullable`:true,
+    `$types`:#["object","null"],
     `description`:"isNull names the field and nothing else."
   }) @component model `FilterIsNull` {
     `op`: "isNull";
@@ -266,7 +269,7 @@ namespace IyaSts.Api.Report {
   }
 
 @js(#{
-    `nullable`:true,
+    `$types`:#["object","null"],
     `description`:"A comparison with one value: a string, a number, a boolean or null, which the field's type then decides."
   }) @component model `FilterValue` {
     `op`: "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "contains" | "startsWith";
@@ -275,7 +278,7 @@ namespace IyaSts.Api.Report {
   }
 
 @js(#{
-    `nullable`:true,
+    `$types`:#["object","null"],
     `description`:"in, with between 1 and 50 values."
   }) @component model `FilterIn` {
     `op`: "in";
@@ -284,7 +287,7 @@ namespace IyaSts.Api.Report {
   }
 
 @js(#{
-    `nullable`:true,
+    `$types`:#["object","null"],
     `description`:"A comparison whose value is a saved definition's parameter, named here and given when the definition runs."
   }) @component model `FilterParam` {
     `op`: "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "contains" | "startsWith" | "in";
@@ -309,14 +312,14 @@ namespace IyaSts.Api.Report {
       `description`:"One source, by its id in the catalog: {{sources}}. An array is invalid_query."
     }) `source`: string;
     @js(#{
-      `nullable`:true,
+      `$types`:#["array","null"],
       `maxItems`:64,
       `uniqueItems`:true,
       `description`:"The fields, at most 64, each once. A count may name none, as three presets do."
     }) `select`?: (FieldId)[];
     `where`?: `Filter`;
     @js(#{
-      `nullable`:true,
+      `$types`:#["array","null"],
       `maxItems`:8,
       `description`:"At most 8 entries, each a field and a direction, and a field once."
     }) `orderBy`?: ({`field`: FieldId; `dir`: "asc" | "desc"})[];
@@ -324,14 +327,14 @@ namespace IyaSts.Api.Report {
     `format`?: "json" | "csv" | "pdf";
     `mode`?: "auto" | "sync" | "async";
     @js(#{
-      `nullable`:true,
+      `$types`:#["string","null"],
       `maxLength`:35,
       `pattern`:"^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$",
       `description`:"A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi."
     }) `locale`?: string;
-    @js(#{`nullable`:true,`enum`:#["count",null]}) `aggregate`?: string;
+    @js(#{`$types`:#["string","null"],`enum`:#["count",null]}) `aggregate`?: string;
     @js(#{
-      `nullable`:true,
+      `$types`:#["array","null"],
       `maxItems`:8,
       `uniqueItems`:true,
       `description`:"The fields a count groups by, at most 8, each once."
@@ -352,7 +355,7 @@ namespace IyaSts.Api.Report {
   }
 
 @js(#{
-    `nullable`:true,
+    `$types`:#["object","null"],
     `description`:"One row: a field's id to what it holds. The keys are the fields the query selected, and `count` where it counted."
   }) @hoisted model QueryResult_rows_i_h9 is Record<QueryResult_rows_i_ap_h8>;
   
@@ -370,10 +373,16 @@ namespace IyaSts.Api.Report {
 
 // WHAT A SAVED PARAMETER MAY HOLD (#1579), which `report/jobs.ts` checked by
 // hand: at most 32 names, each a string of at most 200 characters, a number, a
-// boolean, null, or a list of 1 to 32 of those. A name's length (1 to 64) is
-// the one bound this document cannot state, because OpenAPI 3.0.3 has no
-// `propertyNames`; `jobs.ts` still asks it.
-@js(#{`nullable`:true,`maxLength`:200}) @hoisted scalar ParameterText extends string;
+// boolean, null, or a list of 1 to 32 of those. A name is 1 to 64 characters,
+// `propertyNames`, which OpenAPI 3.0.3 could not state, so `jobs.ts` asked it
+// until this document became 3.1.0 (rcbj, #1579, 2026-11-11).
+//
+// A RUN'S PARAMETERS ARE `RunParameters`, NOT `ParameterBag`, because a run
+// stores nothing and its names were never bounded: a filter's `param` may be
+// 65 characters, and a definition naming one runs with it
+// (`tests/report_parameter_names.js`). Holding a run to the saved bag's name
+// bound would refuse what was accepted.
+@js(#{`$types`:#["string","null"],`maxLength`:200}) @hoisted scalar ParameterText extends string;
 
 @hoisted union ParameterScalar {ParameterText, numeric, boolean}
 
@@ -384,10 +393,17 @@ namespace IyaSts.Api.Report {
   }) @hoisted union ParameterValue {ParameterText, numeric, boolean, ParameterList}
 
 @js(#{
-    `nullable`:true,
+    `$types`:#["object","null"],
     `maxProperties`:32,
+    `propertyNames`:#{`type`:"string",`minLength`:1,`maxLength`:64},
     `description`:"Parameter name to the value the filter uses: at most 32 names of 1 to 64 characters. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none."
   }) @component model `ParameterBag` is Record<ParameterValue>;
+
+@js(#{
+    `$types`:#["object","null"],
+    `maxProperties`:32,
+    `description`:"Parameter name to the value this run uses in place of the saved one: at most 32 names. A string, a number, a boolean, null, or a short array of those. Not a nested object. A run's parameters are not stored, so a name is not held to a saved name's length; one the filter does not name is ignored."
+  }) @component model `RunParameters` is Record<ParameterValue>;
   
 
 @component model `DefinitionWrite` {
@@ -423,17 +439,17 @@ namespace IyaSts.Api.Report {
     }) `schedule`?: string;
     `scheduleEnabled`?: boolean;
     @js(#{
-      `nullable`:true,
+      `$types`:#["string","null"],
       `description`:"When the enabled schedule next occurs, ISO-8601 UTC; null when it is off or has no occurrence."
     }) `nextRunAt`?: string;
     @js(#{
-      `nullable`:true,
+      `$types`:#["string","null"],
       `description`:"The most recent occurrence the schedule has taken (queued, or skipped with a note), or null."
     }) `lastSlotAt`?: string;
     `notify`?: boolean;
     `editable`?: boolean;
-    @js(#{`format`:"date-time",`nullable`:true}) `createdAt`?: string;
-    @js(#{`format`:"date-time",`nullable`:true}) `modifiedAt`?: string;
+    @js(#{`format`:"date-time",`$types`:#["string","null"]}) `createdAt`?: string;
+    @js(#{`format`:"date-time",`$types`:#["string","null"]}) `modifiedAt`?: string;
     `document`?: `QueryDocument`;
     `parameters`?: `ParameterBag`;
     `groups`?: (string)[];
@@ -460,19 +476,19 @@ namespace IyaSts.Api.Report {
     `id`?: string;
     `status`?: "queued" | "running" | "completed" | "failed" | "cancelled" | "expired";
     `format`?: string;
-    @js(#{`nullable`:true}) `submittedAt`?: string;
-    @js(#{`nullable`:true}) `completedAt`?: string;
-    @js(#{`nullable`:true}) `byteSize`?: integer;
+    @js(#{`$types`:#["string","null"]}) `submittedAt`?: string;
+    @js(#{`$types`:#["string","null"]}) `completedAt`?: string;
+    @js(#{`$types`:#["integer","null"]}) `byteSize`?: integer;
     @js(#{
-      `nullable`:true,
+      `$types`:#["string","null"],
       `description`:"The public error token. A job that exceeded report.asyncMaxMs carries result_too_large. The body of a failed job is not partial."
     }) `error`?: string;
-    @js(#{`nullable`:true}) `definitionId`?: string;
-    @js(#{`nullable`:true}) `definitionName`?: string;
+    @js(#{`$types`:#["string","null"]}) `definitionId`?: string;
+    @js(#{`$types`:#["string","null"]}) `definitionName`?: string;
     `source`?: string;
     `fields`?: (string)[];
     @js(#{
-      `nullable`:true,
+      `$types`:#["string","null"],
       `enum`:#["every-person","asked","limit","source","run","schedule",null],
       `description`:"Why this query is a job: every-person (an auto-mode query whose filter the directory cannot answer from an index, so it has to read every person), asked (mode async, or POST /jobs), limit (auto over report.syncMaxRows), source (a source that cannot be read synchronously), run (a saved definition run by hand) or schedule."
     }) `queuedBecause`?: string;
@@ -483,7 +499,7 @@ namespace IyaSts.Api.Report {
 
 @component model `JobList` {
     `jobs`?: (`Job`)[];
-    @js(#{`nullable`:true}) `next`?: string;
+    @js(#{`$types`:#["string","null"]}) `next`?: string;
     @js(#{`description`:"Absent on a cursor page."}) `page`?: integer;
     `pages`?: integer;
     `per`?: integer;
@@ -1287,7 +1303,7 @@ op `post__report_api_definitions__id__share`(@js(#{`maxLength`:64}) `parameters/
     `requestBody`:#{`content`:#{`application/json`:#{`schema`:null,`example`:#{}}}}
   })
 op `post__report_api_definitions__id__run`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
-  `requestBody/content/application~1json/schema`: `ParameterBag`,
+  `requestBody/content/application~1json/schema`: `RunParameters`,
   `responses/202/content/application~1json/schema`: `JobEnvelope`,
   `responses/400/content/application~1json/schema`: `Error`,
   `responses/401/content/application~1json/schema`: `Error`,

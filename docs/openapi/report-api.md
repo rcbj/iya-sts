@@ -87,7 +87,7 @@ Scope: `report:use`, `report:admin`.
 | `announcements[].at` | string |  |  |
 | `announcements[].id` | string |  |  |
 | `announcements[].message` | string |  |  |
-| `everyMs` | number |  |  |
+| `everyMs` | number, or null |  |  |
 | `now` | number |  | This service's clock, in milliseconds: the `since` of the next ask. |
 
 **401**: invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.
@@ -150,7 +150,7 @@ Scope: `report:use`, `report:admin`.
 | `sources[].presets[].document.groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `sources[].presets[].document.groupBy[]` | string |  |  |
 | `sources[].presets[].document.limit` | integer |  |  |
-| `sources[].presets[].document.locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `sources[].presets[].document.locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `sources[].presets[].document.mode` | one of `auto`, `sync`, `async` |  |  |
 | `sources[].presets[].document.orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
 | `sources[].presets[].document.orderBy[].dir` | one of `asc`, `desc` | yes |  |
@@ -172,7 +172,7 @@ Scope: `report:use`, `report:admin`.
 | `sources[].presets[].document.where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
 | `sources[].presets[].document.where (shape 4).field` | string | yes |  |
 | `sources[].presets[].document.where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
-| `sources[].presets[].document.where (shape 4).value` | string, or number, or boolean | yes |  |
+| `sources[].presets[].document.where (shape 4).value` | string, or null, or number, or boolean | yes |  |
 | `sources[].presets[].document.where (shape 5)` | object |  | in, with between 1 and 50 values. |
 | `sources[].presets[].document.where (shape 5).field` | string | yes |  |
 | `sources[].presets[].document.where (shape 5).op` | one of `in` | yes |  |
@@ -249,7 +249,7 @@ Scope: `report:use`, `report:admin`.
 | `source.presets[].document.groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `source.presets[].document.groupBy[]` | string |  |  |
 | `source.presets[].document.limit` | integer |  |  |
-| `source.presets[].document.locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `source.presets[].document.locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `source.presets[].document.mode` | one of `auto`, `sync`, `async` |  |  |
 | `source.presets[].document.orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
 | `source.presets[].document.orderBy[].dir` | one of `asc`, `desc` | yes |  |
@@ -271,12 +271,12 @@ Scope: `report:use`, `report:admin`.
 | `source.presets[].document.where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
 | `source.presets[].document.where (shape 4).field` | string | yes |  |
 | `source.presets[].document.where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
-| `source.presets[].document.where (shape 4).value` | string, or number, or boolean | yes |  |
+| `source.presets[].document.where (shape 4).value` | string, or null, or number, or boolean | yes |  |
 | `source.presets[].document.where (shape 5)` | object |  | in, with between 1 and 50 values. |
 | `source.presets[].document.where (shape 5).field` | string | yes |  |
 | `source.presets[].document.where (shape 5).op` | one of `in` | yes |  |
 | `source.presets[].document.where (shape 5).value` | list | yes |  |
-| `source.presets[].document.where (shape 5).value[]` | string, or number, or boolean |  |  |
+| `source.presets[].document.where (shape 5).value[]` | string, or null, or number, or boolean |  |  |
 | `source.presets[].document.where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
 | `source.presets[].document.where (shape 6).field` | string | yes |  |
 | `source.presets[].document.where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
@@ -331,14 +331,14 @@ Scope: `report:use`, `report:admin`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `definitions` | list |  |  |
-| `definitions[].createdAt` | string, date-time |  |  |
+| `definitions[].createdAt` | string, date-time, or null |  |  |
 | `definitions[].document` | object |  |  |
 | `definitions[].document.aggregate` | one of `count`, `null` |  |  |
 | `definitions[].document.format` | one of `json`, `csv`, `pdf` |  |  |
 | `definitions[].document.groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `definitions[].document.groupBy[]` | string |  |  |
 | `definitions[].document.limit` | integer |  |  |
-| `definitions[].document.locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `definitions[].document.locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `definitions[].document.mode` | one of `auto`, `sync`, `async` |  |  |
 | `definitions[].document.orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
 | `definitions[].document.orderBy[].dir` | one of `asc`, `desc` | yes |  |
@@ -360,12 +360,12 @@ Scope: `report:use`, `report:admin`.
 | `definitions[].document.where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
 | `definitions[].document.where (shape 4).field` | string | yes |  |
 | `definitions[].document.where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
-| `definitions[].document.where (shape 4).value` | string, or number, or boolean | yes |  |
+| `definitions[].document.where (shape 4).value` | string, or null, or number, or boolean | yes |  |
 | `definitions[].document.where (shape 5)` | object |  | in, with between 1 and 50 values. |
 | `definitions[].document.where (shape 5).field` | string | yes |  |
 | `definitions[].document.where (shape 5).op` | one of `in` | yes |  |
 | `definitions[].document.where (shape 5).value` | list | yes |  |
-| `definitions[].document.where (shape 5).value[]` | string, or number, or boolean |  |  |
+| `definitions[].document.where (shape 5).value[]` | string, or null, or number, or boolean |  |  |
 | `definitions[].document.where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
 | `definitions[].document.where (shape 6).field` | string | yes |  |
 | `definitions[].document.where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
@@ -378,16 +378,16 @@ Scope: `report:use`, `report:admin`.
 | `definitions[].groups` | list |  |  |
 | `definitions[].groups[]` | string |  |  |
 | `definitions[].id` | string |  |  |
-| `definitions[].lastSlotAt` | string |  | The most recent occurrence the schedule has taken (queued, or skipped with a note), or null. |
-| `definitions[].modifiedAt` | string, date-time |  |  |
+| `definitions[].lastSlotAt` | string, or null |  | The most recent occurrence the schedule has taken (queued, or skipped with a note), or null. |
+| `definitions[].modifiedAt` | string, date-time, or null |  |  |
 | `definitions[].name` | string |  |  |
-| `definitions[].nextRunAt` | string |  | When the enabled schedule next occurs, ISO-8601 UTC; null when it is off or has no occurrence. |
+| `definitions[].nextRunAt` | string, or null |  | When the enabled schedule next occurs, ISO-8601 UTC; null when it is off or has no occurrence. |
 | `definitions[].notify` | boolean |  |  |
 | `definitions[].owner` | string |  | The owner's subject (urn:uuid:…). |
 | `definitions[].ownerName` | string |  | The owner's display name, or username; empty for a subject this realm cannot name. |
 | `definitions[].parameters` | map |  | Parameter name to the value the filter uses: at most 32 names of 1 to 64 characters. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none. |
-| `definitions[].parameters.{key}` | list, or string, or number, or boolean |  |  |
-| `definitions[].parameters.{key}[]` | string, or number, or boolean |  |  |
+| `definitions[].parameters.{key}` | list, or string, or null, or number, or boolean |  |  |
+| `definitions[].parameters.{key}[]` | string, or null, or number, or boolean |  |  |
 | `definitions[].schedule` | string |  | A five-field cron expression in UTC, or empty. The application composes it from a date-time and weekday boxes. |
 | `definitions[].scheduleEnabled` | boolean |  |  |
 | `page` | integer |  |  |
@@ -434,7 +434,7 @@ Scope: `report:use`, `report:admin`.
 | `document.groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `document.groupBy[]` | string |  |  |
 | `document.limit` | integer |  |  |
-| `document.locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `document.locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `document.mode` | one of `auto`, `sync`, `async` |  |  |
 | `document.orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
 | `document.orderBy[].dir` | one of `asc`, `desc` | yes |  |
@@ -456,12 +456,12 @@ Scope: `report:use`, `report:admin`.
 | `document.where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
 | `document.where (shape 4).field` | string | yes |  |
 | `document.where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
-| `document.where (shape 4).value` | string, or number, or boolean | yes |  |
+| `document.where (shape 4).value` | string, or null, or number, or boolean | yes |  |
 | `document.where (shape 5)` | object |  | in, with between 1 and 50 values. |
 | `document.where (shape 5).field` | string | yes |  |
 | `document.where (shape 5).op` | one of `in` | yes |  |
 | `document.where (shape 5).value` | list | yes |  |
-| `document.where (shape 5).value[]` | string, or number, or boolean |  |  |
+| `document.where (shape 5).value[]` | string, or null, or number, or boolean |  |  |
 | `document.where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
 | `document.where (shape 6).field` | string | yes |  |
 | `document.where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
@@ -469,8 +469,8 @@ Scope: `report:use`, `report:admin`.
 | `name` | string | yes | What the definition is called: at most 120 characters, not only spaces. |
 | `notify` | boolean |  | Mail the owner when a scheduled run finishes. The message links to the job. It does not contain rows. |
 | `parameters` | map |  | Parameter name to the value the filter uses: at most 32 names of 1 to 64 characters. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none. |
-| `parameters.{key}` | list, or string, or number, or boolean |  |  |
-| `parameters.{key}[]` | string, or number, or boolean |  |  |
+| `parameters.{key}` | list, or string, or null, or number, or boolean |  |  |
+| `parameters.{key}[]` | string, or null, or number, or boolean |  |  |
 | `schedule` | string |  | A UTC cron expression, or empty. |
 | `scheduleEnabled` | boolean |  |  |
 
@@ -479,14 +479,14 @@ Scope: `report:use`, `report:admin`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `definition` | object |  |  |
-| `definition.createdAt` | string, date-time |  |  |
+| `definition.createdAt` | string, date-time, or null |  |  |
 | `definition.document` | object |  |  |
 | `definition.document.aggregate` | one of `count`, `null` |  |  |
 | `definition.document.format` | one of `json`, `csv`, `pdf` |  |  |
 | `definition.document.groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `definition.document.groupBy[]` | string |  |  |
 | `definition.document.limit` | integer |  |  |
-| `definition.document.locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `definition.document.locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `definition.document.mode` | one of `auto`, `sync`, `async` |  |  |
 | `definition.document.orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
 | `definition.document.orderBy[].dir` | one of `asc`, `desc` | yes |  |
@@ -508,12 +508,12 @@ Scope: `report:use`, `report:admin`.
 | `definition.document.where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
 | `definition.document.where (shape 4).field` | string | yes |  |
 | `definition.document.where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
-| `definition.document.where (shape 4).value` | string, or number, or boolean | yes |  |
+| `definition.document.where (shape 4).value` | string, or null, or number, or boolean | yes |  |
 | `definition.document.where (shape 5)` | object |  | in, with between 1 and 50 values. |
 | `definition.document.where (shape 5).field` | string | yes |  |
 | `definition.document.where (shape 5).op` | one of `in` | yes |  |
 | `definition.document.where (shape 5).value` | list | yes |  |
-| `definition.document.where (shape 5).value[]` | string, or number, or boolean |  |  |
+| `definition.document.where (shape 5).value[]` | string, or null, or number, or boolean |  |  |
 | `definition.document.where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
 | `definition.document.where (shape 6).field` | string | yes |  |
 | `definition.document.where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
@@ -526,16 +526,16 @@ Scope: `report:use`, `report:admin`.
 | `definition.groups` | list |  |  |
 | `definition.groups[]` | string |  |  |
 | `definition.id` | string |  |  |
-| `definition.lastSlotAt` | string |  | The most recent occurrence the schedule has taken (queued, or skipped with a note), or null. |
-| `definition.modifiedAt` | string, date-time |  |  |
+| `definition.lastSlotAt` | string, or null |  | The most recent occurrence the schedule has taken (queued, or skipped with a note), or null. |
+| `definition.modifiedAt` | string, date-time, or null |  |  |
 | `definition.name` | string |  |  |
-| `definition.nextRunAt` | string |  | When the enabled schedule next occurs, ISO-8601 UTC; null when it is off or has no occurrence. |
+| `definition.nextRunAt` | string, or null |  | When the enabled schedule next occurs, ISO-8601 UTC; null when it is off or has no occurrence. |
 | `definition.notify` | boolean |  |  |
 | `definition.owner` | string |  | The owner's subject (urn:uuid:…). |
 | `definition.ownerName` | string |  | The owner's display name, or username; empty for a subject this realm cannot name. |
 | `definition.parameters` | map |  | Parameter name to the value the filter uses: at most 32 names of 1 to 64 characters. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none. |
-| `definition.parameters.{key}` | list, or string, or number, or boolean |  |  |
-| `definition.parameters.{key}[]` | string, or number, or boolean |  |  |
+| `definition.parameters.{key}` | list, or string, or null, or number, or boolean |  |  |
+| `definition.parameters.{key}[]` | string, or null, or number, or boolean |  |  |
 | `definition.schedule` | string |  | A five-field cron expression in UTC, or empty. The application composes it from a date-time and weekday boxes. |
 | `definition.scheduleEnabled` | boolean |  |  |
 
@@ -581,14 +581,14 @@ Scope: `report:use`, `report:admin`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `definition` | object |  |  |
-| `definition.createdAt` | string, date-time |  |  |
+| `definition.createdAt` | string, date-time, or null |  |  |
 | `definition.document` | object |  |  |
 | `definition.document.aggregate` | one of `count`, `null` |  |  |
 | `definition.document.format` | one of `json`, `csv`, `pdf` |  |  |
 | `definition.document.groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `definition.document.groupBy[]` | string |  |  |
 | `definition.document.limit` | integer |  |  |
-| `definition.document.locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `definition.document.locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `definition.document.mode` | one of `auto`, `sync`, `async` |  |  |
 | `definition.document.orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
 | `definition.document.orderBy[].dir` | one of `asc`, `desc` | yes |  |
@@ -610,12 +610,12 @@ Scope: `report:use`, `report:admin`.
 | `definition.document.where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
 | `definition.document.where (shape 4).field` | string | yes |  |
 | `definition.document.where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
-| `definition.document.where (shape 4).value` | string, or number, or boolean | yes |  |
+| `definition.document.where (shape 4).value` | string, or null, or number, or boolean | yes |  |
 | `definition.document.where (shape 5)` | object |  | in, with between 1 and 50 values. |
 | `definition.document.where (shape 5).field` | string | yes |  |
 | `definition.document.where (shape 5).op` | one of `in` | yes |  |
 | `definition.document.where (shape 5).value` | list | yes |  |
-| `definition.document.where (shape 5).value[]` | string, or number, or boolean |  |  |
+| `definition.document.where (shape 5).value[]` | string, or null, or number, or boolean |  |  |
 | `definition.document.where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
 | `definition.document.where (shape 6).field` | string | yes |  |
 | `definition.document.where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
@@ -628,16 +628,16 @@ Scope: `report:use`, `report:admin`.
 | `definition.groups` | list |  |  |
 | `definition.groups[]` | string |  |  |
 | `definition.id` | string |  |  |
-| `definition.lastSlotAt` | string |  | The most recent occurrence the schedule has taken (queued, or skipped with a note), or null. |
-| `definition.modifiedAt` | string, date-time |  |  |
+| `definition.lastSlotAt` | string, or null |  | The most recent occurrence the schedule has taken (queued, or skipped with a note), or null. |
+| `definition.modifiedAt` | string, date-time, or null |  |  |
 | `definition.name` | string |  |  |
-| `definition.nextRunAt` | string |  | When the enabled schedule next occurs, ISO-8601 UTC; null when it is off or has no occurrence. |
+| `definition.nextRunAt` | string, or null |  | When the enabled schedule next occurs, ISO-8601 UTC; null when it is off or has no occurrence. |
 | `definition.notify` | boolean |  |  |
 | `definition.owner` | string |  | The owner's subject (urn:uuid:…). |
 | `definition.ownerName` | string |  | The owner's display name, or username; empty for a subject this realm cannot name. |
 | `definition.parameters` | map |  | Parameter name to the value the filter uses: at most 32 names of 1 to 64 characters. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none. |
-| `definition.parameters.{key}` | list, or string, or number, or boolean |  |  |
-| `definition.parameters.{key}[]` | string, or number, or boolean |  |  |
+| `definition.parameters.{key}` | list, or string, or null, or number, or boolean |  |  |
+| `definition.parameters.{key}[]` | string, or null, or number, or boolean |  |  |
 | `definition.schedule` | string |  | A five-field cron expression in UTC, or empty. The application composes it from a date-time and weekday boxes. |
 | `definition.scheduleEnabled` | boolean |  |  |
 
@@ -688,7 +688,7 @@ Scope: `report:use`, `report:admin`.
 | `document.groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `document.groupBy[]` | string |  |  |
 | `document.limit` | integer |  |  |
-| `document.locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `document.locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `document.mode` | one of `auto`, `sync`, `async` |  |  |
 | `document.orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
 | `document.orderBy[].dir` | one of `asc`, `desc` | yes |  |
@@ -710,12 +710,12 @@ Scope: `report:use`, `report:admin`.
 | `document.where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
 | `document.where (shape 4).field` | string | yes |  |
 | `document.where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
-| `document.where (shape 4).value` | string, or number, or boolean | yes |  |
+| `document.where (shape 4).value` | string, or null, or number, or boolean | yes |  |
 | `document.where (shape 5)` | object |  | in, with between 1 and 50 values. |
 | `document.where (shape 5).field` | string | yes |  |
 | `document.where (shape 5).op` | one of `in` | yes |  |
 | `document.where (shape 5).value` | list | yes |  |
-| `document.where (shape 5).value[]` | string, or number, or boolean |  |  |
+| `document.where (shape 5).value[]` | string, or null, or number, or boolean |  |  |
 | `document.where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
 | `document.where (shape 6).field` | string | yes |  |
 | `document.where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
@@ -723,8 +723,8 @@ Scope: `report:use`, `report:admin`.
 | `name` | string | yes | What the definition is called: at most 120 characters, not only spaces. |
 | `notify` | boolean |  | Mail the owner when a scheduled run finishes. The message links to the job. It does not contain rows. |
 | `parameters` | map |  | Parameter name to the value the filter uses: at most 32 names of 1 to 64 characters. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none. |
-| `parameters.{key}` | list, or string, or number, or boolean |  |  |
-| `parameters.{key}[]` | string, or number, or boolean |  |  |
+| `parameters.{key}` | list, or string, or null, or number, or boolean |  |  |
+| `parameters.{key}[]` | string, or null, or number, or boolean |  |  |
 | `schedule` | string |  | A UTC cron expression, or empty. |
 | `scheduleEnabled` | boolean |  |  |
 
@@ -733,14 +733,14 @@ Scope: `report:use`, `report:admin`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `definition` | object |  |  |
-| `definition.createdAt` | string, date-time |  |  |
+| `definition.createdAt` | string, date-time, or null |  |  |
 | `definition.document` | object |  |  |
 | `definition.document.aggregate` | one of `count`, `null` |  |  |
 | `definition.document.format` | one of `json`, `csv`, `pdf` |  |  |
 | `definition.document.groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `definition.document.groupBy[]` | string |  |  |
 | `definition.document.limit` | integer |  |  |
-| `definition.document.locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `definition.document.locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `definition.document.mode` | one of `auto`, `sync`, `async` |  |  |
 | `definition.document.orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
 | `definition.document.orderBy[].dir` | one of `asc`, `desc` | yes |  |
@@ -762,12 +762,12 @@ Scope: `report:use`, `report:admin`.
 | `definition.document.where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
 | `definition.document.where (shape 4).field` | string | yes |  |
 | `definition.document.where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
-| `definition.document.where (shape 4).value` | string, or number, or boolean | yes |  |
+| `definition.document.where (shape 4).value` | string, or null, or number, or boolean | yes |  |
 | `definition.document.where (shape 5)` | object |  | in, with between 1 and 50 values. |
 | `definition.document.where (shape 5).field` | string | yes |  |
 | `definition.document.where (shape 5).op` | one of `in` | yes |  |
 | `definition.document.where (shape 5).value` | list | yes |  |
-| `definition.document.where (shape 5).value[]` | string, or number, or boolean |  |  |
+| `definition.document.where (shape 5).value[]` | string, or null, or number, or boolean |  |  |
 | `definition.document.where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
 | `definition.document.where (shape 6).field` | string | yes |  |
 | `definition.document.where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
@@ -780,16 +780,16 @@ Scope: `report:use`, `report:admin`.
 | `definition.groups` | list |  |  |
 | `definition.groups[]` | string |  |  |
 | `definition.id` | string |  |  |
-| `definition.lastSlotAt` | string |  | The most recent occurrence the schedule has taken (queued, or skipped with a note), or null. |
-| `definition.modifiedAt` | string, date-time |  |  |
+| `definition.lastSlotAt` | string, or null |  | The most recent occurrence the schedule has taken (queued, or skipped with a note), or null. |
+| `definition.modifiedAt` | string, date-time, or null |  |  |
 | `definition.name` | string |  |  |
-| `definition.nextRunAt` | string |  | When the enabled schedule next occurs, ISO-8601 UTC; null when it is off or has no occurrence. |
+| `definition.nextRunAt` | string, or null |  | When the enabled schedule next occurs, ISO-8601 UTC; null when it is off or has no occurrence. |
 | `definition.notify` | boolean |  |  |
 | `definition.owner` | string |  | The owner's subject (urn:uuid:…). |
 | `definition.ownerName` | string |  | The owner's display name, or username; empty for a subject this realm cannot name. |
 | `definition.parameters` | map |  | Parameter name to the value the filter uses: at most 32 names of 1 to 64 characters. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none. |
-| `definition.parameters.{key}` | list, or string, or number, or boolean |  |  |
-| `definition.parameters.{key}[]` | string, or number, or boolean |  |  |
+| `definition.parameters.{key}` | list, or string, or null, or number, or boolean |  |  |
+| `definition.parameters.{key}[]` | string, or null, or number, or boolean |  |  |
 | `definition.schedule` | string |  | A five-field cron expression in UTC, or empty. The application composes it from a date-time and weekday boxes. |
 | `definition.scheduleEnabled` | boolean |  |  |
 
@@ -884,20 +884,20 @@ Scope: `report:use`, `report:admin`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| (the answer) | map |  | Parameter name to the value the filter uses: at most 32 names of 1 to 64 characters. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none. |
-| `.{key}` | list, or string, or number, or boolean |  |  |
-| `.{key}[]` | string, or number, or boolean |  |  |
+| (the answer) | map |  | Parameter name to the value this run uses in place of the saved one: at most 32 names. A string, a number, a boolean, null, or a short array of those. Not a nested object. A run's parameters are not stored, so a name is not held to a saved name's length; one the filter does not name is ignored. |
+| `.{key}` | list, or string, or null, or number, or boolean |  |  |
+| `.{key}[]` | string, or null, or number, or boolean |  |  |
 
 **202**: The job.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `job` | object |  |  |
-| `job.byteSize` | integer |  |  |
-| `job.completedAt` | string |  |  |
-| `job.definitionId` | string |  |  |
-| `job.definitionName` | string |  |  |
-| `job.error` | string |  | The public error token. A job that exceeded report.asyncMaxMs carries result_too_large. The body of a failed job is not partial. |
+| `job.byteSize` | integer, or null |  |  |
+| `job.completedAt` | string, or null |  |  |
+| `job.definitionId` | string, or null |  |  |
+| `job.definitionName` | string, or null |  |  |
+| `job.error` | string, or null |  | The public error token. A job that exceeded report.asyncMaxMs carries result_too_large. The body of a failed job is not partial. |
 | `job.fields` | list |  |  |
 | `job.fields[]` | string |  |  |
 | `job.format` | string |  |  |
@@ -908,7 +908,7 @@ Scope: `report:use`, `report:admin`.
 | `job.query.groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `job.query.groupBy[]` | string |  |  |
 | `job.query.limit` | integer |  |  |
-| `job.query.locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `job.query.locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `job.query.mode` | one of `auto`, `sync`, `async` |  |  |
 | `job.query.orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
 | `job.query.orderBy[].dir` | one of `asc`, `desc` | yes |  |
@@ -930,12 +930,12 @@ Scope: `report:use`, `report:admin`.
 | `job.query.where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
 | `job.query.where (shape 4).field` | string | yes |  |
 | `job.query.where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
-| `job.query.where (shape 4).value` | string, or number, or boolean | yes |  |
+| `job.query.where (shape 4).value` | string, or null, or number, or boolean | yes |  |
 | `job.query.where (shape 5)` | object |  | in, with between 1 and 50 values. |
 | `job.query.where (shape 5).field` | string | yes |  |
 | `job.query.where (shape 5).op` | one of `in` | yes |  |
 | `job.query.where (shape 5).value` | list | yes |  |
-| `job.query.where (shape 5).value[]` | string, or number, or boolean |  |  |
+| `job.query.where (shape 5).value[]` | string, or null, or number, or boolean |  |  |
 | `job.query.where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
 | `job.query.where (shape 6).field` | string | yes |  |
 | `job.query.where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
@@ -943,7 +943,7 @@ Scope: `report:use`, `report:admin`.
 | `job.queuedBecause` | one of `every-person`, `asked`, `limit`, `source`, `run`, `schedule`, `null` |  | Why this query is a job: every-person (an auto-mode query whose filter the directory cannot answer from an index, so it has to read every person), asked (mode async, or POST /jobs), limit (auto over report.syncMaxRows), source (a source that cannot be read synchronously), run (a saved definition run by hand) or schedule. |
 | `job.source` | string |  |  |
 | `job.status` | one of `queued`, `running`, `completed`, `failed`, `cancelled`, `expired` |  |  |
-| `job.submittedAt` | string |  |  |
+| `job.submittedAt` | string, or null |  |  |
 
 **400**: invalid_query or result_too_large.
 
@@ -1008,14 +1008,14 @@ Scope: `report:use`, `report:admin`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `definition` | object |  |  |
-| `definition.createdAt` | string, date-time |  |  |
+| `definition.createdAt` | string, date-time, or null |  |  |
 | `definition.document` | object |  |  |
 | `definition.document.aggregate` | one of `count`, `null` |  |  |
 | `definition.document.format` | one of `json`, `csv`, `pdf` |  |  |
 | `definition.document.groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `definition.document.groupBy[]` | string |  |  |
 | `definition.document.limit` | integer |  |  |
-| `definition.document.locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `definition.document.locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `definition.document.mode` | one of `auto`, `sync`, `async` |  |  |
 | `definition.document.orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
 | `definition.document.orderBy[].dir` | one of `asc`, `desc` | yes |  |
@@ -1037,12 +1037,12 @@ Scope: `report:use`, `report:admin`.
 | `definition.document.where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
 | `definition.document.where (shape 4).field` | string | yes |  |
 | `definition.document.where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
-| `definition.document.where (shape 4).value` | string, or number, or boolean | yes |  |
+| `definition.document.where (shape 4).value` | string, or null, or number, or boolean | yes |  |
 | `definition.document.where (shape 5)` | object |  | in, with between 1 and 50 values. |
 | `definition.document.where (shape 5).field` | string | yes |  |
 | `definition.document.where (shape 5).op` | one of `in` | yes |  |
 | `definition.document.where (shape 5).value` | list | yes |  |
-| `definition.document.where (shape 5).value[]` | string, or number, or boolean |  |  |
+| `definition.document.where (shape 5).value[]` | string, or null, or number, or boolean |  |  |
 | `definition.document.where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
 | `definition.document.where (shape 6).field` | string | yes |  |
 | `definition.document.where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
@@ -1055,16 +1055,16 @@ Scope: `report:use`, `report:admin`.
 | `definition.groups` | list |  |  |
 | `definition.groups[]` | string |  |  |
 | `definition.id` | string |  |  |
-| `definition.lastSlotAt` | string |  | The most recent occurrence the schedule has taken (queued, or skipped with a note), or null. |
-| `definition.modifiedAt` | string, date-time |  |  |
+| `definition.lastSlotAt` | string, or null |  | The most recent occurrence the schedule has taken (queued, or skipped with a note), or null. |
+| `definition.modifiedAt` | string, date-time, or null |  |  |
 | `definition.name` | string |  |  |
-| `definition.nextRunAt` | string |  | When the enabled schedule next occurs, ISO-8601 UTC; null when it is off or has no occurrence. |
+| `definition.nextRunAt` | string, or null |  | When the enabled schedule next occurs, ISO-8601 UTC; null when it is off or has no occurrence. |
 | `definition.notify` | boolean |  |  |
 | `definition.owner` | string |  | The owner's subject (urn:uuid:…). |
 | `definition.ownerName` | string |  | The owner's display name, or username; empty for a subject this realm cannot name. |
 | `definition.parameters` | map |  | Parameter name to the value the filter uses: at most 32 names of 1 to 64 characters. A string, a number, a boolean, null, or a short array of those. Not a nested object. Null where a definition has none. |
-| `definition.parameters.{key}` | list, or string, or number, or boolean |  |  |
-| `definition.parameters.{key}[]` | string, or number, or boolean |  |  |
+| `definition.parameters.{key}` | list, or string, or null, or number, or boolean |  |  |
+| `definition.parameters.{key}[]` | string, or null, or number, or boolean |  |  |
 | `definition.schedule` | string |  | A five-field cron expression in UTC, or empty. The application composes it from a date-time and weekday boxes. |
 | `definition.scheduleEnabled` | boolean |  |  |
 
@@ -1165,11 +1165,11 @@ Scope: `report:use`, `report:admin`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `jobs` | list |  |  |
-| `jobs[].byteSize` | integer |  |  |
-| `jobs[].completedAt` | string |  |  |
-| `jobs[].definitionId` | string |  |  |
-| `jobs[].definitionName` | string |  |  |
-| `jobs[].error` | string |  | The public error token. A job that exceeded report.asyncMaxMs carries result_too_large. The body of a failed job is not partial. |
+| `jobs[].byteSize` | integer, or null |  |  |
+| `jobs[].completedAt` | string, or null |  |  |
+| `jobs[].definitionId` | string, or null |  |  |
+| `jobs[].definitionName` | string, or null |  |  |
+| `jobs[].error` | string, or null |  | The public error token. A job that exceeded report.asyncMaxMs carries result_too_large. The body of a failed job is not partial. |
 | `jobs[].fields` | list |  |  |
 | `jobs[].fields[]` | string |  |  |
 | `jobs[].format` | string |  |  |
@@ -1180,7 +1180,7 @@ Scope: `report:use`, `report:admin`.
 | `jobs[].query.groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `jobs[].query.groupBy[]` | string |  |  |
 | `jobs[].query.limit` | integer |  |  |
-| `jobs[].query.locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `jobs[].query.locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `jobs[].query.mode` | one of `auto`, `sync`, `async` |  |  |
 | `jobs[].query.orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
 | `jobs[].query.orderBy[].dir` | one of `asc`, `desc` | yes |  |
@@ -1202,12 +1202,12 @@ Scope: `report:use`, `report:admin`.
 | `jobs[].query.where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
 | `jobs[].query.where (shape 4).field` | string | yes |  |
 | `jobs[].query.where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
-| `jobs[].query.where (shape 4).value` | string, or number, or boolean | yes |  |
+| `jobs[].query.where (shape 4).value` | string, or null, or number, or boolean | yes |  |
 | `jobs[].query.where (shape 5)` | object |  | in, with between 1 and 50 values. |
 | `jobs[].query.where (shape 5).field` | string | yes |  |
 | `jobs[].query.where (shape 5).op` | one of `in` | yes |  |
 | `jobs[].query.where (shape 5).value` | list | yes |  |
-| `jobs[].query.where (shape 5).value[]` | string, or number, or boolean |  |  |
+| `jobs[].query.where (shape 5).value[]` | string, or null, or number, or boolean |  |  |
 | `jobs[].query.where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
 | `jobs[].query.where (shape 6).field` | string | yes |  |
 | `jobs[].query.where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
@@ -1215,8 +1215,8 @@ Scope: `report:use`, `report:admin`.
 | `jobs[].queuedBecause` | one of `every-person`, `asked`, `limit`, `source`, `run`, `schedule`, `null` |  | Why this query is a job: every-person (an auto-mode query whose filter the directory cannot answer from an index, so it has to read every person), asked (mode async, or POST /jobs), limit (auto over report.syncMaxRows), source (a source that cannot be read synchronously), run (a saved definition run by hand) or schedule. |
 | `jobs[].source` | string |  |  |
 | `jobs[].status` | one of `queued`, `running`, `completed`, `failed`, `cancelled`, `expired` |  |  |
-| `jobs[].submittedAt` | string |  |  |
-| `next` | string |  |  |
+| `jobs[].submittedAt` | string, or null |  |  |
+| `next` | string, or null |  |  |
 | `page` | integer |  | Absent on a cursor page. |
 | `pages` | integer |  |  |
 | `per` | integer |  |  |
@@ -1260,7 +1260,7 @@ Scope: `report:use`, `report:admin`.
 | `groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `groupBy[]` | string |  |  |
 | `limit` | integer |  |  |
-| `locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `mode` | one of `auto`, `sync`, `async` |  |  |
 | `orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
 | `orderBy[].dir` | one of `asc`, `desc` | yes |  |
@@ -1282,12 +1282,12 @@ Scope: `report:use`, `report:admin`.
 | `where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
 | `where (shape 4).field` | string | yes |  |
 | `where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
-| `where (shape 4).value` | string, or number, or boolean | yes |  |
+| `where (shape 4).value` | string, or null, or number, or boolean | yes |  |
 | `where (shape 5)` | object |  | in, with between 1 and 50 values. |
 | `where (shape 5).field` | string | yes |  |
 | `where (shape 5).op` | one of `in` | yes |  |
 | `where (shape 5).value` | list | yes |  |
-| `where (shape 5).value[]` | string, or number, or boolean |  |  |
+| `where (shape 5).value[]` | string, or null, or number, or boolean |  |  |
 | `where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
 | `where (shape 6).field` | string | yes |  |
 | `where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
@@ -1298,11 +1298,11 @@ Scope: `report:use`, `report:admin`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `job` | object |  |  |
-| `job.byteSize` | integer |  |  |
-| `job.completedAt` | string |  |  |
-| `job.definitionId` | string |  |  |
-| `job.definitionName` | string |  |  |
-| `job.error` | string |  | The public error token. A job that exceeded report.asyncMaxMs carries result_too_large. The body of a failed job is not partial. |
+| `job.byteSize` | integer, or null |  |  |
+| `job.completedAt` | string, or null |  |  |
+| `job.definitionId` | string, or null |  |  |
+| `job.definitionName` | string, or null |  |  |
+| `job.error` | string, or null |  | The public error token. A job that exceeded report.asyncMaxMs carries result_too_large. The body of a failed job is not partial. |
 | `job.fields` | list |  |  |
 | `job.fields[]` | string |  |  |
 | `job.format` | string |  |  |
@@ -1313,7 +1313,7 @@ Scope: `report:use`, `report:admin`.
 | `job.query.groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `job.query.groupBy[]` | string |  |  |
 | `job.query.limit` | integer |  |  |
-| `job.query.locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `job.query.locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `job.query.mode` | one of `auto`, `sync`, `async` |  |  |
 | `job.query.orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
 | `job.query.orderBy[].dir` | one of `asc`, `desc` | yes |  |
@@ -1335,12 +1335,12 @@ Scope: `report:use`, `report:admin`.
 | `job.query.where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
 | `job.query.where (shape 4).field` | string | yes |  |
 | `job.query.where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
-| `job.query.where (shape 4).value` | string, or number, or boolean | yes |  |
+| `job.query.where (shape 4).value` | string, or null, or number, or boolean | yes |  |
 | `job.query.where (shape 5)` | object |  | in, with between 1 and 50 values. |
 | `job.query.where (shape 5).field` | string | yes |  |
 | `job.query.where (shape 5).op` | one of `in` | yes |  |
 | `job.query.where (shape 5).value` | list | yes |  |
-| `job.query.where (shape 5).value[]` | string, or number, or boolean |  |  |
+| `job.query.where (shape 5).value[]` | string, or null, or number, or boolean |  |  |
 | `job.query.where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
 | `job.query.where (shape 6).field` | string | yes |  |
 | `job.query.where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
@@ -1348,7 +1348,7 @@ Scope: `report:use`, `report:admin`.
 | `job.queuedBecause` | one of `every-person`, `asked`, `limit`, `source`, `run`, `schedule`, `null` |  | Why this query is a job: every-person (an auto-mode query whose filter the directory cannot answer from an index, so it has to read every person), asked (mode async, or POST /jobs), limit (auto over report.syncMaxRows), source (a source that cannot be read synchronously), run (a saved definition run by hand) or schedule. |
 | `job.source` | string |  |  |
 | `job.status` | one of `queued`, `running`, `completed`, `failed`, `cancelled`, `expired` |  |  |
-| `job.submittedAt` | string |  |  |
+| `job.submittedAt` | string, or null |  |  |
 
 **400**: invalid_query, unknown_field, unsupported_operation or result_too_large.
 
@@ -1399,11 +1399,11 @@ Scope: `report:use`, `report:admin`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `job` | object |  |  |
-| `job.byteSize` | integer |  |  |
-| `job.completedAt` | string |  |  |
-| `job.definitionId` | string |  |  |
-| `job.definitionName` | string |  |  |
-| `job.error` | string |  | The public error token. A job that exceeded report.asyncMaxMs carries result_too_large. The body of a failed job is not partial. |
+| `job.byteSize` | integer, or null |  |  |
+| `job.completedAt` | string, or null |  |  |
+| `job.definitionId` | string, or null |  |  |
+| `job.definitionName` | string, or null |  |  |
+| `job.error` | string, or null |  | The public error token. A job that exceeded report.asyncMaxMs carries result_too_large. The body of a failed job is not partial. |
 | `job.fields` | list |  |  |
 | `job.fields[]` | string |  |  |
 | `job.format` | string |  |  |
@@ -1414,7 +1414,7 @@ Scope: `report:use`, `report:admin`.
 | `job.query.groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `job.query.groupBy[]` | string |  |  |
 | `job.query.limit` | integer |  |  |
-| `job.query.locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `job.query.locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `job.query.mode` | one of `auto`, `sync`, `async` |  |  |
 | `job.query.orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
 | `job.query.orderBy[].dir` | one of `asc`, `desc` | yes |  |
@@ -1436,12 +1436,12 @@ Scope: `report:use`, `report:admin`.
 | `job.query.where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
 | `job.query.where (shape 4).field` | string | yes |  |
 | `job.query.where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
-| `job.query.where (shape 4).value` | string, or number, or boolean | yes |  |
+| `job.query.where (shape 4).value` | string, or null, or number, or boolean | yes |  |
 | `job.query.where (shape 5)` | object |  | in, with between 1 and 50 values. |
 | `job.query.where (shape 5).field` | string | yes |  |
 | `job.query.where (shape 5).op` | one of `in` | yes |  |
 | `job.query.where (shape 5).value` | list | yes |  |
-| `job.query.where (shape 5).value[]` | string, or number, or boolean |  |  |
+| `job.query.where (shape 5).value[]` | string, or null, or number, or boolean |  |  |
 | `job.query.where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
 | `job.query.where (shape 6).field` | string | yes |  |
 | `job.query.where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
@@ -1449,7 +1449,7 @@ Scope: `report:use`, `report:admin`.
 | `job.queuedBecause` | one of `every-person`, `asked`, `limit`, `source`, `run`, `schedule`, `null` |  | Why this query is a job: every-person (an auto-mode query whose filter the directory cannot answer from an index, so it has to read every person), asked (mode async, or POST /jobs), limit (auto over report.syncMaxRows), source (a source that cannot be read synchronously), run (a saved definition run by hand) or schedule. |
 | `job.source` | string |  |  |
 | `job.status` | one of `queued`, `running`, `completed`, `failed`, `cancelled`, `expired` |  |  |
-| `job.submittedAt` | string |  |  |
+| `job.submittedAt` | string, or null |  |  |
 
 **401**: invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.
 
@@ -1493,11 +1493,11 @@ Scope: `report:use`, `report:admin`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `job` | object |  |  |
-| `job.byteSize` | integer |  |  |
-| `job.completedAt` | string |  |  |
-| `job.definitionId` | string |  |  |
-| `job.definitionName` | string |  |  |
-| `job.error` | string |  | The public error token. A job that exceeded report.asyncMaxMs carries result_too_large. The body of a failed job is not partial. |
+| `job.byteSize` | integer, or null |  |  |
+| `job.completedAt` | string, or null |  |  |
+| `job.definitionId` | string, or null |  |  |
+| `job.definitionName` | string, or null |  |  |
+| `job.error` | string, or null |  | The public error token. A job that exceeded report.asyncMaxMs carries result_too_large. The body of a failed job is not partial. |
 | `job.fields` | list |  |  |
 | `job.fields[]` | string |  |  |
 | `job.format` | string |  |  |
@@ -1508,7 +1508,7 @@ Scope: `report:use`, `report:admin`.
 | `job.query.groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `job.query.groupBy[]` | string |  |  |
 | `job.query.limit` | integer |  |  |
-| `job.query.locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `job.query.locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `job.query.mode` | one of `auto`, `sync`, `async` |  |  |
 | `job.query.orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
 | `job.query.orderBy[].dir` | one of `asc`, `desc` | yes |  |
@@ -1530,12 +1530,12 @@ Scope: `report:use`, `report:admin`.
 | `job.query.where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
 | `job.query.where (shape 4).field` | string | yes |  |
 | `job.query.where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
-| `job.query.where (shape 4).value` | string, or number, or boolean | yes |  |
+| `job.query.where (shape 4).value` | string, or null, or number, or boolean | yes |  |
 | `job.query.where (shape 5)` | object |  | in, with between 1 and 50 values. |
 | `job.query.where (shape 5).field` | string | yes |  |
 | `job.query.where (shape 5).op` | one of `in` | yes |  |
 | `job.query.where (shape 5).value` | list | yes |  |
-| `job.query.where (shape 5).value[]` | string, or number, or boolean |  |  |
+| `job.query.where (shape 5).value[]` | string, or null, or number, or boolean |  |  |
 | `job.query.where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
 | `job.query.where (shape 6).field` | string | yes |  |
 | `job.query.where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
@@ -1543,7 +1543,7 @@ Scope: `report:use`, `report:admin`.
 | `job.queuedBecause` | one of `every-person`, `asked`, `limit`, `source`, `run`, `schedule`, `null` |  | Why this query is a job: every-person (an auto-mode query whose filter the directory cannot answer from an index, so it has to read every person), asked (mode async, or POST /jobs), limit (auto over report.syncMaxRows), source (a source that cannot be read synchronously), run (a saved definition run by hand) or schedule. |
 | `job.source` | string |  |  |
 | `job.status` | one of `queued`, `running`, `completed`, `failed`, `cancelled`, `expired` |  |  |
-| `job.submittedAt` | string |  |  |
+| `job.submittedAt` | string, or null |  |  |
 
 **401**: invalid_token or invalid_dpop_proof. The code is recorded and is not in the body.
 
@@ -1592,8 +1592,8 @@ As `application/json`:
 | `fields[]` | string |  |  |
 | `rows` | list |  |  |
 | `rows[]` | map |  | One row: a field's id to what it holds. The keys are the fields the query selected, and `count` where it counted. |
-| `rows[].{key}` | list, or string, or number, or boolean |  |  |
-| `rows[].{key}[]` | string, or number, or boolean |  |  |
+| `rows[].{key}` | list, or string, or null, or number, or boolean |  |  |
+| `rows[].{key}[]` | string, or null, or number, or boolean |  |  |
 | `source` | string |  |  |
 | `truncated` | boolean |  |  |
 
@@ -1736,7 +1736,7 @@ Scope: `report:use`, `report:admin`.
 | `groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `groupBy[]` | string |  |  |
 | `limit` | integer |  |  |
-| `locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `mode` | one of `auto`, `sync`, `async` |  |  |
 | `orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
 | `orderBy[].dir` | one of `asc`, `desc` | yes |  |
@@ -1758,12 +1758,12 @@ Scope: `report:use`, `report:admin`.
 | `where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
 | `where (shape 4).field` | string | yes |  |
 | `where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
-| `where (shape 4).value` | string, or number, or boolean | yes |  |
+| `where (shape 4).value` | string, or null, or number, or boolean | yes |  |
 | `where (shape 5)` | object |  | in, with between 1 and 50 values. |
 | `where (shape 5).field` | string | yes |  |
 | `where (shape 5).op` | one of `in` | yes |  |
 | `where (shape 5).value` | list | yes |  |
-| `where (shape 5).value[]` | string, or number, or boolean |  |  |
+| `where (shape 5).value[]` | string, or null, or number, or boolean |  |  |
 | `where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
 | `where (shape 6).field` | string | yes |  |
 | `where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
@@ -1779,8 +1779,8 @@ As `application/json`:
 | `fields[]` | string |  |  |
 | `rows` | list |  |  |
 | `rows[]` | map |  | One row: a field's id to what it holds. The keys are the fields the query selected, and `count` where it counted. |
-| `rows[].{key}` | list, or string, or number, or boolean |  |  |
-| `rows[].{key}[]` | string, or number, or boolean |  |  |
+| `rows[].{key}` | list, or string, or null, or number, or boolean |  |  |
+| `rows[].{key}[]` | string, or null, or number, or boolean |  |  |
 | `source` | string |  |  |
 | `truncated` | boolean |  |  |
 
@@ -1793,11 +1793,11 @@ As `text/csv`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `job` | object |  |  |
-| `job.byteSize` | integer |  |  |
-| `job.completedAt` | string |  |  |
-| `job.definitionId` | string |  |  |
-| `job.definitionName` | string |  |  |
-| `job.error` | string |  | The public error token. A job that exceeded report.asyncMaxMs carries result_too_large. The body of a failed job is not partial. |
+| `job.byteSize` | integer, or null |  |  |
+| `job.completedAt` | string, or null |  |  |
+| `job.definitionId` | string, or null |  |  |
+| `job.definitionName` | string, or null |  |  |
+| `job.error` | string, or null |  | The public error token. A job that exceeded report.asyncMaxMs carries result_too_large. The body of a failed job is not partial. |
 | `job.fields` | list |  |  |
 | `job.fields[]` | string |  |  |
 | `job.format` | string |  |  |
@@ -1808,7 +1808,7 @@ As `text/csv`.
 | `job.query.groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `job.query.groupBy[]` | string |  |  |
 | `job.query.limit` | integer |  |  |
-| `job.query.locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `job.query.locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `job.query.mode` | one of `auto`, `sync`, `async` |  |  |
 | `job.query.orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
 | `job.query.orderBy[].dir` | one of `asc`, `desc` | yes |  |
@@ -1830,12 +1830,12 @@ As `text/csv`.
 | `job.query.where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
 | `job.query.where (shape 4).field` | string | yes |  |
 | `job.query.where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
-| `job.query.where (shape 4).value` | string, or number, or boolean | yes |  |
+| `job.query.where (shape 4).value` | string, or null, or number, or boolean | yes |  |
 | `job.query.where (shape 5)` | object |  | in, with between 1 and 50 values. |
 | `job.query.where (shape 5).field` | string | yes |  |
 | `job.query.where (shape 5).op` | one of `in` | yes |  |
 | `job.query.where (shape 5).value` | list | yes |  |
-| `job.query.where (shape 5).value[]` | string, or number, or boolean |  |  |
+| `job.query.where (shape 5).value[]` | string, or null, or number, or boolean |  |  |
 | `job.query.where (shape 6)` | object |  | A comparison whose value is a saved definition's parameter, named here and given when the definition runs. |
 | `job.query.where (shape 6).field` | string | yes |  |
 | `job.query.where (shape 6).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith`, `in` | yes |  |
@@ -1843,7 +1843,7 @@ As `text/csv`.
 | `job.queuedBecause` | one of `every-person`, `asked`, `limit`, `source`, `run`, `schedule`, `null` |  | Why this query is a job: every-person (an auto-mode query whose filter the directory cannot answer from an index, so it has to read every person), asked (mode async, or POST /jobs), limit (auto over report.syncMaxRows), source (a source that cannot be read synchronously), run (a saved definition run by hand) or schedule. |
 | `job.source` | string |  |  |
 | `job.status` | one of `queued`, `running`, `completed`, `failed`, `cancelled`, `expired` |  |  |
-| `job.submittedAt` | string |  |  |
+| `job.submittedAt` | string, or null |  |  |
 
 **400**: invalid_query, unknown_source is 404, unknown_field, unsupported_operation, unsupported_format or result_too_large.
 
@@ -1937,19 +1937,19 @@ Scope: `report:use`, `report:admin`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
-| `owner` | string |  |  |
+| `owner` | string, or null |  |  |
 | `page` | integer |  |  |
 | `pages` | integer |  |  |
 | `per` | integer |  |  |
 | `schedules` | list |  |  |
 | `schedules[].definition` | object |  |  |
 | `schedules[].definition.failures` | list |  |  |
-| `schedules[].definition.failures[].at` | string |  |  |
+| `schedules[].definition.failures[].at` | string, or null |  |  |
 | `schedules[].definition.failures[].description` | string |  |  |
 | `schedules[].definition.id` | string |  |  |
-| `schedules[].definition.lastSlotAt` | string |  |  |
+| `schedules[].definition.lastSlotAt` | string, or null |  |  |
 | `schedules[].definition.name` | string |  |  |
-| `schedules[].definition.nextRunAt` | string |  |  |
+| `schedules[].definition.nextRunAt` | string, or null |  |  |
 | `schedules[].definition.notify` | boolean |  |  |
 | `schedules[].definition.owner` | string |  |  |
 | `schedules[].definition.ownerName` | string |  |  |
@@ -1957,11 +1957,11 @@ Scope: `report:use`, `report:admin`.
 | `schedules[].definition.scheduleEnabled` | boolean |  |  |
 | `schedules[].jobCount` | integer |  | How many scheduled jobs the definition has in all. |
 | `schedules[].jobs` | list |  | The most recent scheduled jobs, newest first, at most five. |
-| `schedules[].jobs[].byteSize` | integer |  |  |
-| `schedules[].jobs[].completedAt` | string |  |  |
-| `schedules[].jobs[].definitionId` | string |  |  |
-| `schedules[].jobs[].definitionName` | string |  |  |
-| `schedules[].jobs[].error` | string |  | The public error token. A job that exceeded report.asyncMaxMs carries result_too_large. The body of a failed job is not partial. |
+| `schedules[].jobs[].byteSize` | integer, or null |  |  |
+| `schedules[].jobs[].completedAt` | string, or null |  |  |
+| `schedules[].jobs[].definitionId` | string, or null |  |  |
+| `schedules[].jobs[].definitionName` | string, or null |  |  |
+| `schedules[].jobs[].error` | string, or null |  | The public error token. A job that exceeded report.asyncMaxMs carries result_too_large. The body of a failed job is not partial. |
 | `schedules[].jobs[].fields` | list |  |  |
 | `schedules[].jobs[].fields[]` | string |  |  |
 | `schedules[].jobs[].format` | string |  |  |
@@ -1972,7 +1972,7 @@ Scope: `report:use`, `report:admin`.
 | `schedules[].jobs[].query.groupBy` | list |  | The fields a count groups by, at most 8, each once. |
 | `schedules[].jobs[].query.groupBy[]` | string |  |  |
 | `schedules[].jobs[].query.limit` | integer |  |  |
-| `schedules[].jobs[].query.locale` | string |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
+| `schedules[].jobs[].query.locale` | string, or null |  | A language tag. Omitted means the PDF chrome is English. The page sends the signed-in user's language. Filipino and Swedish are drawn. Chinese is named on an English page because the PDF font is WinAnsi. |
 | `schedules[].jobs[].query.mode` | one of `auto`, `sync`, `async` |  |  |
 | `schedules[].jobs[].query.orderBy` | list |  | At most 8 entries, each a field and a direction, and a field once. |
 | `schedules[].jobs[].query.orderBy[].dir` | one of `asc`, `desc` | yes |  |
@@ -1994,7 +1994,7 @@ Scope: `report:use`, `report:admin`.
 | `schedules[].jobs[].query.where (shape 4)` | object |  | A comparison with one value: a string, a number, a boolean or null, which the field's type then decides. |
 | `schedules[].jobs[].query.where (shape 4).field` | string | yes |  |
 | `schedules[].jobs[].query.where (shape 4).op` | one of `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `contains`, `startsWith` | yes |  |
-| `schedules[].jobs[].query.where (shape 4).value` | string, or number, or boolean | yes |  |
+| `schedules[].jobs[].query.where (shape 4).value` | string, or null, or number, or boolean | yes |  |
 | `schedules[].jobs[].query.where (shape 5)` | object |  | in, with between 1 and 50 values. |
 | `schedules[].jobs[].query.where (shape 5).field` | string | yes |  |
 | `schedules[].jobs[].query.where (shape 5).op` | one of `in` | yes |  |
@@ -2007,7 +2007,7 @@ Scope: `report:use`, `report:admin`.
 | `schedules[].jobs[].queuedBecause` | one of `every-person`, `asked`, `limit`, `source`, `run`, `schedule`, `null` |  | Why this query is a job: every-person (an auto-mode query whose filter the directory cannot answer from an index, so it has to read every person), asked (mode async, or POST /jobs), limit (auto over report.syncMaxRows), source (a source that cannot be read synchronously), run (a saved definition run by hand) or schedule. |
 | `schedules[].jobs[].source` | string |  |  |
 | `schedules[].jobs[].status` | one of `queued`, `running`, `completed`, `failed`, `cancelled`, `expired` |  |  |
-| `schedules[].jobs[].submittedAt` | string |  |  |
+| `schedules[].jobs[].submittedAt` | string, or null |  |  |
 | `scope` | one of `mine`, `realm` |  |  |
 | `total` | integer |  |  |
 
