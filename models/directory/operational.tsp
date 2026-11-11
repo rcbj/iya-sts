@@ -30,8 +30,8 @@ model Operational {
   modifyTimestamp?: string;
   @attr(#{what: "RFC 5020. Computed at search time."})
   entryDN?: string;
-  @attr(#{what: "The losing entryUUID of a two-process create race."})
+  @attr(#{kind: "multi", what: "The losing entryUUID of a two-process create race."})
   stsEntryUuidAlias?: (string)[];
-  @attr(#{what: "A person's groups, derived from member. Never stored."})
+  @attr(#{kind: "multi", what: "A person's groups, derived from member. Never stored."})
   memberOf?: (DirectoryDn)[];
 }

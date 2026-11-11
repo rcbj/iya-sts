@@ -33,14 +33,29 @@ namespace IyaSts.Directory;
   ]
 })
 model Oidfed {
-  @attr(#{})
+  @attr(#{
+    kind: "single",
+    what: "What the entry holds: keys, subordinate, anchor, mark-type, issued-mark, held-mark, mark-policy, events, suspension or collection. Written by this service."
+  })
   stsOidfedKind?: string;
-  @attr(#{})
+  @attr(#{
+    kind: "single",
+    what: "The Entity Identifier the entry concerns, where it concerns one. Written by this service."
+  })
   stsOidfedEntityId?: string;
-  @attr(#{})
+  @attr(#{
+    kind: "single",
+    what: "The entry's record as one JSON value, of the shape its kind says. Written by the console, the management API and the federation endpoints."
+  })
   stsOidfedData?: DirectoryJson;
-  @attr(#{})
+  @attr(#{
+    kind: "multi",
+    what: "The realm's Federation Entity Keys, one JSON row per value, on the keys entry. Withheld from every directory read."
+  })
   stsOidfedKeys?: (DirectoryJson)[];
-  @attr(#{})
+  @attr(#{
+    kind: "multi",
+    what: "A subordinate's event history, one JSON event per value, on its events entry. Appended by this service."
+  })
   stsOidfedEvent?: (DirectoryJson)[];
 }
