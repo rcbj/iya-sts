@@ -1123,13 +1123,13 @@
      "party": "https://sp.wire.test/sp",
      "from": "the samlSingleLogoutService on its application entry",
      "url": "https://sp.wire.test/slo?SAMLRequest=<value>&SigAlg=http%3A%2F%2Fwww.w3.org%2F2001%2F04%2Fxmldsig-more%23rsa-sha256&Signature=<value>",
-     "decoded": "<samlp:LogoutRequest xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\" xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\" ID=\"<id1>\" Version=\"2.0\" IssueInstant=\"<time>\" Destination=\"https://sp.wire.test/slo\"><saml:Issuer>http://<port>/realm/samlwire</saml:Issuer><saml:NameID Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified\">wirealice</saml:NameID><samlp:SessionIndex><random></samlp:SessionIndex></samlp:LogoutRequest>"
+     "decoded": "<samlp:LogoutRequest xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\" xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\" ID=\"<id1>\" Version=\"2.0\" IssueInstant=\"<time>\" Destination=\"https://sp.wire.test/slo\"><saml:Issuer>http://<port>/realm/samlwire</saml:Issuer><saml:NameID Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified\">wirealice</saml:NameID><samlp:SessionIndex><id3></samlp:SessionIndex></samlp:LogoutRequest>"
     },
     {
      "party": "https://stranger.wire.test/sp",
      "from": "the assertion consumer service URL it last used — A GUESS",
      "url": "https://stranger.wire.test/acs?SAMLRequest=<value>&SigAlg=http%3A%2F%2Fwww.w3.org%2F2001%2F04%2Fxmldsig-more%23rsa-sha256&Signature=<value>",
-     "decoded": "<samlp:LogoutRequest xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\" xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\" ID=\"<id2>\" Version=\"2.0\" IssueInstant=\"<time>\" Destination=\"https://stranger.wire.test/acs\"><saml:Issuer>http://<port>/realm/samlwire</saml:Issuer><saml:NameID Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified\">wirealice</saml:NameID><samlp:SessionIndex><random></samlp:SessionIndex></samlp:LogoutRequest>"
+     "decoded": "<samlp:LogoutRequest xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\" xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\" ID=\"<id2>\" Version=\"2.0\" IssueInstant=\"<time>\" Destination=\"https://stranger.wire.test/acs\"><saml:Issuer>http://<port>/realm/samlwire</saml:Issuer><saml:NameID Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified\">wirealice</saml:NameID><samlp:SessionIndex><id3></samlp:SessionIndex></samlp:LogoutRequest>"
     }
    ]
   },
@@ -2733,7 +2733,7 @@
      "party": "https://sp.wire.test/sp",
      "from": "the samlSingleLogoutService on its application entry",
      "url": "https://sp.wire.test/slo?SAMLRequest=<value>&SigAlg=http%3A%2F%2Fwww.w3.org%2F2001%2F04%2Fxmldsig-more%23rsa-sha256&Signature=<value>",
-     "decoded": "<samlp:LogoutRequest xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\" xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\" ID=\"<id1>\" Version=\"2.0\" IssueInstant=\"<time>\" Destination=\"https://sp.wire.test/slo\"><saml:Issuer>http://<port>/realm/samlwirep</saml:Issuer><saml:NameID Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified\">wirealice</saml:NameID><samlp:SessionIndex><random></samlp:SessionIndex></samlp:LogoutRequest>"
+     "decoded": "<samlp:LogoutRequest xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\" xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\" ID=\"<id1>\" Version=\"2.0\" IssueInstant=\"<time>\" Destination=\"https://sp.wire.test/slo\"><saml:Issuer>http://<port>/realm/samlwirep</saml:Issuer><saml:NameID Format=\"urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified\">wirealice</saml:NameID><samlp:SessionIndex><id2></samlp:SessionIndex></samlp:LogoutRequest>"
     }
    ]
   },

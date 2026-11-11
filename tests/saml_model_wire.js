@@ -770,6 +770,13 @@ function childMain() {
 const MINTED =
   /\b(ID|AssertionID|ResponseID|SessionIndex|RequestID|Id)=\\?"([^"\\]+)\\?"/g;
 
+// And the elements whose text this service draws at random: a
+// LogoutRequest's SessionIndex is the assertion's SessionIndex attribute
+// again, so it takes the same placeholder. Until #1579 only the attribute
+// was numbered, and a value with no digit or no capital escaped the
+// `random` pattern below.
+const MINTED_TEXT = /<(?:[A-Za-z0-9]+:)?(SessionIndex)>([^<]+)</g;
+
 // The elements whose text is key material or a value drawn at random.
 const OPAQUE = ['SignatureValue', 'DigestValue', 'X509Certificate',
                 'CipherValue', 'MessageHandle', 'AssertionArtifact',
@@ -780,13 +787,15 @@ function numberMinted(text) {
   log.debug("Entering numberMinted().");
   const seen = new Map();
   let match;
-  MINTED.lastIndex = 0;
-  while ((match = MINTED.exec(text)) !== null) {
-    const value = match[2];
-    if (!/^_wire-/.test(value) && value.length >= 8 && !seen.has(value)) {
-      seen.set(value, '<id' + (seen.size + 1) + '>');
+  [MINTED, MINTED_TEXT].forEach(function (pattern) {
+    pattern.lastIndex = 0;
+    while ((match = pattern.exec(text)) !== null) {
+      const value = match[2];
+      if (!/^_wire-/.test(value) && value.length >= 8 && !seen.has(value)) {
+        seen.set(value, '<id' + (seen.size + 1) + '>');
+      }
     }
-  }
+  });
   let out = text;
   seen.forEach(function (placeholder, value) {
     out = out.split(value).join(placeholder);
