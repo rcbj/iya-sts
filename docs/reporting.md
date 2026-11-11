@@ -946,7 +946,10 @@ the synchronous row cap is the limit the size check uses.
 `where` is one filter, or `and`, `or` or `not`. `and` and `or` take
 `args`, a list of 1 to 16 filters. `not` takes `arg`, one filter. A leaf
 is `{ "op", "field", "value" }` or `{ "op", "field", "param" }`. A value
-and a parameter together are refused. A parameter name is a string. The
+and a parameter together are refused. A parameter name is a string of 1
+to 64 characters, as a parameter bag's keys are, so a definition never
+names a parameter a run could not supply; a longer or empty one is
+refused, "A parameter name is a string.". The
 bag is supplied beside a saved definition, not inside an ad hoc document
 that already has `source`.
 
@@ -1180,9 +1183,11 @@ waits for the next occurrence.
 
 `POST /report-api/definitions/{id}/run` is always a job (HTTP 202). The
 body is the parameter object, not a query document: at most 32 keys,
-each value as above. A key overrides the stored default. A run's
-parameters are not stored, so a key is not held to the stored bag's 64
-characters, and a key the document does not name is ignored. An empty object, or an empty body, uses the stored
+each key 1 to 64 characters and each value as above, the same bounds as
+the stored bag. A body outside them is refused, `invalid_query`
+"Parameters are names and values." A key overrides the stored default,
+and a key the document does not name is ignored. The run's parameters
+are not stored. An empty object, or an empty body, uses the stored
 defaults. The stored document already carries `locale`.
 
 `notify: true` mails the owner when a scheduled run finishes

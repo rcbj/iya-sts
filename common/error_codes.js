@@ -27768,6 +27768,12 @@ const CODES = [
   { code: 'STS-REPORT-0059',
     summary: 'A token was refused because the person it names no longer exists.',
     spec: 'HTTP 401' },
+  { code: 'STS-REPORT-0060',
+    summary: 'A stored report definition no longer holds to the Reports API ' +
+      'model (a filter naming a parameter longer than 64 characters, saved ' +
+      'before #1579 bounded it), so it is answered without its document and ' +
+      'parameters, and a run of it is refused for its query.',
+    spec: 'recorded' },
   { code: 'STS-AUDIT-0001',
     summary: 'An audit export destination was refused because its ' +
       'configuration is not usable: an unknown action or type, a missing ' +

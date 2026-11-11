@@ -341,7 +341,7 @@ function reportIdOk(id: string): boolean {
 }
 
 // WHAT A DEFINITION, A SHARE AND A RUN'S PARAMETERS MAY HOLD (#1579) is the
-// model's `DefinitionWrite`, `ShareWrite` and `RunParameters`: the body is held
+// model's `DefinitionWrite`, `ShareWrite` and `ParameterBag`: the body is held
 // to it here, at the door, and `jobs.ts` asks only what one body cannot
 // answer — a schedule's cron grammar, the catalog, a group's existence. A
 // document inside a definition is the model's too, and `Query` reports what
@@ -355,13 +355,19 @@ function reportIdOk(id: string): boolean {
 // rcbj's decision was that no caller sees a change. So the door finds the
 // issue and `jobs.save()` refuses it where the hand check stood
 // (`tests/report_parameter_names.js` holds the order).
+//
+// A RUN'S PARAMETERS ARE THE SAME `ParameterBag`, names of 1 to 64 characters
+// included (rcbj, #1579, 2026-11-11): until then a run's body was
+// `RunParameters`, unbounded in name. A run has no later check to keep in
+// order, so its refusal is the door's, the one a run's bag always had.
 let reportWrites: Record<string, any> | null = null;
 
 function reportWriteShape(name: string): any {
   log.debug("Entering reportWriteShape().");
   if (!reportWrites) {
     reportWrites = {};
-    ['DefinitionWrite', 'ShareWrite', 'RunParameters'].forEach(
+    ['DefinitionWrite', 'ShareWrite', 'ParameterBag',
+     'QueryDocument'].forEach(
       function (one: string): void {
         reportWrites[one] = ModelZod.component('report', one,
                                                { typed: true });
@@ -1012,13 +1018,40 @@ function reportDefinitionView(who: any, row: any): any {
     modifiedAt: jobs.iso(row.modifiedAt)
   };
   if (editable) {
-    view.document = stores.copy(row.document);
-    view.parameters = row.parameters ? stores.copy(row.parameters) : null;
+    if (reportStoredHolds(row)) {
+      view.document = stores.copy(row.document);
+      view.parameters = row.parameters ? stores.copy(row.parameters) : null;
+    }
     view.groups = (row.groups || []).slice();
     view.failures = (row.failures || []).slice();
   }
   log.debug("Leaving reportDefinitionView().");
   return view;
+}
+
+// A DEFINITION STORED BEFORE THE MODEL GREW A BOUND (#1579): a filter's
+// `param` was any length until rcbj's decision of 2026-11-11 made it 1 to 64
+// characters, and there is no migration (no backward compatibility). Every
+// answer is held to the model (`common/response_models.ts`), so such a row's
+// document in a view would turn the whole list into a 500. It is answered
+// without its document and parameters instead: the owner still sees it, can
+// replace its document or delete it, and a run of it is refused 400 for its
+// query (`tests/report_parameter_names.js`, D). Noted once per row.
+const reportStaleNoted = new Set<string>();
+
+function reportStoredHolds(row: any): boolean {
+  log.debug("Entering reportStoredHolds().");
+  const holds = reportWriteIssues('QueryDocument', row.document).length ===
+    0 && (row.parameters == null ||
+    reportWriteIssues('ParameterBag', row.parameters).length === 0);
+  if (!holds && !reportStaleNoted.has(String(row.id))) {
+    reportStaleNoted.add(String(row.id));
+    log.warn(errorCodes.tag('STS-REPORT-0060') + 'report: a stored ' +
+      'definition no longer holds to the model, and is answered without ' +
+      'its document.');
+  }
+  log.debug("Leaving reportStoredHolds().");
+  return holds;
 }
 
 function reportServeIndex(res: ReportAnswering<'GET /report-api'>): void {
@@ -1682,7 +1715,7 @@ async function reportRunSaved(
     log.debug("Leaving reportRunSaved(). Bad JSON.");
     return;
   }
-  if (reportWriteIssues('RunParameters', posted).length) {
+  if (reportWriteIssues('ParameterBag', posted).length) {
     reportSend(res, reportHttpStatus('STS-REPORT-0004'),
       'STS-REPORT-0004', 'invalid_query',
       'Parameters are names and values.');
