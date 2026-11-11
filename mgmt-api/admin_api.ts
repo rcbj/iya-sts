@@ -11328,6 +11328,78 @@ class AdminApi {
     return options;
   }
 
+  // THE GATE'S ROWS, READ OFF THE LOOP BEFORE THE SYNCHRONOUS CHECKS (#880).
+  //
+  // `endedSessionOf()` reads the token register by jti and then the session,
+  // and the disabled-account and role checks read the person. On a request
+  // worker each of those is a synchronous store read the first time that
+  // caller is seen, and it holds the event loop. The rows are asked here,
+  // together, before those checks run, so the checks find them held. A warm
+  // that fails holds nothing and the checks read as they always did: the
+  // decision is not cached, and a failed warm is not a refusal.
+  //
+  // The directory is required HERE and not at the top. `ldap/ldap_server.js`
+  // registers its routes when it is required, and it is position 21, after
+  // this module at 19. A require at load would put `/admin/ldap` wherever
+  // this module was first loaded. By the time a request reaches this gate
+  // the stack has required it. `authn` is the same kind of require: this
+  // module does not load it at the top, and the session warm is the one
+  // call.
+  /**
+   * Reads the token row, its session and its person off the event loop,
+   * so the gate's synchronous checks find them held (#880).
+   *
+   * @param claims - the verified token claims
+   * @param tokenRealm - the realm that issued the token
+   */
+  async warmGateRows(claims, tokenRealm): Promise<void> {
+    const { log, realms, stats } = this.deps;
+    log.debug("Entering AdminApi.warmGateRows().");
+    const jti = String((claims && claims.jti) || '');
+    const sub = String((claims && claims.sub) || '');
+    const clientId = String((claims && claims.client_id) || '');
+    const person = sub && sub !== clientId ? sub : '';
+    const ambient = realms.currentId();
+    try {
+      await realms.run(realms.get(tokenRealm), async function () {
+        if (jti) {
+          await stats.warmTokens([jti]);
+        }
+        const sid = jti ? String(stats.sessionIdOfJti(jti) || '') : '';
+        if (sid) {
+          const authn = require('../authn/authn');
+          await authn.warmSessionAsync(sid);
+        }
+        const ldap = require('../ldap/ldap_server');
+        if (person) {
+          await ldap.warmSubjectsAsync([person]);
+        }
+        // The roster reads the bootstrap administrator by username, and
+        // the owner check lists service accounts. Neither is the token's
+        // subject, and both are synchronous store reads once that subject
+        // is held (#880).
+        const bootstrap = require('../common/bootstrap_name');
+        const bootName = String(bootstrap.current() || '');
+        if (bootName) {
+          await ldap.warmUserNamesAsync([bootName]);
+        }
+        await ldap.serviceAccountNamesAsync();
+      });
+      // `isDisabled()` runs in the request's realm, which is not always the
+      // realm that issued the token. The person is warmed there too.
+      if (person && ambient !== tokenRealm) {
+        const ldap = require('../ldap/ldap_server');
+        await ldap.warmSubjectsAsync([person]);
+      }
+    } catch (e) {
+      log.debug("Caught in AdminApi.warmGateRows(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving AdminApi.warmGateRows(). The warm failed.");
+      throw e;
+    }
+    log.debug("Leaving AdminApi.warmGateRows().");
+  }
+
   // THE GATE, registered where it always was: the exported
   // `registerRoutes(app)` calls this first, and `common/protocol_stack.ts`
   // calls that at the point the gate used to be registered, so the route
@@ -11543,6 +11615,13 @@ class AdminApi {
             'That access token expired at ' +
             new Date(Number(claims.exp) * 1000).toISOString() + '.'] });
         }
+        // THE ROWS THE CHECKS BELOW READ, ASKED OFF THE LOOP FIRST (#880).
+        // The token register, the session and the person are warmed, and
+        // the checks stay the synchronous ones they are. A failed warm
+        // falls through to the same checks. No Entering/Leaving pair on
+        // this continuation: it is this middleware's own remainder, and a
+        // Leaving line before each of its returns would be the change.
+        const admit = function () {
         // A TOKEN THIS SERVICE HAS SINCE REVOKED OR DISOWNED, AND ONE MADE FOR
         // A PERSON WHOSE ACCOUNT IS DISABLED (2026-09-17, #36 follow-up). This
         // gate checked neither, so an administrator's token went on working
@@ -12070,6 +12149,26 @@ class AdminApi {
         }
         res.locals.apiCaller.owner = !!owned;
         return next();
+        };
+        // No Entering/Leaving pair: this only guards the continuation
+        // above. The middleware has returned by the time it runs, so a
+        // throw in the remainder is not Express's to catch. Hand it to
+        // next, which is what a throw in the middleware used to become.
+        const runAdmit = function () {
+          try {
+            admit();
+          } catch (err) {
+            log.debug("Caught in AdminApi.registerGate(): " +
+                      ((err && err.message) || err));
+            next(err);
+          }
+        };
+        self.warmGateRows(claims, tokenRealm).then(runAdmit, function (e) {
+          log.debug("Caught in AdminApi.registerGate(): " +
+                    ((e && e.message) || e));
+          runAdmit();
+        });
+        return;
       }
       // ---------------------------------------------------------------------
       // THE SETTING IS OFF, WHICH ONLY DEVELOPMENT MODE CAN BE (#446,

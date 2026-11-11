@@ -2715,6 +2715,19 @@ const usernameIndexes = realms.keyed(function () {
   return { index: null, version: -1, usersDn: '', builds: 0, collisions: 0 };
 });
 
+// A windowed worker's answer to one username, including nobody (#880).
+// `existingUserEntry()` asks the store by name after the `uid` DN misses,
+// and the console gate does that for the bootstrap administrator on every
+// request. Kept until `ou=users`'s subtree clock moves — a create, a
+// modify or a delete there, and not a forget of a clean slot. An absence
+// at `uid=<name>` is not this answer: a person filed under another RDN is
+// found only by name. A write an add in flight was told about drops the
+// names it could have changed (`dropUserNameAnswers()`), because that
+// apply does not always move the clock.
+const userNameAnswers = realms.keyed(function () {
+  return { version: -1, usersDn: '', answers: null };
+});
+
 // The registry counters of this file's four caches (#74, rule 3ap) — the
 // username index above, and the group index, the entryUUID index and the
 // subtree listings below. Declared HERE, ahead of all four, because seeding
@@ -3348,6 +3361,35 @@ function noteHeldNamesTouched(dn, after) {
     names.forEach(function (name) {
       watch.names.add(name);
     });
+  });
+  // The same news for a username the console gate remembered (#880). An
+  // add whose watch was touched falls through to existingUserEntry(), and
+  // a remembered "nobody" would hide the person this write just made.
+  dropUserNameAnswers(key, names);
+}
+
+// Hot path (every write that an add in flight is told about): no
+// Entering/Leaving pair, the exception the code style allows, stated as
+// it requires. `names` null drops every remembered answer.
+function dropUserNameAnswers(dnKey, names) {
+  const held = userNameAnswers();
+  if (!held.answers || !held.answers.size) {
+    return;
+  }
+  if (names === null) {
+    held.answers = null;
+    held.version = -1;
+    return;
+  }
+  const drop = [];
+  held.answers.forEach(function (entry, name) {
+    if (names.indexOf(name) >= 0 ||
+        (dnKey && entry && normalizeDn(entry.dn) === dnKey)) {
+      drop.push(name);
+    }
+  });
+  drop.forEach(function (name) {
+    held.answers.delete(name);
   });
 }
 
@@ -6130,6 +6172,180 @@ async function warmNamesAsync(names) {
     ? directoryWindow.warmAsync(realms.currentId(), keys) : 0;
 }
 
+// PEOPLE A REQUEST IS ABOUT TO READ BY SUBJECT, PUT IN THE WINDOW FIRST
+// (#880). The console gate resolves the token's subject with
+// entryByUuid(), and in a window that is a synchronous byUuid even after
+// entriesByUuidsAsync() has just answered: that read does not put a slot
+// and does not note the UUID, and windowHeldByUuid() only hits a slot the
+// window HOLDS. A cold subject is asked off the loop, its DN is put
+// (warmAsync()), and only then is the UUID noted. One the window already
+// answers is skipped. Outside a window the directory is the Map.
+/**
+ * Puts the people a request is about to read by subject into the window,
+ * off the event loop (#880).
+ *
+ * @param {Array<string>} subjects - bare UUIDs or `urn:uuid:`
+ * @returns {Promise<number>} how many were not already held
+ */
+async function warmSubjectsAsync(subjects) {
+  log.debug("Entering warmSubjectsAsync().");
+  const list = subjects || [];
+  if (!directoryWindow) {
+    entriesByUuids(list);
+    log.debug("Leaving warmSubjectsAsync(). No window.");
+    return 0;
+  }
+  const window = directoryWindow;
+  const cold = [];
+  list.forEach(function (one) {
+    const wanted = String(one || '').trim().toLowerCase()
+      .replace(/^urn:uuid:/, '');
+    if (UUID_SHAPED.test(wanted) && !windowHeldByUuid(wanted)) {
+      cold.push(wanted);
+    }
+  });
+  if (!cold.length) {
+    const names = [];
+    list.forEach(function (one) {
+      const wanted = String(one || '').trim().toLowerCase()
+        .replace(/^urn:uuid:/, '');
+      const held = UUID_SHAPED.test(wanted)
+        ? windowHeldByUuid(wanted) : null;
+      if (held && isPersonEntry(held)) {
+        const name = personNameOf(held);
+        if (name) {
+          names.push(name);
+        }
+      }
+    });
+    if (names.length) {
+      await warmUserNamesAsync(names);
+    }
+    log.debug("Leaving warmSubjectsAsync(). Already held.");
+    return 0;
+  }
+  const found = await entriesByUuidsAsync(cold);
+  const realmId = realms.currentId();
+  const dns = [];
+  found.forEach(function (entry) {
+    if (!entry || !entry.dn) {
+      return;
+    }
+    const key = normalizeDn(entry.dn);
+    if (window.isWindowed(realmId, key)) {
+      dns.push(key);
+    }
+  });
+  if (dns.length) {
+    await window.warmAsync(realmId, dns);
+  }
+  // Noted only once the slot is held. Noting first lets a lookup see the
+  // memo, miss the window and ask the store synchronously.
+  found.forEach(function (entry, uuid) {
+    if (!entry || !entry.dn) {
+      return;
+    }
+    const held = window.heldIn(realmId, normalizeDn(entry.dn));
+    if (held.known && held.entry && entryUuidOf(held.entry) === uuid) {
+      noteWindowedUuid(uuid, held.entry);
+    }
+  });
+  const names = [];
+  found.forEach(function (entry) {
+    if (!entry || !isPersonEntry(entry)) {
+      return;
+    }
+    const name = personNameOf(entry);
+    if (name) {
+      names.push(name);
+    }
+  });
+  if (names.length) {
+    await warmUserNamesAsync(names);
+  }
+  log.debug("Leaving warmSubjectsAsync(). " + cold.length + " cold.");
+  return cold.length;
+}
+
+// THE USERNAME existingUserEntry() IS ABOUT TO ASK, OFF THE LOOP (#880).
+// The direct `uid=` key is put first, absence included, so getEntry() does
+// not ask byKeys. byName is then asked asynchronously and remembered,
+// including nobody: an absence at the uid key does not stop the name
+// lookup, because a person filed as `cn=` is found only that way.
+/**
+ * Puts each username's direct key and remembers the byName answer.
+ *
+ * @param {Array<string>} names - usernames, not subjects or DNs
+ * @returns {Promise<number>} how many names were offered
+ */
+async function warmUserNamesAsync(names) {
+  log.debug("Entering warmUserNamesAsync().");
+  const list = [];
+  (names || []).forEach(function (one) {
+    const text = String(one == null ? '' : one).trim();
+    if (!text || /^urn:uuid:/i.test(text) || DN_SHAPED.test(text) ||
+        DID_SHAPED.test(text) || SPIFFE_SHAPED.test(text)) {
+      return;
+    }
+    list.push(text);
+  });
+  if (!list.length) {
+    log.debug("Leaving warmUserNamesAsync(). No names.");
+    return 0;
+  }
+  if (!directoryWindow) {
+    log.debug("Leaving warmUserNamesAsync(). No window.");
+    return 0;
+  }
+  const window = directoryWindow;
+  const realmId = realms.currentId();
+  const users = normalizeDn(usersDn());
+  const seenAt = subtreeVersion(users);
+  const coldKeys = [];
+  const askName = [];
+  list.forEach(function (one) {
+    const wanted = one.toLowerCase();
+    const direct = normalizeDn('uid=' + one + ',' + usersDn());
+    if (!window.heldIn(realmId, direct).known) {
+      coldKeys.push(direct);
+    }
+    if (!userNameAnswerOf(wanted).known) {
+      askName.push({ wanted: wanted });
+    }
+  });
+  if (coldKeys.length) {
+    await window.warmAsync(realmId, coldKeys);
+  }
+  if (askName.length && subtreeVersion(users) === seenAt) {
+    const answers = await Promise.all(askName.map(function (one) {
+      return window.findWindowedAsync(realmId, 'byName',
+        [realmId, users, one.wanted], function (entry) {
+          return normalizeDn(parentDn(entry.dn)) === users &&
+            usernameKeysOf(entry).indexOf(one.wanted) >= 0;
+        });
+    }));
+    const foundDns = [];
+    if (subtreeVersion(users) === seenAt) {
+      answers.forEach(function (hits, i) {
+        const entry = hits[0] ? hits[0].entry : null;
+        noteUserNameAnswer(askName[i].wanted, entry, seenAt);
+        if (entry && entry.dn) {
+          const key = normalizeDn(entry.dn);
+          if (window.isWindowed(realmId, key) &&
+              !window.heldIn(realmId, key).known) {
+            foundDns.push(key);
+          }
+        }
+      });
+    }
+    if (foundDns.length) {
+      await window.warmAsync(realmId, foundDns);
+    }
+  }
+  log.debug("Leaving warmUserNamesAsync(). " + list.length + " name(s).");
+  return list.length;
+}
+
 helpers.setSubjectResolver({ subjectFor: subjectForName,
                              nameFor: nameForSubject,
                              namesFor: namesForSubjects,
@@ -6423,6 +6639,41 @@ function entryBySpiffeSubject(id) {
  * @param name - the username
  * @returns the entry, or null
  */
+// Hot path (every username lookup that missed its uid DN): no
+// Entering/Leaving pair, the exception the code style allows, stated as
+// it requires. A Map lookup; the pair would be two lines per sign-in.
+function userNameAnswerOf(wanted) {
+  const held = userNameAnswers();
+  const users = normalizeDn(usersDn());
+  if (!held.answers || held.version !== subtreeVersion(users) ||
+      held.usersDn !== users || !held.answers.has(wanted)) {
+    return { known: false, entry: null };
+  }
+  return { known: true, entry: held.answers.get(wanted) || null };
+}
+
+// Hot path, as `userNameAnswerOf()`: no Entering/Leaving pair. `seenAt`
+// is the subtree clock the answer was read under. A write since then is
+// not stored, so the next lookup asks again.
+function noteUserNameAnswer(wanted, entry, seenAt) {
+  const held = userNameAnswers();
+  const users = normalizeDn(usersDn());
+  const version = subtreeVersion(users);
+  if (seenAt !== version) {
+    return;
+  }
+  if (!held.answers || held.version !== version ||
+      held.usersDn !== users) {
+    held.answers = new Map();
+    held.version = version;
+    held.usersDn = users;
+  }
+  if (subtreeVersion(users) !== version) {
+    return;
+  }
+  held.answers.set(wanted, entry || null);
+}
+
 function existingUserEntry(name) {
   log.debug('Entering existingUserEntry().');
   const wanted = String(name == null ? '' : name).trim().toLowerCase();
@@ -6438,6 +6689,13 @@ function existingUserEntry(name) {
     log.debug('Leaving existingUserEntry().');
     return direct;
   }
+  // Remembered byName, including nobody (#880). The uid DN was already
+  // missed above, so this is not treating that absence as "nobody".
+  const remembered = userNameAnswerOf(wanted);
+  if (remembered.known) {
+    log.debug('Leaving existingUserEntry(). Remembered.');
+    return remembered.entry;
+  }
   // AND THE FALL-THROUGH IS A LOOKUP RATHER THAN A WALK, which is the whole of
   // the username index beside the store: this branch is reached by EVERY
   // create — a person who is not here yet cannot be at the DN tried above — so
@@ -6448,13 +6706,16 @@ function existingUserEntry(name) {
   // every person, rebuilt after every write. Same pair of names, same
   // first-by-key rule a restored process's index has.
   const users = normalizeDn(usersDn());
+  const seenAt = subtreeVersion(users);
   const asked = windowedFind('byName', [users, wanted], function (entry) {
     return normalizeDn(parentDn(entry.dn)) === users &&
       usernameKeysOf(entry).indexOf(wanted) >= 0;
   });
   if (asked) {
+    const found = asked[0] || null;
+    noteUserNameAnswer(wanted, found, seenAt);
     log.debug('Leaving existingUserEntry(). Asked the store.');
-    return asked[0] || null;
+    return found;
   }
   const key = usernameIndexNow().get(wanted);
   const found = key ? (entries.get(key) || null) : null;
@@ -30537,6 +30798,13 @@ module.exports = {
   // go through, exported for SCIM and for the tests.
   entryByUuid: entryByUuid,
   entriesByUuidsAsync: entriesByUuidsAsync,
+  // The console gate's subject warm (#880): the slot and the UUID memo,
+  // which entriesByUuidsAsync() does not fill.
+  warmSubjectsAsync: warmSubjectsAsync,
+  // The console gate's username warm (#880): the uid key, absence
+  // included, and the byName answer existingUserEntry() would ask.
+  warmUserNamesAsync: warmUserNamesAsync,
+  serviceAccountNamesAsync: serviceAccountNamesAsync,
   entriesByUuids: entriesByUuids,
   entryUuidOf: entryUuidOf,
   mergeCreateRace: mergeCreateRace,

@@ -1459,6 +1459,29 @@ gate asks, straight after the revoked-or-disabled check
 its session ends, a second session of the same person that goes on working,
 and a token issued on no session.
 
+**THE GATE READS THOSE ROWS OFF THE EVENT LOOP (#880, 2026-11-11).** The
+checks above stay synchronous. Before them, `AdminApi.warmGateRows()` asks
+the token row (`stats.warmTokens()`), then the session id that row holds
+(`authn.warmSessionAsync()`), then the person (`ldap.warmSubjectsAsync()`,
+which puts the window slot and notes the UUID — `entriesByUuidsAsync()`
+does neither). The roster still reads the bootstrap administrator by
+username (`existingUserEntry()`), and the owner check lists service
+accounts (`serviceAccountNames()`). Those are warmed in the token's realm
+too: `warmUserNamesAsync()` puts the `uid=` key, absence included, and
+remembers the `byName` answer until a write under `ou=users`, and
+`serviceAccountNamesAsync()` fills the list the synchronous call keeps.
+An absence at `uid=<name>` is not treated as nobody. A warm that fails
+holds nothing and the same checks run; the decision is not cached, and a
+failed warm is not a refusal of its own. Applications stay resident, so
+`applications.load()` is not this cost. The group index's `classesUnder`
+read is once per `groupsVersion` and is not part of this change.
+`tests/admin_api_gate_warm.js` holds it, against a window and an on-demand
+reader that count synchronous reads: the first request and the next one
+do none for the token, the person, the bootstrap name or the service
+accounts. The session in that child lives in the memory map, so the test
+records that `warmSessionAsync()` was asked and does not arm the session
+bridge. 8081 was not re-measured.
+
 ## `GET /admin-api/me` — WHAT THE GATE DECIDED FOR THE CALLER (#446, 2026-10-05)
 
 The console is becoming a static application whose only knowledge of its
