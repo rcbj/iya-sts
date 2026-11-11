@@ -178,8 +178,9 @@ const capabilities = require('../cluster/cluster_capabilities');
 // the writes; it has a connection of its own now, with the heartbeat and the
 // leases, so a full pool delays a write and can no longer end the process.
 // The writes themselves do not scale with connections: a process flushes its
-// directory one transaction at a time and its minted rows one at a time
-// (`persistence.js`, `persistence_minted.js`), so a writer holds at most two
+// directory one transaction at a time and its minted rows at most two at a
+// time, and only for keys the other minted flush does not hold (#877,
+// `persistence.js`, `persistence_minted.js`), so a writer holds at most three
 // connections however many requests are waiting, and the rest are the
 // change-log pull, claims and reads. A bigger pool per process would multiply
 // the server's connections by every process on every node — the cost above —
@@ -3464,9 +3465,11 @@ function create(options) {
   // answering, which needs the connection attempt to give up — the 5 s in
   // `clientOptions()` bounds both the dial and the wait for a free slot.
   const pool = knexStore.openPool(clientOptions(), {
-    // Small on purpose. Every query this driver makes is on the flush path,
-    // there is one flush at a time by construction (persistence.js serialises
-    // them), and a mock does not need a connection per core.
+    // Small on purpose. The directory flush is one transaction at a time
+    // (persistence.js). At most two minted flushes of non-overlapping keys
+    // may run beside it (#877), so a writer holds at most three of these
+    // connections. The floor of four leaves one for the change-log pull.
+    // A mock does not need a connection per core.
     max: Number(options.poolMax) > 0 ? Number(options.poolMax)
       : POOL_FLOOR,
     idleTimeoutMillis: 30000

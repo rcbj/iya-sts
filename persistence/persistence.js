@@ -5648,9 +5648,10 @@ module.exports = {
   // WHAT THIS PROCESS HAS WRITTEN, AS A POSITION, AND A WAIT FOR ITS COMMIT
   // (2026-09-14, #46), for cluster/cluster_barrier.js's rule 2. A request
   // reads the position when it arrives and again when it answers; if it moved,
-  // `commitThrough()` resolves once everything up to the second reading is in
-  // the store — the one flush in flight that covers it where there is one, a
-  // new one otherwise — with an array of the answers, any of which may carry
+  // `commitThrough()` resolves once the flush that covers the second reading
+  // has settled — since #877 that may be a second minted flush of keys the
+  // older one does not hold, so the wait is not the previous flush's SQL —
+  // with an array of the answers, any of which may carry
   // `error`. The keystore's queued rows have no generation, so a request that
   // answers while any are queued waits for all of them, as it always did.
   // ---------------------------------------------------------------------
