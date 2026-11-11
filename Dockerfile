@@ -404,14 +404,22 @@ COPY --from=debugger /debugger/ ./debugger/embedded/
 # a missing tooltip and nothing else. STS_RELEASE and BUILD_NUMBER default
 # to empty, which is an ordinary (date and time) build.
 #
+# STS_VERSION_RELEASE (2026-11-11) is the release to stamp in place of
+# VERSION's text: a build of main passes the next patch, which
+# .github/workflows/build-container.yml works out from the git tags
+# (tests/tools/release-number.js). It must be M.N.O exactly or this RUN fails
+# (STS-CORE-0175); empty, the default, the release is VERSION's as before.
+#
 # `cat` afterwards so the record is in the build log: when somebody asks which
 # build an image is, the answer is in the log of the build that made it as well
 # as in the image.
 ARG GIT_COMMIT=
 ARG STS_RELEASE=
 ARG BUILD_NUMBER=
+ARG STS_VERSION_RELEASE=
 RUN GIT_COMMIT="${GIT_COMMIT}" STS_RELEASE="${STS_RELEASE}" \
     BUILD_NUMBER="${BUILD_NUMBER}" \
+    STS_VERSION_RELEASE="${STS_VERSION_RELEASE}" \
     node common/version.js --stamp . && cat version.json
 # OCI metadata, read by ghcr.io and Docker Hub (2026-10-02). `source` is what
 # LINKS the published package (ghcr.io/rcbj/iya-sts, pushed by

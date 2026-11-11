@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5426** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5427** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -51,7 +51,7 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 21
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 106
+* [Service core (`STS-CORE`)](#sts-core) — 107
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 51
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 110
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
@@ -264,6 +264,7 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0172` | A request was refused because its address made too many in a minute. | HTTP 429 |
 | `STS-CORE-0173` | A SAML or WS-Federation request gave a parameter more than once. | HTTP 400 |
 | `STS-CORE-0174` | An XML document was refused because it carries a DOCTYPE or ENTITY declaration (ASVS 5.0.0 1.5.2). | SOAP 1.2 Part 1 section 5: no Document Type Declaration |
+| `STS-CORE-0175` | The build stamp (common/version.js --stamp, or xacml-pep --stamp) was refused: STS_VERSION_RELEASE names the release a build carries in place of the VERSION file's, and it was not M.N.O exactly (three non-negative integers with no leading zero). Nothing is written and the image build fails. | none — the image build exits non-zero |
 
 ## STS-WORKER
 

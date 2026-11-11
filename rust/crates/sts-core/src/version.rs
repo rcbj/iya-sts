@@ -22,6 +22,11 @@
 //! a process starting**: an unreadable `VERSION` is 0.0.0, a corrupt stamp
 //! is a computed record, and a stamp written by a #1298 build (no `build`)
 //! still loads, reporting the bare M.N.O it was written with.
+//!
+//! **A build of main carries the patch its workflow worked out (2026-11-11)**:
+//! `STS_VERSION_RELEASE`, when set, is the release a stamp records in place
+//! of `VERSION`'s, and it must be M.N.O exactly or the stamp is REFUSED
+//! (`STS-CORE-0175`) and writes nothing. Unset or empty, nothing changes.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -73,19 +78,50 @@ fn is_component(s: &str) -> bool {
         && (s == "0" || !s.starts_with('0'))
 }
 
+/// A release, M.N.O exactly, broken out; `None` for anything else.
+fn parse_release(raw: &str) -> Option<(String, String, String)> {
+    let parts: Vec<&str> = raw.split('.').collect();
+    if parts.len() == 3 && parts.iter().all(|p| is_component(p)) {
+        Some((
+            parts[0].to_string(),
+            parts[1].to_string(),
+            parts[2].to_string(),
+        ))
+    } else {
+        None
+    }
+}
+
+/// The release a STAMPED build carries, from `STS_VERSION_RELEASE`, as
+/// `common/version.js`'s `releaseFrom()` decides it: `Ok(None)` when it is
+/// unset or empty (`VERSION`'s, as before it existed), `Ok(Some(..))` when it
+/// is M.N.O exactly, and a refusal for anything else.
+pub fn release_from(
+    version_release: Option<&str>,
+) -> Result<Option<(String, String, String)>, String> {
+    let given = version_release.unwrap_or("").trim();
+    if given.is_empty() {
+        return Ok(None);
+    }
+    match parse_release(given) {
+        Some(parts) => Ok(Some(parts)),
+        None => Err(format!(
+            "STS_VERSION_RELEASE is \"{}\"; it must be a release, M.N.O \
+             exactly (three non-negative integers with no leading zero, \
+             e.g. 1.0.1), or unset for VERSION's",
+            given
+        )),
+    }
+}
+
 /// `VERSION`'s M.N.O, or 0.0.0 — never a failure.
 fn read_release(root: &Path) -> (String, String, String) {
     let file = root.join(VERSION_FILE);
     match std::fs::read_to_string(&file) {
         Ok(raw) => {
             let raw = raw.trim();
-            let parts: Vec<&str> = raw.split('.').collect();
-            if parts.len() == 3 && parts.iter().all(|p| is_component(p)) {
-                return (
-                    parts[0].to_string(),
-                    parts[1].to_string(),
-                    parts[2].to_string(),
-                );
+            if let Some(parts) = parse_release(raw) {
+                return parts;
             }
             if !raw.is_empty() {
                 tracing::error!(
@@ -173,9 +209,10 @@ fn record(
     now: DateTime<Utc>,
     build: String,
     release: bool,
+    named: Option<(String, String, String)>,
 ) -> VersionInfo {
     let root = find_root(dir);
-    let (major, minor, patch) = read_release(&root);
+    let (major, minor, patch) = named.unwrap_or_else(|| read_release(&root));
     VersionInfo {
         version: format!("{}.{}.{}.{}", major, minor, patch, build),
         major,
@@ -193,22 +230,42 @@ fn record(
 /// its build number, the commit and the clock. Never a release.
 pub fn resolve(dir: &Path) -> VersionInfo {
     let now = Utc::now();
-    record(dir, now, utc_stamp(now), false)
+    record(dir, now, utc_stamp(now), false, None)
 }
 
 /// Writes `version.json` into `dir` — the image build's step — with the
-/// build number `STS_RELEASE` and `BUILD_NUMBER` decide. A refusal writes
-/// nothing and is returned, for `--stamp` to exit non-zero with.
+/// build number `STS_RELEASE` and `BUILD_NUMBER` decide, and the release
+/// `STS_VERSION_RELEASE` names (`VERSION`'s when it is unset). A refusal
+/// writes nothing and is returned, for `--stamp` to exit non-zero with.
 pub fn stamp(dir: &Path) -> Result<VersionInfo, String> {
     let now = Utc::now();
     let flag = std::env::var("STS_RELEASE").ok();
     let given = std::env::var("BUILD_NUMBER").ok();
-    stamp_with(dir, flag.as_deref(), given.as_deref(), now)
+    let named = std::env::var("STS_VERSION_RELEASE").ok();
+    stamp_with_release(
+        dir,
+        named.as_deref(),
+        flag.as_deref(),
+        given.as_deref(),
+        now,
+    )
 }
 
-/// [`stamp`] with its inputs given rather than read from the environment.
+/// [`stamp`] with its inputs given rather than read from the environment,
+/// and the release `VERSION`'s.
 pub fn stamp_with(
     dir: &Path,
+    release_flag: Option<&str>,
+    build_number: Option<&str>,
+    now: DateTime<Utc>,
+) -> Result<VersionInfo, String> {
+    stamp_with_release(dir, None, release_flag, build_number, now)
+}
+
+/// [`stamp_with`] with `STS_VERSION_RELEASE`'s value given as well.
+pub fn stamp_with_release(
+    dir: &Path,
+    version_release: Option<&str>,
     release_flag: Option<&str>,
     build_number: Option<&str>,
     now: DateTime<Utc>,
@@ -224,6 +281,25 @@ pub fn stamp_with(
                 ));
             }
         };
+    let named = match release_from(version_release) {
+        Ok(named) => named,
+        Err(problem) => {
+            return Err(format!(
+                "{}[version] refusing to stamp a build: {}",
+                crate::log::tag("STS-CORE-0175"),
+                problem
+            ));
+        }
+    };
+    if let Some((major, minor, patch)) = &named {
+        tracing::info!(
+            "[version] the release is {}.{}.{}, from STS_VERSION_RELEASE, \
+             in place of VERSION's",
+            major,
+            minor,
+            patch
+        );
+    }
     if !ignored.is_empty() {
         tracing::info!(
             "[version] BUILD_NUMBER={} is ignored: this is not a release \
@@ -232,7 +308,7 @@ pub fn stamp_with(
             ignored
         );
     }
-    let mut info = record(dir, now, build, release);
+    let mut info = record(dir, now, build, release, named);
     info.stamped = true;
     let written = std::fs::create_dir_all(dir).and_then(|()| {
         let text = serde_json::to_string_pretty(&info)
@@ -324,6 +400,70 @@ mod tests {
             let refused = stamp_with(&dir, flag, number, at()).unwrap_err();
             assert!(refused.contains("STS-CORE-0164"), "{}", refused);
             assert!(refused.contains("STS_RELEASE"), "{}", refused);
+        }
+        assert!(!dir.join(STAMP_FILE).exists());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_named_release_is_stamped_in_place_of_version() {
+        let dir = std::env::temp_dir()
+            .join(format!("sts-version-named-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(VERSION_FILE), "1.0.0\n").unwrap();
+        let written =
+            stamp_with_release(&dir, Some(" 1.0.7 "), None, None, at())
+                .unwrap();
+        assert_eq!(written.version, "1.0.7.20261104151200");
+        assert_eq!(
+            (
+                written.major.as_str(),
+                written.minor.as_str(),
+                written.patch.as_str()
+            ),
+            ("1", "0", "7")
+        );
+        assert!(!written.release);
+        assert_eq!(load(&dir), written);
+        // With a release build's number as well: 1.0.7.0.
+        let both = stamp_with_release(
+            &dir,
+            Some("1.0.7"),
+            Some("true"),
+            Some("0"),
+            at(),
+        )
+        .unwrap();
+        assert_eq!(both.version, "1.0.7.0");
+        assert!(both.release);
+        // Unset or empty is VERSION's, exactly as stamp_with().
+        for absent in [None, Some(""), Some("  ")] {
+            let plain =
+                stamp_with_release(&dir, absent, None, None, at()).unwrap();
+            assert_eq!(plain.version, "1.0.0.20261104151200");
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_malformed_named_release_is_refused_and_writes_nothing() {
+        let dir = std::env::temp_dir()
+            .join(format!("sts-version-badnamed-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(VERSION_FILE), "1.0.0\n").unwrap();
+        for bad in [
+            "v1.0.1",
+            "1.0",
+            "1.0.1.0",
+            "01.0.1",
+            "1.0.01",
+            "1.0.1-rc.1",
+            "x",
+        ] {
+            let refused = stamp_with_release(&dir, Some(bad), None, None, at())
+                .unwrap_err();
+            assert!(refused.contains("STS-CORE-0175"), "{}", refused);
+            assert!(refused.contains("STS_VERSION_RELEASE"), "{}", refused);
         }
         assert!(!dir.join(STAMP_FILE).exists());
         std::fs::remove_dir_all(&dir).unwrap();

@@ -37,6 +37,16 @@
 //     must not make an ordinary build look like a release, nor let two
 //     builds share a number.
 //
+// **THE RELEASE A BUILD OF main CARRIES (2026-11-11).** rcbj: every merge
+// into `main` is the next patch, 1.0.0 -> 1.0.1 -> 1.0.2, worked out AT BUILD
+// from the repository's `vM.N.P` tags and never committed back. The workflow
+// works the number out (`tests/tools/release-number.js`) and hands it to the
+// stamp as `STS_VERSION_RELEASE`; when it is set it is the release this
+// build stamps in place of VERSION's text, and it must be M.N.O exactly or
+// the stamp is REFUSED (`STS-CORE-0175`) and writes nothing. **Unset or
+// empty, nothing changes**: the release is VERSION's, as it always was.
+// Only `--stamp` reads it, as only `--stamp` reads the two above.
+//
 // #1298 retired the build number for a day (the version was the bare
 // release); #1317 brought it back as a FOURTH component, so the release
 // itself stays M.N.O, untouched, and a release build reads as the release
@@ -123,6 +133,9 @@
 //   STS_RELEASE=true BUILD_NUMBER=0 node common/version.js --stamp <dir>
 //                                          -> 1.0.0.0, a release build; exits
 //                                             non-zero with no valid number
+//   STS_VERSION_RELEASE=1.0.1 node common/version.js --stamp <dir>
+//                                          -> 1.0.1.<instant>; exits non-zero
+//                                             unless it is exactly M.N.O
 //   node common/version.js --check-manifests  -> non-zero if a package.json is stale
 //   node common/version.js --sync-manifests   -> rewrites stale package.json versions
 // ===========================================================================
@@ -299,6 +312,40 @@ const BUILD_NUMBER = /^(0|[1-9]\d*)$/;
 const RELEASE_FLAG = { 'true': true, 'false': false, '': false };
 
 /**
+ * Decides the release a STAMPED build carries: `STS_VERSION_RELEASE` when it
+ * is set (a build of main, whose patch the workflow worked out from the
+ * repository's tags), otherwise VERSION's — exactly as before it existed.
+ *
+ * It must be M.N.O exactly, by the same expression VERSION is read with;
+ * anything else is refused rather than read as VERSION's, because a build of
+ * main that quietly stamped the wrong release would publish under the wrong
+ * tag.
+ * @param env - the environment to read, `process.env` when omitted
+ * @returns `{ ok: true, parts }`, where `parts` is `{ major, minor, patch }`
+ *   or null when the variable is unset or empty, or `{ ok: false, problem }`
+ */
+function releaseFrom(env) {
+  log.debug("Entering releaseFrom().");
+  const e = env || process.env;
+  const given = String(e.STS_VERSION_RELEASE == null ? '' :
+    e.STS_VERSION_RELEASE).trim();
+  if (!given) {
+    log.debug("Leaving releaseFrom(). VERSION's.");
+    return { ok: true, parts: null };
+  }
+  const m = given.match(RELEASE);
+  if (!m) {
+    log.debug("Leaving releaseFrom(). Malformed.");
+    return { ok: false,
+      problem: 'STS_VERSION_RELEASE is "' + given + '"; it must be a ' +
+        'release, M.N.O exactly (three non-negative integers with no ' +
+        'leading zero, e.g. 1.0.1), or unset for VERSION\'s' };
+  }
+  log.debug("Leaving releaseFrom(). Given.");
+  return { ok: true, parts: { major: m[1], minor: m[2], patch: m[3] } };
+}
+
+/**
  * Decides a STAMPED build's number from the environment (#1317): the UTC
  * build instant by default, or — when `STS_RELEASE` is `true` — the
  * `BUILD_NUMBER` the release names.
@@ -347,14 +394,16 @@ function buildNumberFrom(env, now) {
  * instant as YYYYMMDDHHMMSS unless `options` names a release's. Only
  * stamp() passes options; a record computed at startup from a checkout is
  * never a release. The record is marked `stamped: false`.
- * @param options - optional; `{ build, release, now }` decided by stamp()
+ * @param options - optional; `{ build, release, now, parts }` decided by
+ *   stamp(), where `parts` is the release `{ major, minor, patch }` to use in
+ *   place of VERSION's (STS_VERSION_RELEASE)
  * @returns `{ version, major, minor, patch, build, release, commit, builtAt,
  *   stamped }`
  */
 function resolve(options) {
   log.debug("Entering resolve().");
   const o = options || {};
-  const { major, minor, patch } = readRelease();
+  const { major, minor, patch } = o.parts || readRelease();
   const now = o.now || new Date();
   const build = o.build || utcStamp(now);
   const commit = gitCommit();
@@ -428,10 +477,12 @@ function buildId(v) {
  * release's own number. A release flag without a valid number THROWS
  * (`STS-CORE-0164`) and writes nothing — that refusal is what stops an
  * image building; a failure to write is logged, not thrown, as it always
- * was.
+ * was. The release is VERSION's unless `STS_VERSION_RELEASE` names one,
+ * which must be M.N.O exactly or the stamp THROWS (`STS-CORE-0175`) and
+ * writes nothing.
  * @param dir - the directory to write into, created if missing
- * @param env - optional; the environment to read STS_RELEASE and
- *   BUILD_NUMBER from, `process.env` when omitted
+ * @param env - optional; the environment to read STS_RELEASE, BUILD_NUMBER
+ *   and STS_VERSION_RELEASE from, `process.env` when omitted
  * @returns the record written
  */
 function stamp(dir, env) {
@@ -445,6 +496,21 @@ function stamp(dir, env) {
     log.debug("Leaving stamp(). Refused.");
     throw refusal;
   }
+  const named = releaseFrom(env);
+  if (!named.ok) {
+    const refusal = new Error('[STS-CORE-0175] [version] refusing to stamp ' +
+                              'a build: ' + named.problem);
+    /** @type {any} */ (refusal).errorCode = 'STS-CORE-0175';
+    log.debug("Leaving stamp(). Refused the release.");
+    throw refusal;
+  }
+  if (named.parts) {
+    // Said, so the build log shows where the release came from: a build of
+    // main stamps the patch the workflow worked out, not VERSION's text.
+    log.info('the release is ' + [named.parts.major, named.parts.minor,
+             named.parts.patch].join('.') + ', from STS_VERSION_RELEASE, in ' +
+             'place of ' + VERSION_FILE + '\'s');
+  }
   if (decided.ignored) {
     // Said, not refused: BUILD_NUMBER is a common CI variable, and an
     // ordinary build that happens to inherit one is still an ordinary build.
@@ -453,7 +519,7 @@ function stamp(dir, env) {
              'number is the UTC build instant');
   }
   const v = resolve({ build: decided.build, release: decided.release,
-                      now: now });
+                      now: now, parts: named.parts });
   v.stamped = true;
   try {
     fs.mkdirSync(dir, { recursive: true });
@@ -704,7 +770,7 @@ function syncManifests() {
  * @namespace
  */
 module.exports = { resolve, stamp, load, buildInfo, buildId, userAgent,
-    buildNumberFrom, checkManifests,
+    buildNumberFrom, releaseFrom, checkManifests,
     syncManifests, manifestVersion, PRODUCT, STAMP_FILE, VERSION_FILE,
     MANIFESTS };
 
@@ -717,9 +783,9 @@ if (require.main === module) {
       const v = stamp(path.isAbsolute(dir) ? dir : path.join(ROOT, dir));
       console.log(v.version);
     } catch (e) {
-      // A release flag without a valid BUILD_NUMBER (#1317): the message
-      // names both variables, and the non-zero exit is what fails the image
-      // build at its `RUN`.
+      // A release flag without a valid BUILD_NUMBER (#1317), or a malformed
+      // STS_VERSION_RELEASE: the message names the variables, and the
+      // non-zero exit is what fails the image build at its `RUN`.
       log.debug("Caught in --stamp: " + ((e && e.message) || e));
       console.error((e && e.message) || e);
       process.exit(1);

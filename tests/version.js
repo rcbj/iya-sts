@@ -297,6 +297,89 @@ function run(t) {
             'status ' + released.status + ': ' + released.stdout.trim());
   });
 
+  // -----------------------------------------------------------------------
+  // 2b. THE RELEASE A BUILD OF main CARRIES (2026-11-11): STS_VERSION_RELEASE.
+  //
+  //     The workflow works the next patch out from the git tags and hands it
+  //     to the stamp; set, it is the release recorded in place of VERSION's,
+  //     and it must be M.N.O exactly. ABSENT, NOTHING CHANGES — rcbj's
+  //     backwards-compatibility rule — which is asserted against the same
+  //     stamp with the variable unset, empty and blank.
+  // -----------------------------------------------------------------------
+  t.log.info('=== STS_VERSION_RELEASE: the release a build stamps ===');
+  withTempDir(function (dir) {
+    const named = version.stamp(dir, { STS_VERSION_RELEASE: '1.0.7' });
+    t.check(/^1\.0\.7\.\d{14}$/.test(named.version) &&
+            named.major === '1' && named.minor === '0' &&
+            named.patch === '7' && named.release === false,
+            'STS_VERSION_RELEASE=1.0.7 stamps release 1.0.7, broken out as ' +
+            'major, minor and patch, numbered by the instant',
+            JSON.stringify(named));
+    t.check(version.load(dir).version === named.version,
+            'and the stamp on disk is that version', version.load(dir).version);
+    const both = version.stamp(dir, { STS_VERSION_RELEASE: ' 2.3.4 ',
+                                      STS_RELEASE: 'true',
+                                      BUILD_NUMBER: '0' });
+    t.check(both.version === '2.3.4.0' && both.release === true,
+            'trimmed, and with a release build\'s number as well it is ' +
+            '2.3.4.0', both.version);
+    [undefined, '', '   '].forEach(function (absent) {
+      const env = absent === undefined ? {} :
+        { STS_VERSION_RELEASE: absent };
+      const plain = version.stamp(dir, env);
+      t.check(plain.version === raw.trim() + '.' + plain.build &&
+              [plain.major, plain.minor, plain.patch].join('.') ===
+                raw.trim(),
+              'with STS_VERSION_RELEASE ' + (absent === undefined ? 'unset' :
+                JSON.stringify(absent)) + ' the release is VERSION\'s, as ' +
+              'before it existed', plain.version);
+    });
+    t.check(version.releaseFrom({}).ok === true &&
+            version.releaseFrom({}).parts === null,
+            'releaseFrom() answers no release of its own when unset');
+
+    fs.rmSync(path.join(dir, version.STAMP_FILE));
+    const refusals = ['v1.0.1', '1.0', '1.0.1.0', '01.0.1', '1.0.01',
+                      '1.0.1-rc.1', 'latest', '-1.0.0'].map(function (bad) {
+      try {
+        version.stamp(dir, { STS_VERSION_RELEASE: bad });
+        return bad + ' -> stamped';
+      } catch (e) {
+        log.debug("Caught in run(): " + ((e && e.message) || e));
+        const ok = e.errorCode === 'STS-CORE-0175' &&
+          /STS_VERSION_RELEASE/.test(e.message);
+        return bad + (ok ? ' -> refused' : ' -> ' + e.message);
+      }
+    });
+    t.check(refusals.every(function (r) { return / -> refused$/.test(r); }),
+            'an STS_VERSION_RELEASE that is not M.N.O exactly is REFUSED ' +
+            'with STS-CORE-0175, naming the variable', refusals.join('; '));
+    t.check(!fs.existsSync(path.join(dir, version.STAMP_FILE)),
+            'and a refused stamp writes nothing');
+  });
+
+  withTempDir(function (dir) {
+    const cp = require('child_process');
+    const cli = path.join(ROOT, 'common', 'version.js');
+    const env = Object.assign({}, process.env, { STS_VERSION_RELEASE: '1.0' });
+    delete env.STS_RELEASE;
+    delete env.BUILD_NUMBER;
+    const refused = cp.spawnSync(process.execPath, [cli, '--stamp', dir],
+                                 { env: env, encoding: 'utf8' });
+    t.check(refused.status !== 0 && /STS-CORE-0175/.test(refused.stderr) &&
+            !fs.existsSync(path.join(dir, version.STAMP_FILE)),
+            '`--stamp` with a malformed STS_VERSION_RELEASE exits non-zero ' +
+            'naming the code, and writes nothing',
+            'status ' + refused.status + ': ' + refused.stderr.trim());
+    env.STS_VERSION_RELEASE = '1.0.1';
+    const stamped = cp.spawnSync(process.execPath, [cli, '--stamp', dir],
+                                 { env: env, encoding: 'utf8' });
+    const last = stamped.stdout.trim().split('\n').pop();
+    t.check(stamped.status === 0 && /^1\.0\.1\.\d{14}$/.test(last),
+            'and with STS_VERSION_RELEASE=1.0.1 it exits 0 printing ' +
+            '1.0.1.<instant>', 'status ' + stamped.status + ': ' + last);
+  });
+
   t.log.info('=== GIT_COMMIT, buildInfo() and buildId() ===');
   const savedBuild = process.env.BUILD_NUMBER;
   const savedCommit = process.env.GIT_COMMIT;

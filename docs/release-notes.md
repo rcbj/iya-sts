@@ -36,5 +36,8 @@ path.
 
 A build reports its version as `M.N.O.<build>`. `M.N.O` is the release, and
 for 1.0.0 the release build is `1.0.0.0`. Other builds of the same code carry
-the UTC time they were built as their build number. The running service shows
-its version on the admin console and in its metadata.
+the UTC time they were built as their build number. After 1.0.0, each change
+published from `main` is the next patch release (1.0.1, 1.0.2, …), and a new
+minor or major release starts when the repository's `VERSION` file is set to
+it. The running service shows its version on the admin console and in its
+metadata.

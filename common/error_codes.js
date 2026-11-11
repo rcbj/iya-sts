@@ -1254,6 +1254,14 @@ const CODES = [
     summary: 'An XML document was refused because it carries a DOCTYPE or ' +
       'ENTITY declaration (ASVS 5.0.0 1.5.2).',
     spec: 'SOAP 1.2 Part 1 section 5: no Document Type Declaration' },
+  // A BUILD OF main STAMPS THE PATCH ITS WORKFLOW WORKED OUT (2026-11-11).
+  { code: 'STS-CORE-0175',
+    summary: 'The build stamp (common/version.js --stamp, or xacml-pep ' +
+      '--stamp) was refused: STS_VERSION_RELEASE names the release a build ' +
+      'carries in place of the VERSION file\'s, and it was not M.N.O ' +
+      'exactly (three non-negative integers with no leading zero). Nothing ' +
+      'is written and the image build fails.',
+    spec: 'none — the image build exits non-zero' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +
