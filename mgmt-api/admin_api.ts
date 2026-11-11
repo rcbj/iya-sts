@@ -5283,7 +5283,8 @@ class AdminApi {
         handler: function (req, res) {
           log.debug("Entering the management API sign-out action endpoint.");
           const body = parseBody(req);
-          const result = adminActions.logoutAction(self.withAction(req, body));
+          const result = adminActions.logoutAction(self.withAction(req, body),
+            { via: 'api', actor: self.callerNameOf(res) });
           if (!result.ok) {
             errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0032');
           }
@@ -5378,7 +5379,8 @@ class AdminApi {
           return self.runClaimed(res, request.action === 'create'
             ? { group: String(request.group || request.displayName || '') }
             : null, function (held) {
-            const result = adminActions.groupsAction(request);
+            const result = adminActions.groupsAction(request,
+              { via: 'api', actor: self.callerNameOf(res) });
             held.settle(!!result.ok);
             if (!result.ok) {
               errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0033');
@@ -6985,7 +6987,8 @@ class AdminApi {
           log.debug("Entering the management API SAML 2.0 action endpoint.");
           const body = parseBody(req);
           // Two actions dial out and answer with a promise (#37 follow-up).
-          Promise.resolve(adminActions.saml2Action(self.withAction(req, body)))
+          Promise.resolve(adminActions.saml2Action(self.withAction(req, body),
+            { via: 'api', actor: self.callerNameOf(res) }))
             .then(function (result) {
               if (!result.ok) {
                 errorCodes.mark(res, errorCodes.codeOf(result) ||
@@ -9457,7 +9460,7 @@ class AdminApi {
           log.debug("Entering the management API permissions action endpoint.");
           const body = parseBody(req);
           const result = adminActions.permissionsAction(self.withAction(req,
-              body));
+              body), { via: 'api', actor: self.callerNameOf(res) });
           if (!result.ok) {
             errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0058');
           }
@@ -9620,7 +9623,7 @@ class AdminApi {
           log.debug("Entering the management API roles action endpoint.");
           const body = parseBody(req);
           const result = adminActions.rolesAction(self.withAction(req, body),
-                                                  { via: 'api' });
+            { via: 'api', actor: self.callerNameOf(res) });
           if (!result.ok) {
             errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0059');
           }
@@ -9863,7 +9866,8 @@ class AdminApi {
         handler: function (req, res) {
           log.debug("Entering the management API consent action endpoint.");
           const body = parseBody(req);
-          const result = adminActions.consentAction(self.withAction(req, body));
+          const result = adminActions.consentAction(self.withAction(req, body),
+            { via: 'api', actor: self.callerNameOf(res) });
           if (!result.ok) {
             errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0061');
           }
@@ -11348,51 +11352,6 @@ class AdminApi {
   }
 
   // ---------------------------------------------------------------------------
-  // THE ACTOR IS THE GATE'S ANSWER, NEVER THE CALLER'S (#446, 2026-10-05).
-  //
-  // Eighteen places in `admin-core/admin_actions.ts` read `body.actor` for
-  // the audit row an action writes — the console puts its signed-in user
-  // there — and until #446 this API gave them nothing: an operation's schema
-  // refuses a member it does not define, so those rows named nobody (and the
-  // few operations whose schema is open took whatever a caller sent). The
-  // route wrapper calls this after the body has passed its schema: where the
-  // gate verified a token, a JSON body's `actor` member is SET to that
-  // token's subject, replacing anything there. Every handler reads its own
-  // body with `parseBody(req)`, which parses `req.body` each time, so the
-  // one place that reaches all of them is the text they parse.
-  //
-  // A body that is not JSON, and one the handler owns (a streamed upload),
-  // is left alone: the HTTP row still names the caller. So is every request
-  // with no token, which only development's open API has.
-  // ---------------------------------------------------------------------------
-  /**
-   * Replaces a JSON request body's `actor` member with the subject of the
-   * verified access token, so an action's audit row names who called.
-   *
-   * @param req - the request, whose body text is rewritten
-   * @param res - the response, whose locals the gate wrote
-   */
-  nameActor(req, res): void {
-    const { log, parseBody } = this.deps;
-    log.debug("Entering AdminApi.nameActor().");
-    const name = this.callerNameOf(res);
-    if (!name || req.__adminApiHandlerOwnsBody ||
-        typeof req.body !== 'string' ||
-        !/json/i.test(String(req.headers['content-type'] || ''))) {
-      log.debug("Leaving AdminApi.nameActor(). Nothing to name.");
-      return;
-    }
-    const body = parseBody(req);
-    if (!body || typeof body !== 'object' || Array.isArray(body)) {
-      log.debug("Leaving AdminApi.nameActor(). Not an object.");
-      return;
-    }
-    body.actor = name;
-    req.body = JSON.stringify(body);
-    log.debug("Leaving AdminApi.nameActor(). Named.");
-  }
-
-  // ---------------------------------------------------------------------------
   // WHAT THE OPENAPI DOCUMENT IS BUILT FROM, IN ONE PLACE.
   //
   // `admin_api_spec.ts` is a pure function over the route table and takes every
@@ -12366,10 +12325,10 @@ class AdminApi {
           self.sendJson(res, 400, { ok: false, errors: checked.errors });
           return undefined;
         }
-        // AFTER the schema, so a caller's own `actor` is judged by the
-        // operation's schema as it always was — refused, wherever the schema
-        // is closed — and what the actions read is the gate's answer (#446).
-        self.nameActor(req, res);
+        // WHO IS ACTING is not put into the body: each handler hands its
+        // action `callerNameOf(res)` in the action's context (rcbj on #1579,
+        // 2026-11-11), and a caller's own `actor` is refused by the closed
+        // schema above like any member the model does not declare.
         return entry.handler(req, res);
       });
     });

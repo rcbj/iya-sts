@@ -659,7 +659,8 @@ class UmaConsole {
     const given = body || {};
     const action = String(given.action || '');
     log.debug("Entering UmaConsole.act(). " + action);
-    const actor = String((context && context.actor) || given.actor || '');
+    // Who acts is the context's, never a member of the body (#1579).
+    const actor = String((context && context.actor) || '');
     const via = String((context && context.via) || 'console');
     if (ACTIONS.indexOf(action) < 0) {
       log.debug("Leaving UmaConsole.act(). Unknown.");

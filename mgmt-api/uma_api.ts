@@ -191,7 +191,7 @@ class UmaApi {
           let result: Json;
           try {
             result = loadConsole().act(body, { via: 'api',
-              actor: String(verified.name || body.actor || '') });
+              actor: String(verified.name || '') });
           } catch (e) {
             log.error(errorCodes.tag('STS-UMA-0500') + 'uma: an ' +
                       '/admin-api action failed: ' + ((e && e.message) || e));
