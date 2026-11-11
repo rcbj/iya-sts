@@ -23,6 +23,7 @@ import minted = require('../persistence/persistence_minted');
 import BoundedLru = require('../common/bounded_lru');
 import cacheRegistry = require('../common/cache_registry');
 import SyncQuery = require('../common/sync_query');
+import sessionQueries = require('../persistence/session_queries');
 
 const log = bunyan.createLogger({ name: 'sts-session-window' });
 
@@ -797,9 +798,9 @@ class SessionWindow {
   }
 
   /**
-   * The chosen sessions of the subjects holding more than `per` of them,
-   * grouped by subject — every row of at most `maxSubjects` such subjects,
-   * in one question (2026-10-21; `session.overCapRows`).
+   * The chosen sessions of the subjects holding more than `per` of them in
+   * this sweep's subject-key band — every row of at most `maxSubjects`
+   * such subjects, in one question (`session.overCapRows`, #876).
    *
    * @param realmId - the realm
    * @param per - the per-subject cap
@@ -809,8 +810,11 @@ class SessionWindow {
   overCapBySubject(realmId: string, per: number, maxSubjects: number):
       Array<{ subjectKey: string; rows: any[] }> | null {
     log.debug("Entering SessionWindow.overCapBySubject().");
+    const sweepS = Number(config.value('authn.sessionSweepS'));
+    const band = sessionQueries.subjectCapBand(Date.now(), sweepS);
     const page = this.indexAnswer('session.overCapRows',
-      [String(realmId), Math.floor(per), Math.floor(maxSubjects)]);
+      [String(realmId), band.lo, band.hi, Math.floor(per),
+       Math.floor(maxSubjects)]);
     if (page === null) {
       log.debug("Leaving SessionWindow.overCapBySubject(). Unread.");
       return null;

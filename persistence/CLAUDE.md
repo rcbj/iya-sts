@@ -3556,6 +3556,13 @@ trigram for it. **On MariaDB a needle is still a bounded scan** of the
 parent: no substring index exists there (`mariadb/CLAUDE.md`).
 `ldap/CLAUDE.md` has the measurements and the page's rule.
 
+**`sts_sessions_subject_band` is the eighth index (#876), and it is not a
+schema version.** `session.overCapRows` groups one base64url first character
+of `subject_key` per sweep, in `COLLATE "C"`, which `sts_sessions_subject`
+cannot serve. The upgrade is still `schema.sql` run again as the owner;
+`sts_app` cannot build it and the driver refuses (`STS-STORE-0029`) until
+then. Why the sweep asks a band is in `authn/CLAUDE.md`.
+
 **`sts_sessions_surface` is the seventh index (#754, schema version 22).**
 `session.surface` — a hosted surface's relying-party sessions, which
 `Authn.endRelyingPartySessions()` asks for every signal the surface

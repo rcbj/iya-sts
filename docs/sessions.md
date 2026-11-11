@@ -265,7 +265,10 @@ no token. Use **Revoke all** on the Tokens page
 ### One session per sign-in, several per person
 
 A person may hold up to `authn.maxSessionsPerSubject` sessions at once (32 by
-default), and past that their oldest one ends. `authn.maxSessions` is the realm's
+default), and past that their oldest one ends. A sign-in ends that oldest
+session at once. After the cap is lowered, the session sweep catches the rest
+a slice of people at a time and finishes a pass in 64 runs.
+`authn.maxSessions` is the realm's
 limit, where a new session is refused. Two browsers is two sessions.
 They are folded onto one person by an **identity key** — the normalisation that
 makes `alice`, `alice@REALM` and a token's `urn:uuid:<entryUUID>` subject one

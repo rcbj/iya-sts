@@ -2268,9 +2268,15 @@ ends somebody else's session.
   `authn.session-expiry` job then ends at most that realm's
   `authn.sessionShedPerSweep` such rows, oldest first, one subject at a
   time. The budget is read while that realm is ambient and is spent only
-  on that realm; the rows are part of the job's `{ ended }` count. A
-  subject at or under their cap is not ended because the realm is over
-  `authn.maxSessions`. Rows otherwise leave by lifetime, sign-out or revoke.
+  on that realm; the rows are part of the job's `{ ended }` count. Each
+  run asks one of the 64 base64url first characters of `subject_key`
+  (`session.overCapRows`, index `sts_sessions_subject_band`, #876), so a
+  lowered cap reaches every subject in 64 intervals and the aggregate does
+  not count the whole realm. The band is the wall clock divided by
+  `authn.sessionSweepS`, which needs no cursor when the job moves to
+  another worker. A subject at or under their cap is not ended because the
+  realm is over `authn.maxSessions`. Rows otherwise leave by lifetime,
+  sign-out or revoke.
 * **A refused sign-in leaves the browser's current session.** Admission is
   decided before that session is ended. A realm exactly at the cap still
   admits a different person in the same browser, because the current row

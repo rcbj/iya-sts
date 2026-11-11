@@ -589,6 +589,12 @@ ALTER TABLE sts_minted SET (fillfactor=80);
 --@table sts_sessions
 
 --@index sts_sessions_subject
+-- One base64url first character of subject_key per session sweep (#876).
+-- COLLATE "C" is the order that range uses. The database collation does
+-- not partition base64url, and a range in that collation cannot use
+-- sts_sessions_subject. No new schema version: the owner runs this file
+-- again, and a start that cannot create the index is refused until then.
+--@index sts_sessions_subject_band
 --@index sts_sessions_username
 --@index sts_sessions_expires
 --@index sts_sessions_parent
