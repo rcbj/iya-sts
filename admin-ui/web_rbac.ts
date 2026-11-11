@@ -230,8 +230,9 @@ class RbacPage {
               ? '<div class="err" id="grant-picked"><strong>' +
                 kit.esc(personAsked) + '</strong> is not in the ' +
                 'directory and has not signed in, so there is nobody by that ' +
-                'name to pick. Search again, or grant to the name as typed ' +
-                'with the form below.</div>'
+                'name to pick. Search again, or create the person on ' +
+                'Directory, People first: a console role is granted only to ' +
+                'somebody in this realm\'s directory.</div>'
               : '')) +
         '<h3>' + t.html('consoleRbac.body.typedHeading') + '</h3>' +
         '<form method="post" action="/admin/rbac"><div class="formrow">' +

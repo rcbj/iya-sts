@@ -4600,7 +4600,24 @@ async function theAdminRolesRoundTrip() {
       "`members` / `claimed` lists, which are the rows `grants` pages.");
 
   const grantedBefore = before.body.grantCount;
+  // A CONSOLE ROLE IS GRANTED ONLY TO SOMEBODY WHO EXISTS (rcbj, 2026-11-11,
+  // STS-ADMIN-0920): a name with no entry is refused in a sentence naming
+  // them, before the directory is asked to write a member that names
+  // nothing (#1624) — and the roster does not move.
+  const nobody = names.usernameFor("stsapi-role-nobody");
+  await refused("/rbac/grant", { username: nobody, role: rolesAvailable[0] },
+    /Nobody called .* is in this realm's directory/,
+    "a console role for a name with no directory entry");
+  const unmoved = await get("/rbac");
+  assert.strictEqual(unmoved.body.grantCount, grantedBefore,
+    "a refused grant should write nothing; the roster reads " +
+    unmoved.body.grantCount + " grant(s) against " + grantedBefore + ".");
   const subject = names.usernameFor("stsapi-role");
+  await ok("/users/create", {
+    username: subject, invent: false,
+    attributes: { cn: "Operations " + subject, givenName: "Operations",
+                  sn: subject, mail: subject + "@admin-api-operations.test" }
+  }, "created the person a console role is granted to");
   const granted = await ok("/rbac/grant",
     { username: subject, role: rolesAvailable[0] },
     "granted a console role");

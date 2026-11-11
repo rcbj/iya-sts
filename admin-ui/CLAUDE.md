@@ -4131,10 +4131,24 @@ decisions, taken as the issue's plan recommended:
 gate over a loopback socket, the debugger, the startup log) and
 `tests/protocol/sts_console_bootstrap_product.js` the HTTP half.
 
-**A grant to somebody who does not exist is allowed and dangles.** That is the
-interesting case for a mock — grant the role, then watch them arrive already
-holding it — and it is why the roster counts membership VALUES rather than
-resolvable members.
+**A CONSOLE ROLE IS GRANTED ONLY TO A PERSON WHO EXISTS (rcbj, 2026-11-11).**
+`grant()` asks `existingUserEntry()` before it writes, and a name with no
+entry in the roster's realm is refused `reason: 'noSuchPerson'`, coded
+`STS-ADMIN-0920`, in a sentence naming the person and saying to create them
+first — nothing is written. It used to be allowed and dangle, the membership
+naming the uid DN where they WOULD be ("the interesting case for a mock"),
+and two rules ended it: the directory refuses a group member that names no
+stored entry (#1624, `writeGroupEntry()`'s `danglingMember`, STS-LDAP-0212),
+which turned the old grant into a refusal worded as a DN, and a person
+created later under an old name inherits no role or group (#1613), which a
+dangling grant was by construction. Every door that grants comes through
+`grant()` — `/admin/rbac`, `POST /admin-api/rbac/grant`, and the bootstrap
+seeding, which creates its account before granting. A test or a script that
+grants a role creates the person first (`createUser()`, or
+`POST /admin-api/users/create`). The roster still counts membership VALUES
+rather than resolvable members, because a `memberOf`, an `ldapmodify` of an
+older store or a deleted person's leftover can still leave one dangling, and
+`danglingCount` is how the page reports it.
 
 ## 8a-ii. THE THIRD ROLE: SECURITY ADMINISTRATOR (2026-11-02, #645)
 

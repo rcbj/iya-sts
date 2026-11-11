@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5409** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5410** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -91,7 +91,7 @@ is an ordinary outcome.
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 92
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 268
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 269
 * [Management API (`STS-API`)](#sts-api) — 95
 * [User portal (`STS-PORTAL`)](#sts-portal) — 122
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 23
@@ -5538,6 +5538,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0917` | An application was not created because the metadata document given with it was refused. | HTTP 400 |
 | `STS-ADMIN-0918` | A passkey an administrator enrolled was recorded, and the account signal about it could not be sent (ASVS 5.0.0 2.3.3). | — |
 | `STS-ADMIN-0919` | A deleted or renamed application, person or group could not be taken out of, or renamed in, a role or group that named it, so that role or group still names the old name or DN (roles.forgetMember(), roles.renameMember(), the directory's forgetGroupMemberships() and moveGroupMemberships()). | — |
+| `STS-ADMIN-0920` | A console role grant named somebody with no entry in the realm's directory; a role is granted only to a person who exists (admin_rbac.ts grant(), reason noSuchPerson). | HTTP 400 (API) or a 303 with error= |
 
 ## STS-API
 

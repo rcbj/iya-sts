@@ -130,7 +130,11 @@ function childMain() {
     const OTHER = 'aa-other-' + stamp;
     const FALSE_NAME = 'aa-named-by-the-caller-' + stamp;
     const CLIENT = 'sts-api-client';
-    ldap.createUser(WRITER, { invent: false });
+    // OTHER is made too (2026-11-11): a console role is granted only to
+    // somebody with an entry (STS-ADMIN-0920), and part 4 grants OTHER one.
+    [WRITER, OTHER].forEach(function (name) {
+      ldap.createUser(name, { invent: false });
+    });
     const inDefault = function (fn) {
       return realms.run(realms.DEFAULT_REALM, fn);
     };
