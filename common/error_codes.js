@@ -12615,6 +12615,14 @@ const CODES = [
     summary: 'A UsernameToken was refused without being checked: too many ' +
       'recent failures for that identity (#1448).',
     spec: 'SOAP FailedAuthentication' },
+  { code: 'STS-WSTRUST-0071',
+    summary: 'A SOAP envelope /sts built — an RSTR, an RSTR collection or a ' +
+      'Fault — does not match its model in models/ws/ (#1579): its root, ' +
+      'an attribute, a fixed value, or a child element or its order, the ' +
+      'SAML assertion inside held to models/saml/. The envelope is sent as ' +
+      'it was built: the model describes the wire and does not reshape it, ' +
+      'so this is a model gap to close.',
+    spec: 'none (recorded only; the envelope is unchanged)' },
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +
       'refuses to dereference (fetching a URL from a query parameter ' +
@@ -12775,6 +12783,14 @@ const CODES = [
       'declined, on the consent screen, to sign in to the relying party ' +
       '(ASVS 5.0.0 7.6.2).',
     spec: '' },
+  { code: 'STS-WSFED-0032',
+    summary: 'A WS-Federation sign-in response (the RSTR posted in ' +
+      'wresult) or the metadata role this service built does not match ' +
+      'its model in models/ws/ (#1579): its root, an attribute, a fixed ' +
+      'value, or a child element or its order. It is sent as it was ' +
+      'built: the model describes the wire and does not reshape it, so ' +
+      'this is a model gap to close.',
+    spec: 'none (recorded only; the document is unchanged)' },
   { code: 'STS-FED-0001',
     summary: 'A federation endpoint (login or assertion consumer service) ' +
       'was reached while federation.enabled is off.',

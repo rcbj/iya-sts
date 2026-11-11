@@ -543,16 +543,33 @@ class XmlModel {
    *
    * @param id - the message
    * @param xml - the document
+   * @param declarations - for a FRAGMENT whose prefixes are declared by the
+   *   document it is put in (a metadata role inside an EntityDescriptor):
+   *   those prefixes' namespaces, by prefix
    * @returns the problems; empty when there are none
    */
-  problems(id: string, xml: string): string[] {
+  problems(id: string, xml: string,
+           declarations?: Record<string, string>): string[] {
     log.debug("Entering XmlModel.problems(). " + id);
     let root: any = null;
+    const wrapped = declarations
+      ? '<fragment' + Object.keys(declarations).map(function (prefix) {
+        return ' xmlns:' + prefix + '="' +
+          XmlModel.escape(declarations[prefix]) + '"';
+      }).join('') + '>' + String(xml || '') + '</fragment>'
+      : String(xml || '');
     try {
       const doc = new xmldom.DOMParser({ onError: function () {
         // A builder's document that does not parse is the problem below.
-      } }).parseFromString(String(xml || ''), 'text/xml');
+      } }).parseFromString(wrapped, 'text/xml');
       root = doc && doc.documentElement;
+      if (root && declarations) {
+        let first = root.firstChild;
+        while (first && first.nodeType !== 1) {
+          first = first.nextSibling;
+        }
+        root = first || null;
+      }
     } catch (e) {
       log.debug("Caught in XmlModel.problems(): " +
                 ((e && e.message) || e));
@@ -578,12 +595,13 @@ class XmlModel {
    * @param where - what is being sent, for the log
    * @param code - the error code a gap is recorded under
    * @param directory - where the family's model is, for the log
+   * @param declarations - a fragment's prefixes, as `problems()` takes them
    * @returns the document, unchanged
    */
   hold(id: string, xml: string, where: string, code: string,
-       directory: string): string {
+       directory: string, declarations?: Record<string, string>): string {
     log.debug("Entering XmlModel.hold(). " + id);
-    const problems = this.problems(id, xml);
+    const problems = this.problems(id, xml, declarations);
     if (problems.length > 0) {
       // error-code: none — the family's own code arrives as `code`
       log.error(errorCodes.tag(code) + this.family + ': the ' + where +

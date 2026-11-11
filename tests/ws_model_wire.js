@@ -204,6 +204,27 @@ function childMain() {
   }
 
   (async function () {
+    // EVERY HOLD IS HEARD (#1579): a document the model would log a gap for
+    // is a problem of this run, so a builder out of step with its model
+    // fails here as well as in tests/model_ws.js. A tree from before the
+    // model has no reader, and records nothing.
+    try {
+      const XmlModel = require(ROOT + '/common/xml_model');
+      const held = XmlModel.prototype.hold;
+      XmlModel.prototype.hold = function (id, xml, where, code, directory,
+                                          declarations) {
+        const said = this.problems(id, xml, declarations);
+        if (said.length) {
+          record.problems.push(code + ' ' + where + ': ' +
+                               said.slice(0, 3).join('; '));
+        }
+        return held.apply(this, arguments);
+      };
+    } catch (e) {
+      // No reader to hear: said on the record, which compares only its
+      // wire and its problems.
+      record.noReader = String((e && e.message) || e);
+    }
     require(ROOT + '/common/protocol_stack');
     const app = require(ROOT + '/common/app');
     const keystore = require(ROOT + '/common/keystore');
