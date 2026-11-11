@@ -38,8 +38,9 @@
 // in PRODUCT, the same doors: the certificate signs nobody in (the session
 // refused STS-AUTHN-0180, no entry to be the subject of), the presentation
 // signs nobody in, the SVID's caller is authenticated and its session is a
-// record naming no subject — and NO entry appears for any of the three, the
-// directory holding exactly as many entries as before.
+// record naming no subject — and NO entry appears for any of the three: no
+// entry added while it ran names the subject (not a count of the whole
+// directory, which other writes in this process move; 2026-11-11).
 // ===========================================================================
 
 const fs = require('fs');
@@ -184,9 +185,40 @@ function childMain() {
         }
       };
     };
+    // THE ENTRIES, NOT THEIR COUNT (2026-11-11). Run 16's cluster mode read
+    // 85 where 84 had been: the realm's whole directory, groups and
+    // applications too, is counted, and anything this process writes in the
+    // background between the two reads moved it. What each check means is
+    // that the sign-in made no entry FOR ITS NAME, so the entries added are
+    // compared, and one counts against the sign-in only when its DN or a
+    // value names the subject. The added DNs are in the detail either way.
     const entryCount = function () {
       return w.inRealm(function () {
-        return m.ldap.entries.size;
+        return new Set(Array.from(m.ldap.entries.keys()));
+      });
+    };
+    const addedFor = function (before, name) {
+      const wanted = String(name).toLowerCase();
+      return w.inRealm(function () {
+        const out = [];
+        m.ldap.entries.forEach(function (entry, dn) {
+          if (before.has(dn)) {
+            return;
+          }
+          const text = (dn + ' ' + JSON.stringify((entry &&
+            entry.attributes) || {})).toLowerCase();
+          if (text.indexOf(wanted) >= 0) {
+            out.push(dn);
+          }
+        });
+        return out;
+      });
+    };
+    const added = function (before) {
+      return w.inRealm(function () {
+        return Array.from(m.ldap.entries.keys()).filter(function (dn) {
+          return !before.has(dn);
+        });
       });
     };
     const holds = function (name) {
@@ -243,10 +275,9 @@ function childMain() {
         note(!refusedForNoEntry(certName),
              'A2. ' + label + ': no session was even asked for ' + certName +
              ' (no STS-AUTHN-0180): the certificate names nobody');
-        note(!holds(certName) && entryCount() === before,
-             'A3. ' + label + ': and no entry was made — the directory ' +
-             'holds as many entries as before', entryCount() + ' / ' +
-             before);
+        note(!holds(certName) && addedFor(before, certName).length === 0,
+             'A3. ' + label + ': and no entry was made for ' + certName,
+             JSON.stringify(added(before)));
 
         // --- B. the wallet presentation ----------------------------------
         const walletName = 'cs-wallet-' + mode.slice(0, 4) + '-' + M.stamp;
@@ -260,15 +291,15 @@ function childMain() {
              (presented.page.status || '') + ' ' +
              JSON.stringify(presented.answered && presented.answered.json));
         if (!PRODUCT) {
-          note(holds(walletName) && entryCount() > before,
+          note(holds(walletName) && addedFor(before, walletName).length > 0,
                'B2. ' + label + ': and the identity it carries is recorded, ' +
                'which makes an entry for ' + walletName + ' (the control)',
-               entryCount() + ' / ' + before);
+               JSON.stringify(added(before)));
         } else {
-          note(!holds(walletName) && entryCount() === before,
-               'B2. ' + label + ': and no entry is made for ' + walletName +
-               ' — the directory holds as many entries as before',
-               entryCount() + ' / ' + before);
+          note(!holds(walletName) &&
+               addedFor(before, walletName).length === 0,
+               'B2. ' + label + ': and no entry is made for ' + walletName,
+               JSON.stringify(added(before)));
         }
 
         // --- C. the SVID -------------------------------------------------
@@ -302,15 +333,14 @@ function childMain() {
              JSON.stringify({ id: caller.spiffeId, refusal: caller.refusal,
                               policy: refused }));
         if (!PRODUCT) {
-          note(holds(svidId) && entryCount() > before,
+          note(holds(svidId) && added(before).length > 0,
                'C2. ' + label + ': and the caller is recorded, which makes ' +
                'an entry for ' + svidId + ' (the control)',
-               entryCount() + ' / ' + before);
+               JSON.stringify(added(before)));
         } else {
-          note(!holds(svidId) && entryCount() === before,
-               'C2. ' + label + ': and no entry is made for ' + svidId +
-               ' — the directory holds as many entries as before',
-               entryCount() + ' / ' + before);
+          note(!holds(svidId) && addedFor(before, svidId).length === 0,
+               'C2. ' + label + ': and no entry is made for ' + svidId,
+               JSON.stringify(added(before)));
           note(!svidSession || !(svidSession.user && svidSession.user.sub),
                'C3. ' + label + ': its session is a record of the call and ' +
                'names no subject — nobody is signed in as a person',

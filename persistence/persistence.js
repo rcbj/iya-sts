@@ -3469,6 +3469,16 @@ function openStore(chosen, resolvedUrl, globalUrls) {
         log.debug("Leaving loadKeys().");
         return driver.loadKeys();
       },
+      // THE DATA-KEY ROWS ALONE (2026-11-11), offered only by a driver that
+      // can select them; `keystore.refreshDekRows()` reads them before every
+      // key-row write, and otherwise falls back to `loadKeys()`.
+      loadDekRows: typeof driver.loadDekRows === 'function'
+        ? function () {
+          log.debug("Entering loadDekRows().");
+          log.debug("Leaving loadDekRows().");
+          return driver.loadDekRows();
+        }
+        : undefined,
       saveKeys: function (realmId, ciphertext) {
         log.debug("Entering saveKeys().");
         log.debug("Leaving saveKeys().");

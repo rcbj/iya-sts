@@ -25248,6 +25248,11 @@ const CODES = [
       '(roles.forgetMember(), roles.renameMember(), the directory\'s ' +
       'forgetGroupMemberships() and moveGroupMemberships()).',
     spec: '' },
+  { code: 'STS-ADMIN-0920',
+    summary: 'A console role grant named somebody with no entry in the ' +
+      'realm\'s directory; a role is granted only to a person who exists ' +
+      '(admin_rbac.ts grant(), reason noSuchPerson).',
+    spec: 'HTTP 400 (API) or a 303 with error=' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',

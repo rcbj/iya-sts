@@ -580,12 +580,22 @@ async function linkAtFirstSignIn(world) {
       .toString());
   }
   view = await spView(who);
+  // IN PRODUCT THE STEP ITSELF IS TIED TO THE BROWSER THAT OPENED IT (#1454,
+  // `mode.bindsSignInSteps()`), and that check comes first: the other
+  // browser's `/authn-api/pending` read is refused 400 (STS-AUTHN-0552)
+  // before the linking screen's own 403 (STS-FED-0111) is reached. Either
+  // way nothing is linked, which both branches assert.
   await check("the linking screen completed in ANOTHER browser is refused " +
-              "403 (STS-FED-0111) and links nothing", async function () {
-    assert.strictEqual(other.status, 403, squash(other.body));
-    const said = linkView(other.body) || {};
-    assert.strictEqual(said.kind, "refused", squash(other.body));
-    assert.ok(/different browser/.test(said.why), JSON.stringify(said));
+              (isProduct ? "400 (STS-AUTHN-0552)" : "403 (STS-FED-0111)") +
+              " and links nothing", async function () {
+    if (isProduct) {
+      assert.strictEqual(other.status, 400, squash(other.body));
+    } else {
+      assert.strictEqual(other.status, 403, squash(other.body));
+      const said = linkView(other.body) || {};
+      assert.strictEqual(said.kind, "refused", squash(other.body));
+      assert.ok(/different browser/.test(said.why), JSON.stringify(said));
+    }
     assert.strictEqual(view.links.length, 0);
   });
 

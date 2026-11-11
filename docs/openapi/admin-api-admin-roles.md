@@ -270,7 +270,7 @@ Scope: `admin:read`.
 
 Adds them to the role's group as a `member`, creating the group if this is the first grant — which is why "the group does not exist" and "the group has no members" are the same state everywhere in this feature.
 
-**The person need not exist.** A name nothing here has seen, and that has no directory entry, is granted anyway: the membership names the DN they WILL be at (`uid=<name>,ou=users`) and dangles until they first sign in or somebody creates them, and the role counts from that moment. That is the interesting case for testing and is deliberately reachable. What IS refused is a name carrying a character RFC 4514 reserves in a DN — the same refusal `POST /admin-api/users/create` gives, for the same reason.
+**The person must exist.** A name with no entry in this realm's directory is REFUSED with 400, `reason: "noSuchPerson"` and an `errors` sentence naming them, and nothing is written: create them first (POST /admin-api/users/create) and grant the role then. A role is granted only to somebody who exists, so that a person created later under the same name inherits nothing. A name carrying a character RFC 4514 reserves in a DN is refused too — the same refusal `POST /admin-api/users/create` gives, for the same reason.
 
 Granting a role somebody already holds answers 200 with `changed: false` rather than 400, so a script that grants on every run does not fail on its second one.
 

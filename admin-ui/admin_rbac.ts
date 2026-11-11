@@ -1400,9 +1400,10 @@ class AdminRbac {
   // The person's OWN entry when they have one, whatever it is named — somebody
   // whose entry was created by a client certificate is at `cn=<name>,ou=users`
   // and not at `uid=<name>,ou=users`, and a grant that wrote the uid form would
-  // dangle beside the entry it was meant to name. When there is no entry, the
-  // uid form is what a person created later will be at, so the value resolves
-  // the moment they authenticate.
+  // dangle beside the entry it was meant to name. When there is no entry the
+  // uid form is answered with `present: false`, which grant() REFUSES
+  // (STS-ADMIN-0920, 2026-11-11) and revoke() only compares against: a role
+  // is granted to somebody who exists, never to where they would go.
   private memberValueFor(username) {
     const { log } = this.deps;
     log.debug("Entering AdminRbac.memberValueFor(). username=" + username);
@@ -1456,7 +1457,7 @@ class AdminRbac {
     if (!username) {
       log.debug("Leaving AdminRbac.nameProblem().");
       return 'No name was given. Choose somebody from the list, or type the ' +
-             'name they will authenticate under.';
+             'name of a person in this realm\'s directory.';
     }
     if (!directory.nameUsableInDn(username)) {
       log.debug("Leaving AdminRbac.nameProblem().");
@@ -1472,12 +1473,41 @@ class AdminRbac {
     return '';
   }
 
+  // THE PERSON MUST EXIST (rcbj, 2026-11-11). A grant to a name with no entry
+  // used to write the uid DN where they would go, a membership that dangled
+  // until somebody of that name arrived. Two rules ended it: the directory
+  // refuses a group member that names no stored entry (#1624,
+  // `writeGroupEntry()`'s `danglingMember`, STS-LDAP-0212), and a person
+  // created later under an old name inherits no role or group (#1613) — and a
+  // dangling grant was exactly an inheritance waiting for its heir. So the
+  // grant asks first and refuses in a sentence naming the person, rather
+  // than falling through to the directory's refusal of a DN. Every door that
+  // grants a console role comes through here: `/admin/rbac`,
+  // `POST /admin-api/rbac/grant` and the bootstrap seeding, which creates its
+  // account before it grants.
+  private absentPersonProblem(name) {
+    const { log } = this.deps;
+    log.debug("Entering AdminRbac.absentPersonProblem().");
+    if (directory.existingUserEntry(name)) {
+      log.debug("Leaving AdminRbac.absentPersonProblem(). They exist.");
+      return '';
+    }
+    log.debug("Leaving AdminRbac.absentPersonProblem(). Nobody is there.");
+    return 'Nobody called "' + name + '" is in this realm\'s directory (' +
+           directory.usersDn + '), so there is nobody to grant a console ' +
+           'role to. Create the person first — Directory, People, or ' +
+           'POST /admin-api/users/create — and grant the role then. A role ' +
+           'is granted only to somebody who exists, so that a person ' +
+           'created later under the same name inherits nothing.';
+  }
+
   /**
    * Grants a console role by adding the person to the role's group, creating
    * the group if it does not exist.
    *
    * The act is audited. A refusal (no directory, no such role, a name unusable
-   * in a DN, a failed write) carries its error code.
+   * in a DN, a person with no entry, a failed write) carries its error
+   * code.
    * @param username - the person to grant the role to
    * @param roleId - the role id
    * @param context - `via`, `actor` and, through the exported wrapper, `realm`
@@ -1509,6 +1539,13 @@ class AdminRbac {
     if (problem) {
       log.debug("Leaving AdminRbac.grant(). " + problem);
       return self.refused('STS-ADMIN-0583', { ok: false, errors: [problem] });
+    }
+    const absent = self.absentPersonProblem(name);
+    if (absent) {
+      log.debug("Leaving AdminRbac.grant(). " + name + " has no entry.");
+      return self.refused('STS-ADMIN-0920',
+                          { ok: false, reason: 'noSuchPerson',
+                            username: name, errors: [absent] });
     }
 
     const dn = self.dnForRole(role);
@@ -1577,13 +1614,6 @@ class AdminRbac {
                       ' in ' + dn + '.' +
                       (written.created ? ' The group did not exist and was ' +
                                          'created.' : '') +
-                      (target.present ? ''
-                                      : ' NOTHING IS AT THAT DN YET — they ' +
-                                        'have not authenticated here and ' +
-                                        'nobody has created them, so the ' +
-                                        'membership dangles until one of ' +
-                                        'those happens. The role still ' +
-                                        'counts.') +
                       (wasEmpty ? ' This was the FIRST grant, so the ' +
                                   'roster is now enforced: whoever is not ' +
                                   'in one of ' +

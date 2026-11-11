@@ -305,8 +305,9 @@ async function finish(who, location, pair) {
   log.debug("Entering finish().");
   let at = location;
   // THE WALLET SENDS THE PERSON BACK TO THE WAIT PAGE, whose runtime
-  // collects the sign-in (#574): the collection names where to go on.
-  if (/\/authn\/wallet\/wait\?/.test(String(at || ""))) {
+  // collects the sign-in (#574): the collection names where to go on. The
+  // step's ids are in the fragment in product (#1454), the query otherwise.
+  if (/\/authn\/wallet\/wait[?#]/.test(String(at || ""))) {
     at = (await walletSignin.collect(base, who, at)).location;
   }
   for (let n = 0; n < 6 && at && at.indexOf(root) === 0 &&

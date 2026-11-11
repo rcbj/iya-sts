@@ -109,6 +109,13 @@ of them:
 
 A role no test can grant is a role no test can exercise.
 
+**A role is granted only to a person who exists.** On `/admin/rbac` and at
+`POST /admin-api/rbac/grant` a name with no entry in the realm's directory is
+refused (400, `reason: "noSuchPerson"`, recorded as `STS-ADMIN-0920`) and
+nothing is written. Create the person first, on Directory → People or with
+`POST /admin-api/users/create`, and grant the role then — so that somebody
+created later under an old name inherits no role.
+
 **On `/admin/rbac` you find the person by typing part of a username.** Where
 the directory is kept in the database, a search's count stops at 100,000:
 past that the page says *more than 100,000 matches* and pages only through

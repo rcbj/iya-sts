@@ -149,6 +149,12 @@ function childMain() {
       rbac.grant(READER, 'read', { via: 'test' });
     });
     realms.create({ id: R, name: 'The me operation' });
+    // The realm's administrator is a person IN THAT REALM (2026-11-11): a
+    // console role is granted only to somebody with an entry there
+    // (STS-ADMIN-0920).
+    realms.run(realms.get(R), function () {
+      ldap.createUser(BOSS, { invent: false });
+    });
     const bossGrant = rbac.grant(BOSS, 'write', { via: 'test', realm: R });
     note(bossGrant && bossGrant.ok, 'precondition: a realm of its own, with ' +
          'an administrator', JSON.stringify(bossGrant));

@@ -183,6 +183,40 @@ function childMain() {
          'C1. a sealed value that does not open is dropped, not handed over',
          JSON.stringify(broken));
 
+    // ----------------------------------------------------------------- C2
+    // A VALUE SEALED UNDER A DATA KEY ANOTHER PROCESS MADE A MOMENT AGO
+    // (2026-11-10, run 14's cluster mode). B is a second keystore over the
+    // same store, started before A makes the "late" realm's setting-secret
+    // key, so B does not hold it when it reads A's row.
+    const ksPath = require.resolve(ROOT + '/common/keystore');
+    const keystoreA = require.cache[ksPath];
+    delete require.cache[ksPath];
+    const keystoreB = require(ROOT + '/common/keystore');
+    const moduleB = require.cache[ksPath];
+    keystoreB.setStore(keyStore);
+    await keystoreB.start();
+    require.cache[ksPath] = keystoreA;
+    const late = sealedSettings.sealMap({ 'scim.digestPassword': 'late-pw' },
+                                        'late');
+    await keystore.settleDeks();
+    const lateCipher = late['scim.digestPassword'];
+    note(SEALED.test(lateCipher) && !keystore.namesUnheldDek(lateCipher),
+         'C2a. A seals the late realm\'s value under a key it made');
+    require.cache[ksPath] = moduleB;
+    note(keystoreB.namesUnheldDek(lateCipher),
+         'C2b. B, started before, does not hold that key');
+    const dB = sealedSettings.wrap(settingsDriver());
+    dB.held.realms = [{ id: 'late', name: 'Late', overrides: late }];
+    const lateBack = await dB.loadRealms();
+    note(lateBack[0].overrides['scim.digestPassword'] === 'late-pw',
+         'C2c. B reads the data keys again and opens it, rather than ' +
+         'dropping it (STS-STORE-0071)', JSON.stringify(lateBack[0].overrides));
+    dB.held.overrides = { 'scim.digestPassword': lateCipher };
+    const lateOverrides = await dB.loadOverrides();
+    note(lateOverrides['scim.digestPassword'] === 'late-pw',
+         'C2d. and so does the service settings\' load');
+    require.cache[ksPath] = keystoreA;
+
     // ------------------------------------------------------------------ E
     // The claim and counter keys are KEYED digests once a key is held, so a
     // username or an address in them is not recovered by hashing guesses.

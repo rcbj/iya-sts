@@ -282,7 +282,7 @@ class LogoutPage {
       list.map(function (row) {
         const retry = row.state === 'dead' && canWrite
           ? '<form method="post" action="/admin/logout" ' +
-            'style="display:inline">' +
+            'class="inline">' +
             '<input type="hidden" name="action" value="retry-backchannel">' +
             '<input type="hidden" name="delivery" value="' +
             kit.esc(row.id) + '">' +
@@ -367,7 +367,7 @@ class LogoutPage {
    */
   static logoutRowHtml(t, row, canWrite, back) {
     const button = row.terminable && canWrite
-      ? '<form method="post" action="/admin/logout" style="display:inline">' +
+      ? '<form method="post" action="/admin/logout" class="inline">' +
         '<input type="hidden" name="action" value="end">' +
         '<input type="hidden" name="user" value="' + kit.esc(row.user) + '">' +
         '<input type="hidden" name="select" value="' + kit.esc(row.id) + '">' +

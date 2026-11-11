@@ -18,6 +18,11 @@
 #                      hard-fail (STS-PKI-0188)"), rcbj's decision of
 #                      2026-11-06. It is the same text whatever the request.
 #
+# AND ONE THING IS NOT A LEAK AT ALL: a member whose whole text is a string this
+# very request sent (fuzz run 14, 2026-11-11). An administrator's description
+# stored and answered back is the caller's own input, not a code this service
+# recorded; see leaked()'s `echoed`, matched whole and for this request only.
+#
 # THE HELP TEXT IS LISTED BY ROUTE AND MEMBER, EXACTLY, AND NOT BY A MEMBER'S
 # NAME. `description` or `what` allowed everywhere would pass a refusal's
 # reason, or a row of live data, that happened to use the word. A code anywhere
@@ -185,10 +190,21 @@ def _help_text(path_of_route, member):
             and member.endswith(".description"))
 
 
-def leaked(method, path_of_route, status, body):
+def leaked(method, path_of_route, status, body, echoed=()):
     """The codes this answer may not carry, as (member, code); empty when it
     is clean. `body` is text. Anything that is not a successful answer of
-    /admin-api, or is not JSON, may carry none at all."""
+    /admin-api, or is not JSON, may carry none at all.
+
+    `echoed` is every string value THIS REQUEST sent (sts_checks.py's
+    _request_strings). A member of a successful /admin-api answer whose whole
+    text is one of them is the caller's own input handed back -- fuzz run 14's
+    `POST /admin-api/authorization-servers/create` stored the description it
+    was sent, `STS-AUTHN-0356`, and answered the profile with it -- and
+    discloses nothing this service recorded. It is matched whole, so a code
+    the service put BESIDE the caller's text, or a code the caller sent that
+    reappears in some other member, still fails; and it is this request's
+    input only, so text an earlier request stored (a role's description, a
+    directory entry's) is still read as a leak, which is the safe direction."""
     admin = path_of_route.startswith("/admin-api/")
     success = isinstance(status, int) and 200 <= status < 300
     if not (admin and success):
@@ -202,7 +218,8 @@ def leaked(method, path_of_route, status, body):
         return [("(body)", code) for code in _CODE.findall(body)]
     found = []
     for member, text in _strings(answer, ""):
-        if _CODE.search(text) and not _help_text(path_of_route, member):
+        if (_CODE.search(text) and not _help_text(path_of_route, member)
+                and text not in echoed):
             found.extend((member, code) for code in _CODE.findall(text))
     return found
 
@@ -215,7 +232,8 @@ def _main():
     for line in sys.stdin:
         case = json.loads(line)
         print(json.dumps(leaked(case["method"], case["path"], case["status"],
-                                case["body"])))
+                                case["body"],
+                                frozenset(case.get("echoed", ())))))
 
 
 if __name__ == "__main__":

@@ -1768,8 +1768,8 @@
     "text": "ICKE-SPEC. De två konsolrollerna med varje tilldelning, de fyra inställningarna bakom grinden och vem ANROPAREN är. Rollerna är två vanliga katalogrupper, så detta och en ldapsearch svarar om samma poster. Speglar GET /admin/rbac."
   },
   "stsmetadata.endpoints./admin-api/rbac/:action.what": {
-    "en": "0c8ab0417104c2c7",
-    "text": "ICKE-SPEC. Två URL:er bakom ett mönster: grant och revoke. DEN TAR EN ANNAN INLOGGNINGSUPPGIFT ÄN DEN KONSOL DEN GER TILLGÅNG TILL — en åtkomsttoken som bär admin:write snarare än en konsolsession — vilket är det som gör den till vägen tillbaka in när ingen som innehar en roll kan logga in, ett tillstånd från vilket ingen webbläsare alls kan nå konsolen. DEN VAR HELT OGRINDAD fram till 2026-09-09, och konsekvensen var värd att nämna och är nu stängd: vem som helst som kunde nå den här porten kunde tilldela sig själv båda rollerna. Att tilldela en roll som någon redan har, eller återkalla en som personen inte har, svarar 200 med changed:false. En person som inte finns KAN tilldelas en roll: medlemskapet dinglar tills personen loggar in första gången. Speglar POST /admin/rbac."
+    "en": "762545bfac400a73",
+    "text": "ICKE-SPEC. Två URL:er bakom ett mönster: grant och revoke. DEN TAR EN ANNAN INLOGGNINGSUPPGIFT ÄN DEN KONSOL DEN GER TILLGÅNG TILL — en åtkomsttoken som bär admin:write snarare än en konsolsession — vilket är det som gör den till vägen tillbaka in när ingen som innehar en roll kan logga in, ett tillstånd från vilket ingen webbläsare alls kan nå konsolen. DEN VAR HELT OGRINDAD fram till 2026-09-09, och konsekvensen var värd att nämna och är nu stängd: vem som helst som kunde nå den här porten kunde tilldela sig själv båda rollerna. Att tilldela en roll som någon redan har, eller återkalla en som personen inte har, svarar 200 med changed:false. En roll tilldelas bara en person som finns: ett namn utan post i katalogen nekas och ingenting skrivs, så att en person som skapas senare med det namnet inte ärver något. Speglar POST /admin/rbac."
   },
   "stsmetadata.endpoints./admin-api/rbac/:action.effect": {
     "en": "d4fe53d89f2efabd",
