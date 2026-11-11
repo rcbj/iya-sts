@@ -513,14 +513,15 @@ function run(t) {
       "the custom checks include " + check);
   });
 
-  // One request may take 120 seconds. The CLI default is 10, and a legal
+  // One request may take 300 seconds. The CLI default is 10, and a legal
   // realm certificate-authority rebuild whose alternative key is
   // SLH-DSA-SHAKE-256s took 21 to 33 seconds (one POST /admin-api/pki
   // handler 77 seconds) on iya-sts-fuzz-1432. The client recorded that as
-  // a network error and banned the later phases (#1435).
-  t.equal(kit.REQUEST_TIMEOUT_SECONDS, 120,
-    "one Schemathesis request may take 120 seconds");
-  t.equal(kit.requestTimeoutArgs().join(" "), "--request-timeout 120",
+  // a network error and banned the later phases (#1435). 120 was outrun in
+  // fuzz run 16 (2026-11-11) by a POST /admin-api/pki/build under load.
+  t.equal(kit.REQUEST_TIMEOUT_SECONDS, 300,
+    "one Schemathesis request may take 300 seconds");
+  t.equal(kit.requestTimeoutArgs().join(" "), "--request-timeout 300",
     "the run passes that timeout, so a legal realm CA build is observed");
 
   // Every exclusion is scoped to a known surface and carries a reason. An

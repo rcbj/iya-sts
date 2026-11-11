@@ -798,7 +798,13 @@ const MAX_EXAMPLES = parseInt(
 // constraint, so the cost is bounded. Not an environment variable: a run
 // that forgot it would fail the same way again. The algorithm stays legal
 // on a realm branch (#1432 refuses it only on the process branch, #1435).
-const REQUEST_TIMEOUT_SECONDS = 120;
+// 300 SINCE 2026-11-11: fuzz run 16's admin-api cell in fuzz-21 failed on
+// one POST /admin-api/pki/build still running at 120 seconds. A rebuild
+// makes about fifty signatures (three tiers, every Issuing CA, and the
+// realm's signing keys re-certified), one SLH-DSA-SHAKE-256s signature
+// takes 1,087 ms in the service image on an idle machine, and the fuzz
+// stage's other cells hold every core. The handler was working, not hung.
+const REQUEST_TIMEOUT_SECONDS = 300;
 // The venv the tests image builds, or the PATH. STS_SCHEMATHESIS_DIR is the
 // venv ROOT (the Dockerfile's `python3 -m venv /opt/schemathesis`), so the
 // executable is `<dir>/bin/schemathesis` — no `venv` segment.
