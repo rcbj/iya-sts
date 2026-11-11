@@ -142,7 +142,7 @@
     "x-frame-options": "DENY"
    },
    "decoded": {
-    "location.param.authn": "<random>",
+    "location.param.authn": "<handle>",
     "location.path": "http://127.0.0.1/realm/samlwire/authn/login"
    },
    "body": "See Other. Redirecting to /realm/samlwire/authn/login?authn=<handle>"
@@ -169,7 +169,7 @@
     "x-frame-options": "DENY"
    },
    "decoded": {
-    "location.param.authn": "<random>",
+    "location.param.authn": "<handle>",
     "location.path": "http://127.0.0.1/realm/samlwire/authn/login"
    },
    "body": "See Other. Redirecting to /realm/samlwire/authn/login?authn=<handle>"
@@ -246,7 +246,7 @@
     "x-frame-options": "DENY"
    },
    "decoded": {
-    "location.param.rid": "<random>",
+    "location.param.rid": "<handle>",
     "location.path": "http://127.0.0.1/realm/samlwire/saml2/sso"
    },
    "body": "See Other. Redirecting to /realm/samlwire/saml2/sso?rid=<handle>"
@@ -887,7 +887,7 @@
     "x-frame-options": "DENY"
    },
    "decoded": {
-    "location.param.authn": "<random>",
+    "location.param.authn": "<handle>",
     "location.path": "http://127.0.0.1/realm/samlwire/authn/login"
    },
    "body": "See Other. Redirecting to /realm/samlwire/authn/login?authn=<handle>"
@@ -1258,7 +1258,7 @@
     "x-frame-options": "DENY"
    },
    "decoded": {
-    "location.param.authn": "<random>",
+    "location.param.authn": "<handle>",
     "location.path": "http://127.0.0.1/realm/samlwire/authn/login"
    },
    "body": "See Other. Redirecting to /realm/samlwire/authn/login?authn=<handle>"
@@ -1888,7 +1888,7 @@
     "x-frame-options": "DENY"
    },
    "decoded": {
-    "location.param.rid": "<random>",
+    "location.param.rid": "<handle>",
     "location.path": "http://127.0.0.1/realm/samlwirep/saml2/sso"
    },
    "body": "See Other. Redirecting to /realm/samlwirep/saml2/sso?rid=<handle>"

@@ -815,7 +815,10 @@ function normalise(record) {
     // handle.
     ['incident', /(Incident ID<\/dt><dd><code>)\d+/g],
     ['handle', /\b(authn|rid|fid)=[A-Za-z0-9_-]{12,}/g],
-    ['handleParam', /("location\.param\.(?:authn|rid|fid)": ")[^"]+/g],
+    // The step's text is JSON.stringify()'s, with no space after a colon:
+    // until #1579 this read `": "` and never matched, so a handle with no
+    // digit or no capital escaped the `random` pattern below.
+    ['handleParam', /("location\.param\.(?:authn|rid|fid)":\s?")[^"]+/g],
     // A signer's chain, as many certificates as the realm's authority has
     // issued by then: a realm made a moment before can still be issuing
     // its intermediate when the first document is signed (seen under
