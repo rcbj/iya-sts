@@ -667,7 +667,15 @@ function recordJwt(payload, signed, context) {
     username: payload.username || payload.preferred_username ||
               (issuedUnder.grant === 'client_credentials'
                 ? String(payload.client_id || '') : ''),
-    client_id: payload.client_id || payload.azp || payload.aud || '',
+    // ONE STRING, ALWAYS (rcbj on #1579, 2026-11-11): with no client_id and
+    // no azp the fallback is the audience, and an array `aud` (RFC 7519
+    // section 4.1.3) gives its FIRST member. Until then the array itself was
+    // stored, which the model's IssuedToken.clientId (a string) does not
+    // read: the sign-out page showed "no client" and OpenID Provider
+    // Commands skipped the row. `audience` below keeps every member.
+    client_id: String(payload.client_id || payload.azp ||
+                      (Array.isArray(payload.aud) ? payload.aud[0]
+                                                  : payload.aud) || ''),
     // WHAT THIS TOKEN IS ADDRESSED TO, as its own fact. `client_id` above falls
     // back to the `aud` when nothing better names the client, which is right
     // for the tokens page's one party column and loses the audience entirely on

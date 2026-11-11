@@ -254,6 +254,20 @@ async function records(t) {
     })[0];
     const token = heldToReal(t, 'IssuedToken', row);
     t.equal(token.subject, 's', 'an issued token maps');
+    // rcbj on #1579: no client_id, no azp and an array aud is filed under
+    // the FIRST audience, a string, as IssuedToken.clientId reads it.
+    stats.recordJwt({ iss: 'i', sub: 's', aud: ['first-aud', 'second-aud'],
+      exp: now + 60, iat: now, jti: 'model-domain-aud', typ: 'Bearer' },
+    'h.p.s', { kind: 'access_token' });
+    const audRow = stats.tokenList().filter(function (one) {
+      return one.jti === 'model-domain-aud';
+    })[0];
+    const audToken = heldToReal(t, 'IssuedToken', audRow);
+    t.check(audRow.client_id === 'first-aud' &&
+            audToken.clientId === 'first-aud',
+            'a token naming no client and several audiences is filed under ' +
+            'the first, as a string', JSON.stringify([audRow.client_id,
+              audToken.clientId]));
     const session = await authn.startSession(res, 'domain-probe', ['pwd'],
       'urn:x', 'OAuth 2.0 / OIDC', { credential: { kind: 'password' } });
     const mapped = heldToReal(t, 'Session', session);
