@@ -6,10 +6,9 @@
 //
 // `types/api.generated.d.ts` is generated from `models/api/*.tsp` and holds,
 // for each of the five APIs, `IyaApi.<Api>.Operations`: every operation by
-// its operationId (by `METHOD path` in the Reports API, whose operations carry
-// none), with what it takes and what it answers. This file is what binds a
-// handler to its entry there, so that the checker (`tests/typecheck.js`)
-// refuses a handler that
+// its operationId, with what it takes and what it answers. This file is what
+// binds a handler to its entry there, so that the checker
+// (`tests/typecheck.js`) refuses a handler that
 //
 //   * reads a body member, or a query name, its operation does not declare;
 //   * answers a 2xx status with a member, or a value, its operation's answer

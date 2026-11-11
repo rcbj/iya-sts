@@ -24,6 +24,8 @@ Unless an operation below says otherwise, any status it does not list answers th
 
 ## GET /report-api
 
+`getIndex`
+
 **The report API index**
 
 Names the catalog and realms addresses, and carries the service version the application draws in its footer.
@@ -65,6 +67,8 @@ Scope: `report:use`, `report:admin`.
 
 ## GET /report-api/announcements
 
+`getAnnouncements`
+
 **Announcements for everybody signed in**
 
 What an administrator broadcast to this application (#1086) after `since` — the `now` this operation answered the tab's first ask with — within ssf.announcementKeepS, oldest first. With no `since` it answers only `now`. `everyMs` is how often an open tab asks again.
@@ -105,6 +109,8 @@ Scope: `report:use`, `report:admin`.
 | `error_description` | string |  |  |
 
 ## GET /report-api/catalog
+
+`getCatalog`
 
 **The report catalog**
 
@@ -203,6 +209,8 @@ Scope: `report:use`, `report:admin`.
 | `error_description` | string |  |  |
 
 ## GET /report-api/catalog/{id}
+
+`getCatalogSource`
 
 **One report source**
 
@@ -310,6 +318,8 @@ Scope: `report:use`, `report:admin`.
 
 ## GET /report-api/definitions
 
+`getDefinitions`
+
 **List definitions**
 
 The caller's own definitions, those shared with a group the caller belongs to, and every definition when the token has report:admin. In name order, numbered pages: `page` and `per` (50 unless given, at most 200); the answer carries page, pages, per and total beside the rows. `limit` is the older spelling of `per`, read when `per` is absent.
@@ -410,6 +420,8 @@ Scope: `report:use`, `report:admin`.
 | `error_description` | string |  |  |
 
 ## POST /report-api/definitions
+
+`createDefinition`
 
 **Create a definition**
 
@@ -562,6 +574,8 @@ Scope: `report:use`, `report:admin`.
 
 ## GET /report-api/definitions/{id}
 
+`getDefinition`
+
 **Read a definition**
 
 An id the caller may not see is not_found, the same answer as an id that does not exist.
@@ -663,6 +677,8 @@ Scope: `report:use`, `report:admin`.
 | `error_description` | string |  |  |
 
 ## POST /report-api/definitions/{id}
+
+`replaceDefinition`
 
 **Replace a definition**
 
@@ -823,6 +839,8 @@ Scope: `report:use`, `report:admin`.
 
 ## DELETE /report-api/definitions/{id}
 
+`deleteDefinition`
+
 **Delete a definition**
 
 The owner, or report:admin. A share cannot delete.
@@ -865,6 +883,8 @@ Scope: `report:use`, `report:admin`.
 | `error_description` | string |  |  |
 
 ## POST /report-api/definitions/{id}/run
+
+`runDefinition`
 
 **Run a saved definition**
 
@@ -982,6 +1002,8 @@ Scope: `report:use`, `report:admin`.
 
 ## POST /report-api/definitions/{id}/share
 
+`shareDefinition`
+
 **Share a definition**
 
 Replaces the group list. A share can run and retrieve. It cannot edit or delete. Each value is a group DN in this realm.
@@ -1098,6 +1120,8 @@ Scope: `report:use`, `report:admin`.
 
 ## GET /report-api/groups
 
+`getGroups`
+
 **Search the realm's groups**
 
 The groups of this realm whose name or DN contains `q` (case-insensitive; empty matches every group), five a page in name order, each with its own `mail` attribute or an empty string. The definition page builds its share list from it; a definition's groups are who is emailed its result, at that address (#989).
@@ -1142,6 +1166,8 @@ Scope: `report:use`, `report:admin`.
 | `error_description` | string |  |  |
 
 ## GET /report-api/jobs
+
+`getJobs`
 
 **List jobs**
 
@@ -1237,6 +1263,8 @@ Scope: `report:use`, `report:admin`.
 | `error_description` | string |  |  |
 
 ## POST /report-api/jobs
+
+`queueJob`
 
 **Queue a job**
 
@@ -1380,6 +1408,8 @@ Scope: `report:use`, `report:admin`.
 
 ## GET /report-api/jobs/{id}
 
+`getJob`
+
 **Read a job**
 
 The owner and report:admin also receive the query document. A hidden id is job_not_found.
@@ -1473,6 +1503,8 @@ Scope: `report:use`, `report:admin`.
 | `error_description` | string |  |  |
 
 ## POST /report-api/jobs/{id}/cancel
+
+`cancelJob`
 
 **Cancel a job**
 
@@ -1568,6 +1600,8 @@ Scope: `report:use`, `report:admin`.
 
 ## GET /report-api/jobs/{id}/result
 
+`getJobResult`
+
 **Download a result**
 
 The artifact bytes. The media type is the format. A job id is not enough: the token must be allowed to see the job. Past artifact retention the result is gone.
@@ -1638,6 +1672,8 @@ As `text/csv`.
 
 ## GET /report-api/me
 
+`getMe`
+
 **What the user menu draws**
 
 The path of the signed-in person's own profile photo on this realm (#719), empty where they have none. It answers only about the token's person.
@@ -1672,6 +1708,8 @@ Scope: `report:use`, `report:admin`.
 | `error_description` | string |  |  |
 
 ## GET /report-api/openapi.json
+
+`getOpenApi`
 
 **This document**
 
@@ -1713,6 +1751,8 @@ Scope: `report:use`, `report:admin`.
 | `error_description` | string |  |  |
 
 ## POST /report-api/queries
+
+`runQuery`
 
 **Run a query**
 
@@ -1875,6 +1915,8 @@ As `text/csv`.
 
 ## GET /report-api/realms
 
+`getRealms`
+
 **The trust realms**
 
 The realm this request is in, and every realm with its id, name and path prefix where realms are active (null where they are not). The application draws its realm field and switch from it.
@@ -1916,6 +1958,8 @@ Scope: `report:use`, `report:admin`.
 | `error_description` | string |  |  |
 
 ## GET /report-api/schedules
+
+`getSchedules`
 
 **The scheduled definitions and their runs**
 
@@ -2026,6 +2070,8 @@ Scope: `report:use`, `report:admin`.
 | `error_description` | string |  |  |
 
 ## GET /report-api/signals
+
+`getSignals`
 
 **This application's Shared Signals inbox**
 

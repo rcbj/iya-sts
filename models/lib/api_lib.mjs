@@ -523,9 +523,10 @@ function operationType(method, path, operation) {
 
 /**
  * The declarations of every request and response of every document: the
- * reusable schemas, and `Operations`, every operation by its operationId (or,
- * in a document whose operations carry none, by `METHOD path`). The handlers
- * of the five APIs are typed by it through `types/api-handlers.d.ts`.
+ * reusable schemas, and `Operations`, every operation by its operationId,
+ * which every operation of the five documents carries since #1579 (the
+ * Reports API's were keyed by `METHOD path` until then). The handlers of the
+ * five APIs are typed by it through `types/api-handlers.d.ts`.
  *
  * @param served - the documents, by name
  * @returns the text of `types/api.generated.d.ts`
@@ -551,9 +552,12 @@ export function renderApiTypes(served) {
     Object.keys(document.paths).sort().forEach(function (path) {
       Object.keys(document.paths[path]).sort().forEach(function (method) {
         const operation = document.paths[path][method];
-        const key = operation.operationId ||
-          method.toUpperCase() + ' ' + path;
-        lines.push('    ' + JSON.stringify(key) + ': ' +
+        if (!operation.operationId) {
+          log.debug("Leaving renderApiTypes(). No operationId.");
+          throw new Error('The ' + name + ' document\'s ' +
+            method.toUpperCase() + ' ' + path + ' has no operationId.');
+        }
+        lines.push('    ' + JSON.stringify(operation.operationId) + ': ' +
           operationType(method, path, operation) + ';');
       });
     });

@@ -509,6 +509,7 @@ namespace IyaSts.Api.Report {
 @endpoint("/report-api",
   "get",
   #{
+    `operationId`:"getIndex",
     `summary`:"The report API index",
     `description`:"Names the catalog and realms addresses, and carries the service version the application draws in its footer.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -531,7 +532,7 @@ namespace IyaSts.Api.Report {
       }
     }
   })
-op `get__report_api`(`responses/200/content/application~1json/schema`: `Index`,
+op `getIndex`(`responses/200/content/application~1json/schema`: `Index`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
   `responses/default/content/application~1json/schema`: `Error`): void;
@@ -540,6 +541,7 @@ op `get__report_api`(`responses/200/content/application~1json/schema`: `Index`,
 @endpoint("/report-api/openapi.json",
   "get",
   #{
+    `operationId`:"getOpenApi",
     `summary`:"This document",
     `description`:"The description of the released routes.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -562,7 +564,7 @@ op `get__report_api`(`responses/200/content/application~1json/schema`: `Index`,
       }
     }
   })
-op `get__report_api_openapi_json`(`responses/200/content/application~1json/schema`: `OpenApiDocument`,
+op `getOpenApi`(`responses/200/content/application~1json/schema`: `OpenApiDocument`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
   `responses/default/content/application~1json/schema`: `Error`): void;
@@ -571,6 +573,7 @@ op `get__report_api_openapi_json`(`responses/200/content/application~1json/schem
 @endpoint("/report-api/realms",
   "get",
   #{
+    `operationId`:"getRealms",
     `summary`:"The trust realms",
     `description`:"The realm this request is in, and every realm with its id, name and path prefix where realms are active (null where they are not). The application draws its realm field and switch from it.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -593,7 +596,7 @@ op `get__report_api_openapi_json`(`responses/200/content/application~1json/schem
       }
     }
   })
-op `get__report_api_realms`(`responses/200/content/application~1json/schema`: `Realms`,
+op `getRealms`(`responses/200/content/application~1json/schema`: `Realms`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
   `responses/default/content/application~1json/schema`: `Error`): void;
@@ -602,6 +605,7 @@ op `get__report_api_realms`(`responses/200/content/application~1json/schema`: `R
 @endpoint("/report-api/groups",
   "get",
   #{
+    `operationId`:"getGroups",
     `summary`:"Search the realm's groups",
     `description`:"The groups of this realm whose name or DN contains `q` (case-insensitive; empty matches every group), five a page in name order, each with its own `mail` attribute or an empty string. The definition page builds its share list from it; a definition's groups are who is emailed its result, at that address (#989).",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -640,7 +644,7 @@ op `get__report_api_realms`(`responses/200/content/application~1json/schema`: `R
       }
     ]
   })
-op `get__report_api_groups`(`parameters/0/schema`: string,
+op `getGroups`(`parameters/0/schema`: string,
   @js(#{`minimum`:1}) `parameters/1/schema`: integer,
   `responses/200/content/application~1json/schema`: `GroupPage`,
   `responses/401/content/application~1json/schema`: `Error`,
@@ -651,6 +655,7 @@ op `get__report_api_groups`(`parameters/0/schema`: string,
 @endpoint("/report-api/signals",
   "get",
   #{
+    `operationId`:"getSignals",
     `summary`:"This application's Shared Signals inbox",
     `description`:"The CAEP and RISC events this application's own stream delivered in this realm, newest first, twenty a page by default (#1042). report:admin sees every one (`scope` realm); anybody else sees only the events about themselves (`scope` own), and an application sees none. Each row says what this application did with it: the sessions it ended and the tokens of its own client it revoked for the person named, or why it did nothing. `receiving` is false, with `why`, when nothing can arrive. `per` is at most 100.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -689,7 +694,7 @@ op `get__report_api_groups`(`parameters/0/schema`: string,
       }
     ]
   })
-op `get__report_api_signals`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
+op `getSignals`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
   @js(#{`minimum`:1,`maximum`:100}) `parameters/1/schema`: integer,
   `responses/200/content/application~1json/schema`: `SignalPage`,
   `responses/401/content/application~1json/schema`: `Error`,
@@ -700,6 +705,7 @@ op `get__report_api_signals`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
 @endpoint("/report-api/me",
   "get",
   #{
+    `operationId`:"getMe",
     `summary`:"What the user menu draws",
     `description`:"The path of the signed-in person's own profile photo on this realm (#719), empty where they have none. It answers only about the token's person.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -722,7 +728,7 @@ op `get__report_api_signals`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
       }
     }
   })
-op `get__report_api_me`(`responses/200/content/application~1json/schema`: `Me`,
+op `getMe`(`responses/200/content/application~1json/schema`: `Me`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
   `responses/default/content/application~1json/schema`: `Error`): void;
@@ -731,6 +737,7 @@ op `get__report_api_me`(`responses/200/content/application~1json/schema`: `Me`,
 @endpoint("/report-api/announcements",
   "get",
   #{
+    `operationId`:"getAnnouncements",
     `summary`:"Announcements for everybody signed in",
     `description`:"What an administrator broadcast to this application (#1086) after `since` — the `now` this operation answered the tab's first ask with — within ssf.announcementKeepS, oldest first. With no `since` it answers only `now`. `everyMs` is how often an open tab asks again.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -762,7 +769,7 @@ op `get__report_api_me`(`responses/200/content/application~1json/schema`: `Me`,
       }
     ]
   })
-op `get__report_api_announcements`(@js(#{`minimum`:0}) `parameters/0/schema`: integer,
+op `getAnnouncements`(@js(#{`minimum`:0}) `parameters/0/schema`: integer,
   `responses/200/content/application~1json/schema`: `AnnouncementPage`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
@@ -772,6 +779,7 @@ op `get__report_api_announcements`(@js(#{`minimum`:0}) `parameters/0/schema`: in
 @endpoint("/report-api/schedules",
   "get",
   #{
+    `operationId`:"getSchedules",
     `summary`:"The scheduled definitions and their runs",
     `description`:"Every definition that carries a schedule, with when it next runs, the occurrence it last took, the notes a skipped run left, and its most recent scheduled jobs. A report:use token sees the definitions it owns or is shared; report:admin sees every one in the realm and may name one owner with `owner` (a urn:uuid subject or a username). A report:use token that names another owner is refused with forbidden (403). Paged; `per` is at most 100.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -816,7 +824,7 @@ op `get__report_api_announcements`(@js(#{`minimum`:0}) `parameters/0/schema`: in
       }
     ]
   })
-op `get__report_api_schedules`(`parameters/0/schema`: string,
+op `getSchedules`(`parameters/0/schema`: string,
   @js(#{`minimum`:1}) `parameters/1/schema`: integer,
   @js(#{`minimum`:1,`maximum`:100}) `parameters/2/schema`: integer,
   `responses/200/content/application~1json/schema`: `SchedulePage`,
@@ -828,6 +836,7 @@ op `get__report_api_schedules`(`parameters/0/schema`: string,
 @endpoint("/report-api/catalog",
   "get",
   #{
+    `operationId`:"getCatalog",
     `summary`:"The report catalog",
     `description`:"Every source. Each field has an id, a meaning, a type, whether it can be filtered, sorted or grouped, and its operators. paging is limit. relationships is empty. retention is the English sentence for how long the rows last.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -850,7 +859,7 @@ op `get__report_api_schedules`(`parameters/0/schema`: string,
       }
     }
   })
-op `get__report_api_catalog`(`responses/200/content/application~1json/schema`: `Catalog`,
+op `getCatalog`(`responses/200/content/application~1json/schema`: `Catalog`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
   `responses/default/content/application~1json/schema`: `Error`): void;
@@ -859,6 +868,7 @@ op `get__report_api_catalog`(`responses/200/content/application~1json/schema`: `
 @endpoint("/report-api/catalog/{id}",
   "get",
   #{
+    `operationId`:"getCatalogSource",
     `summary`:"One report source",
     `description`:"The same object the catalog lists for one id.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -895,7 +905,7 @@ op `get__report_api_catalog`(`responses/200/content/application~1json/schema`: `
       }
     ]
   })
-op `get__report_api_catalog__id_`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
+op `getCatalogSource`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: `SourceEnvelope`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
@@ -906,6 +916,7 @@ op `get__report_api_catalog__id_`(@js(#{`maxLength`:64}) `parameters/0/schema`: 
 @endpoint("/report-api/queries",
   "post",
   #{
+    `operationId`:"runQuery",
     `summary`:"Run a query",
     `description`:"Synchronous when the source is bounded and the limit fits the sync caps. Otherwise 202 and a job. mode sync over the cap is result_too_large. A body over the byte cap or a sync call over the time cap is refused whole.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -945,7 +956,7 @@ op `get__report_api_catalog__id_`(@js(#{`maxLength`:64}) `parameters/0/schema`: 
     },
     `requestBody`:#{`content`:#{`application/json`:#{`schema`:null,`example`:#{`source`:"users",`select`:#["username"],`limit`:1,`mode`:"sync",`format`:"json"}}}}
   })
-op `post__report_api_queries`(`requestBody/content/application~1json/schema`: `QueryDocument`,
+op `runQuery`(`requestBody/content/application~1json/schema`: `QueryDocument`,
   `responses/200/content/application~1json/schema`: `QueryResult`,
   `responses/200/content/text~1csv/schema`: string,
   @js(#{`format`:"binary"}) `responses/200/content/application~1pdf/schema`: string,
@@ -960,6 +971,7 @@ op `post__report_api_queries`(`requestBody/content/application~1json/schema`: `Q
 @endpoint("/report-api/definitions",
   "get",
   #{
+    `operationId`:"getDefinitions",
     `summary`:"List definitions",
     `description`:"The caller's own definitions, those shared with a group the caller belongs to, and every definition when the token has report:admin. In name order, numbered pages: `page` and `per` (50 unless given, at most 200); the answer carries page, pages, per and total beside the rows. `limit` is the older spelling of `per`, read when `per` is absent.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -1005,7 +1017,7 @@ op `post__report_api_queries`(`requestBody/content/application~1json/schema`: `Q
       }
     ]
   })
-op `get__report_api_definitions`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
+op `getDefinitions`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
   @js(#{`minimum`:1,`maximum`:200}) `parameters/1/schema`: integer,
   @js(#{`minimum`:1,`maximum`:200}) `parameters/2/schema`: integer,
   `responses/200/content/application~1json/schema`: `DefinitionList`,
@@ -1017,6 +1029,7 @@ op `get__report_api_definitions`(@js(#{`minimum`:1}) `parameters/0/schema`: inte
 @endpoint("/report-api/definitions",
   "post",
   #{
+    `operationId`:"createDefinition",
     `summary`:"Create a definition",
     `description`:"Stores the document. parameters is the bag a schedule runs with. A missing value can still be type-checked; it is not stored as a dummy, and the schedule will not run until the value is saved.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -1044,7 +1057,7 @@ op `get__report_api_definitions`(@js(#{`minimum`:1}) `parameters/0/schema`: inte
     },
     `requestBody`:#{`content`:#{`application/json`:#{`schema`:null,`example`:#{`name`:"example",`document`:#{`source`:"no-such-source",`limit`:1}}}}}
   })
-op `post__report_api_definitions`(`requestBody/content/application~1json/schema`: `DefinitionWrite`,
+op `createDefinition`(`requestBody/content/application~1json/schema`: `DefinitionWrite`,
   `responses/200/content/application~1json/schema`: `DefinitionEnvelope`,
   `responses/400/content/application~1json/schema`: `Error`,
   `responses/401/content/application~1json/schema`: `Error`,
@@ -1055,6 +1068,7 @@ op `post__report_api_definitions`(`requestBody/content/application~1json/schema`
 @endpoint("/report-api/definitions/{id}",
   "get",
   #{
+    `operationId`:"getDefinition",
     `summary`:"Read a definition",
     `description`:"An id the caller may not see is not_found, the same answer as an id that does not exist.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -1091,7 +1105,7 @@ op `post__report_api_definitions`(`requestBody/content/application~1json/schema`
       }
     ]
   })
-op `get__report_api_definitions__id_`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
+op `getDefinition`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: `DefinitionEnvelope`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
@@ -1102,6 +1116,7 @@ op `get__report_api_definitions__id_`(@js(#{`maxLength`:64}) `parameters/0/schem
 @endpoint("/report-api/definitions/{id}",
   "post",
   #{
+    `operationId`:"replaceDefinition",
     `summary`:"Replace a definition",
     `description`:"The owner, or report:admin. parameters omitted keeps the stored bag. parameters null clears it.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -1143,7 +1158,7 @@ op `get__report_api_definitions__id_`(@js(#{`maxLength`:64}) `parameters/0/schem
     ],
     `requestBody`:#{`content`:#{`application/json`:#{`schema`:null,`example`:#{`name`:"example",`document`:#{`source`:"no-such-source",`limit`:1}}}}}
   })
-op `post__report_api_definitions__id_`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
+op `replaceDefinition`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
   `requestBody/content/application~1json/schema`: `DefinitionWrite`,
   `responses/200/content/application~1json/schema`: `DefinitionEnvelope`,
   `responses/400/content/application~1json/schema`: `Error`,
@@ -1156,6 +1171,7 @@ op `post__report_api_definitions__id_`(@js(#{`maxLength`:64}) `parameters/0/sche
 @endpoint("/report-api/definitions/{id}",
   "delete",
   #{
+    `operationId`:"deleteDefinition",
     `summary`:"Delete a definition",
     `description`:"The owner, or report:admin. A share cannot delete.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -1192,7 +1208,7 @@ op `post__report_api_definitions__id_`(@js(#{`maxLength`:64}) `parameters/0/sche
       }
     ]
   })
-op `delete__report_api_definitions__id_`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
+op `deleteDefinition`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: `Deleted`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
@@ -1203,6 +1219,7 @@ op `delete__report_api_definitions__id_`(@js(#{`maxLength`:64}) `parameters/0/sc
 @endpoint("/report-api/definitions/{id}/share",
   "post",
   #{
+    `operationId`:"shareDefinition",
     `summary`:"Share a definition",
     `description`:"Replaces the group list. A share can run and retrieve. It cannot edit or delete. Each value is a group DN in this realm.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -1244,7 +1261,7 @@ op `delete__report_api_definitions__id_`(@js(#{`maxLength`:64}) `parameters/0/sc
     ],
     `requestBody`:#{`content`:#{`application/json`:#{`schema`:null,`example`:#{`groups`:#[]}}}}
   })
-op `post__report_api_definitions__id__share`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
+op `shareDefinition`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
   `requestBody/content/application~1json/schema`: `ShareWrite`,
   `responses/200/content/application~1json/schema`: `DefinitionEnvelope`,
   `responses/400/content/application~1json/schema`: `Error`,
@@ -1257,6 +1274,7 @@ op `post__report_api_definitions__id__share`(@js(#{`maxLength`:64}) `parameters/
 @endpoint("/report-api/definitions/{id}/run",
   "post",
   #{
+    `operationId`:"runDefinition",
     `summary`:"Run a saved definition",
     `description`:"Always a job. The body is a parameter object, not a query document. A key in the body overrides the stored default, and one the filter does not name is ignored. The body is held to a saved parameter bag's bounds, names of 1 to 64 characters among them, and is not stored. An empty body uses the stored defaults. The stored document already carries locale.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -1302,7 +1320,7 @@ op `post__report_api_definitions__id__share`(@js(#{`maxLength`:64}) `parameters/
     ],
     `requestBody`:#{`content`:#{`application/json`:#{`schema`:null,`example`:#{}}}}
   })
-op `post__report_api_definitions__id__run`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
+op `runDefinition`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
   `requestBody/content/application~1json/schema`: `ParameterBag`,
   `responses/202/content/application~1json/schema`: `JobEnvelope`,
   `responses/400/content/application~1json/schema`: `Error`,
@@ -1316,6 +1334,7 @@ op `post__report_api_definitions__id__run`(@js(#{`maxLength`:64}) `parameters/0/
 @endpoint("/report-api/jobs",
   "get",
   #{
+    `operationId`:"getJobs",
     `summary`:"List jobs",
     `description`:"Newest first, in numbered pages: `page` and `per` (50 unless given, at most 200), with page, pages, per and total beside the rows. A caller may page by cursor instead: `after` is the previous page's next id and `limit` its size. A job id in the list is not permission to read a job the token cannot see.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -1368,7 +1387,7 @@ op `post__report_api_definitions__id__run`(@js(#{`maxLength`:64}) `parameters/0/
       }
     ]
   })
-op `get__report_api_jobs`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
+op `getJobs`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
   @js(#{`minimum`:1,`maximum`:200}) `parameters/1/schema`: integer,
   `parameters/2/schema`: string,
   `parameters/3/schema`: integer,
@@ -1381,6 +1400,7 @@ op `get__report_api_jobs`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
 @endpoint("/report-api/jobs",
   "post",
   #{
+    `operationId`:"queueJob",
     `summary`:"Queue a job",
     `description`:"The same document as a query, forced to a job even when it would have fit in one synchronous call.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -1412,7 +1432,7 @@ op `get__report_api_jobs`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
     },
     `requestBody`:#{`content`:#{`application/json`:#{`schema`:null,`example`:#{`source`:"no-such-source",`limit`:1}}}}
   })
-op `post__report_api_jobs`(`requestBody/content/application~1json/schema`: `QueryDocument`,
+op `queueJob`(`requestBody/content/application~1json/schema`: `QueryDocument`,
   `responses/202/content/application~1json/schema`: `JobEnvelope`,
   `responses/400/content/application~1json/schema`: `Error`,
   `responses/401/content/application~1json/schema`: `Error`,
@@ -1424,6 +1444,7 @@ op `post__report_api_jobs`(`requestBody/content/application~1json/schema`: `Quer
 @endpoint("/report-api/jobs/{id}",
   "get",
   #{
+    `operationId`:"getJob",
     `summary`:"Read a job",
     `description`:"The owner and report:admin also receive the query document. A hidden id is job_not_found.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -1460,7 +1481,7 @@ op `post__report_api_jobs`(`requestBody/content/application~1json/schema`: `Quer
       }
     ]
   })
-op `get__report_api_jobs__id_`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
+op `getJob`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: `JobEnvelope`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
@@ -1471,6 +1492,7 @@ op `get__report_api_jobs__id_`(@js(#{`maxLength`:64}) `parameters/0/schema`: str
 @endpoint("/report-api/jobs/{id}/cancel",
   "post",
   #{
+    `operationId`:"cancelJob",
     `summary`:"Cancel a job",
     `description`:"A queued job becomes cancelled. A running job is asked to stop and is not returned in part.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -1507,7 +1529,7 @@ op `get__report_api_jobs__id_`(@js(#{`maxLength`:64}) `parameters/0/schema`: str
       }
     ]
   })
-op `post__report_api_jobs__id__cancel`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
+op `cancelJob`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: `JobEnvelope`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
@@ -1518,6 +1540,7 @@ op `post__report_api_jobs__id__cancel`(@js(#{`maxLength`:64}) `parameters/0/sche
 @endpoint("/report-api/jobs/{id}/result",
   "get",
   #{
+    `operationId`:"getJobResult",
     `summary`:"Download a result",
     `description`:"The artifact bytes. The media type is the format. A job id is not enough: the token must be allowed to see the job. Past artifact retention the result is gone.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
@@ -1566,7 +1589,7 @@ op `post__report_api_jobs__id__cancel`(@js(#{`maxLength`:64}) `parameters/0/sche
       }
     ]
   })
-op `get__report_api_jobs__id__result`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
+op `getJobResult`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: `QueryResult`,
   `responses/200/content/text~1csv/schema`: string,
   @js(#{`format`:"binary"}) `responses/200/content/application~1pdf/schema`: string,
