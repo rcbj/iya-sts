@@ -536,6 +536,8 @@
   "stsAuthnTotpSecondFactor": 530,
   "stsAuthnWalletPrimary": 531,
   "stsAuthnWalletSecondFactor": 532,
+  "stsAuthzenApplication": 746,
+  "stsAuthzenCallbackUri": 747,
   "stsBackupCodes": 533,
   "stsBootstrapAdministrator": 534,
   "stsCertificateHostName": 535,

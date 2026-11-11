@@ -266,6 +266,10 @@ model Person {
   @attr(#{})
   stsPseudonymVerifyAddress?: string;
   @attr(#{})
+  stsAuthzenApplication?: (string)[];
+  @attr(#{})
+  stsAuthzenCallbackUri?: (string)[];
+  @attr(#{})
   stsAssertionIssuer?: (string)[];
   @attr(#{})
   stsAssertionKeyPair?: (DirectoryJson)[];

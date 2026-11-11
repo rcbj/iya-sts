@@ -597,6 +597,12 @@ model PersonRecord {
   @fromAttr(#{attr: "stsDefaultDelegationSemantics"})
   `defaultDelegationSemantics`?: string;
 
+  @fromAttr(#{attr: "stsAuthzenApplication"})
+  `authzenApplication`?: string[];
+
+  @fromAttr(#{attr: "stsAuthzenCallbackUri"})
+  `authzenCallbackUri`?: string[];
+
   @fromAttr(#{attr: "stsMailVerified"})
   `mailVerified`?: string;
 

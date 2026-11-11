@@ -330,6 +330,15 @@ namespace IyaSts.Directory;
   // /portal/verify-pseudonym, and it is not a name until that link is spent.
   "stsPseudonym", "stsPseudonymVerifyToken", "stsPseudonymVerifyExpires",
   "stsPseudonymVerifyAddress",
+  // AN AUTHZEN CALLER'S APPLICATION SCOPE AND CALLBACKS, ON A PERSON OR A
+  // SERVICE ACCOUNT (#563, #1180): the applications they may name in
+  // context.application at /access/v1, and the access request callback URLs
+  // registered for them. An application carries the same two as
+  // appAuthzenApplication and appAuthzenCallbackUri. Written by an
+  // administrator only, through authzen/authzen_admin.ts; an `sts*` name is
+  // refused by every other door. Declared here on rcbj's decision on #1579
+  // (2026-11-11); until then both were written and read and declared nowhere.
+  "stsAuthzenApplication", "stsAuthzenCallbackUri",
 
   // THE CLIENT TRUSTSTORE'S DURABLE HALF (2026-09-12): one entry per anchor
   // under ou=trustAnchors in the DEFAULT realm. A CA certificate is public, so

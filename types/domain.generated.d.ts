@@ -744,6 +744,8 @@ declare namespace IyaDomain {
     mayAct?: string;
     delegationSemantics?: string[];
     defaultDelegationSemantics?: string;
+    authzenApplication?: string[];
+    authzenCallbackUri?: string[];
     mailVerified?: string;
     audSub?: string[];
   }
