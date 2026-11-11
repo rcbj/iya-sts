@@ -281,7 +281,9 @@ class XmlModel {
 
   /**
    * A parsed element's attributes, as the model reads each: an xs:boolean
-   * is true only for "true", anything else is its text or '' when absent.
+   * by XML Schema Part 2 section 3.2.2, true for "true" or "1" after its
+   * whitespace is collapsed (rcbj on #1579, 2026-11-11; until then "1" read
+   * as false), anything else is its text or '' when absent.
    * Only the attributes the model marks `read`.
    *
    * @param id - the message the element is
@@ -297,10 +299,25 @@ class XmlModel {
       }
       const raw = element ? element.getAttribute(one.xml) : '';
       out[one.name] = one.reading === 'boolean'
-        ? String(raw || '') === 'true' : (raw || '');
+        ? XmlModel.booleanTrue(raw) : (raw || '');
     });
     log.debug("Leaving XmlModel.read().");
     return out;
+  }
+
+  /**
+   * Whether an xs:boolean's text is true: XML Schema Part 2 section 3.2.2's
+   * lexical space is {true, false, 1, 0}, its whitespace collapsed. Anything
+   * else, absence included, is not true.
+   *
+   * @param raw - the attribute's or element's text
+   * @returns true for "true" and "1"
+   */
+  static booleanTrue(raw: unknown): boolean {
+    log.debug("Entering XmlModel.booleanTrue().");
+    const text = String(raw == null ? '' : raw).trim();
+    log.debug("Leaving XmlModel.booleanTrue().");
+    return text === 'true' || text === '1';
   }
 
   /**

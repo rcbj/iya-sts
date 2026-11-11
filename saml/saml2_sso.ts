@@ -1809,10 +1809,10 @@ class Saml2Sso {
     const policy = firstByLocal(root, 'NameIDPolicy');
     const requested = firstByLocal(root, 'RequestedAuthnContext');
     // THE ATTRIBUTES ARE READ AS THE MODEL SAYS (#1579): the ones
-    // `models/saml/saml2.tsp` marks `read`, an xs:boolean true only for
-    // "true", anything else its text — `id`, `version`, `issueInstant`,
-    // `destination`, `forceAuthn`, `isPassive`, `protocolBinding`, `acsIndex`
-    // and `acsUrl`, and the NameIDPolicy's `nameIdFormat` and `allowCreate`.
+    // `models/saml/saml2.tsp` marks `read`, an xs:boolean true for "true"
+    // or "1" (until 2026-11-11 only for "true"), anything else its text —
+    // `id`, `version`, `issueInstant`, `destination`, `forceAuthn`,
+    // `isPassive`, `protocolBinding`, `acsIndex` and `acsUrl`, and the NameIDPolicy's `nameIdFormat` and `allowCreate`.
     const asRead = SamlModel.read('saml2.AuthnRequest', root);
     const policyRead = policy
       ? SamlModel.read('saml2.NameIDPolicy', policy)

@@ -1040,3 +1040,7 @@ orders. **`Forwardable` and `Delegatable` (#658) are signed parts too** (rcbj,
 they are `inSignedBody` and in `RST_PARTS`, and a signed request carrying
 either outside its signed Body is `STS-WSTRUST-0046`. Until then a copy in a
 header asked for a forwardable ticket, or a forwarded TGT, nobody signed for.
+**Both are read as xs:boolean** (rcbj, #1579, 2026-11-11): `true` or `1`
+is true, `false` or `0` false, and an absent `Forwardable` is true. Until
+then `<wst:Delegatable>1</wst:Delegatable>` read as false and
+`<wst:Forwardable>0</wst:Forwardable>` as true.

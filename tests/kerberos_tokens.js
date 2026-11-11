@@ -491,6 +491,13 @@ async function childBody() {
   t.check(faultCode(r) === 'STS-WSTRUST-0065',
           'O7. wst:Delegatable to a target not trusted for delegation (0065)',
           faultCode(r));
+  // An xs:boolean (rcbj on #1579): `1` asks for delegation as `true` does;
+  // until 2026-11-11 it read as false and the ticket was issued without it.
+  r = await ask(rst({ security: ut, tokenType: GSS,
+                      inner: '<wst:Delegatable>1</wst:Delegatable>' }));
+  t.check(faultCode(r) === 'STS-WSTRUST-0065',
+          'O7. wst:Delegatable written 1 is a request for delegation too ' +
+          '(0065)', faultCode(r));
   set(backId, 'krb5TrustedForDelegation', 'set', 'TRUE');
   r = await ask(rst({ security: ut, tokenType: GSS,
                       inner: '<wst:Delegatable>true</wst:Delegatable>' }));

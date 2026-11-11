@@ -407,7 +407,7 @@ class SpMetadata {
     }
 
     // The descriptor's flags, read as the model says (#1579): an
-    // xs:boolean true only for "true".
+    // xs:boolean true for "true" or "1".
     const spRead = SamlModel.read('md.SPSSODescriptor', sp);
     const out: ParsedMetadata = {
       ok: true,
@@ -482,12 +482,14 @@ class SpMetadata {
       if (!self.endpointProblem(location, binding, out.skipped,
                                 'AssertionConsumerService')) {
         // '' when absent, which is neither answer: the third.
-        const isDefault = endpoint.isDefault;
+        // An xs:boolean: `1` and `0` are `true` and `false` (#1579).
+        const isDefault = String(endpoint.isDefault == null ? ''
+          : endpoint.isDefault).trim();
         out.acsEndpoints.push({
           binding: binding, location: location,
           index: String(endpoint.index).trim(),
-          isDefault: isDefault === 'true' ? 'true'
-            : (isDefault === 'false' ? 'false' : '-')
+          isDefault: isDefault === 'true' || isDefault === '1' ? 'true'
+            : (isDefault === 'false' || isDefault === '0' ? 'false' : '-')
         });
         if (out.acs.indexOf(location) < 0) {
           out.acs.push(location);

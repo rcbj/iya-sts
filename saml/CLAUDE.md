@@ -1850,7 +1850,7 @@ and `saml_model.ts` reads that file.
 * **A message (`@message`)** is one element: its attributes (`@attribute`)
   and children (`@element`) **in the schema's sequence**. Reading:
   `SamlModel.read(id, element)` answers the attributes the model marks
-  `read` — an xs:boolean true only for `"true"`, anything else its text, ''
+  `read` — an xs:boolean true for `"true"` or `"1"`, anything else its text, ''
   when absent — and `readAuthnRequest()`, the LogoutRequest's envelope and
   the NameIDPolicy are read through it, and so are a service provider's
   `md:SPSSODescriptor` flags and endpoints where `sp_metadata.ts` consumes
@@ -1916,8 +1916,13 @@ element's `xmlns` (two children of one local name, a SAML 1.1 and a SAML
 as another vocabulary's property — changes nothing of SAML's, and a term
 here they need is added here (`previousSession`), not copied there.
 
-**One reading the model records and does not change**: xs:boolean allows
-`1` for true, and `ForceAuthn="1"` / `IsPassive="1"` are read as false, as
-they always were here. The model says so (`reading: "boolean"`, true only
-for `"true"`); changing it is a behaviour change owed rcbj's decision.
+**An xs:boolean is read as XML Schema Part 2 section 3.2.2 says** (rcbj's
+decision on #1579, 2026-11-11): `true` and `1` are true, after the
+whitespace is collapsed (`XmlModel.booleanTrue()`). Until then only `"true"`
+was, so `ForceAuthn="1"` and `IsPassive="1"` were read as false — a fresh
+sign-in or a passive answer asked for and not given. Every attribute the
+model reads as `boolean` changed with them: `AllowCreate`, and a service
+provider's `AuthnRequestsSigned` and `WantAssertionsSigned`; so did an
+`AssertionConsumerService`'s `isDefault` in `sp_metadata.ts`, and WS-Trust's
+`Forwardable` and `Delegatable` (`ws-trust/CLAUDE.md`).
 

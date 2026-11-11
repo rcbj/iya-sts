@@ -205,6 +205,21 @@ function readers(t) {
           read.destination === '' && !('providerName' in read),
           'B. an AuthnRequest\'s attributes are read as the model says, ' +
           'and only those it marks read', JSON.stringify(read));
+  // XML Schema Part 2 section 3.2.2 (rcbj on #1579): `1` is true and `0`
+  // false, after the whitespace is collapsed. Until 2026-11-11 `1` was false.
+  const ones = SamlModel.read('saml2.AuthnRequest', parse(
+    '<samlp:AuthnRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol"' +
+    ' ID="_b" Version="2.0" IssueInstant="x" ForceAuthn="1"' +
+    ' IsPassive=" 1 "/>'));
+  const zeros = SamlModel.read('saml2.AuthnRequest', parse(
+    '<samlp:AuthnRequest xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol"' +
+    ' ID="_c" Version="2.0" IssueInstant="x" ForceAuthn="0"' +
+    ' IsPassive="yes"/>'));
+  t.check(ones.forceAuthn === true && ones.isPassive === true &&
+          zeros.forceAuthn === false && zeros.isPassive === false,
+          'B. an xs:boolean is true for "1" as for "true", and false for ' +
+          '"0" and for text outside its lexical space',
+          JSON.stringify([ones, zeros]));
   t.check(SamlModel.children('saml2.Assertion', {
     attributeStatement: 'C', subject: 'B', issuer: 'A' }) === 'ABC',
   'B. a builder\'s parts are joined in the model\'s order');

@@ -112,8 +112,8 @@ export const $decorators = {
 };
 
 /**
- * How an attribute's TypeSpec type is read: `boolean` (xs:boolean, true only
- * for "true") or `text`.
+ * How an attribute's TypeSpec type is read: `boolean` (xs:boolean, true for
+ * "true" or "1", XML Schema Part 2 section 3.2.2) or `text`.
  *
  * @param type - the TypeSpec type
  * @returns the reading

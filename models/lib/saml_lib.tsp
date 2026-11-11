@@ -26,7 +26,7 @@
 //   order this service writes them in. A property is an attribute
 //   (`@attribute`) or a child element (`@element`). An attribute's TypeSpec
 //   type says how it is read: `boolean` is the schema's xs:boolean, read as
-//   true only for "true"; anything else is read as its text. An element's
+//   true for "true" or "1"; anything else is read as its text. An element's
 //   type is the message it is, when the model states it, or `string` for
 //   one whose text is all that is read.
 // * A PARAMETER SET (`@params`) is what a binding or a profile carries

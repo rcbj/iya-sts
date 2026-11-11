@@ -22,7 +22,7 @@
 //     DEMAND. `equivalents(from, to)` is the map between SAML 2.0's
 //     classes and SAML 1.1's methods.
 //   * `read(id, element)` is a parsed request's attributes, as the model
-//     says each is read (an xs:boolean true only for "true", anything else
+//     says each is read (an xs:boolean true for "true" or "1", anything else
 //     its text, '' when absent), for those it marks `read`; `accepts(id,
 //     name)` the values one of them is held to.
 //   * `attributes(id, values)` and `children(id, parts)` are the WRITERS'
@@ -174,7 +174,8 @@ class SamlModel {
 
   /**
    * A parsed element's attributes, as the model reads each: an xs:boolean
-   * is true only for "true", anything else is its text or '' when absent.
+   * true for "true" or "1" (`XmlModel.booleanTrue()`), anything else is its
+   * text or '' when absent.
    * Only the attributes the model marks `read`.
    *
    * @param id - the message the element is

@@ -3074,10 +3074,18 @@ class WsTrust {
       return sp ? sp.spn + '@' + sp.realm
                 : String(app ? app.identifier : one.nameId);
     });
-    const forwardable = String(textByLocal(c.doc, 'Forwardable') || '')
-      .trim().toLowerCase() !== 'false';
-    const delegatable = String(textByLocal(c.doc, 'Delegatable') || '')
-      .trim().toLowerCase() === 'true';
+    // Both are xs:boolean (WS-Trust 1.3 sections 9.3 and 9.4), whose
+    // lexical space has `1` and `0` beside `true` and `false` (rcbj on
+    // #1579, 2026-11-11: until then `<wst:Delegatable>1` read as false and
+    // `<wst:Forwardable>0` as true). Forwardable defaults to true.
+    const forwardableText = String(textByLocal(c.doc, 'Forwardable') || '')
+      .trim().toLowerCase();
+    const forwardable = forwardableText !== 'false' &&
+      forwardableText !== '0';
+    const delegatableText = String(textByLocal(c.doc, 'Delegatable') || '')
+      .trim().toLowerCase();
+    const delegatable = delegatableText === 'true' ||
+      delegatableText === '1';
     if (delegatable) {
       const realm = subjectRealm || '';
       if (!krb5Tokens.trustedForDelegation(application) ||
