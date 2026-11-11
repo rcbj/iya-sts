@@ -252,19 +252,26 @@ model Delegates {
  * says which the code acts on. `anotherPartys` marks the elements that hold
  * SOMEBODY ELSE'S token: a credential inside one is never the requester's.
  * `inSignedBody` (#521) marks the ones a signed request must carry inside the
- * Body its signature covers, because a copy in a header would be read first.
+ * Body its signature covers, because a copy in a header would be read first;
+ * the order is the one that refusal names them in (the RST's schema is a
+ * sequence of xs:any, so no other order is the schema's).
  */
 @message(#{ id: "wst.RequestSecurityToken", element: "RequestSecurityToken",
             namespaces: "wst.namespace", direction: "read",
             cite: "WS-Trust 1.3 section 3.1; WS-Trust 1.4 section 3.1" })
 model Request {
-  @element(#{ xml: "TokenType", occurs: "optional", read: true,
-              inSignedBody: true, cite: "WS-Trust 1.3 section 3.1" })
-  tokenType?: string;
-
   @element(#{ xml: "RequestType", occurs: "one", read: true,
               inSignedBody: true, cite: "WS-Trust 1.3 section 3.1" })
   requestType: string;
+
+  /** Not acted on: the RSTR states the Bearer key type issued (#747). */
+  @element(#{ xml: "KeyType", occurs: "optional", read: false,
+              inSignedBody: true, cite: "WS-Trust 1.3 section 9.2" })
+  keyType?: string;
+
+  @element(#{ xml: "TokenType", occurs: "optional", read: true,
+              inSignedBody: true, cite: "WS-Trust 1.3 section 3.1" })
+  tokenType?: string;
 
   @element(#{ xml: "AppliesTo", occurs: "optional", read: true,
               inSignedBody: true,
@@ -278,11 +285,6 @@ model Request {
   @element(#{ xml: "Lifetime", occurs: "optional", read: true,
               inSignedBody: true, cite: "WS-Trust 1.3 section 4.1" })
   lifetime?: string;
-
-  /** Not acted on: the RSTR states the Bearer key type issued (#747). */
-  @element(#{ xml: "KeyType", occurs: "optional", read: false,
-              inSignedBody: true, cite: "WS-Trust 1.3 section 9.2" })
-  keyType?: string;
 
   @element(#{ xml: "Claims", occurs: "optional", read: false,
               cite: "WS-Trust 1.3 section 4.1" })
