@@ -2194,22 +2194,38 @@ each mode guarantees, exactly:
   content encoding, is read before the barrier and handed to the worker byte
   for byte. An `authorization_code` grant naming one code the pool holds
   state for, or pruned once settled (`settledCodes`), waits for that key
-  only. An unknown code, a refresh grant, a larger, chunked or unframed
-  (HTTP/2 with no length) body is the global wait, never "wait for nothing":
-  the code may have come by `form_post`, a fragment, the front process or
-  another node. `stats().sessionBarrier.codeKeyed` counts them. 8081 before
-  it: `POST /oauth2/token` 43 → 70 ms p50 waiting once the barrier went per
+  only. An unknown code, a larger, chunked or unframed (HTTP/2 with no
+  length) body is the global wait, never "wait for nothing": the code may
+  have come by `form_post`, a fragment, the front process or another node.
+  `stats().sessionBarrier.codeKeyed` counts them. 8081 before it:
+  `POST /oauth2/token` 43 → 70 ms p50 waiting once the barrier went per
   session.
+* **`session`, a refresh grant** (2026-11-11, #879): the same small form,
+  naming one `refresh_token` of at most 12 KiB, waits for `rt:<token>`
+  whether or not this process has seen that token, and for keyless writes,
+  and not for another browser or another token. A 200 JSON token response
+  of a declared length of at most 64 KiB files its ticket under the
+  `refresh_token` it names, before those bytes are sent. A response this
+  process could not read is filed under the keyless key, so the next
+  refresh still waits for it. A token this process never saw is that key,
+  empty: no rotation of it is unfinished here, which is "unknown = old",
+  never "wait for nothing". A grant this process cannot read (more than one
+  token, a longer token, a body over 16 KiB, chunked or unframed) stays the
+  global wait. The refresh's own ticket is not a keyless write, so a
+  browser and the next refresh of a different token do not wait for it.
+  `stats().sessionBarrier.refreshKeyed` counts them. 8081 was not
+  re-measured.
 * **`session`, a request with no key, or whose pool pin the route did not
   honour** — today's global wait, unchanged. That is every other back
-  channel. A pin not
+  channel, apart from a refresh grant this process could read. A pin not
   honoured is global because `oidc_rp.ts`'s back channel pins to the worker
   holding a code ANOTHER client (the browser) wrote, which only that worker is
   sure to hold.
 * **`global`** — every request waits for every write answered before it;
   **`off`** — nobody waits.
 * **What `session` gives up**: a request does not wait for another client's
-  write, and operations (LDAP, Kerberos, SPIFFE) carry no key. **A console
+  write, a refresh of one token does not wait for a refresh of another, and
+  operations (LDAP, Kerberos, SPIFFE) carry no key. **A console
   page now sees another session's writes — a SCIM create, a token another
   client redeemed, a KDC write, another administrator's change — only after
   the workers converge** (0.5–1 s). A suite job that writes as one client and

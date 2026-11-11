@@ -5258,13 +5258,17 @@ const SETTINGS = [
                  'a sign-in flow in its address waits for the writes of ' +
                  'earlier requests that carried the same, for every write ' +
                  'of a request that carried none of them, and for the ' +
-                 'front process\'s own writes; a request carrying none of ' +
-                 'them, such as a token request from a client\'s server, ' +
-                 'SCIM or a management API call with a bearer token, waits ' +
-                 'for every write answered before it. So a browser sees its ' +
-                 'own writes and every back channel\'s at once, and another ' +
-                 'browser\'s only once the workers converge. `global`: ' +
-                 'every request ' +
+                 'front process\'s own writes. A request carrying none of ' +
+                 'them, such as SCIM or a management API call with a bearer ' +
+                 'token, waits for every write answered before it. A ' +
+                 'refresh grant in a small form that names one refresh ' +
+                 'token waits for that token\'s earlier writes and for ' +
+                 'keyless writes, and not for another browser\'s. A refresh ' +
+                 'token this process did not read out of a token response ' +
+                 'counts as one of those keyless writes. So a browser sees ' +
+                 'its own writes and the keyless writes at once, and ' +
+                 'another browser\'s, and another refresh token\'s, only ' +
+                 'once the workers converge. `global`: every request ' +
                  'waits for every write answered before it, which costs ' +
                  'tens of milliseconds a request under load. `off`: no ' +
                  'request waits, and a caller may not find its own write. ' +
