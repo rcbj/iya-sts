@@ -517,6 +517,12 @@ const VOLATILE_MEMBERS = ['value', 'nonce', 'jti', 'instance_id', 'x', 'y',
   'capabilityInvocation', 'assertionMethod', 'authentication', 'sub',
   'cnf', 'jkt', 'expires_in', 'wait', 'status_list', 'resource_reference'];
 
+// Members whose string value is a random token the record keeps as
+// `<random>` (#1579). The text pattern below found them only while the
+// value happened to hold a capital and a digit, and a grant_id or a finish
+// nonce that drew neither failed the record under load; by name, it cannot.
+const RANDOM_MEMBERS = ['grant_id', 'finish'];
+
 // Walks a value: a volatile member's value is replaced by its name, and a
 // URL's handle segment by a placeholder.
 function scrub(value, name) {
@@ -525,6 +531,11 @@ function scrub(value, name) {
       value !== null && value !== '' && name !== 'code') {
     log.debug("Leaving scrub(). A volatile member.");
     return '<' + name + '>';
+  }
+  if (name && RANDOM_MEMBERS.indexOf(name) >= 0 &&
+      typeof value === 'string' && value !== '') {
+    log.debug("Leaving scrub(). A random member.");
+    return '<random>';
   }
   if (Array.isArray(value)) {
     const list = value.map(function (one) {
