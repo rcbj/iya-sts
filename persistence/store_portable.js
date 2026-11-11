@@ -531,6 +531,28 @@ function create(deps) {
   }
 
   /**
+   * The data-key rows alone, for `keystore.refreshDekRows()`: the whole
+   * table is every realm's key set and hierarchy, and that runs before every
+   * key-row write (the postgres driver's `loadDekRows()` argues it). A
+   * case-insensitive collation may match more than the prefix; the keystore
+   * keeps only `dek:` rows either way.
+   *
+   * @returns `[{ realm, material }]`
+   */
+  function loadDekRows() {
+    log.debug("Entering loadDekRows().");
+    log.debug("Leaving loadDekRows().");
+    return run(readPool, 'loadDekRows',
+      kx('sts_keys').select('realm', 'material')
+        .where('realm', 'like', 'dek:%')
+    ).then(function (result) {
+      return rows(result).map(function (row) {
+        return { realm: row.realm, material: row.material };
+      });
+    });
+  }
+
+  /**
    * One realm's sealed key material, or null.
    *
    * @param realmId - the realm
@@ -1190,6 +1212,7 @@ function create(deps) {
     loadOverrides: loadOverrides,
     saveOverrides: saveOverrides,
     loadKeys: loadKeys,
+    loadDekRows: loadDekRows,
     loadKey: loadKey,
     saveKeys: saveKeys,
     deleteKeys: deleteKeys,

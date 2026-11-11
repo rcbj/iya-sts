@@ -6030,6 +6030,29 @@ function create(options) {
     },
 
     // -----------------------------------------------------------------------
+    // THE DATA-KEY ROWS ALONE (2026-11-11), for `keystore.refreshDekRows()`,
+    // which runs before every key-row write and used to read the whole table
+    // for them — every realm's key set and hierarchy, tens of megabytes on a
+    // store with a few hundred realms — to keep a few kilobytes. The filter
+    // is on `realm`, so no other row's material leaves the server; the same
+    // `LIKE` the encryption counts below already use.
+    // -----------------------------------------------------------------------
+    loadDekRows: function () {
+      log.debug('Entering the postgres driver loadDekRows().');
+      if (small) {
+        log.debug("Leaving loadDekRows(). Portable.");
+        return small.loadDekRows();
+      }
+      log.debug("Leaving loadDekRows().");
+      return readPool.query('SELECT realm, material FROM sts_keys WHERE ' +
+                            'realm LIKE \'dek:%\'').then(function (r) {
+        return (r.rows || []).map(function (row) {
+          return { realm: row.realm, material: row.material };
+        });
+      });
+    },
+
+    // -----------------------------------------------------------------------
     // THE KEY MATERIAL. See the CREATE TABLE above for why a column of text is
     // the right shape and why this driver never holds a private key.
     // -----------------------------------------------------------------------

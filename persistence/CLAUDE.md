@@ -791,6 +791,16 @@ memory holding no connection, so two are always left for the flushes and
 the change-log pull. Whether a request's writes should share one
 transaction instead is #1590. `tests/postgres_key_write_slots.js`.
 
+**And a key-row write reads only the data-key rows first (2026-11-11).**
+`keystore.refreshDekRows()`, which runs before every key-set and hierarchy
+write, read the WHOLE of `sts_keys` to keep its `dek:` rows — every realm's
+key set and hierarchy, about 71 MB on fuzz run 16's stack of 165 realms. A
+builder's writes queued behind that read, and its change-log pull, waiting
+for them, spent 2-26 s on one "keys" row (STS-STORE-0039). The driver's
+`loadDekRows()` (`WHERE realm LIKE 'dek:%'`, both engines, routed to the
+global tier) is what it reads now; a driver without it is read through
+`loadKeys()` as before. `tests/key_row_dek_reads.js`.
+
 **A lapsed origin claim is not purged with the other claims** (for a day):
 `purgeClaims()` deleted every expired claim, so a claim that lapsed during a
 stall was deleted at the next purge, the owner's renewal matched no row, and it
