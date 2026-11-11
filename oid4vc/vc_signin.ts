@@ -495,7 +495,10 @@ class VcSignin {
   // caller and is never in the body.
   // ---------------------------------------------------------------------------
   // error-code: none — the definition of this helper; every call site marks its own code first
-  private refuse(res: any, status: number, why: string, view?: Json): void {
+  private refuse(res: IyaApi.AuthnAnswering<'getWalletStart' |
+                   'startWalletSignIn' | 'getWalletWait' | 'walletStatus' |
+                   'answerWalletDcApi'>, status: number, why: string,
+                 view?: Json): void {
     const { log, authn } = this.deps;
     log.debug("Entering VcSignin.refuse(). " + status);
     const body: Json = { ok: false, next: 'refused', errors: [String(why)] };
@@ -746,7 +749,8 @@ class VcSignin {
    * @param args - `query`, `csrf`
    * @returns nothing
    */
-  startView(req: any, res: any, args: WalletArgs): void {
+  startView(req: any, res: IyaApi.AuthnAnswering<'getWalletStart'>,
+            args: WalletArgs): void {
     const { log } = this.deps;
     log.debug("Entering VcSignin.startView().");
     const query = this.parsed(res, args.query, 'query', QUERY);
@@ -781,7 +785,8 @@ class VcSignin {
    * @param args - `body`: `authn`, `mfa`, `siop`, `enrol`, `wallet`
    * @returns a promise settled when the answer is sent
    */
-  async start(req: any, res: any, args: WalletArgs): Promise<void> {
+  async start(req: any, res: IyaApi.AuthnAnswering<'startWalletSignIn'>,
+              args: WalletArgs): Promise<void> {
     const { log, authn, verifier, errorCodes, randomId, stsDid } = this.deps;
     log.debug("Entering VcSignin.start().");
     const query = Object.assign({}, args.body || {});
@@ -992,7 +997,8 @@ class VcSignin {
    * @param args - `state`, `csrf`
    * @returns nothing
    */
-  waitView(req: any, res: any, args: WalletArgs): void {
+  waitView(req: any, res: IyaApi.AuthnAnswering<'getWalletWait'>,
+           args: WalletArgs): void {
     const { log, verifier, authn } = this.deps;
     log.debug("Entering VcSignin.waitView().");
     const state = this.stateOf(res, args);
@@ -1073,7 +1079,8 @@ class VcSignin {
    * @param args - `state`, `body`: `authn`, `mfa`, `enrol`, `response_code`
    * @returns a promise settled when the answer is sent
    */
-  async status(req: any, res: any, args: WalletArgs): Promise<void> {
+  async status(req: any, res: IyaApi.AuthnAnswering<'walletStatus'>,
+               args: WalletArgs): Promise<void> {
     const { log, errorCodes, stsCrypto, authn } = this.deps;
     log.debug("Entering VcSignin.status().");
     const state = this.stateOf(res, args);
@@ -1139,7 +1146,8 @@ class VcSignin {
    * @param args - `state`, `body`: `authn`, `mfa`, `enrol`, `response`
    * @returns a promise settled when the answer is sent
    */
-  async dcApi(req: any, res: any, args: WalletArgs): Promise<void> {
+  async dcApi(req: any, res: IyaApi.AuthnAnswering<'answerWalletDcApi'>,
+              args: WalletArgs): Promise<void> {
     const { log, errorCodes, verifier } = this.deps;
     log.debug("Entering VcSignin.dcApi().");
     const state = this.stateOf(res, args);
@@ -1267,7 +1275,10 @@ class VcSignin {
   // acts answer*): `redirect` back to what was interrupted, the session
   // cookie set on that answer and no other; `mfa`, a second factor's page.
   // ---------------------------------------------------------------------------
-  private async finish(req: any, res: any, ctx: any, tx: any): Promise<void> {
+  private async finish(req: any,
+                       res: IyaApi.AuthnAnswering<'walletStatus' |
+                         'answerWalletDcApi'>, ctx: any,
+                       tx: any): Promise<void> {
     const { log, authn, verifier, errorCodes, clusterClaims, siop } =
       this.deps;
     log.debug("Entering VcSignin.finish().");
@@ -1529,7 +1540,9 @@ class VcSignin {
    * @param e - what was thrown
    * @returns nothing
    */
-  failed(res: any, e: any): void {
+  failed(res: IyaApi.AuthnAnswering<'getWalletStart' | 'startWalletSignIn' |
+           'getWalletWait' | 'walletStatus' | 'answerWalletDcApi'>,
+         e: any): void {
     const { log, errorCodes, authn } = this.deps;
     log.debug("Entering VcSignin.failed().");
     const code = e && typeof e.code === 'string' &&

@@ -25,7 +25,7 @@ English. When several accounts in one browser are enabled, the page uses
 the same account switcher as the portal.
 
 `GET /report-api/openapi.json`, after you are signed in, is the API's own
-description of every released route. This page is the same surface in
+description of every released route, an OpenAPI 3.1.0 document. This page is the same surface in
 prose. The [endpoint list](endpoints.md) names the paths.
 [Reporting](configuration.md#reporting) is every cap.
 
@@ -946,7 +946,10 @@ the synchronous row cap is the limit the size check uses.
 `where` is one filter, or `and`, `or` or `not`. `and` and `or` take
 `args`, a list of 1 to 16 filters. `not` takes `arg`, one filter. A leaf
 is `{ "op", "field", "value" }` or `{ "op", "field", "param" }`. A value
-and a parameter together are refused. A parameter name is a string. The
+and a parameter together are refused. A parameter name is a string of 1
+to 64 characters, as a parameter bag's keys are, so a definition never
+names a parameter a run could not supply; a longer or empty one is
+refused, "A parameter name is a string of 1 to 64 characters.". The
 bag is supplied beside a saved definition, not inside an ad hoc document
 that already has `source`.
 
@@ -1159,7 +1162,7 @@ the status without that document.
 ```
 
 `parameters` is the bag a schedule runs with: a plain object of at most
-32 keys. A key is at most 64 characters. A value is a string of at most
+32 keys. A key is 1 to 64 characters. A value is a string of at most
 200 characters, a finite number, a boolean, null, or an array of 1 to 32
 of those scalars (what `in` needs). Omit `parameters` on a later
 `POST /report-api/definitions/{id}` and the stored bag is kept. Send
@@ -1179,8 +1182,12 @@ not. A definition that already has a queued or running job of its own
 waits for the next occurrence.
 
 `POST /report-api/definitions/{id}/run` is always a job (HTTP 202). The
-body is the parameter object, not a query document. A key overrides the
-stored default. An empty object, or an empty body, uses the stored
+body is the parameter object, not a query document: at most 32 keys,
+each key 1 to 64 characters and each value as above, the same bounds as
+the stored bag. A body outside them is refused, `invalid_query`
+"Parameters are names and values." A key overrides the stored default,
+and a key the document does not name is ignored. The run's parameters
+are not stored. An empty object, or an empty body, uses the stored
 defaults. The stored document already carries `locale`.
 
 `notify: true` mails the owner when a scheduled run finishes

@@ -61,7 +61,16 @@ const GENERATED = ['application', 'role', 'device', 'serviceAccount', 'spiffe',
     'models/generated/openapi.authn.json',
     'models/generated/openapi.account.json',
     'models/generated/openapi.management.json',
-    'models/generated/openapi.console.json']);
+    'models/generated/openapi.console.json',
+    'models/generated/scim.json',
+    'models/generated/oauth.json',
+    'models/generated/gnap.json',
+    'models/generated/authzen.json',
+    'models/generated/ssf.json',
+    'models/generated/enrollment.json',
+    'models/generated/spiffe.json',
+    'models/generated/saml.json',
+    'models/generated/ws.json']);
 
 /**
  * The top-level directories that are not the service's own sources, as the

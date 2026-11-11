@@ -275,9 +275,10 @@ const URN_PREFIX = { person: 'urn:sts:person:',
 //     says what to do instead.
 // ---------------------------------------------------------------------------
 /**
- * The profile a device entry's certificate is issued under.
+ * The profile a device entry's certificate is issued under: the data leaf's,
+ * which the model reads too (#1579).
  */
-const DEVICE_PROFILE = 'device';
+const DEVICE_PROFILE = enrollmentProfiles.DEVICE_PROFILE;
 /**
  * The families that may issue the device profile: EST and SCEP.
  */

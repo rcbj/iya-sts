@@ -12,6 +12,8 @@
 // route: `mgmt-api/admin_api.ts` spreads ROUTES into its table.
 // ===========================================================================
 
+// Types a row of actions by its own actions' operations (#1579).
+import ApiRows = require('../common/api_rows');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
@@ -115,7 +117,12 @@ class ClaimsProvidersApi {
    * @param status - the HTTP status
    * @param body - the body, serialised with indentation
    */
-  sendJson(res: Res, status: number, body: Json): void {
+  // TYPED BY THE OPERATION (#1579): through a handler's response, the
+  // answer is held to the model's at a literal 2xx status
+  // (`types/api-handlers.d.ts`).
+  sendJson<R, S extends number>(res: R, status: S,
+           body: IyaApi.AnswerOf<R, S>): void;
+  sendJson(res: any, status: number, body: any): void {
     const { log } = this.deps;
     log.debug("Entering ClaimsProvidersApi.sendJson(). status=" + status);
     res.status(status).type('application/json')
@@ -183,7 +190,7 @@ class ClaimsProvidersApi {
             baseUrlOf } = this.deps;
     const self = this;
     log.debug("Entering ClaimsProvidersApi.buildRoutes().");
-    const ROUTES = [
+    const ROUTES: IyaApi.AdminRow[] = [
       { method: 'GET', path: BASE + '/claim-providers',
         tag: 'OAuth 2.0 / OIDC', operationId: 'getClaimProviders',
         mirrors: 'GET /admin/claim-providers',
@@ -204,7 +211,7 @@ class ClaimsProvidersApi {
             schema: { type: 'integer', minimum: 1, examples: [10] },
             description: 'Rows per page of each list, capped.' }
         ],
-        handler: function (req: Req, res: Res): void {
+        handler: function (req, res): void {
           log.debug("Entering the management API claim providers endpoint.");
           const json = self.pagedView(req.query || {});
           self.sendJson(res, 200, Object.assign({
@@ -212,9 +219,10 @@ class ClaimsProvidersApi {
           log.debug("Leaving the management API claim providers endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/claim-providers/:action',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/claim-providers/:action',
         tag: 'OAuth 2.0 / OIDC', mirrors: 'POST /admin/claim-providers',
-        handler: function (req: Req, res: Res): void {
+        handler: function (req, res): void {
           log.debug("Entering the management API claim providers action.");
           const body = Object.assign({}, parseBody(req),
                                      { action: String(req.params.action ||
@@ -248,7 +256,7 @@ class ClaimsProvidersApi {
           { action: 'update-provider', operationId: 'updateClaimProvider' },
           { action: 'remove-provider', operationId: 'removeClaimProvider' },
           { action: 'revoke-link', operationId: 'revokeClaimSourceLink' }
-        ] }
+        ] })
     ];
     log.debug("Leaving ClaimsProvidersApi.buildRoutes().");
     return ROUTES;

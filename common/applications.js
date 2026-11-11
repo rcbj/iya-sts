@@ -183,6 +183,7 @@ const cacheRegistry = require('./cache_registry');
 // files, and the day they disagreed every application would silently start
 // requiring a role nobody holds.
 const roles = require('./roles');
+const DomainClasses = require('./domain_classes');
 
 // THE KEY-ENCRYPTION KEY, for the one attribute in this table that is a PRIVATE
 // KEY (2026-09-10). It is a LIBRARY and registers nothing, and it requires
@@ -206,6 +207,11 @@ const validation = require('./validation');
 // `oauth-oidc/client_auth.js`. A leaf over `helpers.js`, so the require closes
 // no cycle and moves no route.
 const certificateSubject = require('./certificate_subject');
+
+// THE OAUTH MODEL (#1579): the JSON type of each client metadata member a
+// registration refusal tests. A leaf over `validation.js` and
+// `model_tables.js`, so the require closes no cycle and moves no route.
+const OAuthModel = require('../oauth-oidc/oauth_model');
 
 // ---------------------------------------------------------------------------
 // THE KINDS. One per way an application can present itself to this service.
@@ -289,7 +295,7 @@ const KIND_IDS = KINDS.map(function (one) { return one.kind; });
 //
 //   * `appProtocol` is DERIVED — the families this application has actually
 //     appeared in, accumulated by seen() as each one happens. Nothing may edit
-//     it, for the reason EDITABLE's header gives at length.
+//     it, for the reason the editability header gives at length.
 //   * `appAllowedProtocol` is DECLARED — the families somebody has said this
 //     application is FOR, ticked on /admin/applications/new before it has ever
 //     connected to anything. It is configuration, like the redirect URIs beside
@@ -700,7 +706,7 @@ const SAML_CERTIFICATE_ATTRIBUTES = ['samlSigningCertificate',
 // WHAT CONSUMING A SERVICE PROVIDER'S METADATA MAY WRITE, and the only
 // attributes replaceSamlMetadataFields() will touch. A closed list, because
 // that function writes DERIVED attributes no door may edit, and a function
-// that wrote whatever it was handed would be a door around the EDITABLE table.
+// that wrote whatever it was handed would be a door around the `editable` rows.
 /**
  * The attributes consuming a service provider's metadata may write, and the
  * only ones `replaceSamlMetadataFields()` touches.
@@ -880,515 +886,11 @@ function normaliseProtocols(value) {
 // common/compiled_tree.js refuses a tree that does not have this file.
 const SCHEMA = ModelTables.schema('application');
 
-// ---------------------------------------------------------------------------
-// WHAT A CONSOLE MAY CHANGE, which is a different question from what an entry
-// carries and is therefore a table of its own rather than a field on the rows
-// above.
-//
-// The distinction is DERIVED versus DECLARED. An application entry holds both
-// kinds and they must not be edited alike:
-//
-//   * DECLARED — what this application IS allowed to do. Its redirect URIs, its
-//     grant types, its secret, and the token endpoint authentication method,
-//     which is what says whether it is confidential. Nothing about them
-//     is a fact about the past; they are configuration, they are what RFC 9700
-//     mode READS, and being able to change them is the point of having a
-//     registry at all. These are editable. `oauthConfidential` is the
-//     registry's recorded determination of that method (#466) and is absent
-//     from this table: the method is what an operator edits, and the registry
-//     writes the flag so it can be read. A create may state a value that
-//     agrees; a value that does not is refused.
-//
-//   * DERIVED — what HAPPENED. The counters, the first and last sighting, the
-//     kinds and protocols it has been seen in, the redirect URIs it has
-//     actually used. A form that could rewrite those would make this page lie
-//     about the service's own behaviour, and the lie would be indistinguishable
-//     from a bug in the recording. These are not editable here.
-//
-// LDAP can still change every one of them — this directory enforces nothing and
-// `ldapmodify` reaches any attribute on any entry. That is not an inconsistency
-// to fix: an operator with an LDAP client is doing something deliberate, and
-// the console is a set of controls somebody clicks. Refusing the derived ones
-// HERE is the difference between offering an operation and merely not
-// preventing it.
-//
-// `set` replaces (single-valued), `multi` adds and removes values. The mode has
-// to match the attribute's own `kind` or the entry ends up with a list where
-// the schema promises one value, so both are read from these two tables and
-// never from a caller.
-// ---------------------------------------------------------------------------
-const EDITABLE = {
-  appName: 'set',
-  // DECLARED, which is the whole of why it is here and `appProtocol` is not.
-  // See the PROTOCOLS table above: one of those two attributes is what somebody
-  // said this application is for and the other is what happened to it.
-  appAllowedProtocol: 'multi',
-  // `multi` for `oauthClientId`'s reason read the other way: an application
-  // that will admit either of two roles is one application, and a `set` here
-  // would replace the list with one value and read afterwards as the others
-  // having been deliberately withdrawn — which, on the one attribute here
-  // that REFUSES people, is the failure worth designing against.
-  appRequiredRole: 'multi',
-  // UMA 2.0 (#1168): whether the resource server may own resources itself.
-  umaOwnsResources: 'set',
-  // THE DELEGATION POLICY (#108): three lists and a flag. See their SCHEMA
-  // rows and `common/delegation_policy.ts`.
-  appAllowedToDelegateTo: 'multi',
-  appAllowedToActOnBehalfOf: 'multi',
-  appDelegationSubjectGroup: 'multi',
-  appDelegationSemantics: 'multi',
-  appDefaultDelegationSemantics: 'set',
-  appNotDelegated: 'set',
-  appMayAct: 'set',
-  // THE IDENTIFIER ATTRIBUTES, one per protocol family (see the PROTOCOLS
-  // table). Every one of them is `multi` bar oauthTlsClientAuthSubjectDn below,
-  // whose own row says why — an application answering to two client_ids or two
-  // SPNs is one application, and a `set` here would replace the list with one
-  // value and read afterwards as the others having been forgotten.
-  oauthClientId: 'multi',
-  // THE AUDIENCE, which is the identifier from the OTHER side: what a token
-  // addressed to this application says in `aud`, rather than what the
-  // application calls itself at the token endpoint. `multi` because a per-
-  // environment hostname is the ordinary case, and because it is the one
-  // attribute here something LOOKS UP — see forAudience(), and the row in
-  // SCHEMA, where the difference between a lookup and a permission is spelled
-  // out.
-  oauthAudience: 'multi',
-  oauthClientSecret: 'set',
-  // A LIST since 2026-10-01: every method the client may use, `none` alone.
-  oauthTokenEndpointAuthMethod: 'multi',
-  // Native SSO (#130). One answer each.
-  oauthNativeSso: 'set',
-  oauthNativeSsoGroup: 'set',
-  // CIBA (#131). One answer each.
-  oauthBackchannelTokenDeliveryMode: 'set',
-  oauthBackchannelClientNotificationEndpoint: 'set',
-  oauthBackchannelAuthenticationRequestSigningAlg: 'set',
-  oauthBackchannelUserCodeParameter: 'set',
-  // OpenID Provider Commands (#151).
-  oauthCommandEndpoint: 'set',
-  // OIDC Core sections 8 and 9 (#118). One answer each.
-  oauthSubjectType: 'set',
-  oauthSectorIdentifierUri: 'set',
-  // The did claim against a pairwise subject (#693). One answer.
-  oauthDidClaimWithPairwise: 'set',
-  oauthTokenEndpointAuthSigningAlg: 'set',
-  oauthJwks: 'set',
-  oauthJwksUri: 'set',
-  // RFC 9701's three. `set`, because each holds one algorithm.
-  oauthIntrospectionSignedResponseAlg: 'set',
-  oauthIntrospectionEncryptedResponseAlg: 'set',
-  oauthIntrospectionEncryptedResponseEnc: 'set',
-  // RFC 9101's five. The request URIs accumulate, like redirect URIs; the
-  // other four hold one answer each.
-  oauthRequestUri: 'multi',
-  oauthRequestObjectSigningAlg: 'set',
-  oauthRequestObjectEncryptionAlg: 'set',
-  oauthRequestObjectEncryptionEnc: 'set',
-  oauthRequireSignedRequestObject: 'set',
-  // RFC 9126's one. It holds one answer.
-  oauthRequirePushedAuthorizationRequests: 'set',
-  // FAPI 2.0 HTTP Signatures' one (#178). It holds one answer.
-  oauthHttpSignedRequests: 'set',
-  // RFC 9396's two. Both accumulate: a resource understands several types, and
-  // a client uses several.
-  oauthAuthorizationDetailsType: 'multi',
-  oauthAuthorizationDetailsTypes: 'multi',
-  // AuthZEN's two (#563). Both accumulate: a catalogue has many rows, and a
-  // caller may be scoped to several applications.
-  authzenAttribute: 'multi',
-  appAuthzenApplication: 'multi',
-  // The access request callback URLs (#1180): a caller may register several.
-  appAuthzenCallbackUri: 'multi',
-  // RFC 9470's two. Each holds one answer: the acr values are one ordered
-  // list in one value, because a directory's multi-valued attribute has no
-  // order and the order is the preference.
-  oauthStepUpAcrValues: 'set',
-  oauthStepUpMaxAge: 'set',
-  // OpenID Connect Registration's and JARM's response members and request
-  // defaults (#290). Each holds one answer; the acr values are one ordered
-  // list in one value, for the step-up attribute's reason above.
-  oauthIdTokenSignedResponseAlg: 'set',
-  oauthIdTokenEncryptedResponseAlg: 'set',
-  oauthIdTokenEncryptedResponseEnc: 'set',
-  oauthUserinfoSignedResponseAlg: 'set',
-  oauthUserinfoEncryptedResponseAlg: 'set',
-  oauthUserinfoEncryptedResponseEnc: 'set',
-  oauthAuthorizationSignedResponseAlg: 'set',
-  oauthAuthorizationEncryptedResponseAlg: 'set',
-  oauthAuthorizationEncryptedResponseEnc: 'set',
-  oauthDefaultAcrValues: 'set',
-  oauthDefaultMaxAge: 'set',
-  // RFC 7521 / RFC 7523. The declaration is `multi` like every other
-  // identifier attribute here — one application legitimately asserts under a
-  // per-environment issuer name, and a `set` would replace the list with one
-  // value and read afterwards as the others having been forgotten. The six the
-  // PKI page writes are `set`, because each holds ONE answer and a list of two
-  // private keys has no rule for which signs.
-  oauthAssertionIssuer: 'multi',
-  oauthAssertionJwks: 'set',
-  oauthAssertionCertificate: 'set',
-  oauthAssertionCertificateChain: 'set',
-  oauthAssertionPrivateKey: 'set',
-  oauthAssertionKid: 'set',
-  oauthAssertionExpiresAt: 'set',
-  // WHERE THE KEY PAIR CAME FROM (2026-09-13) — issued here, or a certificate
-  // uploaded in its place. `set` for the six's reason, and in this table at
-  // all because `admin-ui/pki_admin.ts` writes it through updateApplication()
-  // beside them; KEY_SOURCES below is the closed vocabulary it is checked
-  // against.
-  oauthAssertionKeySource: 'set',
-  // RFC 7522's seven, the same two kinds for the same two reasons: the
-  // declaration accumulates and the five the PKI page writes each hold ONE
-  // answer. The REGISTERED certificate is `set` and not `multi` because
-  // several PEM blocks go in ONE value — a certificate rotation is two blocks
-  // in one attribute, not two attribute values, so that the whole of what a
-  // party may sign with is replaced in one write.
-  oauthSamlAssertionIssuer: 'multi',
-  oauthSamlAssertionSigningCertificate: 'set',
-  oauthSamlAssertionCertificate: 'set',
-  oauthSamlAssertionCertificateChain: 'set',
-  oauthSamlAssertionPrivateKey: 'set',
-  oauthSamlAssertionThumbprint: 'set',
-  oauthSamlAssertionExpiresAt: 'set',
-  oauthSamlAssertionKeySource: 'set',
-  // RFC 7591 section 2.3 (2026-09-13). The declaration accumulates like every
-  // issuer declaration here; the issued statement is ONE value, replaced by
-  // the next issue. The three `appSoftwareStatement*` facts are what a
-  // registration recorded and are not here.
-  oauthSoftwareStatementIssuer: 'multi',
-  oauthIssuedSoftwareStatement: 'set',
-  oauthTlsClientAuthSubjectDn: 'set',
-  // RFC 8705's other four subject parameters and the section 3.4 flag
-  // (2026-09-13). Checked on the way in by mtlsAttributeProblem().
-  oauthTlsClientAuthSanDns: 'set',
-  oauthTlsClientAuthSanUri: 'set',
-  oauthTlsClientAuthSanIp: 'set',
-  oauthTlsClientAuthSanEmail: 'set',
-  oauthTlsClientCertificateBoundAccessTokens: 'set',
-  oauthTlsClientCertificateThumbprint: 'set',
-  appRegistrationAccessToken: 'set',
-  samlEntityId: 'multi',
-  // DECLARED, both of them, which is why they are here and the four SAML
-  // attributes beside them are not: where a LogoutResponse goes and which
-  // certificate the service provider signs with are configuration, and the
-  // NameID formats it has asked for and whether its last request was signed
-  // are what HAPPENED.
-  // `multi` since 2026-09-17 (#37): a rollover publishes two keys.
-  samlSigningCertificate: 'multi',
-  samlSingleLogoutService: 'multi',
-  samlSpMetadataSigningCertificate: 'set',
-  // THE TEN PER-APPLICATION SETTING OVERRIDES. Every one is `set`, for the
-  // reason their SCHEMA rows give: a setting has one answer, and `multi` would
-  // accumulate two values with no rule for which won. They are editable
-  // because nothing observes them — like samlSingleLogoutService above, if
-  // they cannot be written here they cannot be written at all.
-  saml2AssertionLifetimeMin: 'set',
-  saml2SignAssertion: 'set',
-  saml2SignResponse: 'set',
-  saml2NameIdFormat: 'set',
-  saml2ArtifactTtlS: 'set',
-  saml11AssertionLifetimeMin: 'set',
-  saml11SignAssertion: 'set',
-  saml11SignResponse: 'set',
-  saml11NameIdFormat: 'set',
-  saml11ArtifactTtlS: 'set',
-  // Who may start a sign-in (#426, #710).
-  saml2IdpInitiatedSso: 'set',
-  saml2SpInitiatedSso: 'set',
-  saml11IdpInitiatedSso: 'set',
-  saml11SpInitiatedSso: 'set',
-  wsfedIdpInitiatedSso: 'set',
-  wsfedSpInitiatedSso: 'set',
-  // ASVS 5.0.0 7.6.2: whether single sign-on asks first (common/sso_consent).
-  saml2SsoConsent: 'set',
-  saml11SsoConsent: 'set',
-  wsfedSsoConsent: 'set',
-  oauthThirdPartyInitiatedLogin: 'set',
-  oauthSpInitiatedSso: 'set',
-  oauthInitiateLoginUri: 'set',
-  // #1300: what the sign-in and consent screens show about the client —
-  // `set`, one each, written by register() too, oauthInitiateLoginUri's
-  // arrangement.
-  oauthLogoUri: 'set',
-  oauthPolicyUri: 'set',
-  oauthTosUri: 'set',
-  appLaunchProtocol: 'set',
-  // The OAuth 2.0 / OIDC per-client five, the group claim's four and
-  // WS-Federation's one. Same rule as the SAML ten above: `set`, because a
-  // setting has one answer.
-  oauthAccessTokenTtlS: 'set',
-  oauthIdTokenTtlS: 'set',
-  oauthRefreshTokenTtlS: 'set',
-  oauthRefreshIdleSeconds: 'set',
-  oauthRevokeRefreshOnLogout: 'set',
-  // The sixth, and the first whose row carried `families`. Editable like the
-  // five above it and refused on an entry declared for neither OAuth 2.0 nor
-  // OpenID Connect — see familyRefusal(), and the block above the row itself.
-  oauthTokenExchangeRefreshToken: 'set',
-  appGroupsClaim: 'set',
-  appGroupsClaimName: 'set',
-  appGroupsClaimValue: 'set',
-  appGroupsClaimFromMemberOf: 'set',
-  wsfedAssertionLifetimeMin: 'set',
-  // SAML 2.0 encryption: three that say where the recipient's key comes from,
-  // and four setting overrides. All `set` — one answer each.
-  samlSpMetadataUrl: 'set',
-  samlSpMetadata: 'set',
-  samlEncryptionCertificate: 'set',
-  saml2EncryptAssertion: 'set',
-  saml2EncryptionAlgorithm: 'set',
-  saml2KeyTransportAlgorithm: 'set',
-  saml2EncryptLogoutNameId: 'set',
-  wsfedRealm: 'multi',
-  wstrustAppliesTo: 'multi',
-  wstrustJwtScope: 'multi',
-  krb5ServicePrincipalName: 'multi',
-  krb5TrustedForDelegation: 'set',
-  // #430: across a Kerberos trust.
-  krb5S4uSelfRealm: 'multi',
-  krb5ForeignTgtDelegation: 'set',
-  // #493: one JSON array, like the five claim sets below.
-  krb5ClaimsPac: 'set',
-  // #1250: one JSON array, the GNAP access-token JWT's own rows.
-  gnapClaimsAccessToken: 'set',
-  oid4vpClientId: 'multi',
-  // The four that are ONLY ever declared — nothing in this service writes them.
-  federationPartnerId: 'multi',
-  // And the pair that IS read, by authn.js, on the way to the sign-in screen.
-  // Editable for the reason the rest of the declared half is: nothing observes
-  // an application's home identity provider, so if this cannot be written here
-  // it cannot be written at all. `multi` since 2026-08-26, and it used to be
-  // `set`. An application may name SEVERAL service-provider-side relationships
-  // — a SAML 2.0 partner and an OpenID Connect one are an ordinary pair — and
-  // the person picks between them at /authn/select-idp. A `set` here would
-  // replace the list with one value and read afterwards as the others having
-  // been forgotten, which is the same argument every other identifier attribute
-  // above makes.
-  appFederationRelationship: 'multi',
-  appFederationAutoRedirect: 'set',
-  // And the THIRD of that group, added 2026-08-26. Editable for the same
-  // reason the other two are: nothing in this service can OBSERVE how an
-  // application's people are supposed to authenticate, so if it cannot be
-  // written here it cannot be written at all. `multi` since #457: it is the
-  // list of mechanisms the application ALLOWS, one checkbox each. Since #1148
-  // the lists are a named authentication policy's and this names it: `set`,
-  // one value, for the same reason — nothing can observe it.
-  appAuthnPolicy: 'set',
-  // #1235: the passkey policy, `appAuthnPolicy`'s reason.
-  appPasskeyPolicy: 'set',
-  // #1238: the locale policy, the same reason.
-  appLocalePolicy: 'set',
-  // #1236: the password policy, the same reason.
-  appPasswordPolicy: 'set',
-  // #1239: the post-login activity policy, the same reason.
-  appPostLoginPolicy: 'set',
-  // The home page, `set` for its row's reason: an application has one. It is
-  // editable AND written by register() from RFC 7591 `client_uri`, which is the
-  // same arrangement oauthRedirectUri has — a registration states it, and an
-  // entry nobody registered has no other way to acquire one.
-  appHomePageUrl: 'set',
-  // The CORS allowlist, `multi` because an application is served from several
-  // origins as an ordinary matter — a per-environment host, a local
-  // development server beside the deployed one.
-  appCorsOrigin: 'multi',
-  ldapBindDn: 'multi',
-  scimClientId: 'multi',
-  spiffeWorkloadId: 'multi',
-  // The Shared Signals pair. `ssfReceiverId` is the one identifier here that a
-  // PROTOCOL also writes — creating a stream records a sighting — so it is
-  // `multi` like every other accumulating identifier; the delivery endpoint is
-  // declaration only, and `multi` because a receiver legitimately runs one per
-  // environment.
-  ssfReceiverId: 'multi',
-  ssfDeliveryEndpoint: 'multi',
-  // Certificate enrollment's per-application overrides (2026-10-01).
-  acmeAllowedProfiles: 'multi',
-  acmeDefaultProfile: 'set',
-  acmeCertificateLifetimeDays: 'set',
-  estAllowedProfiles: 'multi',
-  estDefaultProfile: 'set',
-  estCertificateLifetimeDays: 'set',
-  scepAllowedProfiles: 'multi',
-  scepDefaultProfile: 'set',
-  scepCertificateLifetimeDays: 'set',
-  estBasicAuthentication: 'set',
-  estCertificateAuthentication: 'set',
-  estServerKeyGeneration: 'set',
-  enrollMaxCertificates: 'set',
-  // The DID document's contents (2026-10-01).
-  didPublicKeyJwk: 'multi',
-  didPrivateKeys: 'set',
-  didService: 'multi',
-  // An application's own claim sets (2026-10-01), each one JSON array.
-  oauthClaimsAccessToken: 'set',
-  oauthClaimsIdToken: 'set',
-  oauthClaimsUserinfo: 'set',
-  saml2CustomAttributes: 'set',
-  saml11CustomAttributes: 'set',
-  // Its own directory-attribute selections (#495), each one JSON array.
-  oauthClaimAttributesAccessToken: 'set',
-  oauthClaimAttributesIdToken: 'set',
-  oauthClaimAttributesUserinfo: 'set',
-  saml2ClaimAttributes: 'set',
-  saml11ClaimAttributes: 'set',
-  vcCredentialClaimAttributes: 'set',
-  // How the realm's set and the application's own combine, per token type,
-  // and a resource server's access-token claims (#395).
-  oauthClaimsCombineAccessToken: 'set',
-  oauthClaimsCombineIdToken: 'set',
-  oauthClaimsCombineUserinfo: 'set',
-  saml2ClaimsCombine: 'set',
-  saml11ClaimsCombine: 'set',
-  oauthAccessTokenClaim: 'multi',
-  oauthAccessTokenClaimsCombine: 'set',
-  // The claims mapped to its own scopes, one JSON object (2026-10-09).
-  oauthPermissionClaims: 'set',
-  didAlsoKnownAs: 'multi',
-  // A secret push destination (#221 P3): each one value, an empty write
-  // clearing it. The credential is write-only: sealed on the way in,
-  // withheld on the way out (SEALED_FIELDS, WITHHELD_FIELDS).
-  secretDestProvider: 'set',
-  secretDestPayload: 'set',
-  secretDestRegion: 'set',
-  secretDestProject: 'set',
-  secretDestEndpoint: 'set',
-  secretDestMount: 'set',
-  secretDestField: 'set',
-  secretDestDirectory: 'set',
-  secretDestCaCertificates: 'set',
-  secretDestCredential: 'set',
-  // An outbound SCIM client (#552): one value each, the two lists multi;
-  // the three credentials sealed and withheld (SEALED_FIELDS,
-  // WITHHELD_FIELDS).
-  scimClientBaseUrl: 'set',
-  scimClientEnabled: 'set',
-  scimClientAuthMethod: 'set',
-  scimClientUsername: 'set',
-  scimClientPassword: 'set',
-  scimClientTokenEndpoint: 'set',
-  scimClientOAuthClientId: 'set',
-  scimClientOAuthClientSecret: 'set',
-  scimClientOAuthClientAuth: 'set',
-  scimClientOAuthScope: 'set',
-  scimClientOAuthResource: 'set',
-  scimClientTlsSource: 'set',
-  scimClientTlsCertificate: 'set',
-  scimClientTlsPrivateKey: 'set',
-  scimClientCaCertificates: 'set',
-  scimClientScopeMode: 'set',
-  scimClientScopeGroups: 'multi',
-  scimClientScopeFilter: 'set',
-  scimClientGroupMode: 'set',
-  scimClientGroups: 'multi',
-  scimClientDeprovision: 'set',
-  scimClientReconcileMinutes: 'set',
-  scimClientJurisdiction: 'set',
-  scimClientCells: 'multi',
-  scimClientMaxRequestsPerSecond: 'set',
-  ssfAllowedEvents: 'multi',
-  // The per-receiver Shared Signals overrides, each one value an empty
-  // write clears (the setting then decides); see their SCHEMA rows.
-  ssfCaepIncludeReasons: 'set',
-  ssfCaepReasonLanguage: 'set',
-  ssfCaepOmitEventTimestamp: 'set',
-  ssfRiscIncludeReasons: 'set',
-  ssfRiscReasonLanguage: 'set',
-  ssfRiscOmitEventTimestamp: 'set',
-  ssfSigningAlgorithm: 'set',
-  ssfMinVerificationInterval: 'set',
-  ssfInactivityTimeoutS: 'set',
-  ssfInactivityAction: 'set',
-  ssfVerificationEveryS: 'set',
-  ssfStreamStatusOnCreate: 'set',
-  ssfMaxStreams: 'set',
-  ssfMaxSubjectsPerStream: 'set',
-  ssfMaxQueuedEvents: 'set',
-  ssfPollMaxEvents: 'set',
-  ssfDeadLetterMaxPerStream: 'set',
-  ssfPushTimeoutMs: 'set',
-  ssfPushRetries: 'set',
-  ssfPushRetryDelayMs: 'set',
-  // GNAP. `gnapKeyIdentity` and `gnapMacaroonKey` are the authorization
-  // server's to write and are deliberately absent: an identity that disagreed
-  // with gnapKey, or a macaroon key that was not the derived one, would be an
-  // entry that verified nothing.
-  gnapInstanceId: 'set',
-  gnapKey: 'set',
-  gnapKeyReference: 'set',
-  gnapKeyProof: 'set',
-  gnapMtlsTrust: 'set',
-  gnapSymmetricKey: 'set',
-  gnapSymmetricAlg: 'set',
-  gnapClassId: 'set',
-  gnapDisplayUri: 'set',
-  gnapLogoUri: 'set',
-  gnapFinishUri: 'multi',
-  gnapInteractionStartModes: 'multi',
-  gnapAllowedAccess: 'multi',
-  gnapBearerTokens: 'set',
-  gnapSkipInteraction: 'set',
-  gnapAccessTokenFormat: 'set',
-  gnapAccessTokenLifetimeS: 'set',
-  gnapResourceServerUri: 'multi',
-  gnapOwnerLookupUri: 'set',
-  gnapJweKey: 'set',
-  gnapScopedSignals: 'set',
-  oauthRedirectUri: 'multi',
-  // UMA 2.0 (#1194): the claims interaction endpoint's return addresses.
-  oauthClaimsRedirectUri: 'multi',
-  oauthPostLogoutRedirectUri: 'multi',
-  oauthFrontchannelLogoutUri: 'set',
-  oauthFrontchannelLogoutSessionRequired: 'set',
-  oauthBackchannelLogoutUri: 'set',
-  oauthBackchannelLogoutSessionRequired: 'set',
-  oauthGrantType: 'multi',
-  oauthResponseType: 'multi',
-  // #1296: the token response types this client may use. See its SCHEMA row.
-  oauthAllowedTokenResponseTypes: 'multi',
-  oauthScope: 'multi',
-  // DECLARED (#110): what the client may be issued. See its SCHEMA row.
-  oauthAllowedScope: 'multi',
-  // THE THREE THAT MAKE A DELEGATED PERMISSION. Two `multi` and one `set`, and
-  // each mode is the attribute's own kind read back: a base URI is one answer
-  // per application (its own row says why widening it would mean deciding
-  // which of two identifiers a token is audienced to), and both lists
-  // accumulate because an application legitimately exposes six permissions and
-  // holds four.
-  //
-  // THEY ARE THE ONLY EDITABLE ATTRIBUTES HERE WITH A CROSS-ENTRY RULE, and it
-  // is checked in updateApplication() rather than in the console: a permission
-  // must be DEFINED before it can be GRANTED, and the check has to sit where
-  // both doors go through it or the form and `POST
-  // /admin-api/applications/add` would hold two opinions about the same
-  // relationship. Same argument as `appAllowedProtocol`'s closed vocabulary two
-  // hundred lines up, and the same asymmetry: only an ADD is checked, because a
-  // REMOVE has to name a value the entry already carries and refusing to remove
-  // what LDAP put there would shut the one door that could tidy it up.
-  oauthPermissionBaseUri: 'set',
-  oauthPermission: 'multi',
-  oauthRoleGatedPermission: 'multi',
-  oauthDelegatedPermission: 'multi',
-  oauthGlobalConsent: 'multi',
-  // The RFC 9728 document an entry was created from, and where it came from.
-  // Declared and not read; see the two SCHEMA rows.
-  oauthResourceMetadata: 'set',
-  oauthResourceMetadataUrl: 'set',
-  samlAssertionConsumerService: 'multi',
-  // WS-Federation's return address, which used to be recorded in the attribute
-  // above. Its own row says why the two were split.
-  wsfedReplyUrl: 'multi',
-  wsfedSignOutUri: 'multi',
-  description: 'set'
-};
-
-// Merged onto the rows so that one table answers "what is this attribute?" and
-// "may I change it?" — the console builds its two selects from it and the
-// action validates against the same thing, which is what stops a form offering
-// a field the action would refuse.
-SCHEMA.attributes.forEach(function (row) {
-  row.editable = EDITABLE[row.name] || false;
-});
+// WHAT A CONSOLE MAY CHANGE is each row's `editable` (`set`, `multi` or
+// false), written in the model beside the row with the reasoning that used to
+// head a table here (#1579). One table answers "what is this attribute?" and
+// "may I change it?": the console builds its two selects from it and the
+// action validates against the same thing.
 
 const ATTRIBUTE_BY_NAME = {};
 SCHEMA.attributes.forEach(function (row) {
@@ -1431,13 +933,13 @@ function editableAttributes(mode) {
 // console's idea of what it may offer eventually disagrees with the action's.
 //
 // THE TEST IS `appAllowedProtocol` AND NOT `appProtocol`, which is the
-// declared-versus-derived line EDITABLE's header draws, applied to a refusal.
-// What somebody DECLARED the application is for is a statement they made and
-// can change; what this service has SEEN it do is a fact about the past, and an
-// application that has been ticked for OAuth 2.0 and has never yet made a
-// request is exactly the entry somebody is configuring when they reach for
-// this. Testing the derived attribute would refuse every write until after the
-// first token request, which is the wrong way round.
+// declared-versus-derived line the editability header draws, applied to a
+// refusal. What somebody DECLARED the application is for is a statement they
+// made and can change; what this service has SEEN it do is a fact about the
+// past, and an application that has been ticked for OAuth 2.0 and has never yet
+// made a request is exactly the entry somebody is configuring when they reach
+// for this. Testing the derived attribute would refuse every write until after
+// the first token request, which is the wrong way round.
 // ---------------------------------------------------------------------------
 /**
  * Returns the protocol families an application was declared for
@@ -2169,10 +1671,10 @@ function primaryNameAttributes(protocols) {
 // (2026-09-30).
 //
 // `/admin/applications/new` and an application's own page draw one grid of
-// every attribute EDITABLE allows, each with the control its TYPE needs: a
-// pair of true/false radio buttons for a boolean, a text box for a string,
-// and a list of text boxes with a "+" and a delete button for an array of
-// strings. The grid is drawn from `applicationFields()` below, so the two
+// every attribute whose row is `editable`, each with the control its TYPE
+// needs: a pair of true/false radio buttons for a boolean, a text box for a
+// string, and a list of text boxes with a "+" and a delete button for an array
+// of strings. The grid is drawn from `applicationFields()` below, so the two
 // pages and `GET /admin-api/applications/new` cannot offer different fields.
 //
 // **THE TYPE OF AN ARRAY IS THE SCHEMA'S `multi`**; nothing else is needed.
@@ -5005,13 +4507,13 @@ function secretDestinationCredentialOf(identifier) {
 // silently dropped — is worse than a refusal, because what is left reads as a
 // complete declaration of what somebody typed.
 //
-// **THE GATE IS `EDITABLE`, NOT THE SCHEMA.** An attribute has to be in the
-// table AND declared rather than derived: a create that could set
-// `appAuthentications` or `appProtocol` would let a form assert that things had
-// happened, which is the line this module's EDITABLE header draws and the one
-// `updateApplication()` already refuses at. So this refuses the derived ones by
-// name and says which they are, rather than writing them and leaving the page
-// to lie.
+// **THE GATE IS A ROW'S `editable`, NOT ITS PRESENCE.** An attribute has to
+// be in the table AND declared rather than derived: a create that could set
+// `appAuthentications` or `appProtocol` would let a form assert that things
+// had happened, which is the line application.tsp's editability header draws
+// and the one `updateApplication()` already refuses at. So this refuses the
+// derived ones by name and says which they are, rather than writing them and
+// leaving the page to lie.
 //
 // A `single` attribute given several values is REFUSED rather than truncated.
 // Taking the first would be a form quietly keeping one of two things a person
@@ -5197,6 +4699,39 @@ function backchannelSchemeProblem(uri, publicClient) {
   return null;
 }
 
+// THE JSON TYPE OF A CLIENT METADATA MEMBER IS THE MODEL'S (#1579).
+// `models/oauth/oauth_members.tsp`'s RegistrationRequest states each member
+// RFC 7591 section 2, OpenID Connect Registration section 2 and the extension
+// specifications define, with its type; every refusal below that tests a
+// member's type asks this, and keeps its own words and its own error code.
+/**
+ * Whether a client metadata member's value is of the JSON type the model
+ * gives it.
+ *
+ * @param {string} member - the registration member
+ * @param {unknown} value - its value
+ * @returns {boolean} true when it is
+ */
+function registrationTypeFits(member, value) {
+  log.debug("Entering registrationTypeFits().");
+  log.debug("Leaving registrationTypeFits().");
+  return OAuthModel.memberFits('registration-request', member, value);
+}
+
+/**
+ * Whether one value of an array member is of the JSON type the model gives
+ * the array's values.
+ *
+ * @param {string} member - the registration member, an array
+ * @param {unknown} value - one of its values
+ * @returns {boolean} true when it is
+ */
+function registrationItemFits(member, value) {
+  log.debug("Entering registrationItemFits().");
+  log.debug("Leaving registrationItemFits().");
+  return OAuthModel.itemFits('registration-request', member, value);
+}
+
 // The same question about an RFC 7591 document, before any of it is written.
 // Answers null or `{ errorCode, error, description }` in RFC 7591 section
 // 3.2.2's vocabulary — `invalid_redirect_uri` for a redirect URI, and
@@ -5370,7 +4905,8 @@ function introspectionResponseProblem(values) {
   const names = Object.keys(INTROSPECTION_ATTRIBUTES);
   for (let i = 0; i < names.length; i++) {
     const value = asked[names[i]];
-    if (value !== undefined && value !== null && typeof value !== 'string') {
+    if (value !== undefined && value !== null &&
+        !registrationTypeFits(names[i], value)) {
       log.debug("Leaving introspectionResponseProblem(). Not a string.");
       return refusal(names[i], 'must be a string naming one algorithm.');
     }
@@ -5512,7 +5048,8 @@ function idTokenEncryptionMetadataProblem(values) {
                  'id_token_encrypted_response_enc'];
   for (let i = 0; i < names.length; i++) {
     const value = asked[names[i]];
-    if (value !== undefined && value !== null && typeof value !== 'string') {
+    if (value !== undefined && value !== null &&
+        !registrationTypeFits(names[i], value)) {
       log.debug("Leaving idTokenEncryptionMetadataProblem(). Not a string.");
       return refusal(names[i], 'must be a string naming one algorithm.');
     }
@@ -5585,7 +5122,8 @@ function jarmMetadataProblem(values) {
                  'authorization_encrypted_response_enc'];
   for (let i = 0; i < names.length; i++) {
     const value = asked[names[i]];
-    if (value !== undefined && value !== null && typeof value !== 'string') {
+    if (value !== undefined && value !== null &&
+        !registrationTypeFits(names[i], value)) {
       log.debug("Leaving jarmMetadataProblem(). Not a string.");
       return refusal(names[i], 'must be a string naming one algorithm.');
     }
@@ -5661,7 +5199,8 @@ function userinfoEncryptionMetadataProblem(values) {
                  'userinfo_encrypted_response_enc'];
   for (let i = 0; i < names.length; i++) {
     const value = asked[names[i]];
-    if (value !== undefined && value !== null && typeof value !== 'string') {
+    if (value !== undefined && value !== null &&
+        !registrationTypeFits(names[i], value)) {
       log.debug("Leaving userinfoEncryptionMetadataProblem(). Not a string.");
       return refusal(names[i], 'must be a string naming one algorithm.');
     }
@@ -5816,12 +5355,12 @@ function requestObjectMetadataProblem(values) {
              member: member, description: member + ': ' + description };
   };
   if (asked.request_uris !== undefined && asked.request_uris !== null) {
-    if (!Array.isArray(asked.request_uris)) {
+    if (!registrationTypeFits('request_uris', asked.request_uris)) {
       log.debug("Leaving requestObjectMetadataProblem(). Not an array.");
       return refusal('request_uris', 'must be an array of URLs.');
     }
     for (let i = 0; i < asked.request_uris.length; i++) {
-      if (typeof asked.request_uris[i] !== 'string') {
+      if (!registrationItemFits('request_uris', asked.request_uris[i])) {
         log.debug("Leaving requestObjectMetadataProblem(). Not a string.");
         return refusal('request_uris', 'every member must be a string.');
       }
@@ -5838,7 +5377,8 @@ function requestObjectMetadataProblem(values) {
                    'request_object_encryption_enc'];
   for (let i = 0; i < strings.length; i++) {
     const value = asked[strings[i]];
-    if (value !== undefined && value !== null && typeof value !== 'string') {
+    if (value !== undefined && value !== null &&
+        !registrationTypeFits(strings[i], value)) {
       log.debug("Leaving requestObjectMetadataProblem(). Not a string.");
       return refusal(strings[i], 'must be a string naming one algorithm.');
     }
@@ -5846,7 +5386,7 @@ function requestObjectMetadataProblem(values) {
   }
   const required = asked.require_signed_request_object;
   if (required !== undefined && required !== null &&
-      typeof required !== 'boolean') {
+      !registrationTypeFits('require_signed_request_object', required)) {
     log.debug("Leaving requestObjectMetadataProblem(). Not a boolean.");
     return refusal('require_signed_request_object', 'must be true or false.');
   }
@@ -6225,21 +5765,23 @@ function requestDefaultsProblem(values) {
              member: member, description: member + ': ' + description };
   };
   if (asked.default_max_age !== undefined &&
-      !(Number.isInteger(asked.default_max_age) &&
+      !(registrationTypeFits('default_max_age', asked.default_max_age) &&
         asked.default_max_age >= 0)) {
     log.debug("Leaving requestDefaultsProblem(). default_max_age.");
     return refusal('default_max_age', 'must be a non-negative whole number ' +
       'of seconds.');
   }
   if (asked.require_auth_time !== undefined &&
-      typeof asked.require_auth_time !== 'boolean') {
+      !registrationTypeFits('require_auth_time', asked.require_auth_time)) {
     log.debug("Leaving requestDefaultsProblem(). require_auth_time.");
     return refusal('require_auth_time', 'must be a boolean.');
   }
   if (asked.default_acr_values !== undefined &&
-      !(Array.isArray(asked.default_acr_values) &&
+      !(registrationTypeFits('default_acr_values',
+                             asked.default_acr_values) &&
         asked.default_acr_values.every(function (one) {
-          return typeof one === 'string' && ACR_VALUE_SHAPE.test(one);
+          return registrationItemFits('default_acr_values', one) &&
+                 ACR_VALUE_SHAPE.test(one);
         }))) {
     log.debug("Leaving requestDefaultsProblem(). default_acr_values.");
     return refusal('default_acr_values', 'must be an array of acr values.');
@@ -6509,7 +6051,8 @@ function cibaMetadataProblem(values) {
                    'verifies (CIBA Core section 4 forbids none).');
   }
   const userCode = asked.backchannel_user_code_parameter;
-  if (userCode !== undefined && typeof userCode !== 'boolean') {
+  if (userCode !== undefined &&
+      !registrationTypeFits('backchannel_user_code_parameter', userCode)) {
     log.debug("Leaving cibaMetadataProblem(). Not a boolean.");
     return refusal('backchannel_user_code_parameter', 'must be a boolean.');
   }
@@ -6529,17 +6072,19 @@ function cibaOf(clientId) {
   log.debug("Entering cibaOf().");
   const who = String(clientId == null ? '' : clientId).trim();
   const found = who ? (forClientId(who) || get(who)) : null;
-  const fields = (found && found.fields) || {};
-  const one = function (name) {
-    return String(valuesOf(fields[name])[0] || '').trim();
+  // What it registered is its OAuthClient's (#1579).
+  const client = DomainClasses.OAuthClient.fromEntry(
+    (found && found.fields) || {});
+  const one = function (value) {
+    return String(valuesOf(value)[0] || '').trim();
   };
-  const mode = one('oauthBackchannelTokenDeliveryMode');
+  const mode = one(client.backchannelTokenDeliveryMode);
   log.debug("Leaving cibaOf(). " + (mode || 'none'));
   return {
     mode: ['poll', 'ping', 'push'].indexOf(mode) >= 0 ? mode : '',
-    endpoint: one('oauthBackchannelClientNotificationEndpoint'),
-    signingAlg: one('oauthBackchannelAuthenticationRequestSigningAlg'),
-    userCode: one('oauthBackchannelUserCodeParameter').toUpperCase() ===
+    endpoint: one(client.backchannelClientNotificationEndpoint),
+    signingAlg: one(client.backchannelAuthenticationRequestSigningAlg),
+    userCode: one(client.backchannelUserCodeParameter).toUpperCase() ===
       'TRUE'
   };
 }
@@ -6642,7 +6187,8 @@ function oidcSubjectMetadataProblem(values) {
   const members = Object.keys(OIDC_SUBJECT_ATTRIBUTES);
   for (let i = 0; i < members.length; i++) {
     const value = asked[members[i]];
-    if (value !== undefined && value !== null && typeof value !== 'string') {
+    if (value !== undefined && value !== null &&
+        !registrationTypeFits(members[i], value)) {
       log.debug("Leaving oidcSubjectMetadataProblem(). Not a string.");
       return refusal(members[i], 'must be a string.');
     }
@@ -6777,7 +6323,8 @@ function pushedAuthorizationMetadataProblem(values) {
   log.debug("Entering pushedAuthorizationMetadataProblem().");
   const asked = values || {};
   const value = asked.require_pushed_authorization_requests;
-  if (value !== undefined && value !== null && typeof value !== 'boolean') {
+  if (value !== undefined && value !== null &&
+      !registrationTypeFits('require_pushed_authorization_requests', value)) {
     log.debug("Leaving pushedAuthorizationMetadataProblem(). Not a boolean.");
     return { errorCode: 'STS-REG-0120', error: 'invalid_client_metadata',
              member: 'require_pushed_authorization_requests',
@@ -7107,7 +6654,9 @@ function mtlsMetadataProblem(values) {
                'Register the one subject the certificate will carry.' };
   }
   const flag = asked.tls_client_certificate_bound_access_tokens;
-  if (flag !== undefined && flag !== null && typeof flag !== 'boolean') {
+  if (flag !== undefined && flag !== null &&
+      !registrationTypeFits('tls_client_certificate_bound_access_tokens',
+                            flag)) {
     log.debug("Leaving mtlsMetadataProblem(). Not a boolean.");
     return { errorCode: 'STS-REG-0132', error: 'invalid_client_metadata',
              member: 'tls_client_certificate_bound_access_tokens',
@@ -7344,22 +6893,29 @@ function gnapMtlsTrustProblem(attribute, value) {
  */
 const AUTHORIZATION_DETAILS_BUILT_IN = ['openid_credential'];
 
-const AUTHORIZATION_DETAILS_DEFINITION_MEMBERS = ['type', 'description',
-                                                  'locations', 'schema',
-                                                  'actions', 'datatypes',
-                                                  'privileges', 'required',
-                                                  'interaction',
-                                                  'consentActions', 'bearer',
-                                                  'maxLifetimeS', 'acr',
-                                                  'derivableFrom',
-                                                  'introspectionClaims',
-                                                  'limits', 'xacml',
-                                                  'notForPolicy'];
+// THE DEFINITION'S MEMBERS ARE THE MODEL'S (#1579): `models/gnap/gnap.tsp`'s
+// `AccessTypeDefinition`, each with its citation, in the order a refusal
+// lists them. What each member MEANS is checked below, because a list's
+// grammar, a member naming another and a sentence a console shows are not
+// shapes.
+const ACCESS_TYPE_DEFINITION = ModelTables.file('gnap.json').members
+  .find(function (set) {
+    return set.id === 'access-type-definition';
+  });
+
+const AUTHORIZATION_DETAILS_DEFINITION_MEMBERS =
+  ACCESS_TYPE_DEFINITION.list.map(function (member) {
+    return member.name;
+  });
 
 // The three values `interaction` may take (#432 phase 4; enforced by phase
-// 6): `always` asks the resource owner whatever the client is, `never` lets a
-// client that may skip the page skip it, `default` leaves it to the client.
-const ACCESS_TYPE_INTERACTIONS = ['always', 'default', 'never'];
+// 6), the model's: `always` asks the resource owner whatever the client is,
+// `never` lets a client that may skip the page skip it, `default` leaves it
+// to the client.
+const ACCESS_TYPE_INTERACTIONS = ACCESS_TYPE_DEFINITION.list
+  .find(function (member) {
+    return member.name === 'interaction';
+  }).values;
 
 // The members an introspection response already carries, which no type may
 // name as a claim to add beside them: RFC 7662 section 2.2's, RFC 9767
@@ -7862,7 +7418,7 @@ function authorizationDetailsMetadataProblem(values) {
              member: 'authorization_details_types',
              description: 'authorization_details_types: ' + description };
   };
-  if (!Array.isArray(types)) {
+  if (!registrationTypeFits('authorization_details_types', types)) {
     log.debug("Leaving authorizationDetailsMetadataProblem(). Not an array.");
     return refusal('must be an array of type names (RFC 9396 section 10).');
   }
@@ -8172,7 +7728,7 @@ function normaliseFields(value) {
       code = code || 'STS-REG-0006';
       return;
     }
-    // oauthConfidential is derived from the method and is not in EDITABLE
+    // oauthConfidential is derived from the method and is not editable
     // (#466). A create may still state TRUE or FALSE when that is the
     // determination, the same way a seed may state oauthScope. The
     // agreement is checked in createApplication(), which knows the method
@@ -10659,22 +10215,24 @@ function softwareStatementFactNames() {
 function softwareStatementFactsOf(clientId) {
   log.debug("Entering softwareStatementFactsOf().");
   const loaded = load(clientId);
-  const fields = loaded.known ? (loaded.record.fields || {}) : {};
-  const one = function (name) {
+  // The facts are the Application's (#1579).
+  const app = DomainClasses.Application.fromEntry(
+    loaded.known ? (loaded.record.fields || {}) : {});
+  const one = function (value) {
     log.debug("Entering one().");
-    const values = valuesOf(fields[name]);
+    const values = valuesOf(value);
     log.debug("Leaving one().");
     return values.length ? String(values[0]) : '';
   };
-  const issuer = one('appSoftwareStatementIssuer');
+  const issuer = one(app.softwareStatementIssuer);
   if (!issuer) {
     log.debug("Leaving softwareStatementFactsOf(). None.");
     return null;
   }
   log.debug("Leaving softwareStatementFactsOf().");
   return { issuer: issuer,
-           trusted: one('appSoftwareStatementTrusted') === 'TRUE',
-           publisher: one('appSoftwareStatementPublisher') };
+           trusted: one(app.softwareStatementTrusted) === 'TRUE',
+           publisher: one(app.softwareStatementPublisher) };
 }
 
 // Has a federation registration ended (#134, 12.3)? Its expiry is checked
@@ -11593,9 +11151,9 @@ function createApplication(detail) {
   // names the kind its family would produce. Ticking SAML 2.0 is a statement
   // about what this application is FOR; writing `saml2-service-provider` into
   // its kinds would be this registry claiming it has SEEN one, which is the
-  // derived-versus-declared line EDITABLE's header draws, and the kinds are on
-  // the wrong side of it. So the page shows what the kind WOULD be and the
-  // entry says nothing until a protocol actually recognises the identifier.
+  // derived-versus-declared line the editability header draws, and the kinds
+  // are on the wrong side of it. So the page shows what the kind WOULD be and
+  // the entry says nothing until a protocol actually recognises the identifier.
   if (asked.protocols.length) {
     setField(record, 'appAllowedProtocol', asked.protocols);
   }
@@ -11850,7 +11408,7 @@ function updateApplication(identifier, change) {
                                  'models/directory/application.tsp, not writing it through ' +
                                  'this.'] }, 'STS-REG-0006');
   }
-  // oauthConfidential is absent from EDITABLE (#466). A set that states
+  // oauthConfidential is not editable (#466). A set that states
   // the determination heals a stale flag; anything else is refused with
   // the sentence that names the method, which the generic derived-attribute
   // refusal would misdescribe.
@@ -14520,11 +14078,11 @@ function deleteApplication(identifier, options) {
 //   3. AN IMPORT NEVER OVERWRITES. An identifier already recorded in the
 //      realm is refused by name (STS-REG-0349).
 //   4. DECLARED ATTRIBUTES ONLY, BOTH WAYS: what an administrator configures
-//      (`EDITABLE`, the key-pair certificates among it) and what names the
-//      entry. What this service RECORDED — counters, sightings, observed
-//      scopes and return addresses, the kinds — is not exported, and an
-//      import carrying one is refused by name (STS-REG-0350), so a copy
-//      starts with no history it did not have.
+//      (the `editable` rows, the key-pair certificates among it) and what names
+//      the entry. What this service RECORDED — counters, sightings, observed
+//      scopes and return addresses, the kinds — is not exported, and an import
+//      carrying one is refused by name (STS-REG-0350), so a copy starts with no
+//      history it did not have.
 //
 // THE PORTABLE CREDENTIALS are the editable ones (below). Five credentials on
 // an application entry are not editable — a Kerberos service key, an
@@ -15093,9 +14651,12 @@ function declaredFlowsOf(clientId) {
     log.debug("Leaving declaredFlowsOf(). Not known.");
     return null;
   }
-  const listOf = function (name) {
-    log.debug("Entering listOf(). " + name);
-    const values = valuesOf(loaded.record.fields[name])
+  // The declared flows are the OAuthClient's (#1579).
+  const client = DomainClasses.OAuthClient.fromEntry(
+    loaded.record.fields || {});
+  const listOf = function (value) {
+    log.debug("Entering listOf().");
+    const values = valuesOf(value)
       .map(function (one) {
         return String(one).split(/\s+/).filter(Boolean).sort().join(' ');
       })
@@ -15105,8 +14666,8 @@ function declaredFlowsOf(clientId) {
     log.debug("Leaving listOf().");
     return values.length ? values : null;
   };
-  const grants = listOf('oauthGrantType');
-  const responses = listOf('oauthResponseType');
+  const grants = listOf(client.grantTypes);
+  const responses = listOf(client.responseTypes);
   if (!grants && !responses) {
     log.debug("Leaving declaredFlowsOf(). Nothing declared.");
     return null;
@@ -15475,7 +15036,7 @@ function list() {
 // Compared lower-case, as every kind names a policy.
 //
 // A KIND ADOPTING A REFERENCE adds its attribute here, a declaration above,
-// an EDITABLE row, an ATTRIBUTE_CHOICES source and a CHOICES_CHECKED_HERE
+// an `editable` row, an ATTRIBUTE_CHOICES source and a CHOICES_CHECKED_HERE
 // entry — `appPasskeyPolicy`'s five lines.
 // ---------------------------------------------------------------------------
 /**

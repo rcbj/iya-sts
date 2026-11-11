@@ -385,6 +385,17 @@ async function childBody() {
   t.check(failed(r, 'STS-WSTRUST-0046'),
           'C3. an unsigned RequestSecurityToken in a header, read first in ' +
           'document order, is STS-WSTRUST-0046', brief(r));
+  // A Kerberos token's options are parts like the rest (#1579): a
+  // wst:Forwardable or wst:Delegatable in a header was read and asked for a
+  // ticket nobody signed for.
+  for (const part of ['Forwardable', 'Delegatable']) {
+    r = await ask('product', sign('alice', {
+      header: '<wst:' + part + ' xmlns:wst="' + WST + '">true</wst:' +
+        part + '>' }));
+    t.check(failed(r, 'STS-WSTRUST-0046'),
+            'C3. an unsigned wst:' + part + ' in a header is ' +
+            'STS-WSTRUST-0046', brief(r));
+  }
   r = await ask('product', sign('alice', { after: function (xml) {
     return xml.replace('<s:Header>', '<s:Header><x:Copy xmlns:x="urn:x" ' +
                        'wsu:Id="body"/>');

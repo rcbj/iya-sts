@@ -5433,7 +5433,7 @@ const CODES = [
     spec: 'Console error notice; HTTP 400 {ok: false, errors} from /admin-api' },
   { code: 'STS-ACME-0097',
     summary: 'The query string of an ACME console page failed validation.',
-    spec: 'HTTP 400 text/plain' },
+    spec: 'HTTP 400 text/plain', retired: true },
   { code: 'STS-ACME-0098',
     summary: 'An ACME finalize was refused because the order is already ' +
       'being finalized by another request, on this node or another.',
@@ -5443,6 +5443,19 @@ const CODES = [
       'claimed because the cluster store could not be asked, so the request ' +
       'was refused.',
     spec: 'HTTP 500, ACME serverInternal problem' },
+  { code: 'STS-ACME-0100',
+    summary: 'An ACME answer or problem document carried a member its model ' +
+      'in models/enrollment/acme.tsp does not name, one of a type or a ' +
+      'value the model does not allow, or lacked a required one (#1579). ' +
+      'The answer is sent as it was built: the model describes the wire ' +
+      'and does not reshape it, so this is a model gap to close.',
+    spec: 'none (recorded only; the answer is unchanged)' },
+  { code: 'STS-ACME-0101',
+    summary: 'An ACME problem document carried an error type ' +
+      'models/enrollment/acme.tsp does not declare (#1579). The problem is ' +
+      'sent as it was built; the type is to be declared, with the document ' +
+      'that defines it.',
+    spec: 'none (recorded only; the problem is unchanged)' },
   // ===== EST ===============================================================
   { code: 'STS-EST-0001',
     summary: 'An EST request reached a realm whose est.enabled is off.',
@@ -5514,7 +5527,7 @@ const CODES = [
     spec: 'HTTP 404 with a plain-text sentence' },
   { code: 'STS-EST-0030',
     summary: 'A query string on /admin/est or /admin/est/monitor failed validation.',
-    spec: 'HTTP 400 on the console' },
+    spec: 'HTTP 400 on the console', retired: true },
   { code: 'STS-EST-0031',
     summary: 'An EST console or /admin-api action body failed validation.',
     spec: 'HTTP 400 on the console or /admin-api' },
@@ -5541,6 +5554,13 @@ const CODES = [
       'defines no reqInfo/respInfo for, so it is unable to answer it ' +
       '(draft-ietf-lamps-attestation-freshness section 5.1) (#257).',
     spec: 'HTTP 503 (section 5.1)' },
+  { code: 'STS-EST-0037',
+    summary: 'An EST /nonce answer carried a member its model in ' +
+      'models/enrollment/est.tsp does not name, or one of a type the model ' +
+      'does not allow (#1579). The answer is sent as it was built: the ' +
+      'model describes the wire and does not reshape it, so this is a ' +
+      'model gap to close.',
+    spec: 'none (recorded only; the answer is unchanged)' },
   // ===== SCEP ==============================================================
   { code: 'STS-SCEP-0001',
     summary: 'A SCEP request reached a realm where scep.enabled is off.',
@@ -11540,6 +11560,28 @@ const CODES = [
       'resolves to a loopback, private, link-local or reserved address ' +
       '(ASVS 5.0.0 1.3.6).',
     spec: 'invalid_request_uri (HTTP 400)' },
+  { code: 'STS-OAUTH-1005',
+    summary: 'An OAuth 2.0 or OpenID Connect answer carried a member its ' +
+      'model in models/oauth/oauth_members.tsp does not name, or one of ' +
+      'a type the model does not allow (#1579). The answer is sent as it ' +
+      'was built: the model describes the wire and does not reshape it, ' +
+      'so this is a model gap to close.',
+    spec: 'none (recorded only; the answer is unchanged)' },
+  { code: 'STS-OAUTH-1006',
+    summary: 'An OAuth 2.0 or OpenID Connect error response carried an ' +
+      'error code models/oauth/oauth_members.tsp does not declare (#1579). ' +
+      'The response is sent as it was built; the code is to be declared, ' +
+      'with the document that defines it.',
+    spec: 'none (recorded only; the response is unchanged)' },
+  { code: 'STS-OAUTH-1007',
+    summary: 'A dynamic client registration, an RFC 7592 update or an ' +
+      'OpenID Federation automatic registration carried a member of a JSON ' +
+      'type models/oauth/oauth_members.tsp\'s RegistrationRequest does not ' +
+      'allow (grant_types as a string, client_name as a number, an array ' +
+      'holding a non-string) that no more specific refusal tested (rcbj on ' +
+      '#1579). Until 2026-11-11 it was recorded under STS-OAUTH-1005 and ' +
+      'accepted.',
+    spec: 'invalid_client_metadata (HTTP 400), RFC 7591 section 3.2.2' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -12175,6 +12217,13 @@ const CODES = [
       'the consent screen, to sign in to the application (ASVS 5.0.0 ' +
       '7.6.2).',
     spec: 'RequestDenied (SAML 2.0); a page (SAML 1.1)' },
+  { code: 'STS-SAML-0121',
+    summary: 'A SAML message or metadata document this service built does ' +
+      'not match its model in models/saml/ (#1579): its root, an ' +
+      'attribute, a fixed value, or a child element or its order. The ' +
+      'document is sent as it was built: the model describes the wire and ' +
+      'does not reshape it, so this is a model gap to close.',
+    spec: 'none (recorded only; the document is unchanged)' },
   { code: 'STS-WSTRUST-0001',
     summary: 'The RequestSecurityToken body is not well-formed XML (or is ' +
       'empty), so no operation could be read from it.',
@@ -12575,6 +12624,14 @@ const CODES = [
     summary: 'A UsernameToken was refused without being checked: too many ' +
       'recent failures for that identity (#1448).',
     spec: 'SOAP FailedAuthentication' },
+  { code: 'STS-WSTRUST-0071',
+    summary: 'A SOAP envelope /sts built — an RSTR, an RSTR collection or a ' +
+      'Fault — does not match its model in models/ws/ (#1579): its root, ' +
+      'an attribute, a fixed value, or a child element or its order, the ' +
+      'SAML assertion inside held to models/saml/. The envelope is sent as ' +
+      'it was built: the model describes the wire and does not reshape it, ' +
+      'so this is a model gap to close.',
+    spec: 'none (recorded only; the envelope is unchanged)' },
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +
       'refuses to dereference (fetching a URL from a query parameter ' +
@@ -12735,6 +12792,14 @@ const CODES = [
       'declined, on the consent screen, to sign in to the relying party ' +
       '(ASVS 5.0.0 7.6.2).',
     spec: '' },
+  { code: 'STS-WSFED-0032',
+    summary: 'A WS-Federation sign-in response (the RSTR posted in ' +
+      'wresult) or the metadata role this service built does not match ' +
+      'its model in models/ws/ (#1579): its root, an attribute, a fixed ' +
+      'value, or a child element or its order. It is sent as it was ' +
+      'built: the model describes the wire and does not reshape it, so ' +
+      'this is a model gap to close.',
+    spec: 'none (recorded only; the document is unchanged)' },
   { code: 'STS-FED-0001',
     summary: 'A federation endpoint (login or assertion consumer service) ' +
       'was reached while federation.enabled is off.',
@@ -17473,6 +17538,21 @@ const CODES = [
     summary: 'The SPIRE Server API could not be given a TLS identity under ' +
       'paranoid PKI mode, so its address was not bound plain (#1360).',
     spec: 'none: the address does not answer, and GET /spiffe says so' },
+  { code: 'STS-SPIFFE-0154',
+    summary: 'A SPIFFE answer — a Workload API, SPIRE Server API or Broker ' +
+      'API message a handler handed grpc-js, a bundle, a minted ' +
+      'JWT-SVID\'s header or claims — carried a member its model in ' +
+      'models/spiffe/*.tsp does not name (protobufjs drops it without a ' +
+      'word), a value of a type the field does not take, or lacked one the ' +
+      'model requires (#1579). The answer is sent as it was built: the ' +
+      'model describes the wire and does not reshape it, so this is a ' +
+      'model gap or a defect to close.',
+    spec: 'none (recorded only; the answer is unchanged)' },
+  { code: 'STS-SPIFFE-0155',
+    summary: 'A SPIFFE gRPC call ended with a status its service and method ' +
+      'in models/spiffe/*.tsp do not declare (#1579). The status is sent ' +
+      'as it was: this is a model gap to close.',
+    spec: 'none (recorded only; the status is unchanged)' },
   { code: 'STS-TLS-0001',
     summary: 'The service did not start: tls.minVersion, tls.ciphers, ' +
       'tls.groups or tls.signatureAlgorithms cannot build a TLS context.',
@@ -19318,6 +19398,34 @@ const CODES = [
     summary: 'A push delivery address is internal or could not be ' +
       'resolved, in product (ASVS 5.0.0 1.3.6).',
     spec: 'the delivery fails' },
+  { code: 'STS-SSF-0159',
+    summary: 'A Shared Signals answer — the transmitter metadata, a stream ' +
+      'configuration, a status or a poll — carried a member its model in ' +
+      'models/ssf/ssf.tsp does not name, one of a type the model does not ' +
+      'allow, or lacked one it requires (#1579). The answer is sent as it ' +
+      'was built: the model describes the wire and does not reshape it, so ' +
+      'this is a model gap to close.',
+    spec: 'none (recorded only; the answer is unchanged)' },
+  { code: 'STS-SSF-0160',
+    summary: 'A Shared Signals refusal carried an err value ' +
+      'models/ssf/ssf.tsp does not declare (#1579). The refusal is sent as ' +
+      'it was built; the value is to be declared, or the refusal to use a ' +
+      'declared one.',
+    spec: 'none (recorded only; the refusal is unchanged)' },
+  { code: 'STS-SSF-0161',
+    summary: 'A Security Event Token this service built carried a claim ' +
+      'models/ssf/ssf.tsp does not name, one of a type it does not allow, ' +
+      'or lacked one RFC 8417 requires (#1579). The SET is sent as it was ' +
+      'built; this is a model gap to close.',
+    spec: 'none (recorded only; the SET is unchanged)' },
+  { code: 'STS-SSF-0162',
+    summary: 'A document this realm exchanged with a federation partner\'s ' +
+      'Shared Signals transmitter is not the shape models/ssf/ssf.tsp gives ' +
+      'it (#1579): a configuration or a SET the partner sent, or a stream ' +
+      'request or poll this realm sent. Recorded; what was received is ' +
+      'still judged by the receiver\'s own checks, and what is sent is sent ' +
+      'unchanged.',
+    spec: 'none (recorded only)' },
   // ===== RISK ==============================================================
   { code: 'STS-RISK-0001',
     summary: 'A dataset import was refused before anything was loaded: the ' +
@@ -21188,7 +21296,7 @@ const CODES = [
       '/admin-api' },
   { code: 'STS-GNAP-0663',
     summary: 'The query string of a GNAP console page failed validation.',
-    spec: 'HTTP 400 text/plain' },
+    spec: 'HTTP 400 text/plain', retired: true },
   { code: 'STS-GNAP-0664',
     summary: 'A GNAP console action form post failed validation.',
     spec: 'Console error notice', retired: true },
@@ -21676,6 +21784,19 @@ const CODES = [
       'The protocol claims are unaffected.',
     spec: 'RFC 9635 section 3.2.1 (the access token is opaque to the ' +
       'client); the JWT is what a resource server verifies' },
+  { code: 'STS-GNAP-0910',
+    summary: 'A GNAP answer carried a member its model in ' +
+      'models/gnap/gnap.tsp does not name, one of a type or value the ' +
+      'model does not allow, or lacked one the model requires (#1579). The ' +
+      'answer is sent as it was built: the model describes the wire and ' +
+      'does not reshape it, so this is a model gap to close.',
+    spec: 'none (recorded only; the answer is unchanged)' },
+  { code: 'STS-GNAP-0911',
+    summary: 'A GNAP error response carried an error code ' +
+      'models/gnap/gnap.tsp does not declare (#1579). The response is sent ' +
+      'as it was built; the code is to be declared, with the document that ' +
+      'defines it.',
+    spec: 'none (recorded only; the response is unchanged)' },
   { code: 'STS-DEVICE-0001',
     summary: 'A device named an owner that is not a person or an application' +
       ' in the realm\'s directory, named no owner, or an owner kind ' +
@@ -23392,6 +23513,13 @@ const CODES = [
       'no-broadening rule held at the last moment, which is a defect ' +
       '(#1181).',
     spec: 'none — logged; the envelope is sent without it' },
+  { code: 'STS-AUTHZEN-0116',
+    summary: 'An AuthZEN answer carried a member its model in ' +
+      'models/authzen/authzen_members.tsp does not name, one of a type or ' +
+      'value the model does not allow, or lacked a member it requires ' +
+      '(#1579). The answer is sent as it was built: the model describes ' +
+      'the wire and does not reshape it, so this is a model gap to close.',
+    spec: 'none (recorded only; the answer is unchanged)' },
   // ===== FGA ===============================================================
   { code: 'STS-FGA-0001',
     summary: 'A policy that belongs to an application (it carries ' +
@@ -27645,6 +27773,12 @@ const CODES = [
   { code: 'STS-REPORT-0059',
     summary: 'A token was refused because the person it names no longer exists.',
     spec: 'HTTP 401' },
+  { code: 'STS-REPORT-0060',
+    summary: 'A stored report definition no longer holds to the Reports API ' +
+      'model (a filter naming a parameter longer than 64 characters, saved ' +
+      'before #1579 bounded it), so it is answered without its document and ' +
+      'parameters, and a run of it is refused for its query.',
+    spec: 'recorded' },
   { code: 'STS-AUDIT-0001',
     summary: 'An audit export destination was refused because its ' +
       'configuration is not usable: an unknown action or type, a missing ' +

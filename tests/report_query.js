@@ -546,7 +546,48 @@ function projections(t) {
   }
 
   const spec = OpenApi.document(catalog);
-  t.equal(spec.openapi, '3.0.3', 'the document is OpenAPI 3.0.3');
+  t.equal(spec.openapi, '3.1.0', 'the document is OpenAPI 3.1.0 (#1579)');
+  t.equal(JSON.stringify(spec).indexOf('"nullable"'), -1,
+    'no schema says OpenAPI 3.0\'s nullable: a nullable value is a type list');
+  const schemas = spec.components.schemas;
+  t.equal(JSON.stringify(schemas.ParameterBag.propertyNames),
+    JSON.stringify({ type: 'string', minLength: 1, maxLength: 64 }),
+    'a saved parameter\'s name is 1 to 64 characters, the model\'s ' +
+    'propertyNames');
+  t.equal(schemas.RunParameters, undefined,
+    'there is no RunParameters: a run\'s parameters are a ParameterBag ' +
+    '(rcbj, #1579, 2026-11-11)');
+  const runBody = spec.paths['/report-api/definitions/{id}/run'].post
+    .requestBody.content['application/json'].schema;
+  t.equal(runBody && runBody.$ref, '#/components/schemas/ParameterBag',
+    'a run\'s body is the ParameterBag, names bounded as a saved bag\'s');
+  const paramName = schemas.FilterParam.properties.param;
+  t.check(paramName.minLength === 1 && paramName.maxLength === 64,
+    'a filter\'s param is a name of 1 to 64 characters',
+    JSON.stringify(paramName));
+  const ModelZod = require('../common/model_zod');
+  const bag = ModelZod.component('report', 'ParameterBag', { typed: true });
+  t.check(!bag.safeParse({ ['p'.repeat(65)]: 1 }).success,
+    'the model refuses a 65-character name');
+  t.check(!bag.safeParse({ '': 1 }).success,
+    'the model refuses an empty name');
+  t.check(bag.safeParse({ ['p'.repeat(64)]: 1 }).success,
+    'the model accepts a 64-character name');
+  t.check(bag.safeParse(null).success,
+    'the model takes null, a definition with no parameters');
+  const long = bag.safeParse({ ['p'.repeat(65)]: 1 });
+  const issue = long.error ? long.error.issues[0] : null;
+  t.check(issue && issue.path.length === 1 && issue.params &&
+    issue.params.propertyNames === true,
+    'the issue is at the member and says it is the name',
+    JSON.stringify(issue));
+  const leaf = ModelZod.component('report', 'FilterParam', { typed: true });
+  t.check(!leaf.safeParse({ op: 'eq', field: 'f',
+                           param: 'p'.repeat(65) }).success,
+    'the model refuses a filter naming a 65-character parameter');
+  t.check(leaf.safeParse({ op: 'eq', field: 'f',
+                          param: 'p'.repeat(64) }).success,
+    'the model takes a filter naming a 64-character parameter');
   const paths = [
     '/report-api',
     '/report-api/openapi.json',

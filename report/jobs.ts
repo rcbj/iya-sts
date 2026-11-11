@@ -228,74 +228,6 @@ function reportParameterNames(document: any): string[] {
   return names;
 }
 
-function reportParamValue(value: any): boolean {
-  log.debug("Entering reportParamValue().");
-  if (value == null || typeof value === 'boolean') {
-    log.debug("Leaving reportParamValue(). Scalar.");
-    return true;
-  }
-  if (typeof value === 'number') {
-    log.debug("Leaving reportParamValue(). Number.");
-    return Number.isFinite(value);
-  }
-  if (typeof value === 'string') {
-    log.debug("Leaving reportParamValue(). String.");
-    return value.length <= 200;
-  }
-  if (!Array.isArray(value) || value.length < 1 || value.length > 32) {
-    log.debug("Leaving reportParamValue(). Not a list.");
-    return false;
-  }
-  for (let i = 0; i < value.length; i++) {
-    const one = value[i];
-    if (one != null && typeof one !== 'string' && typeof one !== 'number' &&
-        typeof one !== 'boolean') {
-      log.debug("Leaving reportParamValue(). Nested.");
-      return false;
-    }
-    if (typeof one === 'string' && one.length > 200) {
-      log.debug("Leaving reportParamValue(). Long.");
-      return false;
-    }
-    if (typeof one === 'number' && !Number.isFinite(one)) {
-      log.debug("Leaving reportParamValue(). Not finite.");
-      return false;
-    }
-  }
-  log.debug("Leaving reportParamValue().");
-  return true;
-}
-
-// The caller's values, or false when the bag is not one this service stores.
-// A dummy used only to type-check a save is not this function.
-function reportStoredParameters(given: any): any {
-  log.debug("Entering reportStoredParameters().");
-  if (given == null) {
-    log.debug("Leaving reportStoredParameters(). None.");
-    return null;
-  }
-  if (typeof given !== 'object' || Array.isArray(given)) {
-    log.debug("Leaving reportStoredParameters(). Not a bag.");
-    return false;
-  }
-  const keys = Object.keys(given);
-  if (keys.length > 32) {
-    log.debug("Leaving reportStoredParameters(). Too many.");
-    return false;
-  }
-  const bag: any = {};
-  for (let i = 0; i < keys.length; i++) {
-    const key = keys[i];
-    if (!key || key.length > 64 || !reportParamValue(given[key])) {
-      log.debug("Leaving reportStoredParameters(). Value.");
-      return false;
-    }
-    bag[key] = stores.copy(given[key]);
-  }
-  log.debug("Leaving reportStoredParameters().");
-  return bag;
-}
-
 function reportDummy(type: string): any {
   log.debug("Entering reportDummy().");
   let value: any = 'x';
@@ -393,18 +325,9 @@ function reportCronOk(expr: string): boolean {
  */
 function reportSave(spec: any): any {
   log.debug("Entering reportSave().");
+  // The body's shape is the model's `DefinitionWrite`, held at the door
+  // (`report_api.ts`, #1579); the name is stored without its spaces.
   const name = String(spec.name || '').trim();
-  if (!name || name.length > 120) {
-    log.debug("Leaving reportSave(). Name.");
-    return reportRefuse('STS-REPORT-0030', 'invalid_query',
-      'A definition needs a name.');
-  }
-  if (!spec.document || typeof spec.document !== 'object' ||
-      Array.isArray(spec.document)) {
-    log.debug("Leaving reportSave(). Document.");
-    return reportRefuse('STS-REPORT-0030', 'invalid_query',
-      'A definition needs a query document.');
-  }
   const schedule = spec.schedule ? String(spec.schedule) : '';
   if (!reportCronOk(schedule)) {
     log.debug("Leaving reportSave(). Schedule.");
@@ -432,13 +355,18 @@ function reportSave(spec: any): any {
   if (spec.parameters === undefined) {
     parameters = previous && previous.parameters ?
       stores.copy(previous.parameters) : null;
-  } else {
-    parameters = reportStoredParameters(spec.parameters);
-    if (parameters === false) {
-      log.debug("Leaving reportSave(). Parameters.");
-      return reportRefuse('STS-REPORT-0030', 'invalid_query',
-        'Parameters are names and values.');
-    }
+  } else if (spec.parameterNamesRefused) {
+    // A NAME OF 1 TO 64 CHARACTERS is the model's `ParameterBag`
+    // (`propertyNames`, #1579), found at the door; it is refused here, where
+    // the hand check stood, so that the order of refusals a caller sees did
+    // not change (`report_api.ts`).
+    log.debug("Leaving reportSave(). Parameters.");
+    return reportRefuse('STS-REPORT-0030', 'invalid_query',
+      'Parameters are names and values.');
+  } else if (spec.parameters !== null) {
+    // What a value may hold, and how many there are, is the model's too,
+    // held at the door.
+    parameters = stores.copy(spec.parameters);
   }
   const row = {
     id: previous ? previous.id : stores.newId(),
@@ -494,12 +422,9 @@ function reportShare(spec: any): any {
     return reportRefuse('STS-REPORT-0019', 'not_found',
       'No such definition.');
   }
-  const groups = Array.isArray(spec.groups) ? spec.groups : null;
-  if (!groups) {
-    log.debug("Leaving reportShare(). Not a list.");
-    return reportRefuse('STS-REPORT-0031', 'invalid_query',
-      'Name the groups to share this definition with.');
-  }
+  // The list's shape is the model's `ShareWrite`, held at the door
+  // (`report_api.ts`, #1579); whether each DN is a group here is not.
+  const groups = spec.groups;
   for (let i = 0; i < groups.length; i++) {
     const dn = String(groups[i] || '').trim();
     if (!dn || !rights.groupExists(dn)) {

@@ -1629,3 +1629,84 @@ the SPIFFE Issuing CA under the Root, which leaves the bundle unchanged.
 ## The description page is a static surface's shell (#584, 2026-10-12)
 
 `GET /spiffe` is this service's own documentation, at a path no specification defines, so #584 made it the description pages' shell (`common/description_pages.ts`, `common/CLAUDE.md` 3cl): the view in `data-sts-state`, drawn in the browser by `spiffe/web_spiffe_description.ts` from the `describeSpiffe` catalogs, with `/spiffe/description.js` — the one bundle the six description pages share — served on this family's own path. `?format=json`, or an `Accept` preferring JSON where the query names no format, answers the JSON form. The JSON form is the description document, to the byte as before; the shell's view adds the issuing authority's readiness and whether the main port is HTTPS, which `page()` read beside it (`page()`, `listenerRows()`, `methodRows()` and `esc()` went with #584). What is attested is still READ from the view, never asserted. The protocol endpoints beneath are not converted (#569's rule). `tests/description_pages.js` holds it.
+
+## THE MESSAGES, REFUSALS AND FACTS ARE THE MODEL'S (#1579)
+
+rcbj's decision on #1579: every protocol family comes into the model, and
+the model describes and validates the wire without reshaping it.
+`models/spiffe/*.tsp` (`models/lib/spiffe_lib.*`) is the source, the image
+build writes `models/generated/spiffe.json`, and `spiffe_model.ts` (a leaf:
+`common/model_tables`, `common/error_codes`, bunyan) reads it.
+
+* **EVERY MESSAGE, METHOD AND ENUM OF THE VENDORED PROTOS IS IN THE MODEL**,
+  converted once from `protos/` and written by hand since: `workload.tsp`,
+  `broker.tsp`, `spire_types.tsp`, `spire_server.tsp`, and `google.tsp` for
+  the well-known types as protobufjs defines them (camelCase — the Struct
+  trap above, stated where a reader of the model meets it). Each field
+  carries its number (`@field`), its oneof and its type; every field is
+  optional, because proto3 has none required. **The build holds the model to
+  the protos** (`checkSpiffe()` against `describeProtos()`, which reads them
+  with protobufjs as the service does): a field's number, name, type,
+  `repeated`, map or oneof, a method's request, response or streaming, an
+  enum's values, a method or a reachable message missing — each stops the
+  image build. **THE PROTOS STAY VERBATIM AND STAY WHAT DECODES THE WIRE**:
+  protobuf decoding is grpc-js's and `@grpc/proto-loader`'s, from these
+  files; the model states, beside them, what this service refuses and
+  answers. That is two writings of the message shapes held equal by the
+  build, which the rule against two copies does not normally allow; the
+  alternative — loading the service definitions from the model's JSON
+  (`loader.fromJSON()`) and keeping the protos only as the specification's
+  text — is rcbj's to decide (#1579).
+* **A REQUEST FIELD'S REFUSAL IS THE MODEL'S** (`@refuse`: when — `empty`,
+  `malformed`, `unexpected` — the gRPC status, the STS code, the sentence,
+  `{reason}` for a malformed SPIFFE ID's clause, the method where one
+  message is shared and each method says it in its own words, and the
+  Broker API's `google.rpc.ErrorInfo` reason). The handler keeps WHERE it
+  reads the field and how (trimmed, blanks dropped — each method as it
+  always did) and asks `rpc.refuseField()`, which marks the call and builds
+  the status error; `SpiffeModel.isEmpty()` is the emptiness the model
+  means. `ValidateJWTSVID`'s two (`spiffe_ca.ts`'s `validateJwtSvid()`) and
+  the Broker API's missing reference (`SpiffeBroker.noReference()`) read the
+  same refusals. **What needs state stays in code and is not a field's
+  refusal**: the entitlement (0146), the authorization table and the access
+  policy, an attestor's verdicts, a join token's spending, the registry's
+  `checkRecord()` (the directory model's), the federated bundle's shadowing
+  rule, and a batch item's per-entry status (`BatchNewX509SVID`'s missing
+  CSR names its entry, which a field's sentence cannot).
+* **THE FACTS THE CODE DECIDES WITH**: the SPIFFE ID grammar (`@idGrammar`:
+  the scheme, both byte bounds, both character classes, the reserved
+  `/spire` prefix — `spiffe_id.ts` keeps the parse, its order and its
+  sentences); an X509-SVID leaf's rules (`@svidRules`, asked in order by
+  `spiffe_auth.ts`'s `leafSvidProblem()`, each clause the refusal's);
+  the `bundle-key-use` registry (`spiffe_ca.ts`'s `checkBundleDocument()`
+  and its sentence) and `jwt-svid-typ` (the header a minted JWT-SVID
+  carries); and each unimplemented method's reason (`@rpc`'s
+  `unimplemented`, which is `spiffe_api.ts`'s `NOT_IMPLEMENTED` and so
+  `GET /spiffe`'s).
+* **ANSWERS ARE HELD, NOT REFUSED.** `spiffe_grpc.ts`'s wrappers hand every
+  message a handler writes — a unary reply, each message of a server stream,
+  a bidirectional stream's challenge and result — to `SpiffeModel.
+  holdReply()` against the method's response message BEFORE protobufjs's
+  `fromObject()` drops what is no field, and every status a call ends with
+  to `holdStatus()` against its service's statuses (the wrapper's refusals
+  and a defect's UNKNOWN) and its method's own. `spiffe_ca.ts` holds the
+  bundle it builds and each JWT-SVID's header and claims to their member
+  sets. A gap is logged under STS-SPIFFE-0154 (an answer) or 0155 (a
+  status), remembered for `SpiffeModel.gaps()`, and the answer is sent
+  unchanged. The per-method status lists were read off the handlers on the
+  day; one a call ends with that nobody listed is the 0155 to close.
+* **NOT IN THE MODEL, AND WHY**: `workload_agent.ts`, the node-local agent
+  (#324), loads nothing of this service and keeps its own SPIFFE ID parser
+  — a STRICTER trust domain pattern, no leading or trailing punctuation —
+  and its own shorter refusal sentences. Reading the model there would
+  change what that agent answers; whether it should is rcbj's call.
+
+`tests/spiffe_model_wire.js` holds the wire, in development and product
+mode, to the record made before the switch (the bundle endpoint, the
+Workload API, the SPIRE Server API on a realm's private Unix socket and the
+Broker API on its mutual-TLS port: every message decoded field by field,
+`bytes` described, each status, details and trailer) and requires that the
+live conversation recorded no gap. `tests/model_spiffe.js` holds the build's
+refusals, that no modelled sentence, bound, character class, leaf rule, key
+use or unimplemented reason is written in `spiffe/` but the model, that
+every recorded answer and status is its model's, and the holding.

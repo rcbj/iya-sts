@@ -83,6 +83,7 @@ import datatypes = require('../xacml/xacml_datatypes');
 import xacmlRequest = require('../xacml/xacml_request');
 import catalogue = require('./authzen_catalogue');
 import rowsGrammar = require('../xacml/xacml_attribute_rows');
+import authzenModel = require('./authzen_model');
 
 const { log } = helpers;
 
@@ -173,32 +174,17 @@ interface Outcome {
 }
 
 // THE OBLIGATIONS PROFILE'S REGISTERED TYPES (#1177, its section 5), each
-// with the properties it requires and those that are arrays. An XACML
+// with the properties it requires and those that are arrays — the model's
+// obligation member sets (`models/authzen/authzen_members.tsp`). An XACML
 // obligation `urn:sts:xacml:authzen:obligation:<type>` is that type; any
 // other but the one this service discharges is `custom`.
-const OBLIGATION_TYPES = Object.freeze({
-  'step-up': { required: ['acr_value'], arrays: ['amr_values'] },
-  'notification': { required: ['to', 'body'], arrays: ['to'] },
-  'session_termination': { required: ['subject'], arrays: [] }
-});
+const OBLIGATION_TYPES = Object.freeze(authzenModel.obligationTypes());
 
 // The XACML obligation id prefix that names a registered type.
 const OBLIGATION_PREFIX = 'urn:sts:xacml:authzen:obligation:';
 
 // The one obligation this service discharges itself, as an audit row.
 const DISCHARGED = 'urn:sts:xacml:obligation:log';
-
-// The members each object may carry, beside `properties`.
-const MEMBERS = Object.freeze({
-  subject: ['type', 'id', 'properties'],
-  action: ['name', 'properties'],
-  resource: ['type', 'id', 'properties'],
-  top: ['subject', 'action', 'resource', 'context']
-});
-
-// The longest a type, an id or a name may be. Generous; a bound because a
-// value goes into the request and the audit row.
-const MAX_TEXT = 1024;
 
 // The value rules' kinds (`xacml/xacml_attribute_rows.ts`, which owns the
 // rules since #564) and the code each has always had here. The bounds —
@@ -225,18 +211,6 @@ function refused(code: string, message: string): ReadResult {
 }
 
 /**
- * Tells whether a value is a JSON object (not an array, not null).
- *
- * @param value - the value
- * @returns true for an object
- */
-function isObject(value: unknown): boolean {
-  log.debug("Entering isObject().");
-  log.debug("Leaving isObject().");
-  return !!value && typeof value === 'object' && !Array.isArray(value);
-}
-
-/**
  * Reads AuthZEN access evaluations against a realm's catalogue, and maps
  * their decisions back. Pure, without I/O.
  */
@@ -251,121 +225,41 @@ class AuthzenMap {
    */
   static read(body: unknown, rows: CatalogueRow[]): ReadResult {
     log.debug("Entering AuthzenMap.read().");
-    if (!isObject(body)) {
-      log.debug("Leaving AuthzenMap.read(). Not an object.");
-      return refused('STS-AUTHZEN-0001',
-        'An access evaluation request is a JSON object with subject, ' +
-        'action, resource and optionally context.');
+    // THE SHAPE IS THE MODEL'S (#1579): `models/authzen/authzen.tsp`'s
+    // EvaluationRequest, read member by member in its order, each refusal
+    // the code and sentence it declares.
+    const refusal = authzenModel.read('evaluation', body);
+    if (refusal) {
+      log.debug("Leaving AuthzenMap.read(). " + refusal.code);
+      return { refusal: refusal };
     }
     const given: any = body;
-    const strayTop = AuthzenMap.stray(given, MEMBERS.top);
-    if (strayTop) {
-      log.debug("Leaving AuthzenMap.read(). An unknown member.");
-      return refused('STS-AUTHZEN-0009',
-        'An access evaluation request has no member "' + strayTop + '"; it ' +
-        'takes subject, action, resource and context.');
-    }
+    // Each entity's required members, as the model names them.
     const parts: any = {};
-    const shapes = [
-      ['subject', ['type', 'id']],
-      ['action', ['name']],
-      ['resource', ['type', 'id']]
-    ];
-    for (let i = 0; i < shapes.length; i += 1) {
-      const name = String(shapes[i][0]);
-      const required = shapes[i][1] as string[];
-      const object = given[name];
-      if (object === undefined) {
-        log.debug("Leaving AuthzenMap.read(). No " + name + ".");
-        return refused('STS-AUTHZEN-0002',
-          'The request has no ' + name + ', which AuthZEN requires (' +
-          name + '.' + required.join(' and ' + name + '.') + ').');
+    const required: string[] = [];
+    authzenModel.request('evaluation').fields.forEach(function (field: any) {
+      if (field.kind !== 'object' || !field.required) {
+        return;
       }
-      if (!isObject(object)) {
-        log.debug("Leaving AuthzenMap.read(). " + name + " not an object.");
-        return refused('STS-AUTHZEN-0003', name + ' must be a JSON object.');
-      }
-      const stray = AuthzenMap.stray(object, MEMBERS[name]);
-      if (stray) {
-        log.debug("Leaving AuthzenMap.read(). An unknown member of " + name +
-                  ".");
-        return refused('STS-AUTHZEN-0009',
-          name + ' has no member "' + stray + '"; it takes ' +
-          MEMBERS[name].join(', ') + '.');
-      }
-      parts[name] = {};
-      for (let j = 0; j < required.length; j += 1) {
-        const member = required[j];
-        const value = object[member];
-        if (value === undefined || value === null || value === '') {
-          log.debug("Leaving AuthzenMap.read(). No " + name + "." + member +
-                    ".");
-          return refused('STS-AUTHZEN-0002',
-            name + '.' + member + ' is required, and a non-empty string.');
+      parts[field.name] = {};
+      field.fields.forEach(function (inner: any) {
+        if (inner.required) {
+          parts[field.name][inner.name] = given[field.name][inner.name];
+          required.push(field.name + '.' + inner.name);
         }
-        if (typeof value !== 'string' || value.length > MAX_TEXT) {
-          log.debug("Leaving AuthzenMap.read(). " + name + "." + member +
-                    " not a string.");
-          return refused('STS-AUTHZEN-0003',
-            name + '.' + member + ' must be a string of at most ' +
-            MAX_TEXT + ' characters.');
-        }
-        parts[name][member] = value;
-      }
-      if (object.properties !== undefined && !isObject(object.properties)) {
-        log.debug("Leaving AuthzenMap.read(). " + name + ".properties not " +
-                  "an object.");
-        return refused('STS-AUTHZEN-0003',
-          name + '.properties must be a JSON object.');
-      }
-    }
-    if (given.context !== undefined && !isObject(given.context)) {
-      log.debug("Leaving AuthzenMap.read(). context not an object.");
-      return refused('STS-AUTHZEN-0003', 'context must be a JSON object.');
-    }
+      });
+    });
     const context = given.context || {};
-    let supportedObligations: string[] | null = null;
-    if (context.supported_obligations !== undefined) {
-      const sent = context.supported_obligations;
-      if (!Array.isArray(sent) || sent.length > 32 ||
-          !sent.every(function (one: unknown) {
-            return typeof one === 'string' && one.length <= 64;
-          })) {
-        log.debug("Leaving AuthzenMap.read(). A bad supported_obligations.");
-        return refused('STS-AUTHZEN-0003',
-          'context.supported_obligations must be an array of at most 32 ' +
-          'obligation type names.');
-      }
-      supportedObligations = sent.slice(0);
-    }
-    // `context.approval` (#1180): an object carrying the `id` this service
-    // issued. Its shape is checked here; whether it is an approval at all is
-    // `verify()`'s, against the store.
-    let approval: any = null;
-    if (context.approval !== undefined) {
-      const sent = context.approval;
-      if (!isObject(sent) || typeof sent.id !== 'string' || !sent.id ||
-          sent.id.length > MAX_TEXT) {
-        log.debug("Leaving AuthzenMap.read(). A bad approval.");
-        return refused('STS-AUTHZEN-0003',
-          'context.approval must be the approval object a completed access ' +
-          'request returned, with its id.');
-      }
-      approval = sent;
-    }
-    let application = '';
-    if (context.application !== undefined) {
-      if (typeof context.application !== 'string' || !context.application ||
-          context.application.length > MAX_TEXT) {
-        log.debug("Leaving AuthzenMap.read(). A bad context.application.");
-        return refused('STS-AUTHZEN-0003',
-          'context.application must be a non-empty string naming one of ' +
-          'the applications this caller is scoped to.');
-      }
-      application = context.application;
-    }
-    const supplied = ['subject.type', 'subject.id', 'action.name',
-                      'resource.type', 'resource.id'];
+    const supportedObligations: string[] | null =
+      context.supported_obligations !== undefined
+        ? context.supported_obligations.slice(0) : null;
+    // `context.approval` (#1180): its shape is the model's; whether it is an
+    // approval at all is `verify()`'s, against the store.
+    const approval: any = context.approval !== undefined
+      ? context.approval : null;
+    const application: string = context.application !== undefined
+      ? context.application : '';
+    const supplied = required.slice(0);
     if (application) {
       supplied.push('context.application');
     }
@@ -399,22 +293,6 @@ class AuthzenMap {
                            supportedObligations: supportedObligations,
                            approval: approval,
                            attributes: attributes, supplied: supplied } };
-  }
-
-  /**
-   * The first member of an object that is not in a list, or ''.
-   *
-   * @param object - the object
-   * @param allowed - the members it may carry
-   * @returns the member's name, cut short, or ''
-   */
-  static stray(object: any, allowed: string[]): string {
-    log.debug("Entering AuthzenMap.stray().");
-    const found = Object.keys(object).filter(function (key: string) {
-      return allowed.indexOf(key) < 0;
-    })[0];
-    log.debug("Leaving AuthzenMap.stray().");
-    return found ? found.slice(0, 64) : '';
   }
 
   /**
@@ -764,7 +642,6 @@ class AuthzenMap {
  */
 export = {
   AuthzenMap: AuthzenMap,
-  MAX_TEXT: MAX_TEXT,
   read: AuthzenMap.read,
   request: AuthzenMap.request,
   outcome: AuthzenMap.outcome,

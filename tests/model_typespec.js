@@ -88,14 +88,15 @@ function roundTrips(t, tools, objects) {
     t.check(!!object, 'the compiled model has ' + id);
     if (object) {
       if (object.authored) {
-        // `common/applications.js` adds each row's `editable` once it has
-        // loaded the table, so what is compared is the file it read.
-        t.equal(JSON.stringify(tools.lib.schemaOf(object)),
-          fs.readFileSync(path.join(ROOT, 'models', 'generated',
-            id + '.schema.json'), 'utf8'),
+        // The file, and what the module holds once it has loaded it: a
+        // module that adds to its table after loading (as applications.js
+        // once added each row's `editable`) states a fact the model does not.
+        const file = fs.readFileSync(path.join(ROOT, 'models', 'generated',
+          id + '.schema.json'), 'utf8');
+        t.equal(JSON.stringify(tools.lib.schemaOf(object)), file,
           id + ', written by hand, is the file the service reads');
-        t.equal((tables[id].attributes || []).length, object.attributes.length,
-          id + ': the service loaded every row');
+        t.equal(JSON.stringify(tables[id]), file,
+          id + ': the table the service holds is the model\'s, unchanged');
         return;
       }
       t.equal(ModelIr.stable(tools.lib.schemaOf(object)),
@@ -106,40 +107,26 @@ function roundTrips(t, tools, objects) {
   log.debug("Leaving roundTrips().");
 }
 
-function federationLists(t, objects) {
-  log.debug("Entering federationLists().");
-  // The lists are written once, in the model, and the code reads them. A
-  // mechanism or policy has a row of behaviour in the code too, so each list
-  // is held to those rows: an id with no behaviour would fail at sign-in.
-  const federation = require('../federation/federation');
-  const object = objects.filter(function (one) {
-    return one.id === 'federationRelationship';
-  })[0];
-  const expected = {
-    fedSubjectPolicy: federation.SUBJECT_POLICY_IDS,
-    fedEncryptionKeyType: federation.ENCRYPTION_KEY_TYPES,
-    fedKeyManagementAlgorithm: federation.XML_KEY_MANAGEMENT.concat(
-      federation.JOSE_KEY_MANAGEMENT),
-    fedContentEncryptionAlgorithm: federation.XML_CONTENT_ENCRYPTION.concat(
-      federation.JOSE_CONTENT_ENCRYPTION),
-    fedAuthnMechanism: federation.MECHANISM_IDS
-  };
-  t.equal(federation.MECHANISMS.map(function (one) {
-    return one.mechanism;
-  }).join(','), federation.MECHANISM_IDS.join(','),
-  'every federation mechanism in the model has its row in the code');
-  t.equal(federation.SUBJECT_POLICIES.map(function (one) {
-    return one.policy;
-  }).join(','), federation.SUBJECT_POLICY_IDS.join(','),
-  'every subject policy in the model has its row in the code');
-  Object.keys(expected).forEach(function (name) {
-    const row = object.attributes.filter(function (one) {
-      return one.name === name;
-    })[0];
-    t.equal(row && row.allowed && row.allowed.join(','),
-      expected[name].join(','), name + ': the model\'s values are the code\'s');
-  });
-  log.debug("Leaving federationLists().");
+function factsChecked(t, tools, objects) {
+  log.debug("Entering factsChecked().");
+  t.equal(tools.lib.checkFacts(objects).join('; '), '',
+    'every entry\'s lists, terms, pairings, mechanisms and doors hold');
+  // A pairing is checked against the lists it names, so a key type or an
+  // algorithm the lists do not have is refused by the build.
+  const broken = tools.lib.checkFacts([{ id: 'x',
+    lists: { keys: ['a', 'b'], algs: ['p', 'q'] },
+    pairings: { algsForKey: { from: ['keys'], to: ['algs'],
+      values: { a: ['p', 'r'], c: ['q'] } } },
+    doors: [{ id: 'd', key: 'k', label: 'l' }, { id: 'd', key: 'k2',
+      label: 'l2' }] }]);
+  ['gives a r', 'pairs c', 'says nothing of b', 'doors names d twice']
+    .forEach(function (said) {
+      t.check(broken.some(function (one) {
+        return one.indexOf(said) >= 0;
+      }), 'the build refuses a fact that does not hold: ' + said,
+      broken.join('; '));
+    });
+  log.debug("Leaving factsChecked().");
 }
 
 function policyFields(t, tools, objects) {
@@ -158,16 +145,12 @@ function policyFields(t, tools, objects) {
       t.check(have.indexOf(row.key) >= 0,
         kind.id + ': the service has the model\'s setting ' + row.key);
     });
-    // A row the code computes (a mechanism, a door) has its sentence in
-    // the published table too, so the two are held equal here.
+    // A row the code builds from a register (a mechanism, a door) takes its
+    // sentence from its attribute in the model, so one it names wrongly has
+    // none.
     kind.module.FIELDS.forEach(function (row) {
       t.check(row.dflt !== undefined && !!row.type && !!row.what,
         kind.id + '.' + row.key + ' is complete once the code has bound it');
-      const published = kind.module.SCHEMA.attributes.filter(function (one) {
-        return one.name === row.attribute;
-      })[0];
-      t.equal(published && published.what, row.what,
-        kind.id + '.' + row.key + ': the table says what the setting says');
     });
   });
   log.debug("Leaving policyFields().");
@@ -368,7 +351,7 @@ async function run(t) {
   const objects = tools.lib.readDirectory(program);
   const persistence = tools.lib.readPersistence(program);
   roundTrips(t, tools, objects);
-  federationLists(t, objects);
+  factsChecked(t, tools, objects);
   policyFields(t, tools, objects);
   const PostgresImport = require('../common/postgres_import');
   const sql = PostgresImport.read(ROOT);

@@ -179,39 +179,51 @@ import PageLocale = require('../common/page_locale');
 // `realms`, `helpers` and the page's language, none of which requires this
 // module, so it closes no cycle and moves no route.
 import ErrorPage = require('../common/error_page');
+// THE MODEL (#1579): every namespace, token type, `wa` action, `wauth` value
+// and claim type below, the parameters' uses, and the order the sign-in
+// response and the metadata role are written in are `models/ws/*.tsp`'s —
+// SAML's terms among them are `models/saml/`'s — and both documents are held
+// to it as they are built. A leaf: it requires only `common/xml_model`.
+import WsModel = require('../ws-trust/ws_model');
 
 // --- the vocabulary --------------------------------------------------------
-const WSFED_NS = 'http://docs.oasis-open.org/wsfed/federation/200706';
+// Every value here is the model's (`models/ws/wsfed.tsp`), asked by name.
+const WSFED_NS = WsModel.term('wsfed.namespace', 'federation');
 
-const WSFED_AUTH_NS = 'http://docs.oasis-open.org/wsfed/authorization/200706';
-
-const SAML_METADATA_NS = 'urn:oasis:names:tc:SAML:2.0:metadata';
+const WSFED_AUTH_NS = WsModel.term('wsfed.namespace', 'authorization');
 
 // WS-Trust February 2005 — the namespace this profile's RSTR is written in by
 // default. Not a typo for the ws-sx one /sts uses: see decision 2 above.
-const TRUST_2005_02 = 'http://schemas.xmlsoap.org/ws/2005/02/trust';
+const TRUST_2005_02 = WsModel.term('wst.namespace', 'trust2005');
 
-const TRUST_1_3 = 'http://docs.oasis-open.org/ws-sx/ws-trust/200512';
-
-/**
- * The token type URI of a SAML 1.1 assertion.
- */
-const SAML11_TOKEN_TYPE = 'urn:oasis:names:tc:SAML:1.0:assertion';
+const TRUST_1_3 = WsModel.term('wst.namespace', 'trust13');
 
 /**
- * The token type URI of a SAML 2.0 assertion.
+ * The token type URI of a SAML 1.1 assertion: SAML 1.1's assertion
+ * namespace, the model's `saml11` (and the default, its first term).
  */
-const SAML2_TOKEN_TYPE = 'urn:oasis:names:tc:SAML:2.0:assertion';
+const SAML11_TOKEN_TYPE = WsModel.term('wsfed.tokenType', 'saml11');
 
-// The claim URIs a WS-Federation relying party keys off. They are the Microsoft
-// namespaces rather than anything OASIS published, because that is what exists:
-// WS-Federation defines a claim dialect and no claim vocabulary, and every RP
-// in this ecosystem was written against these.
-const CLAIM_NS = 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims';
+/**
+ * The token type URI of a SAML 2.0 assertion: SAML 2.0's assertion
+ * namespace.
+ */
+const SAML2_TOKEN_TYPE = WsModel.term('wsfed.tokenType', 'saml2');
 
-const MS_CLAIM_NS = 'http://schemas.microsoft.com/ws/2008/06/identity/claims';
+// The claim types a WS-Federation relying party keys off, and the metadata
+// offers (`wsfed.claim`). They are the Microsoft namespaces rather than
+// anything OASIS published, because that is what exists: WS-Federation
+// defines a claim dialect and no claim vocabulary, and every RP in this
+// ecosystem was written against these.
+// A hot path of every sign-in response; no Entering/Leaving pair, which
+// would drown the log.
+const claimOf = function (name: string): { namespace: string; name: string } {
+  const uri = WsModel.term('wsfed.claim', name);
+  const cut = uri.lastIndexOf('/');
+  return { namespace: uri.slice(0, cut), name: uri.slice(cut + 1) };
+};
 
-const ATTRNAME_FORMAT_URI = 'urn:oasis:names:tc:SAML:2.0:attrname-format:uri';
+const ATTRNAME_FORMAT_URI = WsModel.term('saml2.attrNameFormat', 'uri');
 
 // How the End-User authenticated, said twice because the two token types have
 // separate vocabularies for it: SAML 1.1 has AuthenticationMethod URIs, SAML
@@ -224,12 +236,7 @@ const ATTRNAME_FORMAT_URI = 'urn:oasis:names:tc:SAML:2.0:attrname-format:uri';
 // specific mechanism this service did not perform), while `multipleauthn` is
 // exactly the claim being made — more than one factor — and is the value AD FS
 // emits for it, so a relying party in this ecosystem already knows it.
-const AM_PASSWORD_SAML11 = 'urn:oasis:names:tc:SAML:1.0:am:password';
-
-const AC_PASSWORD_SAML2 =
-    'urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport';
-
-const AM_MULTIFACTOR = 'http://schemas.microsoft.com/claims/multipleauthn';
+const AM_MULTIFACTOR = WsModel.term('wsfed.wauth', 'multipleAuthn');
 
 // And the THIRD thing a session here can now say, which the two above cannot:
 // a security key used PASSWORDLESS, at /authn/login with the passwordless box
@@ -245,31 +252,20 @@ const AM_MULTIFACTOR = 'http://schemas.microsoft.com/claims/multipleauthn';
 // that overstates nothing. A relying party that needs to know what happened
 // reads the SAML 1.1 method or the amr in an OIDC token; it does not get a
 // guess dressed up as a class reference.
-const AM_HARDWARE_SAML11 = 'urn:oasis:names:tc:SAML:1.0:am:HardwareToken';
+const AM_HARDWARE_SAML11 = WsModel.term('wsfed.wauth', 'hardwareToken');
 
-const AC_UNSPECIFIED_SAML2 =
-    'urn:oasis:names:tc:SAML:2.0:ac:classes:unspecified';
-
-// What `wauth` may ask for (13.2.1), besides the two EAP class URIs. A
+// What `wauth` may ask for (13.2.1), besides the two EAP class URIs: the
+// model's `wsfed.wauth`, each term marked with the demand it is read as. A
 // request for anything else is refused rather than quietly answered with a
-// password assertion: `wauth` is how a relying party DEMANDS an authentication
-// type, and an IdP that ignores it lets the demand appear to have been met. A
-// demand in the two lists below that the session does not meet is a STEP-UP
-// since 2026-09-17 (#36) — see signIn(). The EAP URIs are not a third list:
-// they live on common/phishing_resistance.ts and classOfUri() recognises
-// them (#737).
-const WAUTH_PASSWORD = [
-  AM_PASSWORD_SAML11,
-  'urn:oasis:names:tc:SAML:1.0:am:unspecified',
-  AC_PASSWORD_SAML2,
-  'urn:oasis:names:tc:SAML:2.0:ac:classes:Password',
-  'http://schemas.xmlsoap.org/ws/2005/05/identity/authenticationmethod/password',
-  'http://schemas.microsoft.com/ws/2008/06/identity/authenticationmethod/password'
-];
+// password assertion: `wauth` is how a relying party DEMANDS an
+// authentication type, and an IdP that ignores it lets the demand appear to
+// have been met. A demand that the session does not meet is a STEP-UP since
+// 2026-09-17 (#36) — see signIn(). The EAP URIs are not a fourth list: they
+// live on common/phishing_resistance.ts and classOfUri() recognises them
+// (#737).
+const WAUTH_PASSWORD = WsModel.terms('wsfed.wauth', 'wauth', 'password');
 
-const WAUTH_MULTIFACTOR = [
-  AM_MULTIFACTOR
-];
+const WAUTH_MULTIFACTOR = WsModel.terms('wsfed.wauth', 'wauth', 'multiFactor');
 
 // A demand for a HARDWARE TOKEN, which used to sit in the list above and is a
 // different question now that a session can have a key and no password. Asking
@@ -277,9 +273,19 @@ const WAUTH_MULTIFACTOR = [
 // whether there were two factors. A passwordless session answers the first and
 // not the second, and lumping them together answered the first one wrong —
 // refusing a session that had done precisely what was asked for.
-const WAUTH_HARDWARE = [
-  AM_HARDWARE_SAML11
-];
+const WAUTH_HARDWARE = WsModel.terms('wsfed.wauth', 'wauth', 'hardware');
+
+// The `wa` actions, the model's `wsfed.request`; `answered: false` names a
+// service this profile defines and this service does not run.
+const WA_SIGN_IN = WsModel.term('wsfed.request', 'signIn');
+const WA_SIGN_OUT = WsModel.term('wsfed.request', 'signOut');
+const WA_CLEANUP = WsModel.term('wsfed.request', 'signOutCleanup');
+const WA_NOT_ANSWERED = WsModel.termsOf('wsfed.request')
+  .filter(function (one) {
+    return one.answered === false;
+  }).map(function (one) {
+    return one.value;
+  });
 
 const PASSIVE_PATH = '/wsfed';
 // THE ONE-TRIP MARKER OF A SIGN-IN MECHANISM RE-PROMPT (#457), on the return
@@ -649,20 +655,18 @@ class WsFederation {
     // reason below.
     const user = personAttributes.personFor(sessionUser);
     const claims = personAttributes.withoutAbsent([
-      { namespace: CLAIM_NS, name: 'nameidentifier', value: user.sub },
-      { namespace: CLAIM_NS, name: 'name', value: user.username },
-      { namespace: CLAIM_NS, name: 'givenname', value: user.given_name },
-      { namespace: CLAIM_NS, name: 'surname', value: user.family_name },
-      { namespace: CLAIM_NS, name: 'emailaddress', value: user.email },
+      Object.assign(claimOf('nameidentifier'), { value: user.sub }),
+      Object.assign(claimOf('name'), { value: user.username }),
+      Object.assign(claimOf('givenname'), { value: user.given_name }),
+      Object.assign(claimOf('surname'), { value: user.family_name }),
+      Object.assign(claimOf('emailaddress'), { value: user.email }),
       // The UPN and the mail address are the same string here because userFor()
       // mints one address, and inventing a second identifier that differed
       // would be a distinction with nothing behind it. A relying party matching
       // on `upn` still gets the shape it expects.
-      { namespace: CLAIM_NS, name: 'upn', value: user.email },
-      { namespace: MS_CLAIM_NS, name: 'authenticationmethod',
-        value: authnMethod },
-      { namespace: MS_CLAIM_NS, name: 'authenticationinstant',
-        value: authnInstant }
+      Object.assign(claimOf('upn'), { value: user.email }),
+      Object.assign(claimOf('authenticationmethod'), { value: authnMethod }),
+      Object.assign(claimOf('authenticationinstant'), { value: authnInstant })
     ]);
     log.debug("Leaving WsFederation.claimsFor(). " + claims.length +
               " claim(s).");
@@ -749,17 +753,20 @@ class WsFederation {
       asked = String(params.tokenType);
       from = 'the non-spec tokenType parameter';
     }
-    // The short forms, because nobody types the URN by hand twice.
-    if (asked === 'saml11' || asked === 'saml1' ||
-        asked === '1.1') asked = SAML11_TOKEN_TYPE;
-    if (asked === 'saml2' || asked === 'saml20' ||
-        asked === '2.0') asked = SAML2_TOKEN_TYPE;
+    // The short forms, because nobody types the URN by hand twice: each
+    // token type's `shortForms` in the model.
+    const short = WsModel.termsOf('wsfed.tokenType').find(function (one) {
+      return (one.shortForms || []).indexOf(asked) >= 0;
+    });
+    if (short) {
+      asked = short.value;
+    }
     if (!asked) {
       log.debug("Leaving WsFederation.tokenTypeFor(). SAML 1.1, from " + from +
                 ".");
       return { tokenType: SAML11_TOKEN_TYPE, from: from };
     }
-    if (asked !== SAML11_TOKEN_TYPE && asked !== SAML2_TOKEN_TYPE) {
+    if (WsModel.terms('wsfed.tokenType').indexOf(asked) < 0) {
       log.debug("Leaving WsFederation.tokenTypeFor(). An unsupported token " +
                 "type was asked for: " + asked);
       return { error: asked, from: from };
@@ -778,45 +785,59 @@ class WsFederation {
     log.debug("Entering WsFederation.buildRstr(). tokenType=" + tokenType +
               ", trust=" +
               trustVersion);
-    const trustNs = trustVersion === '1.3' ? TRUST_1_3 : TRUST_2005_02;
-    const wsu = 'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd';
-    const keyType = trustVersion === '1.3'
-      ? trustNs + '/Bearer'
+    // The model's `trust` parameter: `1.3`, else 2005/02.
+    const trust13 = WsModel.param('wsfed.passive', 'trust').accepts
+      .indexOf(String(trustVersion)) >= 0;
+    const trustNs = trust13 ? TRUST_1_3 : TRUST_2005_02;
+    const wsu = WsModel.term('wsse.namespace', 'utility');
+    const keyType = trust13
+      ? WsModel.relative('wst.keyType', 'bearer', trustNs)
       // 2005/02 has no /Bearer: the value that says "no proof key, this is a
       // bearer token" in that vintage is NoProofKey out of the identity
       // namespace, and it is what AD FS puts here.
-      : 'http://schemas.xmlsoap.org/ws/2005/05/identity/NoProofKey';
+      : WsModel.term('wsfed.keyType', 'noProofKey');
     const appliesTo = realm
-      ? '<wsp:AppliesTo ' +
-        'xmlns:wsp="http://schemas.xmlsoap.org/ws/2004/09/policy">' +
-        '<wsa:EndpointReference ' +
-        'xmlns:wsa="http://www.w3.org/2005/08/addressing"><wsa:Address>' +
-        xmlEscape(realm) +
-        '</wsa:Address></wsa:EndpointReference></wsp:AppliesTo>'
+      ? '<wsp:AppliesTo xmlns:wsp="' + WsModel.term('wsp.namespace', 'policy') +
+        '">' + WsModel.children('wsp.AppliesTo', {
+          endpointReference: '<wsa:EndpointReference xmlns:wsa="' +
+            WsModel.term('wsa.namespace', 'addressing') + '">' +
+            WsModel.children('wsa.EndpointReference', {
+              address: '<wsa:Address>' + xmlEscape(realm) +
+                '</wsa:Address>' }) + '</wsa:EndpointReference>' }) +
+        '</wsp:AppliesTo>'
       : '';
     // The element order is AD FS's and is worth keeping: Lifetime, AppliesTo,
-    // RequestedSecurityToken, TokenType, RequestType, KeyType. The WS-Trust
-    // schema is a sequence, so a relying party built on a generated parser
-    // rejects any other order, and the ones that hand-parse were written
-    // against this one.
-    const inner =
-      '<t:Lifetime>' +
-        '<wsu:Created xmlns:wsu="' + wsu + '">' + iso(0) + '</wsu:Created>' +
-        '<wsu:Expires xmlns:wsu="' + wsu + '">' + iso(lifetimeMin) +
-        '</wsu:Expires></t:Lifetime>' +
-      appliesTo +
-      '<t:RequestedSecurityToken>' + assertionXml +
-        '</t:RequestedSecurityToken><t:TokenType>' + tokenType +
-        '</t:TokenType><t:RequestType>' + trustNs +
-        '/Issue</t:RequestType><t:KeyType>' + keyType + '</t:KeyType>';
+    // RequestedSecurityToken, TokenType, RequestType, KeyType — the model's
+    // `wsfed.RequestSecurityTokenResponse`. The WS-Trust schema is a
+    // sequence, so a relying party built on a generated parser rejects any
+    // other order, and the ones that hand-parse were written against this
+    // one.
+    const inner = WsModel.children('wsfed.RequestSecurityTokenResponse', {
+      lifetime: '<t:Lifetime>' + WsModel.children('wst.Lifetime', {
+        created: '<wsu:Created xmlns:wsu="' + wsu + '">' + iso(0) +
+          '</wsu:Created>',
+        expires: '<wsu:Expires xmlns:wsu="' + wsu + '">' + iso(lifetimeMin) +
+          '</wsu:Expires>' }) + '</t:Lifetime>',
+      appliesTo: appliesTo,
+      requestedSecurityToken: '<t:RequestedSecurityToken>' + assertionXml +
+        '</t:RequestedSecurityToken>',
+      tokenType: '<t:TokenType>' + tokenType + '</t:TokenType>',
+      requestType: '<t:RequestType>' +
+        WsModel.relative('wst.request', 'issue', trustNs) +
+        '</t:RequestType>',
+      keyType: '<t:KeyType>' + keyType + '</t:KeyType>' });
     const rstr = '<t:RequestSecurityTokenResponse xmlns:t="' + trustNs + '">' +
                  inner +
                  '</t:RequestSecurityTokenResponse>';
-    const wresult = trustVersion === '1.3'
-      ? '<t:RequestSecurityTokenResponseCollection xmlns:t="' + trustNs + '">' +
-        rstr +
-        '</t:RequestSecurityTokenResponseCollection>'
-      : rstr;
+    const wresult = trust13
+      ? WsModel.hold('wsfed.RequestSecurityTokenResponseCollection',
+        '<t:RequestSecurityTokenResponseCollection xmlns:t="' + trustNs +
+        '">' + WsModel.children('wsfed.RequestSecurityTokenResponseCollection',
+          { response: rstr }) +
+        '</t:RequestSecurityTokenResponseCollection>',
+        'WS-Federation sign-in response')
+      : WsModel.hold('wsfed.RequestSecurityTokenResponse', rstr,
+                     'WS-Federation sign-in response');
     logArtifact('WS-Federation wresult (RSTR)', 'as posted to the relying ' +
                                                 'party',
                 wresult);
@@ -855,7 +876,7 @@ class WsFederation {
       '</h1><p class="sub">' + t.html('handoff.wsfed.signingIn.sub') +
       '</p><form method="post" ' +
       'action="' + xmlEscape(wreply) + '" id="wsfed-form">' +
-        '<input type="hidden" name="wa" value="wsignin1.0">' +
+        '<input type="hidden" name="wa" value="' + WA_SIGN_IN + '">' +
         '<input type="hidden" name="wresult" value="' + xmlEscape(wresult) +
       '">' +
         (wctx !== undefined && wctx !== null && wctx !== ''
@@ -865,7 +886,7 @@ class WsFederation {
         '<div class="row"><button type="submit">' +
       t.html('handoff.common.continueToRp') +
       '</button></div></form><div class="meta"><div>wa: ' +
-      '<code>wsignin1.0</code></div><div>' +
+      '<code>' + WA_SIGN_IN + '</code></div><div>' +
       t.html('handoff.wsfed.postingTo', { destination: wreply }) +
       '</div><div>' + t.html('handoff.wsfed.realm', { realm: realm }) +
       '</div><div>' + t.html('handoff.wsfed.tokenType',
@@ -927,7 +948,9 @@ class WsFederation {
                                'fresh ' +
                                'authentication.' };
     }
-    const ageMin = (Date.now() / 1000 - (session.authTime || 0)) / 60;
+    // Read through the `Session` concept (#1579).
+    const ageMin = (Date.now() / 1000 -
+                    (authn.sessionView(session).authTime || 0)) / 60;
     if (ageMin > minutes) {
       log.debug("Leaving WsFederation.freshEnough(). The session is " +
                 Math.round(ageMin) +
@@ -1942,7 +1965,9 @@ class WsFederation {
     });
     const user = session.user;
     const methods = this.authnMethodsFor(session);
-    const authnInstant = new Date((session.authTime || 0) * 1000).toISOString();
+    // When they authenticated, read through the `Session` concept (#1579).
+    const authnInstant = new Date((authn.sessionView(session).authTime || 0) *
+                                  1000).toISOString();
     // THE ISSUER (#523): the realm's one name, its OAuth issuer, for every
     // relying party — the name its metadata publishes, and the one SAML SSO,
     // WS-Trust and every JWT carry (`common/issuer_names.ts`).
@@ -2109,7 +2134,7 @@ class WsFederation {
           wreply: address,
           url: address ?
                address + (address.indexOf('?') >= 0 ? '&' : '?') +
-               'wa=wsignoutcleanup1.0' : ''
+               'wa=' + WA_CLEANUP : ''
         });
       });
     });
@@ -2233,7 +2258,7 @@ class WsFederation {
       log.debug("Entering cleanupUrl().");
       log.debug("Leaving cleanupUrl().");
       return url + (url.indexOf('?') >= 0 ? '&' : '?') +
-          'wa=wsignoutcleanup1.0';
+          'wa=' + WA_CLEANUP;
     };
     let inner = '<h1>' + (cleanupOnly
       ? t.html('handoff.wsfed.signedOutCleanup')
@@ -2330,28 +2355,28 @@ class WsFederation {
       return this.sendPage(res, 200, 'WS-Federation passive requestor endpoint',
                            this.descriptionPage(baseUrlOf(req)));
     }
-    if (wa === 'wsignin1.0') {
+    if (wa === WA_SIGN_IN) {
       this.signIn(req, res, params);
       log.debug("Leaving the passive requestor endpoint. wsignin1.0.");
       return;
     }
-    if (wa === 'wsignout1.0') {
+    if (wa === WA_SIGN_OUT) {
       this.signOut(req, res, params, false);
       log.debug("Leaving the passive requestor endpoint. wsignout1.0.");
       return;
     }
-    if (wa === 'wsignoutcleanup1.0') {
+    if (wa === WA_CLEANUP) {
       this.signOut(req, res, params, true);
       log.debug("Leaving the passive requestor endpoint. wsignoutcleanup1.0.");
       return;
     }
-    if (wa === 'wattr1.0' || wa === 'wpseudo1.0') {
+    if (WA_NOT_ANSWERED.indexOf(wa) >= 0) {
       log.debug("Leaving the passive requestor endpoint. " + wa + " is not " +
           "implemented.");
       errorCodes.mark(res, 'STS-WSFED-0012');
       log.debug("Leaving WsFederation.passiveRequestor().");
       return this.wsfedError(res, 501, 'That service is not implemented',
-        wa === 'wattr1.0'
+        wa === WsModel.term('wsfed.request', 'attribute')
           ? 'wattr1.0 is the attribute service (section 3.2/13.3): a relying ' +
             'party asking the identity provider for more claims about a ' +
             'subject it already has a token for. It is not implemented here, ' +
@@ -2582,13 +2607,22 @@ class WsFederation {
   roleDescriptor(base) {
     const { log, mode, stsCrypto, xmlEscape } = this.deps;
     log.debug("Entering WsFederation.roleDescriptor().");
-    const claim = (name, namespace, display, description) => {
+    // One offered claim type, from the model's `wsfed.claim`: its URI, its
+    // display name, and the description of what THIS REALM'S MODE emits
+    // (2026-09-12) — `invented` where development invents the value. A
+    // signed document describing fake values a product deployment never
+    // issues is a signed falsehood about the deployment.
+    const claim = (one) => {
       log.debug("Entering claim().");
+      const description = mode.inventsClaimValues() && one.invented
+        ? one.invented : one.description;
       log.debug("Leaving claim().");
-      return '<auth:ClaimType Uri="' + namespace + '/' + name + '" ' +
-        'Optional="true"><auth:DisplayName>' + xmlEscape(display) +
-        '</auth:DisplayName><auth:Description>' + xmlEscape(description) +
-        '</auth:Description></auth:ClaimType>';
+      return '<auth:ClaimType' + WsModel.attributes('wsfed.ClaimType', {
+        uri: one.value }) + '>' + WsModel.children('wsfed.ClaimType', {
+          displayName: '<auth:DisplayName>' + xmlEscape(one.display) +
+            '</auth:DisplayName>',
+          description: '<auth:Description>' + xmlEscape(description) +
+            '</auth:Description>' }) + '</auth:ClaimType>';
     };
 
     const keyDescriptor = (use) => {
@@ -2600,79 +2634,56 @@ class WsFederation {
         // The certificate, its chain and the service Root (#1064):
         // helpers.x509DataXml(), the one writer of an X509Data here.
         return '<md:KeyDescriptor use="' + use + '"><ds:KeyInfo ' +
-          'xmlns:ds="http://www.w3.org/2000/09/xmldsig#">' +
-          helpers.x509DataXml(one.certPem, one.chainPem) +
+          'xmlns:ds="' + WsModel.term('saml2.namespace', 'xmlSignature') +
+          '">' + helpers.x509DataXml(one.certPem, one.chainPem) +
           '</ds:KeyInfo></md:KeyDescriptor>';
       }).join('');
     };
 
-    const endpoint = (element, address) => {
+    const endpoint = (id, address) => {
       log.debug("Entering endpoint().");
+      const element = WsModel.message(id).element;
       log.debug("Leaving endpoint().");
-      return '<fed:' + element + '><wsa:EndpointReference><wsa:Address>' +
-        xmlEscape(address) +
-        '</wsa:Address></wsa:EndpointReference></fed:' + element + '>';
+      return '<fed:' + element + '>' + WsModel.children(id, {
+        endpointReference: '<wsa:EndpointReference>' +
+          WsModel.children('wsa.EndpointReference', {
+            address: '<wsa:Address>' + xmlEscape(address) +
+              '</wsa:Address>' }) + '</wsa:EndpointReference>' }) +
+        '</fed:' + element + '>';
     };
-    const out =
+    const out = WsModel.hold('wsfed.RoleDescriptor',
         '<md:RoleDescriptor ' +
-        'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"' +
-          ' xmlns:fed="' + WSFED_NS + '"' +
+        'xmlns:xsi="' + WsModel.term('wsfed.namespace', 'schemaInstance') +
+        '" xmlns:fed="' + WSFED_NS + '"' +
           ' xmlns:auth="' + WSFED_AUTH_NS + '"' +
-          ' xmlns:wsa="http://www.w3.org/2005/08/addressing"' +
-          ' xsi:type="fed:SecurityTokenServiceType"' +
-          ' protocolSupportEnumeration="' + WSFED_NS + ' ' +
-          'http://schemas.xmlsoap.org/ws/2005/02/trust">' +
-          keyDescriptor('signing') +
-          '<fed:TokenTypesOffered>' +
-            '<fed:TokenType Uri="' + SAML11_TOKEN_TYPE + '"/>' +
-            '<fed:TokenType Uri="' + SAML2_TOKEN_TYPE + '"/>' +
-          '</fed:TokenTypesOffered>' +
-          '<fed:ClaimTypesOffered>' +
-            claim('nameidentifier', CLAIM_NS, 'Name ID', 'The subject ' +
-                                                         'identifier this ' +
-                                                         'service minted.') +
-            claim('name', CLAIM_NS, 'Name', 'The username typed at the ' +
-                                            'sign-in screen.') +
-            // WHAT IS EMITTED IN THIS REALM'S MODE (2026-09-12). The
-            // development descriptions are the ones this document always
-            // carried, and they describe the persona `userFor()` invents; a
-            // product realm invents none, so the same claims say where the
-            // value really comes from. A signed document describing fake values
-            // a product deployment never issues is a signed falsehood about the
-            // deployment.
-            (mode.inventsClaimValues()
-              ? claim('givenname', CLAIM_NS, 'Given name', 'Made up from the ' +
-                  'username.') +
-                claim('surname', CLAIM_NS, 'Surname', 'Always "Mock".') +
-                claim('emailaddress', CLAIM_NS, 'E-mail address',
-                      'username@sts.example.') +
-                claim('upn', CLAIM_NS, 'UPN', 'The same string as the mail ' +
-                                              'address.')
-              : claim('givenname', CLAIM_NS, 'Given name',
-                      'The givenName on the person\'s directory entry; ' +
-                      'omitted when it has none.') +
-                claim('surname', CLAIM_NS, 'Surname',
-                      'The sn on the person\'s directory entry; omitted when ' +
-                      'it has none.') +
-                claim('emailaddress', CLAIM_NS, 'E-mail address',
-                      'The mail on the person\'s directory entry; omitted ' +
-                      'when it has none.') +
-                claim('upn', CLAIM_NS, 'UPN',
-                      'The same string as the mail address; omitted when ' +
-                      'there is none.')) +
-            claim('authenticationmethod', MS_CLAIM_NS, 'Authentication method',
-                  'What the browser session actually did: a password, a ' +
-                  'security key, multiple factors, a TLS client certificate, ' +
-                  'a Kerberos ticket, what a federation partner asserted, or ' +
-                  'unspecified when it was none of those.') +
-            claim('authenticationinstant', MS_CLAIM_NS, 'Authentication ' +
-                'instant',
-                  'When that session authenticated.') +
-          '</fed:ClaimTypesOffered>' +
-          endpoint('SecurityTokenServiceEndpoint',
-                   helpers.rebaseTo(base, 'ws-trust') + '/sts') +
-          endpoint('PassiveRequestorEndpoint', base + PASSIVE_PATH) +
-        '</md:RoleDescriptor>';
+          ' xmlns:wsa="' + WsModel.term('wsa.namespace', 'addressing') + '"' +
+          WsModel.attributes('wsfed.RoleDescriptor', {
+            protocolSupportEnumeration: WSFED_NS + ' ' + TRUST_2005_02 }) +
+          '>' +
+          WsModel.children('wsfed.RoleDescriptor', {
+            keyDescriptor: keyDescriptor('signing'),
+            tokenTypesOffered: '<fed:TokenTypesOffered>' +
+              WsModel.children('wsfed.TokenTypesOffered', {
+                tokenType: WsModel.terms('wsfed.tokenType', 'offered')
+                  .map(function (uri) {
+                    return '<fed:TokenType' +
+                      WsModel.attributes('wsfed.TokenType', { uri: uri }) +
+                      '/>';
+                  }).join('') }) +
+              '</fed:TokenTypesOffered>',
+            claimTypesOffered: '<fed:ClaimTypesOffered>' +
+              WsModel.children('wsfed.ClaimTypesOffered', {
+                claimType: WsModel.termsOf('wsfed.claim').map(claim)
+                  .join('') }) +
+              '</fed:ClaimTypesOffered>',
+            securityTokenServiceEndpoint: endpoint(
+              'wsfed.SecurityTokenServiceEndpoint',
+              helpers.rebaseTo(base, 'ws-trust') + '/sts'),
+            passiveRequestorEndpoint: endpoint(
+              'wsfed.PassiveRequestorEndpoint', base + PASSIVE_PATH) }) +
+        '</md:RoleDescriptor>', 'WS-Federation metadata role',
+        // A fragment: the EntityDescriptor around it declares `md:`.
+        { md: WsModel.term('saml2.namespace', 'metadata') });
     log.debug("Leaving WsFederation.roleDescriptor().");
     return out;
   }

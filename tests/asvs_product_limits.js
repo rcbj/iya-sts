@@ -269,9 +269,12 @@ function childMain() {
         note(list.indexOf("'" + name + "'") >= 0,
              name + ' is withheld from every LDAP reader');
       });
-    const scimMap = fs.readFileSync(ROOT_DIR + '/scim/scim_map.ts', 'utf8');
-    note(!/ldap:\s*'(stsTotp|stsBackup|oauthClientSecret|stsActivation)/
-      .test(scimMap), 'and SCIM maps none of them');
+    // The SCIM mapping is the model's since #1579.
+    const scimMap = fs.readFileSync(ROOT_DIR + '/models/scim/scim.tsp',
+                                    'utf8');
+    note(/ldap:\s*"uid"/.test(scimMap) &&
+         !/ldap:\s*"(stsTotp|stsBackup|oauthClientSecret|stsActivation)/i
+           .test(scimMap), 'and SCIM maps none of them');
 
     // --- 10. a person with no scope needs a role (#1473) --------------------
     const ldap = require(ROOT_DIR + '/ldap/ldap_server');

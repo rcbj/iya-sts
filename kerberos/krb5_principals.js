@@ -97,6 +97,7 @@ const realms = require('../common/realms');
 // an audit ring exists to hold a row.
 const errorCodes = require('../common/error_codes');
 const cacheRegistry = require('../common/cache_registry');
+const DomainClasses = require('../common/domain_classes');
 
 // ---------------------------------------------------------------------------
 // ONE PRINCIPAL DATABASE PER TRUST REALM (2026-09-15).
@@ -3928,17 +3929,18 @@ function delegationPolicy() {
   // principal table. In a process with no directory the registry answers
   // empty, and so does this.
   const applications = require('../common/applications');
-  const valuesOf = function (row, attribute) {
-    log.debug("Entering valuesOf().");
-    const raw = row && row.fields ? row.fields[attribute] : undefined;
-    log.debug("Leaving valuesOf().");
+  // A service's delegation is its concepts' (#1579): the Application's
+  // who-for and who-to, the KerberosService's ok-as-delegate.
+  const listOf = function (raw) {
+    log.debug("Entering listOf().");
+    log.debug("Leaving listOf().");
     return (Array.isArray(raw) ? raw : (raw === undefined || raw === null ||
       raw === '' ? [] : [raw])).map(String).filter(Boolean);
   };
-  const flag = function (row, attribute) {
+  const flag = function (raw) {
     log.debug("Entering flag().");
     log.debug("Leaving flag().");
-    return (valuesOf(row, attribute)[0] || '').toUpperCase() === 'TRUE';
+    return (listOf(raw)[0] || '').toUpperCase() === 'TRUE';
   };
   const suffix = '@' + ctx.REALM;
   const services = (applications.list() || []).filter(function (row) {
@@ -3953,11 +3955,13 @@ function delegationPolicy() {
   };
   services.forEach(function (row) {
     const id = String(row.identifier);
-    const semantics = valuesOf(row, 'appDelegationSemantics')
+    const app = DomainClasses.Application.fromEntry(row.fields || {});
+    const kdc = DomainClasses.KerberosService.fromEntry(row.fields || {});
+    const semantics = listOf(app.delegationSemantics)
       .map(function (one) { return one.toLowerCase(); });
     const impersonates = semantics.indexOf('impersonation') >= 0;
     // CLASSIC — the permission is on THIS account and names what it may reach.
-    valuesOf(row, 'appAllowedToDelegateTo').forEach(function (target) {
+    listOf(app.allowedToDelegateTo).forEach(function (target) {
       const warnings = [];
       if (!impersonates) {
         warnings.push('This account does not allow IMPERSONATION ' +
@@ -3994,7 +3998,7 @@ function delegationPolicy() {
     });
     // RESOURCE-BASED — the permission is on THIS account and names who may
     // act on its behalf, so the pair is built the other way round.
-    valuesOf(row, 'appAllowedToActOnBehalfOf').forEach(function (requester) {
+    listOf(app.allowedToActOnBehalfOf).forEach(function (requester) {
       const warnings = [];
       if (/\//.test(requester) && !known(requester)) {
         warnings.push('This KDC has no principal called ' + requester + '. ' +
@@ -4018,8 +4022,8 @@ function delegationPolicy() {
         note: String(row.description || '')
       });
     });
-    const notDelegated = flag(row, 'appNotDelegated');
-    const okAsDelegate = flag(row, 'krb5TrustedForDelegation');
+    const notDelegated = flag(app.notDelegated);
+    const okAsDelegate = flag(kdc.trustedForDelegation);
     if (notDelegated || impersonates || okAsDelegate) {
       accounts.push({
         principal: id,

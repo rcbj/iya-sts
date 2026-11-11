@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5410** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5426** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -60,14 +60,14 @@ is an ordinary outcome.
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 186
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 258
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
-* [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
-* [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
+* [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 74
+* [EST (RFC 7030) (`STS-EST`)](#sts-est) — 30
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 434
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 752
-* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 120
-* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 70
-* [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 31
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 755
+* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 121
+* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 71
+* [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 32
 * [Federation (`STS-FED`)](#sts-fed) — 217
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 257
@@ -76,19 +76,19 @@ is an ordinary outcome.
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 85
-* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 153
+* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 155
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 60
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 164
-* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 137
+* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 141
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 54
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 15
-* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 359
+* [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 361
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 33
 * [XACML and access policy (`STS-XACML`)](#sts-xacml) — 105
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 59
-* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 92
+* [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 93
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 269
@@ -99,7 +99,7 @@ is an ordinary outcome.
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 185
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
-* [Reporting (`STS-REPORT`)](#sts-report) — 58
+* [Reporting (`STS-REPORT`)](#sts-report) — 59
 * [Audit export (`STS-AUDIT`)](#sts-audit) — 16
 
 ## STS-HTTP
@@ -1217,9 +1217,11 @@ Raised from: acme/.
 | `STS-ACME-0094` | An ACME console or management API EAB or host name action was refused by the core with no code of its own. | Console error notice; HTTP 400 {ok: false, errors} from /admin-api |
 | `STS-ACME-0095` | An ACME endpoint, console action or management API action threw unexpectedly. | HTTP 500, ACME serverInternal problem; console error notice |
 | `STS-ACME-0096` | An ACME console or management API revoke-certificate named a certificate that is already revoked. | Console error notice; HTTP 400 {ok: false, errors} from /admin-api |
-| `STS-ACME-0097` | The query string of an ACME console page failed validation. | HTTP 400 text/plain |
+| `STS-ACME-0097` *(retired)* | The query string of an ACME console page failed validation. | HTTP 400 text/plain |
 | `STS-ACME-0098` | An ACME finalize was refused because the order is already being finalized by another request, on this node or another. | HTTP 403, ACME orderNotReady problem |
 | `STS-ACME-0099` | An ACME Replay-Nonce or an order's finalize could not be claimed because the cluster store could not be asked, so the request was refused. | HTTP 500, ACME serverInternal problem |
+| `STS-ACME-0100` | An ACME answer or problem document carried a member its model in models/enrollment/acme.tsp does not name, one of a type or a value the model does not allow, or lacked a required one (#1579). The answer is sent as it was built: the model describes the wire and does not reshape it, so this is a model gap to close. | none (recorded only; the answer is unchanged) |
+| `STS-ACME-0101` | An ACME problem document carried an error type models/enrollment/acme.tsp does not declare (#1579). The problem is sent as it was built; the type is to be declared, with the document that defines it. | none (recorded only; the problem is unchanged) |
 
 ## STS-EST
 
@@ -1251,13 +1253,14 @@ Raised from: est/.
 | `STS-EST-0020` | An EST handler failed unexpectedly; the client is told nothing about why. | HTTP 500 with a generic sentence |
 | `STS-EST-0021` | A /simplereenroll named a certificate that has expired or been revoked. | HTTP 400 |
 | `STS-EST-0022` | An EST label named a trust realm where the realm was already named — by the /realm/<id> prefix or by an earlier label segment (#251). A request names its realm once. | HTTP 404 with a plain-text sentence |
-| `STS-EST-0030` | A query string on /admin/est or /admin/est/monitor failed validation. | HTTP 400 on the console |
+| `STS-EST-0030` *(retired)* | A query string on /admin/est or /admin/est/monitor failed validation. | HTTP 400 on the console |
 | `STS-EST-0031` | An EST console or /admin-api action body failed validation. | HTTP 400 on the console or /admin-api |
 | `STS-EST-0032` | An EST console or /admin-api action named an action that does not exist. | HTTP 400 on the console or /admin-api |
 | `STS-EST-0033` | An EST /admin-api action was refused and carried no more specific code. | HTTP 400 on /admin-api |
 | `STS-EST-0034` | An EST /nonce request (draft-ietf-lamps-attestation-freshness section 5.1) was malformed: a body that is not one JSON object, a member the nonce-request CDDL does not define, a "len" outside 8..64, a "reqTypeInfo" without a dotted-decimal "type", or a body larger than est.maxRequestBytes (#257). | HTTP 400, a sentence and no nonce (section 5.1) |
 | `STS-EST-0035` | An EST /nonce POST did not carry application/est-attestation-freshness+json, the one media type draft-ietf-lamps-attestation-freshness section 5.1 allows (#257). | HTTP 400 (section 5.1 answers every error 400) |
 | `STS-EST-0036` | An EST /nonce request named a "reqTypeInfo" type this service defines no reqInfo/respInfo for, so it is unable to answer it (draft-ietf-lamps-attestation-freshness section 5.1) (#257). | HTTP 503 (section 5.1) |
+| `STS-EST-0037` | An EST /nonce answer carried a member its model in models/enrollment/est.tsp does not name, or one of a type the model does not allow (#1579). The answer is sent as it was built: the model describes the wire and does not reshape it, so this is a model gap to close. | none (recorded only; the answer is unchanged) |
 
 ## STS-SCEP
 
@@ -2519,6 +2522,9 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-1002` | A confidential client sent no code_challenge, in product (ASVS 5.0.0 10.4.6). | invalid_request |
 | `STS-OAUTH-1003` | A dynamic client registration was refused because the register did not store it (ASVS 5.0.0 2.3.3). | invalid_client_metadata |
 | `STS-OAUTH-1004` | A registered request_uri was not fetched under the outbound policy: federation.outbound is off, its host is not in security.outboundAllowedHosts, or (in product mode) the name resolves to a loopback, private, link-local or reserved address (ASVS 5.0.0 1.3.6). | invalid_request_uri (HTTP 400) |
+| `STS-OAUTH-1005` | An OAuth 2.0 or OpenID Connect answer carried a member its model in models/oauth/oauth_members.tsp does not name, or one of a type the model does not allow (#1579). The answer is sent as it was built: the model describes the wire and does not reshape it, so this is a model gap to close. | none (recorded only; the answer is unchanged) |
+| `STS-OAUTH-1006` | An OAuth 2.0 or OpenID Connect error response carried an error code models/oauth/oauth_members.tsp does not declare (#1579). The response is sent as it was built; the code is to be declared, with the document that defines it. | none (recorded only; the response is unchanged) |
+| `STS-OAUTH-1007` | A dynamic client registration, an RFC 7592 update or an OpenID Federation automatic registration carried a member of a JSON type models/oauth/oauth_members.tsp's RegistrationRequest does not allow (grant_types as a string, client_name as a number, an array holding a non-string) that no more specific refusal tested (rcbj on #1579). Until 2026-11-11 it was recorded under STS-OAUTH-1005 and accepted. | invalid_client_metadata (HTTP 400), RFC 7591 section 3.2.2 |
 
 ## STS-SAML
 
@@ -2648,6 +2654,7 @@ Raised from: saml/.
 | `STS-SAML-0118` | A service provider's metadata reaches no trust anchor, so it was not consumed, under paranoid PKI mode (#1360). | the caller's refusal, or the refresh's recorded failure |
 | `STS-SAML-0119` | A passive SAML 2.0 request was answered NoPassive: the person has not agreed to sign in to the service provider, and a passive request cannot ask (ASVS 5.0.0 7.6.2). | NoPassive |
 | `STS-SAML-0120` | A SAML sign-in was refused because the person declined, on the consent screen, to sign in to the application (ASVS 5.0.0 7.6.2). | RequestDenied (SAML 2.0); a page (SAML 1.1) |
+| `STS-SAML-0121` | A SAML message or metadata document this service built does not match its model in models/saml/ (#1579): its root, an attribute, a fixed value, or a child element or its order. The document is sent as it was built: the model describes the wire and does not reshape it, so this is a model gap to close. | none (recorded only; the document is unchanged) |
 
 ## STS-WSTRUST
 
@@ -2727,6 +2734,7 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0068` | A Validate named a Kerberos token the acceptor did not accept, or that was not checked because wstrust.acceptKerberos is off (#658). | HTTP 200 RSTR with wst:Status invalid, WS-Trust 1.4 section 7 |
 | `STS-WSTRUST-0069` | A WS-Security signature's KeyInfo names a Kerberos token that the security header does not carry, by Reference or by its #Kerberosv5APREQSHA1 key identifier (#658). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0070` | A UsernameToken was refused without being checked: too many recent failures for that identity (#1448). | SOAP FailedAuthentication |
+| `STS-WSTRUST-0071` | A SOAP envelope /sts built — an RSTR, an RSTR collection or a Fault — does not match its model in models/ws/ (#1579): its root, an attribute, a fixed value, or a child element or its order, the SAML assertion inside held to models/saml/. The envelope is sent as it was built: the model describes the wire and does not reshape it, so this is a model gap to close. | none (recorded only; the envelope is unchanged) |
 
 ## STS-WSFED
 
@@ -2767,6 +2775,7 @@ Raised from: ws-federation/.
 | `STS-WSFED-0029` | An identity-provider-initiated sign-in back from its one step-up on risk (sts_risk_retry=1) was still denied on risk by the issuance policy, and was refused rather than sent round again (#712). | HTTP 403 error page |
 | `STS-WSFED-0030` | A wsignin1.0 named an EAP phishing-resistant class URI as wauth (phr, or only phrh) and the session still had not earned that class after the one trip to the sign-in screen. A page, because this profile has no status to carry. Two class URIs in one wauth stay the unknown-method refusal (#737). | HTTP 400 error page |
 | `STS-WSFED-0031` | A WS-Federation sign-in was refused because the person declined, on the consent screen, to sign in to the relying party (ASVS 5.0.0 7.6.2). | — |
+| `STS-WSFED-0032` | A WS-Federation sign-in response (the RSTR posted in wresult) or the metadata role this service built does not match its model in models/ws/ (#1579): its root, an attribute, a fixed value, or a child element or its order. It is sent as it was built: the model describes the wire and does not reshape it, so this is a model gap to close. | none (recorded only; the document is unchanged) |
 
 ## STS-FED
 
@@ -3858,6 +3867,8 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0151` | The workload agent could not obtain an SVID or a bundle from the SPIRE Server API (#324). | — |
 | `STS-SPIFFE-0152` | The workload agent attested and bound its Unix socket but could not write the file named by --ready-file, so it stopped rather than serve a socket its workload waits on and cannot find (#695). | — |
 | `STS-SPIFFE-0153` | The SPIRE Server API could not be given a TLS identity under paranoid PKI mode, so its address was not bound plain (#1360). | none: the address does not answer, and GET /spiffe says so |
+| `STS-SPIFFE-0154` | A SPIFFE answer — a Workload API, SPIRE Server API or Broker API message a handler handed grpc-js, a bundle, a minted JWT-SVID's header or claims — carried a member its model in models/spiffe/*.tsp does not name (protobufjs drops it without a word), a value of a type the field does not take, or lacked one the model requires (#1579). The answer is sent as it was built: the model describes the wire and does not reshape it, so this is a model gap or a defect to close. | none (recorded only; the answer is unchanged) |
+| `STS-SPIFFE-0155` | A SPIFFE gRPC call ended with a status its service and method in models/spiffe/*.tsp do not declare (#1579). The status is sent as it was: this is a model gap to close. | none (recorded only; the status is unchanged) |
 
 ## STS-TLS
 
@@ -4246,6 +4257,10 @@ Raised from: ssf/.
 | `STS-SSF-0156` | An HTTP Basic credential was refused without being checked: too many recent failures (#1448). | HTTP 401 |
 | `STS-SSF-0157` | A person authenticated by HTTP Basic holds no console role, in product (ASVS 5.0.0 8.2.1). | HTTP 403 |
 | `STS-SSF-0158` | A push delivery address is internal or could not be resolved, in product (ASVS 5.0.0 1.3.6). | the delivery fails |
+| `STS-SSF-0159` | A Shared Signals answer — the transmitter metadata, a stream configuration, a status or a poll — carried a member its model in models/ssf/ssf.tsp does not name, one of a type the model does not allow, or lacked one it requires (#1579). The answer is sent as it was built: the model describes the wire and does not reshape it, so this is a model gap to close. | none (recorded only; the answer is unchanged) |
+| `STS-SSF-0160` | A Shared Signals refusal carried an err value models/ssf/ssf.tsp does not declare (#1579). The refusal is sent as it was built; the value is to be declared, or the refusal to use a declared one. | none (recorded only; the refusal is unchanged) |
+| `STS-SSF-0161` | A Security Event Token this service built carried a claim models/ssf/ssf.tsp does not name, one of a type it does not allow, or lacked one RFC 8417 requires (#1579). The SET is sent as it was built; this is a model gap to close. | none (recorded only; the SET is unchanged) |
+| `STS-SSF-0162` | A document this realm exchanged with a federation partner's Shared Signals transmitter is not the shape models/ssf/ssf.tsp gives it (#1579): a configuration or a SET the partner sent, or a stream request or poll this realm sent. Recorded; what was received is still judged by the receiver's own checks, and what is sent is sent unchanged. | none (recorded only) |
 
 ## STS-RISK
 
@@ -4661,7 +4676,7 @@ Raised from: gnap/.
 | `STS-GNAP-0660` | A GNAP console or management API revoke-grant names a grant that is not in this realm. | Console error notice; HTTP 400 {ok: false, errors} from /admin-api |
 | `STS-GNAP-0661` | A GNAP console or management API delete-resource-set names a resource set not registered in this realm. | Console error notice; HTTP 400 {ok: false, errors} from /admin-api |
 | `STS-GNAP-0662` | A GNAP console or management API action is not one of revoke-grant and delete-resource-set. | Console error notice; HTTP 400 {ok: false, errors} from /admin-api |
-| `STS-GNAP-0663` | The query string of a GNAP console page failed validation. | HTTP 400 text/plain |
+| `STS-GNAP-0663` *(retired)* | The query string of a GNAP console page failed validation. | HTTP 400 text/plain |
 | `STS-GNAP-0664` *(retired)* | A GNAP console action form post failed validation. | Console error notice |
 | `STS-GNAP-0665` | A GNAP management API action was refused and the refusal carried no more specific code. | HTTP 400 {ok: false, errors} |
 | `STS-GNAP-0700` | The approver of a GNAP grant could not be recorded for the Shared Signals subject scope; the approval went ahead. | — |
@@ -4750,6 +4765,8 @@ Raised from: gnap/.
 | `STS-GNAP-0906` | In product mode, a GNAP client instance proved a key no application entry registers, and the class_id its request sent does not name an application such a key may be an instance of: no GNAP client of that identifier in the realm, a resource server, one nobody registered, or one listing no registered gnapFinishUri (#1216). With no class_id, the refusal is STS-GNAP-0082. | HTTP 401 GNAP invalid_client (RFC 9635 sections 2.3 and 2.3.3) |
 | `STS-GNAP-0907` | A GNAP grant made by an unregistered instance of its application (#1216) was refused at use — its continuation, or introspected inactive — because gnap.unregisteredInstances has been turned off since (#1219). Such a grant is never refused for the key missing from the entry, where it never was (that is STS-GNAP-0731 for every other grant). | RFC 9635 section 5 (invalid_continuation); RFC 9767 section 3.3 (active: false) |
 | `STS-GNAP-0908` | The custom claims configured for a GNAP access-token JWT could not be read. The token is still minted, without those claims. The protocol claims are unaffected. | RFC 9635 section 3.2.1 (the access token is opaque to the client); the JWT is what a resource server verifies |
+| `STS-GNAP-0910` | A GNAP answer carried a member its model in models/gnap/gnap.tsp does not name, one of a type or value the model does not allow, or lacked one the model requires (#1579). The answer is sent as it was built: the model describes the wire and does not reshape it, so this is a model gap to close. | none (recorded only; the answer is unchanged) |
+| `STS-GNAP-0911` | A GNAP error response carried an error code models/gnap/gnap.tsp does not declare (#1579). The response is sent as it was built; the code is to be declared, with the document that defines it. | none (recorded only; the response is unchanged) |
 
 ## STS-DEVICE
 
@@ -5136,6 +5153,7 @@ Raised from: authzen/.
 | `STS-AUTHZEN-0113` | An AuthZEN scope tuple's scope is a gated permission no role of its subject authorizes (#302); answered false (#1181). | decision: false |
 | `STS-AUTHZEN-0114` | An AuthZEN token-exchange subject gate named a subject token with no lifetime left (context.subject_token.exp), so any token_lifetime would be 0, a denial; answered false (#1181). | decision: false |
 | `STS-AUTHZEN-0115` | A granted_scope wider than the subject token's scope was built for an AuthZEN token-exchange answer and was not sent: the no-broadening rule held at the last moment, which is a defect (#1181). | none — logged; the envelope is sent without it |
+| `STS-AUTHZEN-0116` | An AuthZEN answer carried a member its model in models/authzen/authzen_members.tsp does not name, one of a type or value the model does not allow, or lacked a member it requires (#1579). The answer is sent as it was built: the model describes the wire and does not reshape it, so this is a model gap to close. | none (recorded only; the answer is unchanged) |
 
 ## STS-FGA
 
@@ -6144,6 +6162,7 @@ Raised from: report/.
 | `STS-REPORT-0057` | A query parameter of a /report-api request held a value its declared type does not, and was refused before the operation ran (#1483). | HTTP 400 {error:invalid_query, error_description} |
 | `STS-REPORT-0058` | A /report-api request carried a custom header that its operation does not declare and no specification or known proxy, CDN or tracing family defines, and was refused before the operation ran (#1483). | HTTP 400 {error:invalid_query, error_description} |
 | `STS-REPORT-0059` | A token was refused because the person it names no longer exists. | HTTP 401 |
+| `STS-REPORT-0060` | A stored report definition no longer holds to the Reports API model (a filter naming a parameter longer than 64 characters, saved before #1579 bounded it), so it is answered without its document and parameters, and a run of it is refused for its query. | recorded |
 
 ## STS-AUDIT
 

@@ -34,6 +34,88 @@ const EXPECTED_IDS = [
   'xacmlPep', 'xacmlPolicy'
 ];
 
+// RFC 5612's enterprise number, reserved for documentation. This service's
+// own names were numbered under it until its Private Enterprise Number
+// (67607, #1471) was assigned; #1573 moved them.
+const DOCUMENTATION_ROOT = '1.3.6.1.4.1.32473';
+
+/**
+ * NOTHING THIS SERVICE PUBLISHES MAY USE THE DOCUMENTATION NUMBER ONCE THE
+ * REGISTER SAYS ITS ROOT IS REAL (#1573): the catalogue, the RFC 4512
+ * definitions written from it, and every page under docs/. While the root
+ * is still a placeholder the reading page must say so, and it must not
+ * once it is not.
+ *
+ * @param {object} t - the assertion kit
+ * @param {object} catalog - a collected catalogue
+ * @param {object} register - models/directory/oid_register.json
+ */
+function documentationNumber(t, catalog, register) {
+  log.debug("Entering documentationNumber().");
+  const ModelEmit = require('../common/model_emit');
+  const startsAt = function (oid) {
+    return typeof oid === 'string' &&
+      (oid === DOCUMENTATION_ROOT ||
+        oid.indexOf(DOCUMENTATION_ROOT + '.') === 0);
+  };
+  t.equal(catalog.oidRoot.root, register.root,
+    'the catalogue carries the register\'s root');
+  t.equal(catalog.oidRoot.placeholder, register.placeholder === true,
+    'the catalogue carries whether the root is a placeholder');
+  if (register.placeholder === true) {
+    t.check(ModelEmit.directoryDocs(catalog).indexOf('is a placeholder') >= 0,
+      'a placeholder root is said to be one on the reading page');
+    log.debug("Leaving documentationNumber().");
+    return;
+  }
+  t.check(!startsAt(register.root),
+    'a root that is not a placeholder is not RFC 5612\'s number');
+  const onDocumentation = [];
+  catalog.objects.forEach(function (object) {
+    object.attributes.concat(object.personAttributes).concat(
+      object.objectClasses).forEach(function (row) {
+      if (startsAt(row.oid)) {
+        onDocumentation.push(row.name);
+      }
+    });
+  });
+  t.equal(onDocumentation.join(','), '',
+    'no name in the catalogue is numbered under RFC 5612\'s number');
+  const schema = ModelEmit.ldapSchema(catalog.objects);
+  const definitions = schema.attributeTypes.concat(schema.objectClasses)
+    .filter(function (one) {
+      return one.indexOf(DOCUMENTATION_ROOT) >= 0;
+    });
+  t.equal(definitions.length, 0,
+    'no RFC 4512 definition uses RFC 5612\'s number', definitions[0]);
+  const page = ModelEmit.directoryDocs(catalog);
+  t.check(page.indexOf('is a placeholder') < 0,
+    'the reading page no longer calls the OIDs placeholders');
+  const placeholderCatalog = Object.assign({}, catalog, {
+    oidRoot: { root: DOCUMENTATION_ROOT, placeholder: true }
+  });
+  t.check(ModelEmit.directoryDocs(placeholderCatalog).indexOf(
+    'An OID that begins `' + DOCUMENTATION_ROOT + '` is a placeholder') >= 0,
+    'a placeholder root would still be said to be one');
+  const docs = path.join(ROOT, 'docs');
+  const published = [];
+  const walk = function (dir) {
+    fs.readdirSync(dir, { withFileTypes: true }).forEach(function (entry) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+      } else if (/\.(md|html|json|yaml|yml|txt)$/.test(entry.name) &&
+          fs.readFileSync(full, 'utf8').indexOf(DOCUMENTATION_ROOT) >= 0) {
+        published.push(path.relative(ROOT, full));
+      }
+    });
+  };
+  walk(docs);
+  t.equal(published.join(','), '',
+    'no page under docs/ carries RFC 5612\'s number');
+  log.debug("Leaving documentationNumber().");
+}
+
 function objectById(catalog, id) {
   log.debug("Entering objectById().");
   const found = catalog.objects.filter(function (object) {
@@ -149,13 +231,26 @@ function run(t) {
     'stsApplication has an OID from this service\'s register');
   t.equal(gapCount(first, 'oid-unassigned'), 0,
     'every name has an OID, or a register entry saying who publishes it');
-  t.check(/^1\.3\.6\.1\.4\.1\.32473\.1\.2\.\d+$/.test(stsClass.oid),
-    'the class is under the arc, which is RFC 5612\'s until Iya has its own');
+  const register = JSON.parse(fs.readFileSync(path.join(ROOT, 'models',
+    'directory', 'oid_register.json'), 'utf8'));
+  t.check(typeof stsClass.oid === 'string' &&
+    stsClass.oid.indexOf(register.root + '.1.2.') === 0 &&
+    /^\d+$/.test(stsClass.oid.slice((register.root + '.1.2.').length)),
+    'the class is under the register\'s class arc', stsClass.oid);
+  documentationNumber(t, first, register);
 
   t.equal(gapCount(first, 'no-schema', 'person'), 1, 'person has no SCHEMA');
   t.equal(gapCount(first, 'no-schema', 'group'), 1, 'group has no SCHEMA');
-  t.check(gapCount(first, 'kind-unspecified', 'role', 'roleName') >= 1,
-    'a role attribute that omits kind stays unspecified');
+  // EVERY ATTRIBUTE STATES HOW MANY VALUES IT HOLDS (#1579, 2026-11-11):
+  // the model, or the standard that defines the name. A new attribute that
+  // states neither is a gap, and this is what reports it.
+  const unstated = first.gaps.filter(function (gap) {
+    return gap.code === 'kind-unspecified';
+  }).map(function (gap) {
+    return gap.object + '.' + gap.name;
+  });
+  t.equal(unstated.length, 0,
+    'every attribute states how many values it holds', unstated.join(', '));
   t.equal(gapCount(first, 'json-blob', 'attributeSource',
     'stsAttributeSourceData'), 1,
     'an attribute source is one JSON value');
@@ -264,15 +359,12 @@ function run(t) {
   const number = collector.parse(first, 'application',
     { appIdentifier: 1 });
   t.check(!number.ok, 'a number is not a single-valued string');
-  const role = objectById(first, 'role');
-  const unspecified = role.attributes.filter(function (row) {
-    return row.kind === 'unspecified';
-  })[0];
-  t.check(!!unspecified, 'a role attribute omits kind');
-  const loose = {};
-  loose[unspecified.name] = 1;
-  const looseParsed = collector.parse(first, 'role', loose);
-  t.check(looseParsed.ok, 'unspecified kind accepts a non-string',
+  // A stated single-valued policy attribute is a string to the validator,
+  // as an application's is above.
+  const loose = { stsPostLoginNoPasskeyRole: 1 };
+  const looseParsed = collector.parse(first, 'policy.postLogin', loose);
+  t.check(!looseParsed.ok,
+    'a single-valued policy attribute is not a number',
     looseParsed.errors.join(';'));
 
   const applicationClass = ModelEmit.directoryClass(application);
@@ -282,9 +374,10 @@ function run(t) {
     'the class parses with strictObject');
   t.check(applicationClass.indexOf('z.string()') >= 0,
     'a single attribute is a string');
-  const roleClass = ModelEmit.directoryClass(role);
-  t.check(roleClass.indexOf('z.unknown()') >= 0,
-    'unspecified kind is unknown');
+  const postLoginClass = ModelEmit.directoryClass(
+    objectById(first, 'policy.postLogin'));
+  t.check(postLoginClass.indexOf('z.unknown()') < 0,
+    'every post-login attribute states its kind, so none is unknown');
   const passwordClass = ModelEmit.directoryClass(password);
   const onPerson = passwordClass.indexOf('class PolicyPasswordOnPerson');
   t.check(onPerson > passwordClass.indexOf('class PolicyPassword {'),

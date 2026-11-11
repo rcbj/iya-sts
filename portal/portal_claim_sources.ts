@@ -59,6 +59,8 @@ import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
+type AccountAnswering<K extends keyof IyaApi.Account.Operations> =
+  import('../types/account-api').AccountAnswering<K>;
 type AccountContext = import('../types/account-api').AccountContext;
 type AccountCaller = import('../types/account-api').AccountCaller;
 
@@ -213,7 +215,8 @@ class PortalClaimSources {
    * @param body - the checked body
    * @returns nothing
    */
-  act(ctx: AccountContext, req: Json, res: Json, caller: AccountCaller,
+  act(ctx: AccountContext, req: Json, res: AccountAnswering<'linkClaimSource'>,
+      caller: AccountCaller,
       body: Json): unknown {
     const { log, claimsProviders } = this.deps;
     log.debug("Entering PortalClaimSources.act().");
@@ -459,8 +462,8 @@ class PortalClaimSources {
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/claim-sources',
         operationId: 'getClaimSources', access: 'person', query: PAGE_QUERY,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           const view = self.view(caller.username, input.query.page || 1);
           if (input.query.done) {
             view.notice = String(input.query.done);
@@ -472,8 +475,8 @@ class PortalClaimSources {
         } },
       { method: 'POST', path: ctx.BASE + '/claim-sources',
         operationId: 'linkClaimSource', access: 'person', body: LINK_FORM,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.act(ctx, req, res, caller, input.body);
         } }
     ];

@@ -69,6 +69,8 @@ import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
+type AccountAnswering<K extends keyof IyaApi.Account.Operations> =
+  import('../types/account-api').AccountAnswering<K>;
 type AccountContext = import('../types/account-api').AccountContext;
 
 const vz = validation.z;
@@ -484,7 +486,8 @@ class AccountActivation {
    * @param query - the checked query
    * @returns nothing
    */
-  async open(ctx: AccountContext, req: Json, res: Json,
+  async open(ctx: AccountContext, req: Json,
+             res: AccountAnswering<'getActivation'>,
              query: Json): Promise<unknown> {
     const { log, credentials, passkeyPolicy } = this.deps;
     const { audit, websecurity } = ctx;
@@ -663,7 +666,7 @@ class AccountActivation {
    * @param body - the checked body
    * @returns nothing
    */
-  async spend(ctx: AccountContext, req: Json, res: Json,
+  async spend(ctx: AccountContext, req: Json, res: AccountAnswering<'activate'>,
               body: Json): Promise<unknown> {
     const { log, credentials, passkeyPolicy, webauthnPolicy } = this.deps;
     const { audit, websecurity } = ctx;
@@ -883,16 +886,16 @@ class AccountActivation {
       { method: 'GET', path: ctx.BASE + '/activation',
         operationId: 'getActivation', access: 'link',
         query: ACTIVATE_QUERY,
-        handler: function (req: Json, res: Json, caller: Json,
-                           input: Json): unknown {
+        handler: function (req, res, caller,
+                           input): unknown {
           return self.open(ctx, req, res, Object.assign({}, input.query,
             { token: String(req.headers['x-link-token'] || '') }));
         } },
       { method: 'POST', path: ctx.BASE + '/activation',
         operationId: 'activate', access: 'link',
         body: ACTIVATE_FORM,
-        handler: function (req: Json, res: Json, caller: Json,
-                           input: Json): unknown {
+        handler: function (req, res, caller,
+                           input): unknown {
           return self.spend(ctx, req, res, input.body);
         } }
     ];

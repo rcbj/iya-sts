@@ -128,6 +128,12 @@ declare namespace IyaDomain {
     actor?: string;
     target?: string;
     summary: string;
+    origin?: string;
+    actorForm?: string;
+    protocol?: string;
+    channel?: string;
+    address?: string;
+    detail?: Record<string, unknown>;
   }
 
   /**
@@ -289,6 +295,7 @@ declare namespace IyaDomain {
    * What the directory keeps about any entry.
    */
   interface DirectoryEntry {
+    entryUuid?: string;
     createTimestamp?: string;
     modifyTimestamp?: string;
     entryDN?: string;
@@ -440,6 +447,8 @@ declare namespace IyaDomain {
     stsPostLoginPolicy?: string;
     stsAttributePolicy?: string;
     federationRelationship?: string[];
+    email?: string;
+    displayName?: string;
   }
 
   /**
@@ -458,6 +467,11 @@ declare namespace IyaDomain {
     sessionId?: string;
     grantId?: string;
     revoked: boolean;
+    username?: string;
+    issuedAt: number;
+    revocable: boolean;
+    dpopThumbprint?: string;
+    state?: string;
   }
 
   /**
@@ -730,6 +744,8 @@ declare namespace IyaDomain {
     mayAct?: string;
     delegationSemantics?: string[];
     defaultDelegationSemantics?: string;
+    authzenApplication?: string[];
+    authzenCallbackUri?: string[];
     mailVerified?: string;
     audSub?: string[];
   }
@@ -932,6 +948,16 @@ declare namespace IyaDomain {
     expires: number;
     lastSeenAt: number;
     events: AuthenticationEvent[];
+    eventsDropped?: number;
+    sub?: string;
+    derivedFrom?: string;
+    relyingPartySurface?: string;
+    relyingPartyLabel?: string;
+    relyingPartyClientId?: string;
+    relyingPartyRenewals?: number;
+    relyingPartyRenewedAt?: number;
+    apiCalls?: number;
+    accountSetId?: string;
   }
 
   /**

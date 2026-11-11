@@ -41,6 +41,8 @@
 // load, where it was always declared.
 // ---------------------------------------------------------------------------
 
+// Types a row of actions by its own actions' operations (#1579).
+import ApiRows = require('../common/api_rows');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
@@ -118,7 +120,12 @@ class OAuth2MonitorApi {
    * @param status - the HTTP status
    * @param body - the body, serialised with indentation
    */
-  sendJson(res: Res, status: number, body: Json): void {
+  // TYPED BY THE OPERATION (#1579): through a handler's response, the
+  // answer is held to the model's at a literal 2xx status
+  // (`types/api-handlers.d.ts`).
+  sendJson<R, S extends number>(res: R, status: S,
+           body: IyaApi.AnswerOf<R, S>): void;
+  sendJson(res: any, status: number, body: any): void {
     const { log } = this.deps;
     log.debug("Entering OAuth2MonitorApi.sendJson(). status=" + status);
     // error-code: none — the status is a variable; each refusal below marks
@@ -153,7 +160,7 @@ class OAuth2MonitorApi {
     const { log, parseBody, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering OAuth2MonitorApi.buildRoutes().");
-    const ROUTES = [
+    const ROUTES: IyaApi.AdminRow[] = [
       { method: 'GET', path: BASE + '/oauth2/monitor',
         tag: 'OAuth 2.0 / OIDC',
         operationId: 'getOauth2Monitor',
@@ -197,7 +204,7 @@ class OAuth2MonitorApi {
             description: 'Which page of the RFC 9470 section\'s ' +
                          'per-client counter rows.' }
         ],
-        handler: function (req: Req, res: Res) {
+        handler: function (req, res) {
           log.debug("Entering the management API OAuth 2.0 monitor " +
                     "endpoint.");
           const model = self.consoleModel();
@@ -214,10 +221,10 @@ class OAuth2MonitorApi {
                     "endpoint.");
         } },
 
-      { method: 'POST', route: BASE + '/oauth2/monitor/:action',
+      ApiRows.actions({ method: 'POST', route: BASE + '/oauth2/monitor/:action',
         tag: 'OAuth 2.0 / OIDC',
         mirrors: 'POST /admin/oauth2/monitor',
-        handler: function (req: Req, res: Res) {
+        handler: function (req, res) {
           log.debug("Entering the management API OAuth 2.0 monitor " +
                     "action.");
           const body = Object.assign(
@@ -250,7 +257,7 @@ class OAuth2MonitorApi {
         actions: [
           { action: 'delete-pushed-request',
             operationId: 'deletePushedRequest' }
-        ] }
+        ] })
     ];
     log.debug("Leaving OAuth2MonitorApi.buildRoutes().");
     return ROUTES;

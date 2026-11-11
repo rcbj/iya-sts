@@ -22,8 +22,19 @@ import { documents, everyOperation, projections, renderApiTypes }
   from '../lib/api_lib.mjs';
 import { checkDomains, readDomains, renderClasses, renderTypes }
   from '../lib/domain_lib.mjs';
-import { factsOf, fieldsOf, linksIn, readDirectory, readPersistence, readSpellings,
-  renderScript, schemaOf } from '../lib/model_lib.mjs';
+import { checkScim, readScim } from '../lib/scim_lib.mjs';
+import { checkOAuth, readOAuth } from '../lib/oauth_lib.mjs';
+import { checkGnap, readGnap } from '../lib/gnap_lib.mjs';
+import { checkAuthzen, readAuthzen } from '../lib/authzen_lib.mjs';
+import { checkSsf, readSsf } from '../lib/ssf_lib.mjs';
+import { checkEnrollment, readEnrollment }
+  from '../lib/enrollment_lib.mjs';
+import { checkSpiffe, describeProtos, readSpiffe }
+  from '../lib/spiffe_lib.mjs';
+import { createRequire } from 'module';
+import { checkSaml, readSaml, unclaimed } from '../lib/saml_lib.mjs';
+import { checkFacts, factsOf, fieldsOf, linksIn, readDirectory, readPersistence,
+  readSpellings, renderScript, schemaOf } from '../lib/model_lib.mjs';
 
 const log = bunyan.createLogger({
   name: 'sts-model-generate',
@@ -32,6 +43,30 @@ const log = bunyan.createLogger({
 
 const ROOT = path.join(path.dirname(url.fileURLToPath(import.meta.url)),
   '..', '..');
+
+// The vendored protos the SPIFFE model is held to: the files
+// `spiffe/spiffe_grpc.ts` loads, read by the protobufjs it loads them with.
+const SPIFFE_PROTOS = ['workloadapi.proto', 'brokerapi.proto',
+  'spire/api/server/entry/v1/entry.proto',
+  'spire/api/server/agent/v1/agent.proto',
+  'spire/api/server/bundle/v1/bundle.proto',
+  'spire/api/server/svid/v1/svid.proto',
+  'spire/api/server/trustdomain/v1/trustdomain.proto',
+  'spire/api/server/debug/v1/debug.proto'];
+
+/**
+ * The vendored SPIFFE protos, described.
+ *
+ * @returns from `describeProtos()`
+ */
+function vendoredProtos() {
+  log.debug("Entering vendoredProtos().");
+  const require = createRequire(path.join(ROOT, 'package.json'));
+  const protobuf = require('protobufjs');
+  log.debug("Leaving vendoredProtos().");
+  return describeProtos(protobuf, path, path.join(ROOT, 'spiffe', 'protos'),
+                        SPIFFE_PROTOS);
+}
 
 /**
  * Compiles the model and writes each authored object's table.
@@ -60,6 +95,11 @@ async function generate() {
   const authored = objects.filter(function (object) {
     return object.authored === true;
   });
+  const wrong = checkFacts(objects);
+  if (wrong.length > 0) {
+    log.debug("Leaving generate(). An entry's facts are wrong.");
+    throw new Error('The directory model is wrong: ' + wrong.join('; '));
+  }
   const names = readSpellings(program);
   if (!names) {
     log.debug("Leaving generate(). No name lists.");
@@ -83,6 +123,83 @@ async function generate() {
   fs.writeFileSync(path.join(out, 'domain.d.ts'), renderTypes(concepts));
   fs.writeFileSync(path.join(out, 'domain_classes.txt'),
     renderClasses(concepts));
+  const scim = readScim(program);
+  const scimProblems = checkScim(scim, objects);
+  if (scimProblems.length > 0) {
+    log.debug("Leaving generate(). The SCIM model is wrong.");
+    throw new Error('The SCIM model is wrong: ' + scimProblems.join('; '));
+  }
+  fs.writeFileSync(path.join(out, 'scim.json'), JSON.stringify(scim));
+  const oauth = readOAuth(program);
+  const oauthProblems = checkOAuth(oauth);
+  if (oauthProblems.length > 0) {
+    log.debug("Leaving generate(). The OAuth model is wrong.");
+    throw new Error('The OAuth model is wrong: ' + oauthProblems.join('; '));
+  }
+  fs.writeFileSync(path.join(out, 'oauth.json'), JSON.stringify(oauth));
+  const gnap = readGnap(program);
+  const gnapProblems = checkGnap(gnap);
+  if (gnapProblems.length > 0) {
+    log.debug("Leaving generate(). The GNAP model is wrong.");
+    throw new Error('The GNAP model is wrong: ' + gnapProblems.join('; '));
+  }
+  delete gnap.problems;
+  fs.writeFileSync(path.join(out, 'gnap.json'), JSON.stringify(gnap));
+  const authzen = readAuthzen(program);
+  const authzenProblems = checkAuthzen(authzen);
+  if (authzenProblems.length > 0) {
+    log.debug("Leaving generate(). The AuthZEN model is wrong.");
+    throw new Error('The AuthZEN model is wrong: ' +
+                    authzenProblems.join('; '));
+  }
+  fs.writeFileSync(path.join(out, 'authzen.json'), JSON.stringify(authzen));
+  const ssf = readSsf(program);
+  const ssfProblems = checkSsf(ssf);
+  if (ssfProblems.length > 0) {
+    log.debug("Leaving generate(). The Shared Signals model is wrong.");
+    throw new Error('The Shared Signals model is wrong: ' +
+                    ssfProblems.join('; '));
+  }
+  fs.writeFileSync(path.join(out, 'ssf.json'), JSON.stringify(ssf));
+  const enrollment = readEnrollment(program);
+  const enrollmentProblems = checkEnrollment(enrollment);
+  if (enrollmentProblems.length > 0) {
+    log.debug("Leaving generate(). The enrollment model is wrong.");
+    throw new Error('The enrollment model is wrong: ' +
+      enrollmentProblems.join('; '));
+  }
+  fs.writeFileSync(path.join(out, 'enrollment.json'),
+    JSON.stringify(enrollment));
+  const spiffe = readSpiffe(program);
+  const spiffeProblems = checkSpiffe(spiffe, vendoredProtos());
+  if (spiffeProblems.length > 0) {
+    log.debug("Leaving generate(). The SPIFFE model is wrong.");
+    throw new Error('The SPIFFE model is wrong: ' +
+                    spiffeProblems.join('; '));
+  }
+  fs.writeFileSync(path.join(out, 'spiffe.json'), JSON.stringify(spiffe));
+  const saml = readSaml(program);
+  const samlProblems = checkSaml(saml);
+  if (samlProblems.length > 0) {
+    log.debug("Leaving generate(). The SAML model is wrong.");
+    throw new Error('The SAML model is wrong: ' + samlProblems.join('; '));
+  }
+  fs.writeFileSync(path.join(out, 'saml.json'), JSON.stringify(saml));
+  // SOAP, WS-Trust and WS-Federation, written with SAML's decorators and
+  // read into a file of their own (#1579).
+  const ws = readSaml(program, 'ws');
+  const wsProblems = checkSaml(ws);
+  if (wsProblems.length > 0) {
+    log.debug("Leaving generate(). The WS-Trust model is wrong.");
+    throw new Error('The WS-Trust and WS-Federation model is wrong: ' +
+                    wsProblems.join('; '));
+  }
+  fs.writeFileSync(path.join(out, 'ws.json'), JSON.stringify(ws));
+  const unclaimedIds = unclaimed(program);
+  if (unclaimedIds.length > 0) {
+    log.debug("Leaving generate(). An XML id no family claims.");
+    throw new Error('No XML family claims ' + unclaimedIds.join(', '));
+  }
   const persistence = readPersistence(program);
   fs.writeFileSync(path.join(out, 'persistence.postgres.json'),
     JSON.stringify({ objects: persistence.objects,

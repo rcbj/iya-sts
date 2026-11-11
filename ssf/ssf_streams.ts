@@ -83,6 +83,7 @@ import realms = require('../common/realms');
 import cacheRegistry = require('../common/cache_registry');
 import subjects = require('./ssf_subjects');
 import events = require('./ssf_events');
+import SsfModel = require('./ssf_model');
 
 // stream_id -> stream record, one partition per trust realm.
 const streams = realms.map({ persist: 'ssf_streams.streams' });
@@ -202,20 +203,12 @@ const DELIVERY_PUSH = 'urn:ietf:rfc:8935';
 const DELIVERY_POLL = 'urn:ietf:rfc:8936';
 
 /**
- * The two delivery methods, each with its URN, a name and a description.
+ * The two delivery methods, each with its URN, a name and a description —
+ * the model's rows (`models/ssf/ssf.tsp`, #1579).
  */
-const DELIVERY_METHODS = [
-  { method: DELIVERY_PUSH, name: 'Push (RFC 8935)',
-    what: 'The transmitter POSTs each SET to a URL the receiver gave it. ' +
-          'The receiver has to be reachable, which is what makes this the ' +
-          'hard one for a browser: a page cannot be an HTTP server, so the ' +
-          'debugger hosts its receiver endpoint in its api layer.' },
-  { method: DELIVERY_POLL, name: 'Poll (RFC 8936)',
-    what: 'The receiver POSTs to the transmitter and is handed whatever has ' +
-          'queued up, acknowledging what it read. Nothing has to be ' +
-          'reachable but the transmitter, which is why a browser can be a ' +
-          'receiver over this method and not over the other one.' }
-];
+const DELIVERY_METHODS = SsfModel.deliveries().map(function (row: any) {
+  return { method: row.method, name: row.name, what: row.what };
+});
 
 // Whether an event about this subject belongs on this stream. `defaultSubjects`
 // is what decides it when the list is empty; see the header above.
@@ -1070,8 +1063,12 @@ class SsfStreams {
       return norm(a) === norm(b);
     };
     const expected = this.streamConfiguration(record, {});
-    const members = ['iss', 'aud', 'events_supported', 'events_delivered',
-                     'min_verification_interval', 'inactivity_timeout'];
+    // THE MODEL SAYS WHICH (#1579): every Transmitter-Supplied member of
+    // a stream configuration but `stream_id`, which is how an update names
+    // the stream, in the model's order.
+    const members = SsfModel.supplied('transmitter').filter((name) => {
+      return name !== 'stream_id';
+    });
     for (let i = 0; i < members.length; i++) {
       const name = members[i];
       if (!Object.prototype.hasOwnProperty.call(body, name)) {

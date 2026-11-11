@@ -60,9 +60,7 @@ import adminViews = require('../admin-core/admin_views');
 import cms = require('./scep_cms');
 import ra = require('./scep_ra');
 import InstanceSlot = require('../common/instance_slot');
-
-const vz = validation.z;
-const vt = validation.types;
+import ModelZod = require('../common/model_zod');
 
 /**
  * The six things an operator does by hand on the SCEP page: create or delete a
@@ -73,67 +71,47 @@ const SCEP_ACTIONS = ['create-challenge', 'delete-challenge', 'reissue-ra',
                       'revoke-certificate', 'add-host-name',
                       'remove-host-name'];
 
-const KINDS = ['person', 'application'];
-
-// The revocation reasons an operator may give an enrolled certificate: RFC
-// 5280's list without the CA and attribute-authority ones, which describe an
-// authority rather than a leaf, and without certificateHold, which the core's
-// record has no way to lift again.
-/**
- * The RFC 5280 revocation reasons an operator may give an enrolled certificate.
- */
-const REVOKE_REASONS = ['unspecified', 'keyCompromise', 'affiliationChanged',
-                        'superseded', 'cessationOfOperation',
-                        'privilegeWithdrawn'];
-
-const PROFILE_TEXT = vz.string().min(1).max(64)
-  .regex(/^[a-z][a-z0-9-]{0,63}$/, 'must be a profile identifier');
-
-const ENTRY_FIELDS = {
-  kind: vt.oneOf(KINDS),
-  identifier: vt.name
+// EACH ACTION'S BODY AND EACH VIEW'S QUERY ARE THEIR OPERATIONS' IN THE
+// MANAGEMENT API OPENAPI DOCUMENT (#1579): `models/api/management.tsp`, which
+// `/admin-api` already holds an action's body to. The validators are built
+// from it by `common/model_zod.ts`, so an in-process caller meets the same
+// check and the document is the one source; a parameter declaring
+// `allowEmptyValue` takes an empty value as none, as a form's control sends.
+const OPERATIONS: Record<string, string> = {
+  'create-challenge': 'createScepChallenge',
+  'delete-challenge': 'deleteScepChallenge',
+  'reissue-ra': 'reissueScepRa',
+  'revoke-certificate': 'revokeScepCertificate',
+  'add-host-name': 'addScepHostName',
+  'remove-host-name': 'removeScepHostName'
 };
 
 /**
  * The body schema of each SCEP action.
  */
-const ACTION_SCHEMAS = {
-  'create-challenge': vz.object(Object.assign({}, ENTRY_FIELDS, {
-    profile: vt.opt(PROFILE_TEXT),
-    lifetimeS: vt.opt(vt.integer(60, 2592000))
-  })),
-  // The random part may carry the minting cell's twelve-character tag (#98,
-  // `cert_enrollment.ts`'s `credentialId()`).
-  'delete-challenge': vz.object({
-    id: vz.string().min(1).max(600)
-      .regex(/^scep-[pa]-[A-Za-z0-9_-]{1,400}-[0-9a-f]{16}(?:[A-Za-z0-9_-]{12})?$/,
-             'must be a SCEP challenge id')
-  }),
-  'reissue-ra': vz.object({}),
-  'revoke-certificate': vz.object({
-    serial: vz.string().min(1).max(128)
-      .regex(/^[0-9A-Fa-f:]+$/, 'must be a hexadecimal serial number'),
-    reason: vt.opt(vt.oneOf(REVOKE_REASONS))
-  }),
-  'add-host-name': vz.object(Object.assign({}, ENTRY_FIELDS, {
-    hostName: vz.string().min(1).max(253)
-  })),
-  'remove-host-name': vz.object(Object.assign({}, ENTRY_FIELDS, {
-    hostName: vz.string().min(1).max(253)
-  }))
-};
-
-// The query both views accept. Unknown parameters are stripped; a repeated one
-// is refused by `validation.check()`.
-const VIEW_QUERY = vz.object({
-  per: vt.opt(vt.integer(1, 1000)),
-  page: vt.opt(vt.integer(1, 1000000)),
-  certificatesPage: vt.opt(vt.integer(1, 1000000)),
-  credentialsPage: vt.opt(vt.integer(1, 1000000)),
-  format: vt.opt(vt.oneOf(['json', 'JSON', 'html'])),
-  notice: vt.opt(vt.text),
-  error: vt.opt(vt.text)
+const ACTION_SCHEMAS: Record<string, any> = {};
+Object.keys(OPERATIONS).forEach(function (action) {
+  ACTION_SCHEMAS[action] = ModelZod.body('management', OPERATIONS[action]);
 });
+
+// The revocation reasons an operator may give an enrolled certificate: RFC
+// 5280's list without the CA and attribute-authority ones, which describe an
+// authority rather than a leaf, and without certificateHold, which the core's
+// record has no way to lift again — the revoke operation's own list in the
+// model.
+/**
+ * The RFC 5280 revocation reasons an operator may give an enrolled certificate.
+ */
+const REVOKE_REASONS: string[] = ModelZod.operation('management',
+  'revokeScepCertificate').requestBody.content['application/json'].schema
+  .properties.reason.enum.slice(0);
+
+// The query each view accepts, by the view's operation. Unknown parameters
+// are stripped; a repeated one is refused by `validation.check()`.
+const VIEW_QUERIES: Record<string, any> = {
+  view: ModelZod.query('management', 'getScep'),
+  monitor: ModelZod.query('management', 'getScepMonitor')
+};
 
 // What SCEP does not do, drawn on the page and in the JSON. scep/CLAUDE.md
 // carries the argument for each.
@@ -273,15 +251,18 @@ class ScepConsole {
   }
 
   /**
-   * Validates the query string the two views accept.
+   * Validates the query string of one of the two views against its
+   * operation's.
    *
    * @param req - the request
+   * @param view - `view` (GET /admin-api/scep) or `monitor`
    * @returns the validation's answer
    */
-  queryOf(req) {
+  queryOf(req, view?) {
     const { log, validation } = this.deps;
     log.debug("Entering ScepConsole.queryOf().");
-    const checked = validation.check(req, 'query', VIEW_QUERY);
+    const checked = validation.check(req, 'query',
+                                     VIEW_QUERIES[view || 'view']);
     log.debug("Leaving ScepConsole.queryOf(). ok=" + checked.ok);
     return checked;
   }
@@ -622,7 +603,11 @@ class ScepConsole {
                           ['Unknown action "' + action + '". The ' +
         SCEP_ACTIONS.length + ' are: ' + SCEP_ACTIONS.join(', ') + '.']);
     }
-    const posted = validation.checkParsed(body || {}, 'body', schema);
+    // What the request carries beside the operation's body: the action (the
+    // path's). Who acts is the context's, never a member (#1579).
+    const fields = Object.assign({}, body || {});
+    delete fields.action;
+    const posted = validation.checkParsed(fields, 'body', schema);
     if (!posted.ok) {
       log.debug("Leaving ScepConsole.scepAction(). Malformed.");
       return this.refused('STS-SCEP-0061', [posted.detail]);

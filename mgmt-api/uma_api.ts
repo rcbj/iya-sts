@@ -21,6 +21,8 @@
 // table, as it does the AuthZEN operations'.
 // ---------------------------------------------------------------------------
 
+// Types a row of actions by its own actions' operations (#1579).
+import ApiRows = require('../common/api_rows');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
@@ -99,7 +101,12 @@ class UmaApi {
    * @param status - the HTTP status
    * @param body - the body
    */
-  sendJson(res: Res, status: number, body: Json): void {
+  // TYPED BY THE OPERATION (#1579): through a handler's response, the
+  // answer is held to the model's at a literal 2xx status
+  // (`types/api-handlers.d.ts`).
+  sendJson<R, S extends number>(res: R, status: S,
+           body: IyaApi.AnswerOf<R, S>): void;
+  sendJson(res: any, status: number, body: any): void {
     const { log } = this.deps;
     log.debug("Entering UmaApi.sendJson(). status=" + status);
     res.status(status).type('application/json')
@@ -118,7 +125,7 @@ class UmaApi {
     const self = this;
     const { log, parseBody, loadConsole } = this.deps;
     log.debug("Entering UmaApi.buildRoutes().");
-    const ROUTES = [
+    const ROUTES: IyaApi.AdminRow[] = [
       { method: 'GET', path: BASE + '/uma', tag: 'UMA',
         operationId: 'getUma',
         mirrors: 'GET /admin/uma',
@@ -160,7 +167,7 @@ class UmaApi {
             schema: { type: 'integer', minimum: 1 },
             description: 'Which page of `pending` to return.' }
         ],
-        handler: function (req: Req, res: Res): void {
+        handler: function (req, res): void {
           log.debug("Entering the management API UMA endpoint.");
           self.sendJson(res, 200, loadConsole().view(req));
           log.debug("Leaving the management API UMA endpoint.");
@@ -168,14 +175,15 @@ class UmaApi {
       { method: 'GET', path: BASE + '/uma/monitor', tag: 'UMA',
         operationId: 'getUmaMonitor',
         mirrors: 'GET /admin/uma#uma-tab-servers',
-        handler: function (req: Req, res: Res): void {
+        handler: function (req, res): void {
           log.debug("Entering the management API UMA monitor endpoint.");
           self.sendJson(res, 200, loadConsole().monitorView());
           log.debug("Leaving the management API UMA monitor endpoint.");
         } },
-      { method: 'POST', route: BASE + '/uma/:action', tag: 'UMA',
+      ApiRows.actions({ method: 'POST',
+        route: BASE + '/uma/:action', tag: 'UMA',
         mirrors: 'POST /admin/uma',
-        handler: function (req: Req, res: Res): void {
+        handler: function (req, res): void {
           log.debug("Entering the management API UMA action.");
           const body = Object.assign({}, parseBody(req),
             { action: String(req.params.action || '') });
@@ -183,7 +191,7 @@ class UmaApi {
           let result: Json;
           try {
             result = loadConsole().act(body, { via: 'api',
-              actor: String(verified.name || body.actor || '') });
+              actor: String(verified.name || '') });
           } catch (e) {
             log.error(errorCodes.tag('STS-UMA-0500') + 'uma: an ' +
                       '/admin-api action failed: ' + ((e && e.message) || e));
@@ -215,7 +223,7 @@ class UmaApi {
           { action: 'owner-unshare', operationId: 'unshareUmaResource' },
           { action: 'owner-approve', operationId: 'approveUmaRequest' },
           { action: 'owner-refuse', operationId: 'refuseUmaRequest' }
-        ] }
+        ] })
     ];
     log.debug("Leaving UmaApi.buildRoutes().");
     return ROUTES;

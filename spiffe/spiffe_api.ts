@@ -116,6 +116,7 @@ import realms = require('../common/realms');
 import ca = require('./spiffe_ca');
 import registry = require('./spiffe_registry');
 import rpc = require('./spiffe_grpc');
+import SpiffeModel = require('./spiffe_model');
 // For the caller on a call — see the header. This module never authorizes;
 // it reads WHO, where a method's answer depends on it.
 import auth = require('./spiffe_auth');
@@ -1331,21 +1332,19 @@ class SpiffeApi {
         // A challenge response arriving when no challenge is outstanding.
         // Refused rather than ignored: a client in that state has misread the
         // protocol, and an empty answer would leave it waiting.
+        // Each refusal's status, code and sentence are the model's
+        // (models/spiffe/spire_server.tsp and spire_types.tsp).
         if (request.challenge_response !== undefined && !request.params) {
-          errorCodes.mark(call, 'STS-SPIFFE-0051');
-          throw rpc.invalidArgument('No attestation challenge is outstanding ' +
-                                    'on this stream, so there is nothing a ' +
-                                    'challenge_response can answer. Send the ' +
-                                    'params step first.');
+          throw rpc.refuseField(call,
+                                'spire.api.server.agent.v1.AttestAgentRequest',
+                                'challenge_response', 'unexpected');
         }
         const params = request.params || {};
         const data = params.data || {};
         const attestationType = String(data.type || '').trim();
-        if (!attestationType) {
-          errorCodes.mark(call, 'STS-SPIFFE-0079');
-          throw rpc.invalidArgument('AttestAgent names its attestor in ' +
-                                    'params.data.type, and this one is ' +
-                                    'empty.');
+        if (SpiffeModel.isEmpty(attestationType)) {
+          throw rpc.refuseField(call, 'spire.api.types.AttestationData',
+                                'type', 'empty');
         }
         const attestor = attestation.attestorFor(attestationType);
         if (!attestor) {
@@ -1358,12 +1357,10 @@ class SpiffeApi {
             'verify is refused rather than taken on trust.');
         }
         const csr = (params.params || {}).csr;
-        if (!csr || !csr.length) {
-          errorCodes.mark(call, 'STS-SPIFFE-0053');
-          throw rpc.invalidArgument('AttestAgent needs a certificate signing ' +
-                                    'request in params.params.csr: the agent ' +
-                                    'keeps its own private key, so there is ' +
-                                    'nothing to issue against without one.');
+        if (SpiffeModel.isEmpty(csr)) {
+          throw rpc.refuseField(call,
+                                'spire.api.server.agent.v1.AgentX509SVIDParams',
+                                'csr', 'empty', 'AttestAgent');
         }
         // The attestor verifies — and may challenge, and may claim the
         // evidence. Everything it throws is the call's answer; a conversation
@@ -1537,10 +1534,10 @@ class SpiffeApi {
                             async function (call) {
         await ca.ready();
         const csr = ((call.request || {}).params || {}).csr;
-        if (!csr || !csr.length) {
-          errorCodes.mark(call, 'STS-SPIFFE-0053');
-          throw rpc.invalidArgument('RenewAgent needs a certificate signing ' +
-                                    'request in params.csr.');
+        if (SpiffeModel.isEmpty(csr)) {
+          throw rpc.refuseField(call,
+                                'spire.api.server.agent.v1.AgentX509SVIDParams',
+                                'csr', 'empty', 'RenewAgent');
         }
         const caller = call.spiffeCaller || {};
         if (!caller.authenticated || !caller.entities.agent) {
@@ -2201,11 +2198,10 @@ class SpiffeApi {
                               async function (call) {
         await ca.ready();
         const request = call.request || {};
-        if (!request.csr || !request.csr.length) {
-          errorCodes.mark(call, 'STS-SPIFFE-0053');
-          throw rpc.invalidArgument('MintX509SVID takes a certificate ' +
-                                    'signing request; the SPIFFE ID is read ' +
-                                    'from its URI subjectAltName.');
+        if (SpiffeModel.isEmpty(request.csr)) {
+          throw rpc.refuseField(call,
+                                'spire.api.server.svid.v1.MintX509SVIDRequest',
+                                'csr', 'empty');
         }
         // The one place a CSR's OWN subjectAltName is read, and it is safe here
         // for a reason that does not generalise: there is no entry to take the
@@ -2240,19 +2236,16 @@ class SpiffeApi {
         await ca.ready();
         const request = call.request || {};
         const id = spiffeId.fromProto(request.id);
-        if (!id) {
-          errorCodes.mark(call, 'STS-SPIFFE-0065');
-          throw rpc.invalidArgument('MintJWTSVID needs the SPIFFE ID to mint ' +
-                                    'for, as a trust_domain and a path.');
+        if (SpiffeModel.isEmpty(id)) {
+          throw rpc.refuseField(call,
+                                'spire.api.server.svid.v1.MintJWTSVIDRequest',
+                                'id', 'empty');
         }
         const audiences = (request.audience || []).map(String).filter(Boolean);
-        if (!audiences.length) {
-          errorCodes.mark(call, 'STS-SPIFFE-0027');
-          throw rpc.invalidArgument('MintJWTSVID requires at least one ' +
-                                    'audience: a JWT-SVID is a bearer ' +
-                                    'credential, and the audience is ' +
-                                    'what stops one being replayed ' +
-                                    'against a different service.');
+        if (SpiffeModel.isEmpty(audiences)) {
+          throw rpc.refuseField(call,
+                                'spire.api.server.svid.v1.MintJWTSVIDRequest',
+                                'audience', 'empty');
         }
         const minted = await ca.mintJwtSvid(id, audiences,
                                             { ttl: Number(request.ttl || 0) });
@@ -2357,10 +2350,10 @@ class SpiffeApi {
                                 self.notBeneath(call, entry));
         }
         const audiences = (request.audience || []).map(String).filter(Boolean);
-        if (!audiences.length) {
-          errorCodes.mark(call, 'STS-SPIFFE-0027');
-          throw rpc.invalidArgument('NewJWTSVID requires at least one ' +
-                                    'audience.');
+        if (SpiffeModel.isEmpty(audiences)) {
+          throw rpc.refuseField(call,
+                                'spire.api.server.svid.v1.NewJWTSVIDRequest',
+                                'audience', 'empty');
         }
         const minted = await ca.mintJwtSvid(entry.spiffeId, audiences,
                                             { ttl: entry.jwtSvidTtl,
@@ -2847,24 +2840,10 @@ const joinTokens = realms.map({ persist: 'spiffe.joinTokens',
 // same argument, where nothing identifies the caller — see the handler.
 /**
  * The SPIRE Server API methods this service does not implement, each with its
- * reason, for `GET /spiffe` and the console.
+ * reason, for `GET /spiffe` and the console: each method's `unimplemented`
+ * in models/spiffe/spire_server.tsp (#1579).
  */
-const NOT_IMPLEMENTED = {
-  'Bundle.AppendBundle':
-    'It would publish an authority this server holds no key for, which every ' +
-    'workload in the trust domain would then trust. Rotate instead.',
-  'Bundle.PublishJWTAuthority':
-    'The same reason as AppendBundle.',
-  'Bundle.PublishWITAuthority':
-    'This service issues no WIT-SVIDs.',
-  'SVID.MintWITSVID':
-    'This service issues no WIT-SVIDs.',
-  'SVID.BatchNewWITSVID':
-    'This service issues no WIT-SVIDs.',
-  'TrustDomain.RefreshBundle':
-    'This service records a bundle endpoint URL and never fetches it — the ' +
-    'same refusal it gives wreqptr and jwks_uri. Push the bundle in instead.'
-};
+const NOT_IMPLEMENTED: Record<string, string> = SpiffeModel.notImplemented();
 
 // The six services, in the order the surface is published. The handlers of
 // each are built by `SpiffeApi.wire()` when the instance is installed (#50,

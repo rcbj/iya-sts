@@ -52,6 +52,7 @@
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import catalogue = require('./authzen_catalogue');
+import Classes = require('../common/domain_classes');
 
 const { log } = helpers;
 
@@ -59,6 +60,10 @@ const { log } = helpers;
 const API_OBJECT = 'sts-authzen-api';
 
 // The person attribute and the application attribute that hold a scope.
+// The application's is read through the Application concept (#1579); the
+// person's two are read by name because no directory object of the model
+// declares them yet, and declaring one changes the spelling the directory
+// answers it in, which is rcbj's to decide.
 const PERSON_SCOPE = 'stsAuthzenApplication';
 const APPLICATION_SCOPE = 'appAuthzenApplication';
 
@@ -198,6 +203,19 @@ class AuthzenAdmin {
   }
 
   /**
+   * A concept's list as `valuesOf()` answers one: strings, the empty ones
+   * gone.
+   *
+   * @param values - a field of a concept
+   * @returns the values
+   */
+  static listOf(values: string[] | undefined): string[] {
+    log.debug("Entering AuthzenAdmin.listOf().");
+    log.debug("Leaving AuthzenAdmin.listOf().");
+    return (values || []).map(String).filter(Boolean);
+  }
+
+  /**
    * One caller as the tab draws it: who, what kind, and its scope.
    *
    * @param key - a name or a DN
@@ -235,10 +253,10 @@ class AuthzenAdmin {
       log.debug("Leaving AuthzenAdmin.callerOf(). An application.");
       return { dn: String(full.dn || ''), name: String(full.identifier),
                kind: 'application',
-               applications: AuthzenAdmin.valuesOf(full.fields,
-                                                   APPLICATION_SCOPE),
-               callbacks: AuthzenAdmin.valuesOf(full.fields,
-                                                APPLICATION_CALLBACK),
+               applications: AuthzenAdmin.listOf(Classes.Application
+                 .fromEntry(full.fields || {}).authzenApplication),
+               callbacks: AuthzenAdmin.listOf(Classes.Application
+                 .fromEntry(full.fields || {}).authzenCallbackUri),
                member: !!full.dn &&
                        members.indexOf(String(full.dn).toLowerCase()) >= 0 };
     }
@@ -307,7 +325,8 @@ class AuthzenAdmin {
       xacmlEnabled: config.value('xacml.enabled') !== false,
       apiObject: !!object,
       audience: object && object.fields
-        ? AuthzenAdmin.valuesOf(object.fields, 'oauthAudience') : [],
+        ? AuthzenAdmin.listOf(Classes.OAuthClient.fromEntry(object.fields)
+          .audience) : [],
       callerAuthentication: String(
         config.value('authzen.callerAuthentication') || 'mtls'),
       doors: caller.DOORS.slice(0),
@@ -591,7 +610,8 @@ class AuthzenAdmin {
     let own = false;
     if (candidate.kind === 'application') {
       const full = applications.get(candidate.name);
-      scope = AuthzenAdmin.valuesOf(full && full.fields, APPLICATION_SCOPE);
+      scope = AuthzenAdmin.listOf(Classes.Application
+        .fromEntry((full && full.fields) || {}).authzenApplication);
       // AN APPLICATION IS ALWAYS SCOPED TO ITSELF (`authzen_caller.ts`'s
       // `scopeOf()` adds its own identifiers), so nothing is written for
       // a remote PEP that is the enforcing application.

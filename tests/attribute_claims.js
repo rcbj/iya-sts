@@ -74,7 +74,7 @@ function theAct(t) {
                 name: 'badge', attribute: 'employeeNumber',
                 type: 'number' }, stats.JWT_CLAIM_SET_IDS).ok === true &&
           act({ action: 'add-attribute-claim', set: 'id_token',
-                name: 'teams', attribute: 'ou', multi: 'true' },
+                name: 'teams', attribute: 'ou', multi: true },
               stats.JWT_CLAIM_SET_IDS).ok === true,
           'A1. three attribute claims are added: one, one typed, one multi');
   const refused = [
@@ -91,7 +91,7 @@ function theAct(t) {
           'type and no attribute are each refused',
           JSON.stringify(refused.map(function (one) { return one.ok; })));
   t.check(act({ action: 'add-attribute-claim', set: 'saml2',
-                name: 'costCenter', attribute: 'costCenter', multi: 'true' },
+                name: 'costCenter', attribute: 'costCenter', multi: true },
               stats.SAML_CLAIM_SET_IDS).ok === true,
           'A3. and one in the SAML 2.0 set');
   const rows = stats.attributeClaimRows().map(function (one) {

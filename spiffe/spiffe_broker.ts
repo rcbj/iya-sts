@@ -89,6 +89,7 @@ import rpc = require('./spiffe_grpc');
 import workload = require('./spiffe_workload');
 import ca = require('./spiffe_ca');
 import spiffeId = require('./spiffe_id');
+import SpiffeModel = require('./spiffe_model');
 import peer = require('./spiffe_peer');
 import realms = require('../common/realms');
 import audit = require('../common/audit');
@@ -401,6 +402,25 @@ class SpiffeBroker {
     return err;
   }
 
+  /**
+   * The refusal of a request with no reference, from the model
+   * (models/spiffe/broker.tsp, WorkloadReference): its status, code,
+   * sentence and ErrorInfo reason.
+   *
+   * @param call - the gRPC call
+   * @returns the error
+   */
+  noReference(call: any): Error {
+    const { log } = this.deps;
+    log.debug("Entering SpiffeBroker.noReference().");
+    const refused = SpiffeModel.refusal('spiffe.broker.WorkloadReference',
+                                        'reference', 'empty');
+    log.debug("Leaving SpiffeBroker.noReference().");
+    // error-code: none — the code is the model's, marked by refusal()
+    return this.refusal(call, refused.code, refused.status, refused.message,
+                        refused.errorInfo);
+  }
+
   // STEPS 1 AND 3's parsing: the request's `reference` as a Reference, or a
   // thrown INVALID_ARGUMENT.
   /**
@@ -427,7 +447,7 @@ class SpiffeBroker {
     };
     if (!typeUrl) {
       log.debug("Leaving SpiffeBroker.decodeReference(). None.");
-      throw invalid('workload reference must be provided');
+      throw this.noReference(call);
     }
     const value = Buffer.from((any && any.value) || []);
     let fields = null;
@@ -743,10 +763,7 @@ class SpiffeBroker {
                            '');
     if (!typeUrl) {
       log.debug("Leaving SpiffeBroker.referenced(). No reference.");
-      throw this.refusal(call, 'STS-SPIFFE-0136',
-                         rpc.status.INVALID_ARGUMENT,
-                         'workload reference must be provided',
-                         'WORKLOAD_REFERENCE_INVALID');
+      throw this.noReference(call);
     }
     this.authorizeType(call, typeUrl, typeUrl === PID_REFERENCE ? 'pid'
       : typeUrl === K8S_REFERENCE ? 'k8s' : '');
@@ -1162,18 +1179,20 @@ class SpiffeBroker {
         const audiences = (request.audience || []).map(function (a) {
           return String(a || '').trim();
         }).filter(Boolean);
-        if (!audiences.length) {
-          errorCodes.mark(call, 'STS-SPIFFE-0027');
-          throw rpc.invalidArgument('audience must be specified');
+        // The refusals' status, code and sentence are the model's
+        // (models/spiffe/broker.tsp, FetchJWTSVIDRequest).
+        if (SpiffeModel.isEmpty(audiences)) {
+          throw rpc.refuseField(call, 'spiffe.broker.FetchJWTSVIDRequest',
+                                'audience', 'empty');
         }
         const wanted = String(request.spiffe_id || '').trim();
         let parsed = null;
         if (wanted) {
           parsed = spiffeId.parse(wanted);
           if (!parsed.ok) {
-            errorCodes.mark(call, 'STS-SPIFFE-0028');
-            throw rpc.invalidArgument('invalid requested SPIFFE ID: ' +
-                                      parsed.reason);
+            throw rpc.refuseField(call, 'spiffe.broker.FetchJWTSVIDRequest',
+                                  'spiffe_id', 'malformed', undefined,
+                                  parsed.reason);
           }
         }
         const ref = await self.referenced(call);

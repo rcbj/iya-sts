@@ -137,8 +137,8 @@ const { log } = helpers;
 interface GroupRow {
   dn?: string;
   cn?: string;
-  via: unknown[];
-  viaMemberOf?: unknown;
+  via: string[];
+  viaMemberOf?: boolean;
   [member: string]: unknown;
 }
 

@@ -29,6 +29,49 @@ namespace IyaSts.Directory;
   container: "ou=applications",
   ownContainer: false,
   authored: true,
+  // ---------------------------------------------------------------------
+  // WHAT A CONSOLE MAY CHANGE: each row's `editable`, `set` or `multi`, and
+  // a row that says nothing is not editable. It is a different question from
+  // what an entry carries, which is why it is a field of its own.
+  //
+  // The distinction is DERIVED versus DECLARED. An application entry holds both
+  // kinds and they must not be edited alike:
+  //
+  //   * DECLARED — what this application IS allowed to do. Its redirect URIs, its
+  //     grant types, its secret, and the token endpoint authentication method,
+  //     which is what says whether it is confidential. Nothing about them
+  //     is a fact about the past; they are configuration, they are what RFC 9700
+  //     mode READS, and being able to change them is the point of having a
+  //     registry at all. These are editable. `oauthConfidential` is the
+  //     registry's recorded determination of that method (#466) and is not
+  //     editable: the method is what an operator edits, and the registry
+  //     writes the flag so it can be read. A create may state a value that
+  //     agrees; a value that does not is refused.
+  //
+  //   * DERIVED — what HAPPENED. The counters, the first and last sighting, the
+  //     kinds and protocols it has been seen in, the redirect URIs it has
+  //     actually used. A form that could rewrite those would make this page lie
+  //     about the service's own behaviour, and the lie would be indistinguishable
+  //     from a bug in the recording. These are not editable here.
+  //
+  // LDAP can still change every one of them — this directory enforces nothing and
+  // `ldapmodify` reaches any attribute on any entry. That is not an inconsistency
+  // to fix: an operator with an LDAP client is doing something deliberate, and
+  // the console is a set of controls somebody clicks. Refusing the derived ones
+  // HERE is the difference between offering an operation and merely not
+  // preventing it.
+  //
+  // `set` replaces (single-valued), `multi` adds and removes values. The mode has
+  // to match the attribute's own `kind` or the entry ends up with a list where
+  // the schema promises one value, so both are read from the row and never
+  // from a caller.
+  //
+  // On the rows so that one table answers "what is this attribute?" and "may I
+  // change it?" — the console builds its two selects from it and the action
+  // validates against the same thing, which is what stops a form offering a
+  // field the action would refuse.
+  // ---------------------------------------------------------------------
+  editing: true,
   key: "appIdentifier",
   naming: #{
     attribute: "cn",
@@ -78,6 +121,7 @@ model Application {
   })
   cn?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "RFC 7591 client_name, or the identifier",
     what: "What to call it on a page. A registration supplies one; otherwise the identifier is the name, because inventing a friendly name for an opaque id would be inventing a fact."
@@ -121,6 +165,11 @@ model Application {
   // again when it reads.
   // ---------------------------------------------------------------------
   @attr(#{
+    // The home page, `set` for its row's reason: an application has one. It is
+    // editable AND written by register() from RFC 7591 `client_uri`, which is
+    // the same arrangement oauthRedirectUri has — a registration states it, and
+    // an entry nobody registered has no other way to acquire one.
+    editable: "set",
     kind: "single",
     from: "RFC 7591 client_uri, the console, the management API, or by hand",
     what: "THE APPLICATION'S OWN HOME PAGE: where a person goes to reach it, and therefore where a sign-in to it starts. It is what /portal/applications links each row to, and an entry without one is drawn there with no link rather than with a guessed address. DECLARED and never derived — the redirect URIs beside it are callbacks and not front doors, so nothing computes this from them. http or https only, because it becomes an href."
@@ -134,6 +183,7 @@ model Application {
   // itself.
   // ---------------------------------------------------------------------
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     what: "WHICH PROTOCOL /launch/{app} uses for this application when the link names none and identity-provider-initiated sign-in is on for more than one: saml2, saml11, wsfed or oidc."
@@ -166,6 +216,10 @@ model Application {
   // not normalised, which is why the reader normalises again.
   // ---------------------------------------------------------------------
   @attr(#{
+    // The CORS allowlist, `multi` because an application is served from several
+    // origins as an ordinary matter — a per-environment host, a local
+    // development server beside the deployed one.
+    editable: "multi",
     kind: "multi",
     from: "the console, the management API, or by hand",
     what: "THE ORIGINS A BROWSER PAGE MAY CALL THIS SERVICE FROM FOR THIS APPLICATION — `https://app.example.com`, one exact origin per value, with no path and no wildcard. A request that names this application as its client (a client_id, a Basic credential, a client assertion, or an access token issued to it) is answered with Access-Control-Allow-Origin only when its Origin is listed here; a request that names no client at all — discovery, a JWKS, a DID document, a CORS preflight — is answered for an origin listed on ANY application in the realm. EMPTY ALLOWS NO THIRD-PARTY ORIGIN, in both modes. This service's own origins (its listeners, global.publicBaseUrl, the embedded debugger, and global.corsOrigins) never need listing. Normalised when written: scheme and host lower-cased, a default port dropped."
@@ -184,6 +238,11 @@ model Application {
   })
   appProtocol?: string[];
   @attr(#{
+    // DECLARED, which is the whole of why it is here and `appProtocol` is not.
+    // See the PROTOCOLS table above: one of those two attributes is what
+    // somebody said this application is for and the other is what happened to
+    // it.
+    editable: "multi",
     kind: "multi",
     from: "the console, the management API, or by hand",
     what: "THE PROTOCOL FAMILIES THIS APPLICATION IS DECLARED FOR, one value per family, from the closed table PROTOCOLS publishes. It is the DECLARED twin of appProtocol above and the two must not be read as one thing: that attribute is what has happened and cannot be edited, this one is what somebody said the application is for and is ticked on /admin/applications/new before it has ever connected. It grants nothing. In PRODUCT mode the issuance policy refuses an issuance through a family it does not name — an application declared for SAML 2.0 alone is refused an access token (STS-XACML-0084); in development it refuses nothing. Declared for nothing, nothing is refused in either mode."
@@ -202,6 +261,7 @@ model Application {
   // the attribute hold several; an entry an ldapmodify gave several is read
   // as its first, and the next save writes one.
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "this registry",
     standard: true,
@@ -297,6 +357,13 @@ model Application {
   })
   appFederationTrustAnchor?: string;
   @attr(#{
+    // THE IDENTIFIER ATTRIBUTES, one per protocol family (see the PROTOCOLS
+    // table). Every one of them is `multi` bar oauthTlsClientAuthSubjectDn
+    // below, whose own row says why — an application answering to two
+    // client_ids or two SPNs is one application, and a `set` here would replace
+    // the list with one value and read afterwards as the others having been
+    // forgotten.
+    editable: "multi",
     kind: "multi",
     from: "OAuth 2.0 / OIDC / OpenID4VCI",
     identifier: true,
@@ -305,12 +372,21 @@ model Application {
   })
   oauthClientId?: string[];
   @attr(#{
+    // THE AUDIENCE, which is the identifier from the OTHER side: what a token
+    // addressed to this application says in `aud`, rather than what the
+    // application calls itself at the token endpoint. `multi` because a per-
+    // environment hostname is the ordinary case, and because it is the one
+    // attribute here something LOOKS UP — see forAudience(), and the row in
+    // SCHEMA, where the difference between a lookup and a permission is spelled
+    // out.
+    editable: "multi",
     kind: "multi",
     from: "the console, the management API, or by hand",
     what: "THE AUDIENCE THIS APPLICATION ANSWERS TO — the `aud` an access token addressed to it carries, and what a client puts in RFC 8693 section 2.1's `audience` (or `resource`) when it exchanges a token to reach this application. It is the OAuth spelling of a fact three other families here already record under their own names: `wstrustAppliesTo` is the same thing in a RequestSecurityToken and `samlEntityId` is the same thing in an assertion's AudienceRestriction, and one attribute holding all three would be one string that has to mean whichever protocol asked last.\n\nIt is DECLARED — nobody presents an audience as their own name, so nothing here writes it and it cannot be derived — and it is a URI rather than a client_id because that is what an audience is: the resource, not the client that calls it. Several values is the ordinary case (a per-environment hostname), which is why it accumulates.\n\n**IT IS READ, WHICH MAKES IT THE EXCEPTION** among the declaration attributes beside it. The token exchange looks an `audience` UP here — forAudience() — so that a delegation recorded for `https://esb1.example.com` names the application `esb1` on /admin/delegation and in its picture, instead of drawing a box for a URL that nothing else in the register mentions. It is a LOOKUP and not a permission: an audience nobody registered is exchanged for exactly as before and recorded verbatim, because a service that refused would remove a test case rather than add one."
   })
   oauthAudience?: string[];
   @attr(#{
+    editable: "set",
     kind: "multi",
     from: "POST /oauth2/register",
     sensitive: true,
@@ -318,6 +394,7 @@ model Application {
   })
   oauthClientSecret?: string[];
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "OAuth 2.0 / OIDC",
     what: "Registered redirect URIs from a registration, and any redirect_uri this service has ACCEPTED for the application beside them. The two are not the same claim and the registry does not merge them silently — see appRedirectUriObserved."
@@ -328,6 +405,8 @@ model Application {
   // of its own, exact-match, and never an RFC 6749 redirect_uri unless it
   // is listed here too.
   @attr(#{
+    // UMA 2.0 (#1194): the claims interaction endpoint's return addresses.
+    editable: "multi",
     kind: "multi",
     from: "the console, the management API, or by hand",
     what: "Where /uma/claims may send the requesting party back to this client after gathering claims (UMA 2.0 Grant section 3.3.2, claims_redirect_uri). Matched exactly; a claims_redirect_uri not listed here is told to the person and never redirected to."
@@ -360,30 +439,35 @@ model Application {
   })
   appReturnAddressObserved?: string[];
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "POST /oauth2/register",
     what: "Registered post_logout_redirect_uris, which RP-Initiated Logout matches against exactly, in every mode (#124)."
   })
   oauthPostLogoutRedirectUri?: string[];
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register, the console, or by hand",
     what: "WHERE THIS CLIENT IS TOLD THAT THE USER SIGNED OUT — OpenID Connect Front-Channel Logout 1.0 section 2's frontchannel_logout_uri. The sign-out page loads it in a hidden iframe, with iss and sid on the query string when the client asked for them. It is SINGLE-valued because the specification defines one URI per client, unlike the redirect URIs beside it; a client with none registered is not notified at all and is listed on /logout as such rather than silently skipped."
   })
   oauthFrontchannelLogoutUri?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register, the console, or by hand",
     what: "TRUE if this client requires `iss` and `sid` on the notification above — Front-Channel Logout 1.0 section 2's frontchannel_logout_session_required. It matters because an RP with several sessions in one browser cannot tell which one ended without the sid, and RFC 7591 section 2 makes an omitted boolean FALSE rather than unknown — so an absent value here means the client did not ask, which is a different fact from the client not having registered."
   })
   oauthFrontchannelLogoutSessionRequired?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register, the console, or by hand",
     what: "WHERE THIS SERVICE POSTS A LOGOUT TOKEN WHEN THE USER SIGNS OUT — OpenID Connect Back-Channel Logout 1.0 section 2.2's backchannel_logout_uri. Every sign-out of a session this client was issued an authorization response on sends one, server-to-server, after the sign-out has answered, through the outbound policy (https with the certificate verified; no internal address in product mode). SINGLE-valued, like the front-channel URI: the specification defines one per client. https with no fragment; http only for a confidential client and only where the outbound policy sends over http (federation.outboundAllowHttp, development mode; section 2.2, #123)."
   })
   oauthBackchannelLogoutUri?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register, the console, or by hand",
     what: "TRUE if this client requires `sid` in the Logout Token — Back-Channel Logout 1.0 section 2.2's backchannel_logout_session_required. This service puts `sid` AND `sub` in every Logout Token it sends, so the flag is always honoured; it is recorded because \"false\" and \"not stated\" are different facts about a client, as for the front-channel flag."
@@ -395,12 +479,14 @@ model Application {
   // client to its flows. The sightings moved to the two *Observed rows
   // below, as appRedirectUriObserved sits beside oauthRedirectUri.
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "OAuth 2.0 / OIDC",
     what: "The grant types this client may use — RFC 7591 section 2's grant_types, from a registration or written by an administrator. The token endpoint refuses any other grant (unauthorized_client), in every mode; an empty list restricts nothing. What the client has actually used is oauthGrantTypeObserved."
   })
   oauthGrantType?: string[];
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "OAuth 2.0 / OIDC",
     what: "The response_type values this client may ask for — RFC 7591 section 2's response_types, from a registration or written by an administrator, each value one response type (\"code\", \"code id_token\"). The authorization endpoint refuses any other (unauthorized_client), in every mode; an empty list restricts nothing. What the client has actually asked for is oauthResponseTypeObserved."
@@ -435,6 +521,8 @@ model Application {
   // access-control template's default `ownerApplicationAttributes` (rule
   // 3cn), rcbj's decision.
   @attr(#{
+    // #1296: the token response types this client may use. See its SCHEMA row.
+    editable: "multi",
     kind: "multi",
     from: "OAuth 2.0 / OIDC",
     what: "The response types that issue an access token from the authorization endpoint — token, code token, id_token token, code id_token token — this client may use where RFC 9700 mode is in force (product mode always is). Honoured only while the realm waives RFC 9700 section 2.1.2 (oauth2.allowImplicitTokenResponses, never under OAuth 2.1 or FAPI); then a type not listed here is refused (unauthorized_client). EMPTY BY DEFAULT, and empty means none. Written by an administrator or the application's owner while the realm allows these types, or by a dynamic registration within oauth2.dynamicRegistrationTokenResponseTypes. RFC 9700 section 2.1.2 says clients SHOULD NOT use them."
@@ -453,6 +541,7 @@ model Application {
   })
   oauthResponseTypeObserved?: string[];
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "OAuth 2.0 / OIDC",
     what: "Scopes this application has ASKED FOR, accumulated as it asks. SIGHTED, never declared: nothing is allowed or refused by it. What the application may be issued is oauthAllowedScope."
@@ -480,6 +569,8 @@ model Application {
   // needs.
   // ---------------------------------------------------------------------
   @attr(#{
+    // DECLARED (#110): what the client may be issued. See its SCHEMA row.
+    editable: "multi",
     kind: "multi",
     from: "POST /oauth2/register (its `scope`), the console, the management API, or by hand",
     what: "THE SCOPES THIS CLIENT MAY BE ISSUED — RFC 7591 section 2's `scope`, \"the list that the client can use when requesting access tokens\". One scope token per value. Three kinds of scope read it differently.\n\n**This service's own protected scopes** — admin:read and admin:write (/admin-api), report:use and report:admin (/report-api), the SCIM scopes (scim.scopeRead, scim.scopeWrite), the Shared Signals scopes (ssf.authScopeRead, ssf.authScopeWrite, and always ssf.read and ssf.manage) and the debugger permission — are issued ONLY to a client that lists them, IN BOTH MODES. For Shared Signals, write includes read: listing a write scope authorizes the read scope too, and listing only a read scope does not authorize a write scope. The resource server behind each asks again on every call, so removing a value here cuts off tokens already issued. An RFC 7591 registration may not declare them; an administrator does, here.\n\n**Every other scope**, in product mode, is issued only when listed here — or, when nothing is listed, when it is in the default set: openid, profile, email, address, phone, offline_access and this realm's OpenID4VCI credential scopes. In development any scope is issued.\n\n**A scope naming an application or a delegated permission** keeps its own rules (the audience, and oauthDelegatedPermission) and need not be listed.\n\nA scope outside the list is refused invalid_scope at the authorization and token endpoints (RFC 6749 section 3.3), and taken off a refresh or a token exchange. Distinct from oauthScope, which is only what the client has asked for."
@@ -505,12 +596,29 @@ model Application {
   // which is how 1-to-many and many-to-1 both fall out of the same attribute
   // without a container of their own.
   @attr(#{
+    // THE THREE THAT MAKE A DELEGATED PERMISSION. Two `multi` and one `set`,
+    // and each mode is the attribute's own kind read back: a base URI is one
+    // answer per application (its own row says why widening it would mean
+    // deciding which of two identifiers a token is audienced to), and both
+    // lists accumulate because an application legitimately exposes six
+    // permissions and holds four. THEY ARE THE ONLY EDITABLE ATTRIBUTES HERE
+    // WITH A CROSS-ENTRY RULE, and it is checked in updateApplication() rather
+    // than in the console: a permission must be DEFINED before it can be
+    // GRANTED, and the check has to sit where both doors go through it or the
+    // form and `POST /admin-api/applications/add` would hold two opinions about
+    // the same relationship. Same argument as `appAllowedProtocol`'s closed
+    // vocabulary two hundred lines up, and the same asymmetry: only an ADD is
+    // checked, because a REMOVE has to name a value the entry already carries
+    // and refusing to remove what LDAP put there would shut the one door that
+    // could tidy it up.
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     what: "THE BASE URI EVERY PERMISSION THIS APPLICATION DEFINES HANGS OFF, and the thing that makes a permission name globally unique here. A permission is identified by this value followed by its name — base `https://example.com/` and name `write` are the permission `https://example.com/write` — which is what a client puts in a `scope` and what the access token is then AUDIENCED to. Entra ID calls it the Application ID URI and spells it `api://<guid>`; the shape is the same and nothing here requires that scheme.\n\nIT IS NORMALISED TO END IN A SEPARATOR when it is written through this module — a trailing `/` is added where there is no `/`, `#` or `:` at the end — because base + name is a plain concatenation and `https://example.com` + `write` would otherwise produce `https://example.comwrite`. An `ldapmodify` reaches this attribute like every other and is not normalised, so a base written by hand means exactly what it says.\n\nSINGLE-VALUED, and it is the one attribute in this group that could not be widened without deciding something: two bases would mean every permission on the entry had two identifiers, and the lookup that turns a scope into an audience would have to pick one to put in `aud`."
   })
   oauthPermissionBaseUri?: string;
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "the console, the management API, or by hand",
     what: "ONE PERMISSION THIS APPLICATION EXPOSES, one value each. The value is the permission's NAME — `read`, `write`, `Widgets.ReadWrite.All` — optionally followed by `|` and a description: `write|Change widgets on somebody's behalf`. The FIRST `|` is the delimiter and every later one belongs to the description, so a description may contain the character and a name may not.\n\nThe name must be a legal OAuth scope token (RFC 6749 section 3.3 — no space, no double quote, no backslash), because that is what a client will put in a `scope` parameter and what comes back on the token's `scope` claim. A name or a description containing an operator error code is refused too: both are returned on every page that lists the permission, and a code is recorded rather than sent. Nothing enforces either rule when an `ldapmodify` writes the value; this module and both consoles do.\n\nA PERMISSION MUST EXIST BEFORE ANYTHING CAN BE GRANTED IT, which is the one ordering rule this feature has and is checked in updateApplication() so that the console form and the management API cannot disagree about it. It is checked on the GRANT and not here: this attribute is the definition, and a definition nobody has used yet is the ordinary first step rather than a mistake."
@@ -523,6 +631,7 @@ model Application {
   // in. The role side is `rolePermission` on a role entry
   // (`common/roles.js`); the question is `common/role_permissions.ts`'s.
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "the console, the management API, or by hand",
     what: "A PERMISSION THIS APPLICATION DEFINES THAT IS ISSUED ONLY TO A SUBJECT HOLDING A ROLE THAT AUTHORIZES IT. One value each, the permission's NAME as `oauthPermission` gives it (`write`, not the full identifier). A person or an application asking for a gated permission is issued it only while they hold a role whose `rolePermission` names the full identifier (base + name); otherwise it is left off the token (RFC 6749 section 3.3), and a request asking for nothing else is refused `invalid_scope`. A permission not listed here is issued as it always was, which is what keeps every existing client working until somebody opts in.\n\nThe name must be one of this entry's own permissions when it is written through this module; an `ldapmodify` is not checked, and a value naming no defined permission gates nothing, because no request can name it."
@@ -536,18 +645,23 @@ model Application {
   // setting with the document it came from missing is a value nobody can
   // check. DECLARATION ONLY: nothing in this service reads it back.
   @attr(#{
+    // The RFC 9728 document an entry was created from, and where it came from.
+    // Declared and not read; see the two SCHEMA rows.
+    editable: "set",
     kind: "single",
     from: "an RFC 9728 import, the console, the management API, or by hand",
     what: "THE PROTECTED RESOURCE METADATA DOCUMENT (RFC 9728) THIS APPLICATION WAS CONFIGURED FROM, as compact JSON. Its `resource` is the default name, `oauthPermissionBaseUri` and `oauthAudience` of an entry created from it, and its `scopes_supported` the permissions; every other member — `authorization_servers`, `jwks_uri`, `bearer_methods_supported`, the DPoP members — is recorded here and nowhere else.\n\nIt is DECLARATION ONLY: nothing reads it back, nothing re-fetches it, and changing it changes none of the attributes it filled in. A value written through this module must be a JSON object with a `resource`; an `ldapmodify` is not checked."
   })
   oauthResourceMetadata?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "an RFC 9728 import, the console, the management API, or by hand",
     what: "WHERE THE PROTECTED RESOURCE METADATA DOCUMENT WAS FETCHED FROM, when it was fetched rather than pasted or uploaded. Recorded and never dialled again: the fetch is an administrator's act on /admin/applications/new or POST /admin-api/applications/load-resource-metadata, and nothing refreshes it."
   })
   oauthResourceMetadataUrl?: string;
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "the console, the management API, or by hand",
     what: "A PERMISSION THIS APPLICATION HAS BEEN GRANTED ON ANOTHER ONE — the whole permission identifier, base URI and name together: `https://example.com/write`. It is the DELEGATION RELATIONSHIP, and it is held on the CLIENT rather than on the resource for Entra's reason and one more: the client is the party that will name it in a `scope`, so the entry that answers \"may this request be honoured\" is the entry the request identifies.\n\n**IT IS READ, and it is read in the one place that decides what a token says.** A `scope` value matching a defined permission becomes the access token's `aud` (the base URI) and its `scope` (the name) — see oauth2.js's audienceScopes(). In PRODUCT MODE an ungranted permission is refused `invalid_scope` at the authorization and token endpoints, always. In development it is reported and REFUSES nothing unless `oauth2.delegatedPermissionsEnforced` is on, which is off by default: a client under test is exercised by both answers.\n\nA VALUE THAT RESOLVES TO NO DEFINED PERMISSION IS NOT AN ERROR AND IS NOT HIDDEN. The resource's entry may have been deleted, or the permission removed from under it; `/admin/delegation` shows such a grant as DANGLING, which is the same three-state honesty the rest of this console applies to a name it cannot resolve."
@@ -564,6 +678,7 @@ model Application {
   // to, and a person may consent a scope the client was never granted, and
   // /admin/consent exists to show the difference.
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "the console, the management API, or by hand",
     what: "A SCOPE NOBODY IS ASKED ABOUT WHEN THEY SIGN IN TO THIS APPLICATION. One value per scope, written exactly as a client puts it in a `scope` parameter — `openid`, `profile`, or a whole delegated permission identifier such as `https://example.com/write`.\n\n**It is an OVERRIDE and not a record.** With `oauth2.consentRequired` on (which is the default), the authorization endpoint draws /oauth2/consent for any scope this person has not agreed to for this application; a scope named here is skipped for EVERYBODY, and nothing is written to anybody's entry. So removing a value asks everybody again — including the people who would have said yes — where removing a person's own `oauthConsent` asks only them.\n\n**It is keyed on the pair and not on the scope alone.** Consenting `read` here consents it for THIS application; an application registered five minutes later that spells the same word is still asked.\n\nA value that names no permission any application defines is not an error and is not hidden — most scopes are not permissions. It must be a legal RFC 6749 section 3.3 scope token, because a value with a space in it could never match one scope; an `ldapmodify` reaches this attribute like every other and is not checked, and /admin/consent shows what it put there."
@@ -608,6 +723,8 @@ model Application {
   // two contradictory declarations (`authMethodsProblem()`). The FIRST
   // value is what RFC 7591's single-valued member reports.
   @attr(#{
+    // A LIST since 2026-10-01: every method the client may use, `none` alone.
+    editable: "multi",
     kind: "multi",
     from: "POST /oauth2/register",
     what: "How it authenticates — every method it may use at the token endpoint, any one of which a request may present. `none` (a public client) cannot be held with any other. RFC 7591 section 2 makes client_secret_basic the default when a registration omits it, which is why an omission means CONFIDENTIAL rather than unknown."
@@ -615,6 +732,8 @@ model Application {
   oauthTokenEndpointAuthMethod?: string[];
   // OPENID CONNECT NATIVE SSO FOR MOBILE APPS 1.0 (#130, 2026-09-23).
   @attr(#{
+    // Native SSO (#130). One answer each.
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or a TRUSTED software statement at POST /oauth2/register",
     families: #["oidc"],
@@ -623,6 +742,7 @@ model Application {
   })
   oauthNativeSso?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or a TRUSTED software statement at POST /oauth2/register",
     families: #["oidc"],
@@ -633,6 +753,8 @@ model Application {
   // OPENID CONNECT CIBA CORE 1.0 SECTION 4 (#131, 2026-09-23): the four
   // registration members, from a registration, the console or the API.
   @attr(#{
+    // CIBA (#131). One answer each.
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register, the console, the management API",
     families: #["oidc"],
@@ -641,6 +763,7 @@ model Application {
   })
   oauthBackchannelTokenDeliveryMode?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register, the console, the management API",
     families: #["oidc"],
@@ -649,6 +772,8 @@ model Application {
   })
   oauthBackchannelClientNotificationEndpoint?: string;
   @attr(#{
+    // OpenID Provider Commands (#151).
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register, the console, the management API",
     families: #["oidc"],
@@ -657,6 +782,7 @@ model Application {
   })
   oauthCommandEndpoint?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register, the console, the management API",
     families: #["oidc"],
@@ -665,6 +791,7 @@ model Application {
   })
   oauthBackchannelAuthenticationRequestSigningAlg?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register, the console, the management API",
     families: #["oidc"],
@@ -674,6 +801,8 @@ model Application {
   oauthBackchannelUserCodeParameter?: string;
   // OPENID CONNECT CORE SECTION 8 AND SECTION 9 (#118, 2026-09-22).
   @attr(#{
+    // OIDC Core sections 8 and 9 (#118). One answer each.
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register, the console, the management API, or by hand",
     families: #["oidc"],
@@ -682,6 +811,7 @@ model Application {
   })
   oauthSubjectType?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register, the console, the management API, or by hand",
     families: #["oidc"],
@@ -691,6 +821,8 @@ model Application {
   oauthSectorIdentifierUri?: string;
   // THE `did` CLAIM AGAINST A PAIRWISE SUBJECT (#693, phase 2).
   @attr(#{
+    // The did claim against a pairwise subject (#693). One answer.
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     families: #["oidc"],
@@ -699,6 +831,7 @@ model Application {
   })
   oauthDidClaimWithPairwise?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register, the console, the management API, or by hand",
     families: #["oauth2", "oidc"],
@@ -707,12 +840,14 @@ model Application {
   })
   oauthTokenEndpointAuthSigningAlg?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register, or by hand",
     what: "THE CLIENT'S PUBLIC KEYS, as a JWKS document — what private_key_jwt is verified against (RFC 7591 `jwks`). This is the asymmetric credential RFC 9700 section 2.5 RECOMMENDS, and it is the one credential attribute here that is NOT a secret: it is public key material, worth nothing to anybody who reads it, which is the whole point of preferring it to a shared secret."
   })
   oauthJwks?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register",
     what: "RFC 7591 `jwks_uri`, https. FETCHED since #120, when a key is needed, under federation/federation_http.ts's outbound policy (https, no redirect, a size cap, internal addresses refused in product mode), cached for oauth2.clientJwksCacheS and fetched again for an unknown kid at most every oauth2.clientJwksRefetchS. Never beside `oauthJwks`: RFC 7591 section 2 allows one or the other."
@@ -733,6 +868,8 @@ model Application {
   // below — the list is `common/crypto.js`'s own, so a value this service
   // cannot sign or encrypt with cannot be stored.
   @attr(#{
+    // RFC 9701's three. `set`, because each holds one algorithm.
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register, the console, the management API, or by hand",
     families: #["oauth2", "oidc"],
@@ -741,6 +878,7 @@ model Application {
   })
   oauthIntrospectionSignedResponseAlg?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register, the console, the management API, or by hand",
     families: #["oauth2", "oidc"],
@@ -749,6 +887,7 @@ model Application {
   })
   oauthIntrospectionEncryptedResponseAlg?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register, the console, the management API, or by hand",
     families: #["oauth2", "oidc"],
@@ -770,6 +909,9 @@ model Application {
   // chosen by whoever sent the request. `multi`, because a client serving
   // request objects from several places is one client.
   @attr(#{
+    // RFC 9101's five. The request URIs accumulate, like redirect URIs; the
+    // other four hold one answer each.
+    editable: "multi",
     kind: "multi",
     from: "POST /oauth2/register, the console, the management API, or by hand",
     families: #["oauth2", "oidc"],
@@ -778,6 +920,7 @@ model Application {
   })
   oauthRequestUri?: string[];
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register, the console, the management API, or by hand",
     families: #["oauth2", "oidc"],
@@ -786,6 +929,7 @@ model Application {
   })
   oauthRequestObjectSigningAlg?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register, the console, the management API, or by hand",
     families: #["oauth2", "oidc"],
@@ -794,6 +938,7 @@ model Application {
   })
   oauthRequestObjectEncryptionAlg?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register, the console, the management API, or by hand",
     families: #["oauth2", "oidc"],
@@ -802,6 +947,7 @@ model Application {
   })
   oauthRequestObjectEncryptionEnc?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register, the console, the management API, or by hand",
     families: #["oauth2", "oidc"],
@@ -814,6 +960,8 @@ model Application {
   // `oauth-oidc/oauth2.ts`'s `pushedRequestPolicyRefusal()`. Family-scoped for
   // the introspection attributes' reason.
   @attr(#{
+    // RFC 9126's one. It holds one answer.
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register, the console, the management API, or by hand",
     families: #["oauth2", "oidc"],
@@ -827,6 +975,8 @@ model Application {
   // the console, the management API or by hand, never by a client. READ by
   // `oauth-oidc/http_signatures.ts` through `httpSignaturesOf()`.
   @attr(#{
+    // FAPI 2.0 HTTP Signatures' one (#178). It holds one answer.
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     families: #["oauth2", "oidc"],
@@ -847,6 +997,9 @@ model Application {
   // RFC 9396 and GNAP share — see `authorizationDetailsTypeOf()`'s block —
   // so a GNAP resource server declares its types here too.
   @attr(#{
+    // RFC 9396's two. Both accumulate: a resource understands several types,
+    // and a client uses several.
+    editable: "multi",
     kind: "multi",
     from: "the console (the Access types tab), the management API, the RFC 9728 import, or by hand",
     families: #["oauth2", "oidc", "gnap"],
@@ -855,6 +1008,7 @@ model Application {
   })
   oauthAuthorizationDetailsType?: string[];
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "POST /oauth2/register, the console, the management API, or by hand",
     families: #["oauth2", "oidc"],
@@ -872,6 +1026,9 @@ model Application {
   // entry instead. Both are written by an administrator only: what a
   // caller may ask about is never something the caller says.
   @attr(#{
+    // AuthZEN's two (#563). Both accumulate: a catalogue has many rows, and a
+    // caller may be scoped to several applications.
+    editable: "multi",
     kind: "multi",
     from: "the console (the AuthZEN page), the management API, or by hand",
     families: #["oauth2", "oidc"],
@@ -880,6 +1037,7 @@ model Application {
   })
   authzenAttribute?: string[];
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "the console, the management API, or by hand",
     families: #["oauth2", "oidc"],
@@ -894,6 +1052,8 @@ model Application {
   // (the AuthZEN tab's set-callbacks); `federation/CLAUDE.md` carries the
   // URL-dialling argument.
   @attr(#{
+    // The access request callback URLs (#1180): a caller may register several.
+    editable: "multi",
     kind: "multi",
     from: "the console (the AuthZEN tab), the management API, or by hand",
     families: #["oauth2", "oidc"],
@@ -914,6 +1074,10 @@ model Application {
   // `oauth-oidc/step_up.ts`'s header's. Family-scoped for the introspection
   // attributes' reason.
   @attr(#{
+    // RFC 9470's two. Each holds one answer: the acr values are one ordered
+    // list in one value, because a directory's multi-valued attribute has no
+    // order and the order is the preference.
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     families: #["oauth2", "oidc"],
@@ -922,6 +1086,7 @@ model Application {
   })
   oauthStepUpAcrValues?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     families: #["oauth2", "oidc"],
@@ -946,6 +1111,10 @@ model Application {
   // ONE space-separated value in preference order, for
   // `oauthStepUpAcrValues`' reason: a multi-valued attribute has no order.
   @attr(#{
+    // OpenID Connect Registration's and JARM's response members and request
+    // defaults (#290). Each holds one answer; the acr values are one ordered
+    // list in one value, for the step-up attribute's reason above.
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register, the console, the management API, or by hand",
     families: #["oidc"],
@@ -954,6 +1123,7 @@ model Application {
   })
   oauthIdTokenSignedResponseAlg?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register, the console, the management API, or by hand",
     families: #["oidc"],
@@ -962,6 +1132,7 @@ model Application {
   })
   oauthIdTokenEncryptedResponseAlg?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register, the console, the management API, or by hand",
     families: #["oidc"],
@@ -970,6 +1141,7 @@ model Application {
   })
   oauthIdTokenEncryptedResponseEnc?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register, the console, the management API, or by hand",
     families: #["oidc"],
@@ -978,6 +1150,7 @@ model Application {
   })
   oauthUserinfoSignedResponseAlg?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register, the console, the management API, or by hand",
     families: #["oidc"],
@@ -986,6 +1159,7 @@ model Application {
   })
   oauthUserinfoEncryptedResponseAlg?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register, the console, the management API, or by hand",
     families: #["oidc"],
@@ -994,6 +1168,7 @@ model Application {
   })
   oauthUserinfoEncryptedResponseEnc?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register, the console, the management API, or by hand",
     families: #["oauth2", "oidc"],
@@ -1002,6 +1177,7 @@ model Application {
   })
   oauthAuthorizationSignedResponseAlg?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register, the console, the management API, or by hand",
     families: #["oauth2", "oidc"],
@@ -1010,6 +1186,7 @@ model Application {
   })
   oauthAuthorizationEncryptedResponseAlg?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register, the console, the management API, or by hand",
     families: #["oauth2", "oidc"],
@@ -1018,6 +1195,7 @@ model Application {
   })
   oauthAuthorizationEncryptedResponseEnc?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register, the console, the management API, or by hand",
     families: #["oidc"],
@@ -1026,6 +1204,7 @@ model Application {
   })
   oauthDefaultAcrValues?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register, the console, the management API, or by hand",
     families: #["oidc"],
@@ -1051,6 +1230,13 @@ model Application {
   // see.
   // -------------------------------------------------------------------
   @attr(#{
+    // RFC 7521 / RFC 7523. The declaration is `multi` like every other
+    // identifier attribute here — one application legitimately asserts under a
+    // per-environment issuer name, and a `set` would replace the list with one
+    // value and read afterwards as the others having been forgotten. The six
+    // the PKI page writes are `set`, because each holds ONE answer and a list
+    // of two private keys has no rule for which signs.
+    editable: "multi",
     kind: "multi",
     from: "by hand",
     identifier: true,
@@ -1059,24 +1245,28 @@ model Application {
   })
   oauthAssertionIssuer?: string[];
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "/admin/pki",
     what: "THE PUBLIC KEYS THIS SERVICE ISSUED THIS APPLICATION, as a JWKS document, each key carrying `x5c` (its certificate chain) and `x5t#S256`. Written by the Issue control on /admin/pki and by POST /admin-api/pki/issue.\n\nIt is a SECOND attribute beside `oauthJwks` and never overwrites it. A client that registered its own keys and was later issued a pair by an operator has two ways to sign, both of which somebody deliberately arranged — and writing over the first would silently end it the moment somebody pressed a button about the second. Both are read, ORed, by client_auth.js and by assertion_grant.js. Public key material, so like oauthJwks it is worth nothing to whoever reads this directory."
   })
   oauthAssertionJwks?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "/admin/pki",
     what: "The leaf certificate, PEM, whose subject is this application and whose issuer is the realm's Issuing CA. The same bytes as the first `x5c` member above, in the form a person can paste into `openssl x509 -text`."
   })
   oauthAssertionCertificate?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "/admin/pki",
     what: "The Issuing CA and the Intermediate CA, PEM, in that order — what a leaf travels with. The ROOT is deliberately not in it: a root is a trust anchor, and a relying party that accepted one because it arrived in the chain would be accepting a certificate that vouched for itself."
   })
   oauthAssertionCertificateChain?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "/admin/pki",
     sensitive: true,
@@ -1084,18 +1274,26 @@ model Application {
   })
   oauthAssertionPrivateKey?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "/admin/pki",
     what: "The `kid` of the issued key, derived from the key material as every kid in this service is (RFC 7638). An assertion naming it in its JWS header narrows the verification to that key; one naming nothing is tried against every key registered for this application, which is correct rather than lax."
   })
   oauthAssertionKid?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "/admin/pki",
     what: "When the issued certificate expires, as a GeneralizedTime. It is a fact about the CERTIFICATE and not a policy: nothing here refuses an assertion because this date has passed — what refuses one is the certificate failing to build a path, which is checked where the chain is checked. Drawn on /admin/pki so that an operator can see what is about to stop working."
   })
   oauthAssertionExpiresAt?: string;
   @attr(#{
+    // WHERE THE KEY PAIR CAME FROM (2026-09-13) — issued here, or a certificate
+    // uploaded in its place. `set` for the six's reason, and in this table at
+    // all because `admin-ui/pki_admin.ts` writes it through updateApplication()
+    // beside them; KEY_SOURCES below is the closed vocabulary it is checked
+    // against.
+    editable: "set",
     kind: "single",
     from: "/admin/pki, or the application's own page",
     what: "WHERE THE RFC 7523 KEY PAIR ABOVE CAME FROM, and therefore who holds its private half. `issued` — generated here and signed by this realm's Issuing CA, the private key on `oauthAssertionPrivateKey`. `uploaded-realm-ca` — a certificate this realm's own certificate authority issued, uploaded in place of a generated pair. `uploaded-external-ca` — a certificate from another authority, uploaded with its whole chain up to a self-signed root, every link verified. For both uploaded values the APPLICATION holds the private key and this service never has.\n\nA fact about what was done and not a policy: no verifier reads it, and an entry written before it existed carries none — the console reads a sealed private key as `issued` there, which is the only thing that could have put one on the entry."
@@ -1131,6 +1329,13 @@ model Application {
   // carry.
   // -------------------------------------------------------------------
   @attr(#{
+    // RFC 7522's seven, the same two kinds for the same two reasons: the
+    // declaration accumulates and the five the PKI page writes each hold ONE
+    // answer. The REGISTERED certificate is `set` and not `multi` because
+    // several PEM blocks go in ONE value — a certificate rotation is two blocks
+    // in one attribute, not two attribute values, so that the whole of what a
+    // party may sign with is replaced in one write.
+    editable: "multi",
     kind: "multi",
     from: "by hand",
     identifier: true,
@@ -1139,24 +1344,28 @@ model Application {
   })
   oauthSamlAssertionIssuer?: string[];
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     what: "THE CERTIFICATE THIS PARTY SIGNS ITS RFC 7522 ASSERTIONS WITH, PEM, registered by value. The analogue of `oauthJwks` for a profile whose signatures are XML Signature rather than JWS — there is no JWKS in SAML, the thing a party registers IS a certificate.\n\nSeveral PEM blocks may be in one value, because a party rotating a certificate holds two for as long as assertions signed by the old one are still in flight. Public key material, so like `oauthJwks` it is worth nothing to whoever reads this directory.\n\n**A CERTIFICATE ARRIVING IN THE ASSERTION'S OWN `<ds:KeyInfo>` IS NOT A SUBSTITUTE FOR THIS.** It is used to choose among what is registered here and never as a key in its own right, which is where this profile is stricter than RFC 7523: a chain to this realm's Root proves the REALM issued a key and says nothing about WHICH application holds it, so accepting one would let an application's RFC 7523 leaf sign a SAML assertion."
   })
   oauthSamlAssertionSigningCertificate?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "/admin/pki",
     what: "The leaf certificate this service ISSUED this application for RFC 7522, PEM, whose subject is the application and whose issuer is the realm's Issuing CA. Written by the Issue control on /admin/pki with the SAML 2.0 purpose chosen, and by POST /admin-api/pki/issue with `purpose: \"saml\"`. It is a DIFFERENT certificate over a DIFFERENT key pair from `oauthAssertionCertificate` beside it, and its subjectAltName carries the RFC 7522 profile URI so that a certificate read out of context says which profile it was issued for."
   })
   oauthSamlAssertionCertificate?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "/admin/pki",
     what: "The Issuing CA and the Intermediate CA, PEM, in that order — what the leaf above travels with. The ROOT is deliberately not in it, for the reason the JWT chain row gives: a relying party that accepted one because it arrived in the chain would be accepting a certificate that vouched for itself."
   })
   oauthSamlAssertionCertificateChain?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "/admin/pki",
     sensitive: true,
@@ -1164,18 +1373,21 @@ model Application {
   })
   oauthSamlAssertionPrivateKey?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "/admin/pki",
     what: "The SHA-256 thumbprint of the issued certificate, base64url. It is what `oauthAssertionKid` is for the JWT profile and it is spelt differently because the two formats carry different handles: a JWS header names a `kid` and an XML Signature carries the certificate itself, so what matches a presented <ds:KeyInfo> against what is registered is a thumbprint."
   })
   oauthSamlAssertionThumbprint?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "/admin/pki",
     what: "When the issued RFC 7522 certificate expires, as a GeneralizedTime. A fact about the CERTIFICATE and not a policy, exactly as `oauthAssertionExpiresAt` is: nothing here refuses an assertion because this date has passed. Drawn on /admin/pki so that an operator can see what is about to stop working."
   })
   oauthSamlAssertionExpiresAt?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "/admin/pki, or the application's own page",
     what: "Where the RFC 7522 key pair above came from, in the vocabulary `oauthAssertionKeySource` uses and for its reason: `issued`, `uploaded-realm-ca` or `uploaded-external-ca`. It is a SEPARATE attribute from the JWT one because the two key pairs are separate — one may be issued here while the other is somebody else's certificate."
@@ -1191,6 +1403,11 @@ model Application {
   // the decision.
   // -------------------------------------------------------------------
   @attr(#{
+    // RFC 7591 section 2.3 (2026-09-13). The declaration accumulates like every
+    // issuer declaration here; the issued statement is ONE value, replaced by
+    // the next issue. The three `appSoftwareStatement*` facts are what a
+    // registration recorded and are not here.
+    editable: "multi",
     kind: "multi",
     from: "by hand",
     identifier: true,
@@ -1199,6 +1416,7 @@ model Application {
   })
   oauthSoftwareStatementIssuer?: string[];
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the application's own page, or POST /admin-api/applications/issue-software-statement",
     what: "THE SOFTWARE STATEMENT THIS REALM LAST ISSUED FOR THIS APPLICATION, as the compact JWS, typed `software-statement+jwt`, with `sub` naming this application. A client presenting it at POST /oauth2/register is registered with the members it fixes. NOT A SECRET — RFC 7591 section 2.3 expects a statement to ship with every copy of the software — and not a record of every statement issued: issuing again replaces this value, and the earlier statement still verifies until it expires or the realm's signing key changes."
@@ -1223,6 +1441,7 @@ model Application {
   })
   appSoftwareStatementPublisher?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     identifier: true,
@@ -1231,36 +1450,44 @@ model Application {
   })
   oauthTlsClientAuthSubjectDn?: string;
   @attr(#{
+    // RFC 8705's other four subject parameters and the section 3.4 flag
+    // (2026-09-13). Checked on the way in by mtlsAttributeProblem().
+    editable: "set",
     kind: "single",
     from: "by hand / POST /oauth2/register",
     what: "RFC 8705 section 2.1.2 `tls_client_auth_san_dns`: a dNSName the certificate this client authenticates with must carry, compared without regard to case or a trailing dot, never as a wildcard. One of the five subject parameters; see oauthTlsClientAuthSubjectDn."
   })
   oauthTlsClientAuthSanDns?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand / POST /oauth2/register",
     what: "RFC 8705 section 2.1.2 `tls_client_auth_san_uri`: a uniformResourceIdentifier the certificate must carry, compared exactly. One of the five subject parameters."
   })
   oauthTlsClientAuthSanUri?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand / POST /oauth2/register",
     what: "RFC 8705 section 2.1.2 `tls_client_auth_san_ip`: an iPAddress the certificate must carry, IPv4 or IPv6, compared as the address rather than its spelling. One of the five subject parameters."
   })
   oauthTlsClientAuthSanIp?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand / POST /oauth2/register",
     what: "RFC 8705 section 2.1.2 `tls_client_auth_san_email`: an rfc822Name the certificate must carry, the domain compared without regard to case and the local part exactly (RFC 5280 section 7.5). One of the five subject parameters."
   })
   oauthTlsClientAuthSanEmail?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand / POST /oauth2/register",
     what: "RFC 8705 section 3.4 `tls_client_certificate_bound_access_tokens`, TRUE or FALSE. TRUE is this client DECLARING that its tokens are certificate-bound, and it is held to that in EVERY mode: a token request from it over a connection with no client certificate is refused (STS-OAUTH-0487) rather than answered with an unbound token, which section 3.4 leaves to the authorization server. FALSE or absent changes nothing — a client presenting a certificate still gets a bound token."
   })
   oauthTlsClientCertificateBoundAccessTokens?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     what: "For RFC 8705 section 2.2 self_signed_tls_client_auth: the base64url SHA-256 of the DER of the certificate this client authenticates with. THIS SERVICE'S OWN NAME, kept beside what the RFC names: since 2026-09-13 a certificate also authenticates the client when it is the x5c[0] of a key in the jwks it registered (section 2.2.2). Fetch a certificate's thumbprint with GET /tls/sign-in, or compute it: openssl x509 -outform DER | openssl dgst -sha256 -binary | base64url."
@@ -1278,6 +1505,7 @@ model Application {
   oauthConfidential?: string;
   // --- SAML, WS-Federation, WS-Trust ------------------------------------
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "SAML 2.0 / SAML 1.1",
     identifier: true,
@@ -1286,12 +1514,14 @@ model Application {
   })
   samlEntityId?: string[];
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "SAML 2.0 / SAML 1.1",
     what: "THE ASSERTION CONSUMER SERVICE URL — where a SAML response is posted back to, and the redirect URI of both SAML families. It held WS-Federation's `wreply` as well until 2026-08-25; that moved to wsfedReplyUrl, because the SAML pages read this attribute for the Single Logout fallback and a wreply arriving in it made a WS-Federation application look as though it had named a SAML ACS. CHECKED IN PRODUCT MODE ONLY: development sends a response wherever the request asked and records the address here; product delivers only to an address already on this list, and a sighting there never adds one. What development RECORDS here is marked on appReturnAddressObserved, and product refuses a marked address until an operator confirms it — so a realm switched from development to product does not trust what development learnt. Values recorded before that mark existed carry none and still need reviewing."
   })
   samlAssertionConsumerService?: string[];
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "consumed metadata, or by hand",
     what: "WHERE A <samlp:LogoutResponse> IS SENT for this service provider, and where a LogoutRequest goes when this identity provider starts the logout. DECLARED, not observed: a LogoutRequest carries no return address, so only SP METADATA or an operator can say. Consuming the metadata writes its SingleLogoutService locations here (and each endpoint's binding and ResponseLocation on samlSloEndpoint, which is read first). With none recorded the fallback is saml2.defaultSingleLogoutService and then the assertion consumer service URL above, which is a guess this service makes out loud rather than quietly."
@@ -1319,6 +1549,13 @@ model Application {
   // metadata publishes the old and new key side by side during a rollover
   // and both must verify. `saml/request_signature.ts` argues the rest.
   @attr(#{
+    // DECLARED, both of them, which is why they are here and the four SAML
+    // attributes beside them are not: where a LogoutResponse goes and which
+    // certificate the service provider signs with are configuration, and the
+    // NameID formats it has asked for and whether its last request was signed
+    // are what HAPPENED. `multi` since 2026-09-17 (#37): a rollover publishes
+    // two keys.
+    editable: "multi",
     kind: "multi",
     from: "consumed metadata, the SAML 2.0 page, or by hand",
     what: "THE SERVICE PROVIDER'S REGISTERED SIGNING CERTIFICATES, base64 DER, one per value. A signed AuthnRequest, LogoutRequest or LogoutResponse from this service provider is VERIFIED against these — in every mode — and refused when it verifies against none. Written by consuming its metadata (every KeyDescriptor use=\"signing\" or with no use), by the SAML 2.0 console page, by POST /admin-api/saml2/set-signing-certificate, by confirming the observed certificate below, or by hand. Its key must make an XML signature this service verifies — RSA, EC, EdDSA, DSA, ML-DSA or SLH-DSA (STS-REG-0160). It is NEVER written from a request: the certificate a request carries in its ds:KeyInfo goes on samlObservedSigningCertificate. Values written before 2026-09-17 were captured off requests and carry no provenance — review them before trusting them. Public key material, so unlike oauthClientSecret it is worth nothing to whoever reads this directory."
@@ -1353,18 +1590,23 @@ model Application {
   // right default for a mock, where the alternative is refusing to
   // demonstrate the feature.
   @attr(#{
+    // SAML 2.0 encryption: three that say where the recipient's key comes from,
+    // and four setting overrides. All `set` — one answer each.
+    editable: "set",
     kind: "single",
     from: "by hand",
     what: "WHERE THIS SERVICE PROVIDER'S METADATA IS PUBLISHED. It is fetched by the \"refresh metadata\" action on the application page and by POST /admin-api/applications/refresh-metadata, and NEVER while a flow is running — an assertion that had to wait on somebody else's web server to be issued would make every sign-in as reliable as that server. What the fetch writes is everything consuming the document writes — see samlSpMetadata below.\n\nThis is the SECOND outbound-request surface in this service; federation was the first and is the only other. It follows the same refusals — the URL must be one this entry carries, the scheme must be http or https, and the request times out."
   })
   samlSpMetadataUrl?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "a metadata fetch, or by hand",
     what: "THE SERVICE PROVIDER'S METADATA DOCUMENT, cached verbatim. It is what the refresh action stores, and what uploading one on the SAML 2.0 page (or POST /admin-api/saml2/upload-metadata) stores for a service provider whose metadata this service cannot reach. CONSUMING it (2026-09-17) writes its AssertionConsumerService and SingleLogoutService endpoints as REGISTERED return addresses (samlAssertionConsumerService, samlAcsEndpoint, samlSingleLogoutService, samlSloEndpoint), its signing certificates (samlSigningCertificate), its encryption certificate (samlEncryptionCertificate), its NameIDFormats, AuthnRequestsSigned and WantAssertionsSigned, and its validUntil and cacheDuration. Setting this attribute by hand stores the document and consumes NOTHING — use the upload.\n\nIT IS KEPT AS WELL AS THE EXTRACT so that a reader can see what was actually consumed. A certificate with no document behind it is a value nobody can check."
   })
   samlSpMetadata?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "metadata, or by hand",
     what: "THE CERTIFICATE AN ASSERTION IS ENCRYPTED TO, base64 DER or PEM. Written by the metadata fetch from the <md:KeyDescriptor use=\"encryption\"> — falling back to an unqualified KeyDescriptor, which the specification says serves both uses — and settable by hand for a service provider with no metadata at all.\n\nIt decides what goes out. With none here a registered samlSigningCertificate is used, then — in development only — the observed one, and with none of them the assertion is sent in clear (development) or refused (product), and the page says so."
@@ -1445,12 +1687,14 @@ model Application {
   })
   samlSpMetadataSignature?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     what: "THE CERTIFICATE THIS SERVICE PROVIDER'S METADATA MUST BE SIGNED WITH, base64 DER. With it set, a document that is unsigned, or whose signature does not verify against it, is REFUSED and nothing on the entry changes. Without it a signed document is consumed and recorded as signed-not-verified: the trust act is then the operator's choice of URL (or document), which is what an explicit refresh or upload is."
   })
   samlSpMetadataSigningCertificate?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     overrides: "saml2.encryptAssertion",
@@ -1458,6 +1702,7 @@ model Application {
   })
   saml2EncryptAssertion?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     overrides: "saml2.encryptionAlgorithm",
@@ -1465,6 +1710,7 @@ model Application {
   })
   saml2EncryptionAlgorithm?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     overrides: "saml2.keyTransportAlgorithm",
@@ -1472,6 +1718,7 @@ model Application {
   })
   saml2KeyTransportAlgorithm?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     overrides: "saml2.encryptLogoutNameId",
@@ -1496,6 +1743,10 @@ model Application {
   // the SERVICE-WIDE default list; the per-application half of that has
   // existed since this file was written and is `oauthRedirectUri` above.
   @attr(#{
+    // The OAuth 2.0 / OIDC per-client five, the group claim's four and
+    // WS-Federation's one. Same rule as the SAML ten above: `set`, because a
+    // setting has one answer.
+    editable: "set",
     kind: "single",
     from: "by hand",
     overrides: "oauth2.accessTokenTtlS",
@@ -1503,6 +1754,7 @@ model Application {
   })
   oauthAccessTokenTtlS?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     overrides: "oauth2.idTokenTtlS",
@@ -1510,6 +1762,7 @@ model Application {
   })
   oauthIdTokenTtlS?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     overrides: "oauth2.refreshTokenTtlS",
@@ -1517,6 +1770,7 @@ model Application {
   })
   oauthRefreshTokenTtlS?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     overrides: "oauth2.refreshIdleSeconds",
@@ -1531,18 +1785,22 @@ model Application {
   // `set-custom-claim` and `remove-custom-claim` actions; kept off the
   // field grid, which would show a JSON array as one text box.
   @attr(#{
+    // An application's own claim sets (2026-10-01), each one JSON array.
+    editable: "set",
     kind: "single",
     from: "the console's Custom claims section",
     what: "THIS APPLICATION'S OWN ACCESS TOKEN CLAIMS, as a JSON array of rows like the realm's Custom claims page. Added to the realm's access token claims for tokens issued to this client, and an application row replaces the realm row of the same name."
   })
   oauthClaimsAccessToken?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console's Custom claims section",
     what: "THIS APPLICATION'S OWN ID TOKEN CLAIMS, as a JSON array of rows like the realm's Custom claims page. Added to the realm's ID Token claims for this client, winning by name."
   })
   oauthClaimsIdToken?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console's Custom claims section",
     what: "THIS APPLICATION'S OWN USERINFO CLAIMS, as a JSON array of rows like the realm's UserInfo claims page. Added to the realm's UserInfo claims answered to this client, winning by name."
@@ -1557,18 +1815,22 @@ model Application {
   // `inherit-claim-attributes`; kept off the field grid for the reason the
   // rows above are.
   @attr(#{
+    // Its own directory-attribute selections (#495), each one JSON array.
+    editable: "set",
     kind: "single",
     from: "the console's Custom claims section",
     what: "THIS APPLICATION'S OWN SELECTION of directory attributes for its access tokens, as a JSON array of attribute names from the realm's Custom claims catalogue. When present it REPLACES the realm's selection for tokens issued to this client; absent, the realm's is used."
   })
   oauthClaimAttributesAccessToken?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console's Custom claims section",
     what: "THIS APPLICATION'S OWN SELECTION of directory attributes for its ID Tokens, a JSON array of catalogue attribute names, replacing the realm's selection when present."
   })
   oauthClaimAttributesIdToken?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console's UserInfo claims section",
     what: "THIS APPLICATION'S OWN SELECTION of directory attributes for the UserInfo response answered to it, a JSON array of catalogue attribute names, replacing the realm's selection when present."
@@ -1578,18 +1840,23 @@ model Application {
   // TYPE (#395; `common/scope_claims.ts`). On the field grid, under the
   // OAuth sub-tab's Claims in tokens section.
   @attr(#{
+    // How the realm's set and the application's own combine, per token type,
+    // and a resource server's access-token claims (#395).
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     what: "HOW THE REALM'S ACCESS-TOKEN CLAIMS AND THIS APPLICATION'S OWN ARE COMBINED (#395), the typed rows and the ticked directory attributes alike: application (only this application's own), union (the realm's and its own), intersection (only what both hold) or realm (only the realm's). Unset, its rows are added to the realm's and win by name, and its selection replaces the realm's. An application holding nothing of its own gets the realm's whatever this says."
   })
   oauthClaimsCombineAccessToken?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     what: "HOW THE REALM'S ID TOKEN CLAIMS AND THIS APPLICATION'S OWN ARE COMBINED (#395), the typed rows and the ticked directory attributes alike: application (only this application's own), union (the realm's and its own), intersection (only what both hold) or realm (only the realm's). Unset, its rows are added to the realm's and win by name, and its selection replaces the realm's. An application holding nothing of its own gets the realm's whatever this says."
   })
   oauthClaimsCombineIdToken?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     what: "HOW THE REALM'S USERINFO CLAIMS AND THIS APPLICATION'S OWN ARE COMBINED (#395), the typed rows and the ticked directory attributes alike: application (only this application's own), union (the realm's and its own), intersection (only what both hold) or realm (only the realm's). Unset, its rows are added to the realm's and win by name, and its selection replaces the realm's. An application holding nothing of its own gets the realm's whatever this says."
@@ -1599,6 +1866,7 @@ model Application {
   // (#395; RFC 9068 section 2.2.2). Read by `oauth2.ts`'s accessToken()
   // for each audience the token names.
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "the console, the management API, or by hand",
     what: "THE IDENTITY CLAIMS THIS RESOURCE SERVER WANTS on the access tokens addressed to it (one of its oauthAudience values, or its client_id named as a scope), from OpenID Connect Core section 5.4's profile, email, address and phone claims. Each is released only when the scope that covers it was GRANTED, and on a token for several resource servers only a claim every one of them declared goes in. Absent, the token carries none of these claims from this layer — preferred_username included."
@@ -1608,18 +1876,22 @@ model Application {
   // and written by the application's Scope claims tab, so kept off the
   // field grid for the reason the selections above are.
   @attr(#{
+    // The claims mapped to its own scopes, one JSON object (2026-10-09).
+    editable: "set",
     kind: "single",
     from: "the console's Scope claims tab",
     what: "THE CLAIMS EACH OF THIS RESOURCE SERVER'S PERMISSIONS CARRIES, as a JSON object from a permission name (one of its oauthPermission values) to a list of attribute names from the realm's claim catalogue. An access token addressed to this application on which a permission was GRANTED carries the person's values of that permission's attributes, under the catalogue's claim names; granting the permission is the grant of those claims, a standard OpenID Connect one included. Combined with the client's claims as oauthAccessTokenClaimsCombine says."
   })
   oauthPermissionClaims?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     what: "HOW THE CLIENT'S ACCESS-TOKEN CLAIMS AND THIS RESOURCE SERVER'S DECLARED CLAIMS (oauthAccessTokenClaim) ARE COMBINED on a token addressed to it: 'union' (the default), 'intersection' (only claims both carry), 'client' (only the client's) or 'resource' (only the declared ones). Several resource servers that disagree are combined by intersection. Nothing a grant did not cover is released, whichever is chosen."
   })
   oauthAccessTokenClaimsCombine?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     overrides: "oauth2.revokeRefreshOnLogout",
@@ -1631,6 +1903,7 @@ model Application {
   // /launch/{app} sends the person to `oauthInitiateLoginUri` and the client
   // starts an ordinary authorization request from there.
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     overrides: "oauth2.thirdPartyInitiatedLogin",
@@ -1639,6 +1912,7 @@ model Application {
   })
   oauthThirdPartyInitiatedLogin?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     overrides: "oauth2.spInitiatedSso",
@@ -1657,6 +1931,7 @@ model Application {
   // because `ldapmodify` reaches it unchecked.
   // ---------------------------------------------------------------------
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "RFC 7591 initiate_login_uri, the console, the management API, or by hand",
     families: #["oauth2", "oidc"],
@@ -1685,6 +1960,10 @@ model Application {
   // `ldapmodify` reaches the attributes unchecked.
   // ---------------------------------------------------------------------
   @attr(#{
+    // #1300: what the sign-in and consent screens show about the client —
+    // `set`, one each, written by register() too, oauthInitiateLoginUri's
+    // arrangement.
+    editable: "set",
     kind: "single",
     from: "RFC 7591 logo_uri, the console, the management API, or by hand",
     families: #["oauth2", "oidc"],
@@ -1692,6 +1971,7 @@ model Application {
   })
   oauthLogoUri?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "RFC 7591 policy_uri, the console, the management API, or by hand",
     families: #["oauth2", "oidc"],
@@ -1699,6 +1979,7 @@ model Application {
   })
   oauthPolicyUri?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "RFC 7591 tos_uri, the console, the management API, or by hand",
     families: #["oauth2", "oidc"],
@@ -1725,12 +2006,16 @@ model Application {
   // updateApplication() and createApplication() both turn away a write onto
   // an entry declared for neither, naming what to tick first. The console
   // does not offer it there either, which is the same "a form cannot offer a
-  // field the action would refuse" rule EDITABLE's own header states.
+  // field the action would refuse" rule the editability header states.
   //
   // `ldapmodify` still reaches it, as it reaches everything here. The refusal
   // is the difference between offering an operation and merely not preventing
   // it, which is the line the derived attributes are already on.
   @attr(#{
+    // The sixth, and the first whose row carried `families`. Editable like the
+    // five above it and refused on an entry declared for neither OAuth 2.0 nor
+    // OpenID Connect — see familyRefusal(), and the block above the row itself.
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     overrides: "oauth2.tokenExchangeRefreshToken",
@@ -1768,6 +2053,12 @@ model Application {
   // is how enforcement is turned on for one application, and it is the only
   // way it is turned on.
   @attr(#{
+    // `multi` for `oauthClientId`'s reason read the other way: an application
+    // that will admit either of two roles is one application, and a `set` here
+    // would replace the list with one value and read afterwards as the others
+    // having been deliberately withdrawn — which, on the one attribute here
+    // that REFUSES people, is the failure worth designing against.
+    editable: "multi",
     kind: "multi",
     from: "by hand",
     what: "A role somebody must hold before this application is issued anything — a token, an assertion, a WS-Federation response, a session. Multi-valued and ANY of them is enough. ABSENT MEANS EVERYBODY, the built-in role everybody holds, which is why an unconfigured application refuses nobody. The decision is made by the XACML PDP against the policy named by xacml.issuancePolicy, not by an if in an issuance site, so the reason for a refusal is a policy somebody can read."
@@ -1796,18 +2087,23 @@ model Application {
   // allowed without inventing an entry for it.
   // ---------------------------------------------------------------------
   @attr(#{
+    // THE DELEGATION POLICY (#108): three lists and a flag. See their SCHEMA
+    // rows and `common/delegation_policy.ts`.
+    editable: "multi",
     kind: "multi",
     from: "by hand",
     what: "THE TARGETS THIS APPLICATION MAY OBTAIN A TOKEN FOR ON SOMEBODY ELSE'S BEHALF, when it is the INTERMEDIARY of a WS-Trust OnBehalfOf / ActAs request or an RFC 8693 token exchange — the analogue of Kerberos's msDS-AllowedToDelegateTo, on the front end. One application identifier (or the literal audience / AppliesTo) per value. Enforced in product mode; development records what would have been refused on /admin/delegation. appAllowedToActOnBehalfOf on the TARGET is the other way to allow the same pair."
   })
   appAllowedToDelegateTo?: string[];
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "by hand",
     what: "THE INTERMEDIARIES THIS APPLICATION ACCEPTS as acting for somebody else when it is the TARGET of a delegation — the resource-based analogue of Kerberos's msDS-AllowedToActOnBehalfOfOtherIdentity, set on the back end. One intermediary application identifier per value."
   })
   appAllowedToActOnBehalfOf?: string[];
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "by hand",
     what: "THE PEOPLE THIS INTERMEDIARY MAY ACT FOR, as group DNs: a subject must be a member of one of them. EMPTY MEANS ANYBODY who is not protected — a person carrying stsNotDelegated, or a member of the console's Admin Read or Admin Write roster, is never delegated whatever this says."
@@ -1818,30 +2114,35 @@ model Application {
   // replaced appTrustedToImpersonate: impersonation in the set is that
   // flag (and, at Kerberos, a forwardable S4U2Self ticket).
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "by hand",
     what: "THE SEMANTICS this application allows: `delegation`, `impersonation`, or both. As the ACTOR — the client of a token exchange, the requester of a WS-Trust OnBehalfOf / ActAs, the service of a Kerberos S4U request — it says what this application may DO; empty is delegation only, so impersonating somebody needs `impersonation` here (Kerberos's TRUSTED_TO_AUTHENTICATE_FOR_DELEGATION). As the SUBJECT it says what may be done AS it; empty is both. The issuance policy decides; this is one of its facts."
   })
   appDelegationSemantics?: string[];
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     what: "`delegation` or `impersonation`: what an act this application is part of is when the request does not say — the actor's default first, then the subject's, then delegation.defaultSemantics."
   })
   appDefaultDelegationSemantics?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     what: "TRUE or FALSE, default FALSE: nobody may act for this application, in any protocol — NOT_DELEGATED, the application's counterpart of a person's stsNotDelegated."
   })
   appNotDelegated?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     what: "The DN of ONE party — a person or another application — this application names as its delegate: a token about it carries RFC 8693 section 4.4's may_act naming that party, as the issuance policy assigns it, and an exchange of that token by anybody else is refused. A person's counterpart is stsMayAct."
   })
   appMayAct?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     overrides: "groups.claim",
@@ -1849,6 +2150,7 @@ model Application {
   })
   appGroupsClaim?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     overrides: "groups.claimName",
@@ -1856,6 +2158,7 @@ model Application {
   })
   appGroupsClaimName?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     overrides: "groups.claimValue",
@@ -1863,6 +2166,7 @@ model Application {
   })
   appGroupsClaimValue?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     overrides: "groups.claimFromMemberOf",
@@ -1875,6 +2179,7 @@ model Application {
   // carried a module-level `const lifetimeMin = 60`. A group of one, for the
   // reason config.js's row gives.
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     overrides: "wsfed.assertionLifetimeMin",
@@ -1910,12 +2215,14 @@ model Application {
   // and an identity provider that refused to issue because somebody typed
   // "yes" instead of "true" would be a service that stopped answering.
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console's Custom SAML attributes section",
     what: "THIS SERVICE PROVIDER'S OWN SAML 2.0 ATTRIBUTES, as a JSON array of rows like the realm's Custom SAML attributes page (a nameFormat allowed). Added to the realm's SAML 2.0 attributes in assertions for this audience, winning by name."
   })
   saml2CustomAttributes?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console's Custom SAML attributes section",
     what: "THIS RELYING PARTY'S OWN SAML 1.1 ATTRIBUTES, as a JSON array of rows like the realm's Custom SAML attributes page (a namespace allowed). Added to the realm's SAML 1.1 attributes in assertions for this audience (SAML 1.1, WS-Federation, WS-Trust), winning by name."
@@ -1923,12 +2230,14 @@ model Application {
   saml11CustomAttributes?: string;
   // The SAML halves of #495's selections, as the OAuth ones above.
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console's Custom SAML attributes section",
     what: "THIS SERVICE PROVIDER'S OWN SELECTION of directory attributes for its SAML 2.0 assertions, a JSON array of catalogue attribute names, replacing the realm's selection when present."
   })
   saml2ClaimAttributes?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console's Custom SAML attributes section",
     what: "THIS RELYING PARTY'S OWN SELECTION of directory attributes for its SAML 1.1 assertions (SAML 1.1, WS-Federation, WS-Trust), a JSON array of catalogue attribute names, replacing the realm's selection when present."
@@ -1936,12 +2245,14 @@ model Application {
   saml11ClaimAttributes?: string;
   // The SAML halves of #395's combine modes, as the OAuth ones.
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     what: "HOW THE REALM'S SAML 2.0 ATTRIBUTES AND THIS APPLICATION'S OWN ARE COMBINED (#395), the typed rows and the ticked directory attributes alike: application (only this application's own), union (the realm's and its own), intersection (only what both hold) or realm (only the realm's). Unset, its rows are added to the realm's and win by name, and its selection replaces the realm's. An application holding nothing of its own gets the realm's whatever this says."
   })
   saml2ClaimsCombine?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     what: "HOW THE REALM'S SAML 1.1 ATTRIBUTES AND THIS APPLICATION'S OWN ARE COMBINED (#395), the typed rows and the ticked directory attributes alike: application (only this application's own), union (the realm's and its own), intersection (only what both hold) or realm (only the realm's). Unset, its rows are added to the realm's and win by name, and its selection replaces the realm's. An application holding nothing of its own gets the realm's whatever this says."
@@ -1951,6 +2262,7 @@ model Application {
   // Verifiable Credentials → Credential claims selection, for credentials
   // issued on an access token issued to this client (vc_claims.ts).
   @attr(#{
+    editable: "set",
     kind: "single",
     families: #["oid4vci"],
     from: "the console's Credential claims section",
@@ -1958,6 +2270,12 @@ model Application {
   })
   vcCredentialClaimAttributes?: string;
   @attr(#{
+    // THE TEN PER-APPLICATION SETTING OVERRIDES. Every one is `set`, for the
+    // reason their SCHEMA rows give: a setting has one answer, and `multi`
+    // would accumulate two values with no rule for which won. They are editable
+    // because nothing observes them — like samlSingleLogoutService above, if
+    // they cannot be written here they cannot be written at all.
+    editable: "set",
     kind: "single",
     from: "by hand",
     overrides: "saml2.assertionLifetimeMin",
@@ -1965,6 +2283,7 @@ model Application {
   })
   saml2AssertionLifetimeMin?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     overrides: "saml2.signAssertion",
@@ -1972,6 +2291,7 @@ model Application {
   })
   saml2SignAssertion?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     overrides: "saml2.signResponse",
@@ -1979,6 +2299,7 @@ model Application {
   })
   saml2SignResponse?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     overrides: "saml2.nameIdFormat",
@@ -1986,6 +2307,7 @@ model Application {
   })
   saml2NameIdFormat?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     overrides: "saml2.artifactTtlS",
@@ -1993,6 +2315,7 @@ model Application {
   })
   saml2ArtifactTtlS?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     overrides: "saml11.assertionLifetimeMin",
@@ -2000,6 +2323,7 @@ model Application {
   })
   saml11AssertionLifetimeMin?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     overrides: "saml11.signAssertion",
@@ -2007,6 +2331,7 @@ model Application {
   })
   saml11SignAssertion?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     overrides: "saml11.signResponse",
@@ -2014,6 +2339,7 @@ model Application {
   })
   saml11SignResponse?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     overrides: "saml11.nameIdFormat",
@@ -2021,6 +2347,7 @@ model Application {
   })
   saml11NameIdFormat?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     overrides: "saml11.artifactTtlS",
@@ -2032,6 +2359,8 @@ model Application {
   // above; IDENTITY-PROVIDER-INITIATED IS OFF until an application opts in
   // (rcbj on #426), so `saml2IdpInitiatedSso` is the one an operator sets.
   @attr(#{
+    // Who may start a sign-in (#426, #710).
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     overrides: "saml2.idpInitiatedSso",
@@ -2039,6 +2368,8 @@ model Application {
   })
   saml2IdpInitiatedSso?: string;
   @attr(#{
+    // ASVS 5.0.0 7.6.2: whether single sign-on asks first (common/sso_consent).
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     overrides: "saml2.ssoConsent",
@@ -2046,6 +2377,7 @@ model Application {
   })
   saml2SsoConsent?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     overrides: "saml2.spInitiatedSso",
@@ -2053,6 +2385,7 @@ model Application {
   })
   saml2SpInitiatedSso?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     overrides: "saml11.idpInitiatedSso",
@@ -2060,6 +2393,7 @@ model Application {
   })
   saml11IdpInitiatedSso?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     overrides: "saml11.ssoConsent",
@@ -2067,6 +2401,7 @@ model Application {
   })
   saml11SsoConsent?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     overrides: "saml11.spInitiatedSso",
@@ -2080,6 +2415,7 @@ model Application {
   })
   samlAuthnRequestSigned?: string;
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "WS-Federation",
     identifier: true,
@@ -2088,6 +2424,9 @@ model Application {
   })
   wsfedRealm?: string[];
   @attr(#{
+    // WS-Federation's return address, which used to be recorded in the
+    // attribute above. Its own row says why the two were split.
+    editable: "multi",
     kind: "multi",
     from: "WS-Federation, the console, or by hand",
     what: "WHERE A SIGN-IN RESPONSE IS POSTED BACK TO for this application: the `wreply` of section 13.2.1, WS-Federation's redirect URI. It was written into samlAssertionConsumerService until 2026-08-25, which put a wreply in the attribute the SAML pages read for an assertion consumer service and for the Single Logout fallback — one attribute holding two protocols' return addresses, so a WS-Federation application appeared to have a SAML ACS it had never named. Two facts, two attributes. Like the SAML one beside it this is CHECKED IN PRODUCT MODE ONLY: development refuses no wreply, because a service that refused would remove a test case rather than add one; product posts only to an address on this list and a sighting never adds one. A wreply development recorded is marked on appReturnAddressObserved and product refuses it until it is confirmed; values recorded before that mark existed carry none and still need reviewing before a realm is switched to product."
@@ -2095,6 +2434,7 @@ model Application {
   wsfedReplyUrl?: string[];
   // WHO MAY START A SIGN-IN, PER RELYING PARTY (#426, #710).
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     overrides: "wsfed.idpInitiatedSso",
@@ -2102,6 +2442,7 @@ model Application {
   })
   wsfedIdpInitiatedSso?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     overrides: "wsfed.spInitiatedSso",
@@ -2109,6 +2450,7 @@ model Application {
   })
   wsfedSpInitiatedSso?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     overrides: "wsfed.ssoConsent",
@@ -2116,12 +2458,14 @@ model Application {
   })
   wsfedSsoConsent?: string;
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "by hand",
     what: "WHERE A wsignoutcleanup1.0 PING IS SENT for this application — WS-Federation's logout URI, and the one this table did not have until 2026-08-30. DECLARED, not observed, which makes it the sibling of samlSingleLogoutService rather than of wsfedReplyUrl: a cleanup is sent when a SESSION ends, and by then the request that would have carried a wreply is long over.\n\n**A DECLARED ADDRESS OUTRANKS AN OBSERVED ONE** (#747). `cleanupTargetsFor()` pings every value here for a realm the session signed into, and the wreply the sign-in response went to, which `session.wsfedRealms` records, only where this is empty."
   })
   wsfedSignOutUri?: string[];
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "WS-Trust",
     identifier: true,
@@ -2132,6 +2476,7 @@ model Application {
   // #485: the OAuth 2.0 scopes a WS-Trust JWT for this application
   // carries, judged as an access token's are.
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "by hand",
     families: #["wstrust"],
@@ -2140,6 +2485,7 @@ model Application {
   wstrustJwtScope?: string[];
   // --- Kerberos and OID4VP ----------------------------------------------
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "Kerberos v5",
     identifier: true,
@@ -2155,6 +2501,8 @@ model Application {
   // claimsForTicket()). The 2026-10-01 pattern of the five sets above, and
   // kept off the field grid for their reason.
   @attr(#{
+    // #493: one JSON array, like the five claim sets below.
+    editable: "set",
     kind: "single",
     from: "the console's Kerberos PAC claims section",
     what: "THIS SERVICE'S OWN PAC CLAIMS, as a JSON array of rows like the realm's Kerberos PAC claims page. Added to the claims a service ticket for one of this application's SPNs carries (those of the TGT it was issued from), an application row replacing the claim of the same name. Only while krb5.pacClaims is on."
@@ -2169,6 +2517,8 @@ model Application {
   // for the rows above's reason: the GNAP tab's Custom claims section
   // writes them.
   @attr(#{
+    // #1250: one JSON array, the GNAP access-token JWT's own rows.
+    editable: "set",
     kind: "single",
     from: "the console's Custom claims section",
     what: "THIS CLIENT'S OWN GNAP ACCESS-TOKEN JWT CLAIMS, as a JSON array of rows like the other custom-claim sets. Added to a jwt-signed token and to the JWT inside a jwt-encrypted token issued to this client, an application row replacing the realm row of the same name. The token's own claims (access, flags, label, grant_id and the JWT names) cannot be overridden. Macaroon, biscuit and zcap tokens do not carry these rows."
@@ -2176,6 +2526,7 @@ model Application {
   gnapClaimsAccessToken?: string;
   // #186: UNCONSTRAINED DELEGATION is Kerberos's alone, and OFF unless set.
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     what: "TRUE or FALSE, default FALSE: this Kerberos service is TRUSTED FOR DELEGATION — unconstrained (Active Directory's TRUSTED_FOR_DELEGATION). Its service tickets carry ok-as-delegate, which tells a client it may forward its TGT here; whoever holds a forwarded TGT can act as that person anywhere. A protected person's TGT is never forwardable, so it is never forwarded however this is set. Constrained delegation (appAllowedToDelegateTo, appAllowedToActOnBehalfOf) is the safer alternative."
@@ -2185,6 +2536,8 @@ model Application {
   // words on it. Read by the issuance policy as facts; the trusts
   // themselves are records under ou=kerberosTrusts.
   @attr(#{
+    // #430: across a Kerberos trust.
+    editable: "multi",
     kind: "multi",
     from: "by hand",
     families: #["krb5"],
@@ -2193,6 +2546,7 @@ model Application {
   })
   krb5S4uSelfRealm?: string[];
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     families: #["krb5"],
@@ -2270,6 +2624,7 @@ model Application {
   })
   appRegistrationJson?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "POST /oauth2/register",
     sensitive: true,
@@ -2277,6 +2632,7 @@ model Application {
   })
   appRegistrationAccessToken?: string;
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "OpenID4VP",
     identifier: true,
@@ -2295,6 +2651,9 @@ model Application {
   // declaration and only ever declaration, exactly as appAllowedProtocol is,
   // and like it they grant and refuse nothing.
   @attr(#{
+    // The four that are ONLY ever declared — nothing in this service writes
+    // them.
+    editable: "multi",
     kind: "multi",
     from: "the console, or by hand",
     identifier: true,
@@ -2305,6 +2664,7 @@ model Application {
   // Both modes' truth (#543 round 2): "EVERY BIND HERE SUCCEEDS" was
   // unqualified, and in product only a person binds.
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "the console, or by hand",
     identifier: true,
@@ -2313,6 +2673,7 @@ model Application {
   })
   ldapBindDn?: string[];
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "the console, or by hand",
     identifier: true,
@@ -2321,18 +2682,22 @@ model Application {
   })
   scimClientId?: string[];
   @attr(#{
+    // Certificate enrollment's per-application overrides (2026-10-01).
+    editable: "multi",
     kind: "multi",
     from: "the console, or by hand",
     what: "THE ACME PROFILES THIS APPLICATION MAY BE ISSUED. Where it lists something it OVERRIDES acme.allowedProfiles for this application, wider or narrower; empty leaves the realm's list. The five CA, OCSP and KDC profiles are never issued."
   })
   acmeAllowedProfiles?: string[];
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, or by hand",
     what: "THE PROFILE THIS APPLICATION IS ISSUED OVER ACME WHEN A REQUEST NAMES NONE, overriding acme.defaultProfile. Used only while the list in force for it allows it."
   })
   acmeDefaultProfile?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     overrides: "acme.certificateLifetimeDays",
@@ -2340,18 +2705,21 @@ model Application {
   })
   acmeCertificateLifetimeDays?: string;
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "the console, or by hand",
     what: "THE EST PROFILES THIS APPLICATION MAY BE ISSUED. Where it lists something it OVERRIDES est.allowedProfiles for this application, wider or narrower; empty leaves the realm's list. The five CA, OCSP and KDC profiles are never issued."
   })
   estAllowedProfiles?: string[];
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, or by hand",
     what: "THE PROFILE THIS APPLICATION IS ISSUED OVER EST WHEN A REQUEST NAMES NONE, overriding est.defaultProfile. Used only while the list in force for it allows it."
   })
   estDefaultProfile?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     overrides: "est.certificateLifetimeDays",
@@ -2359,18 +2727,21 @@ model Application {
   })
   estCertificateLifetimeDays?: string;
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "the console, or by hand",
     what: "THE SCEP PROFILES THIS APPLICATION MAY BE ISSUED. Where it lists something it OVERRIDES scep.allowedProfiles for this application, wider or narrower; empty leaves the realm's list. The five CA, OCSP and KDC profiles are never issued."
   })
   scepAllowedProfiles?: string[];
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, or by hand",
     what: "THE PROFILE THIS APPLICATION IS ISSUED OVER SCEP WHEN A REQUEST NAMES NONE, overriding scep.defaultProfile. Used only while the list in force for it allows it."
   })
   scepDefaultProfile?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     overrides: "scep.certificateLifetimeDays",
@@ -2378,6 +2749,7 @@ model Application {
   })
   scepCertificateLifetimeDays?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     overrides: "est.basicAuthentication",
@@ -2385,6 +2757,7 @@ model Application {
   })
   estBasicAuthentication?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     overrides: "est.certificateAuthentication",
@@ -2392,6 +2765,7 @@ model Application {
   })
   estCertificateAuthentication?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     overrides: "est.serverKeyGeneration",
@@ -2399,6 +2773,7 @@ model Application {
   })
   estServerKeyGeneration?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "by hand",
     overrides: "pki.enrollmentMaxCertificatesPerEntry",
@@ -2409,12 +2784,15 @@ model Application {
   // at <base>/applications/<identifier>/did.json for an application
   // declared for `did`. See the `did` row of PROTOCOLS.
   @attr(#{
+    // The DID document's contents (2026-10-01).
+    editable: "multi",
     kind: "multi",
     from: "the console's Generate a key pair, or by hand",
     what: "A PUBLIC KEY THE APPLICATION'S DID DOCUMENT PUBLISHES, one JWK per value, each a JsonWebKey2020 verification method named by its kid (its RFC 7638 thumbprint where it carries none) and listed under authentication and assertionMethod. Public members only: a value carrying d, p, q, dp, dq, qi, oth, k or priv is refused. Generate a key pair on the application's page and the private half is handed out once and not kept here."
   })
   didPublicKeyJwk?: string[];
   @attr(#{
+    editable: "set",
     kind: "single",
     sensitive: true,
     from: "the console's Generate a key pair",
@@ -2422,12 +2800,14 @@ model Application {
   })
   didPrivateKeys?: string;
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "the console, or by hand",
     what: "A SERVICE THE DID DOCUMENT NAMES, as <type>|<serviceEndpoint>: for example LinkedDomains|https://app.example.com. The type is one token; the endpoint an absolute http or https URL. Each becomes a service entry with the id <did>#service-<n>."
   })
   didService?: string[];
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "the console, or by hand",
     what: "ANOTHER IDENTIFIER FOR THE SAME APPLICATION, published as the DID document's alsoKnownAs: an absolute URI such as the application's web origin or its client_id URL. DID Core makes it a claim, not a proof; a relying party checks it."
@@ -2439,6 +2819,10 @@ model Application {
   // `common/secret_destinations.ts`, which reads these; every address here
   // is the operator's, and no request can name one.
   @attr(#{
+    // A secret push destination (#221 P3): each one value, an empty write
+    // clearing it. The credential is write-only: sealed on the way in, withheld
+    // on the way out (SEALED_FIELDS, WITHHELD_FIELDS).
+    editable: "set",
     kind: "single",
     from: "Directory → Secret destinations, the console, or by hand",
     families: #["secret-destination"],
@@ -2446,6 +2830,7 @@ model Application {
   })
   secretDestProvider?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "Directory → Secret destinations, the console, or by hand",
     families: #["secret-destination"],
@@ -2453,6 +2838,7 @@ model Application {
   })
   secretDestPayload?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "Directory → Secret destinations, the console, or by hand",
     families: #["secret-destination"],
@@ -2460,6 +2846,7 @@ model Application {
   })
   secretDestRegion?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "Directory → Secret destinations, the console, or by hand",
     families: #["secret-destination"],
@@ -2467,6 +2854,7 @@ model Application {
   })
   secretDestProject?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "Directory → Secret destinations, the console, or by hand",
     families: #["secret-destination"],
@@ -2474,6 +2862,7 @@ model Application {
   })
   secretDestEndpoint?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "Directory → Secret destinations, the console, or by hand",
     families: #["secret-destination"],
@@ -2481,6 +2870,7 @@ model Application {
   })
   secretDestMount?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "Directory → Secret destinations, the console, or by hand",
     families: #["secret-destination"],
@@ -2488,6 +2878,7 @@ model Application {
   })
   secretDestField?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "Directory → Secret destinations, the console, or by hand",
     families: #["secret-destination"],
@@ -2495,6 +2886,7 @@ model Application {
   })
   secretDestDirectory?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "Directory → Secret destinations, the console, or by hand",
     families: #["secret-destination"],
@@ -2502,6 +2894,7 @@ model Application {
   })
   secretDestCaCertificates?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "Directory → Secret destinations, the console, or by hand",
     families: #["secret-destination"],
@@ -2514,6 +2907,9 @@ model Application {
   // the `scim-client` row of PROTOCOLS and `scim/scim_client.ts`, which
   // reads these; every address here is the operator's.
   @attr(#{
+    // An outbound SCIM client (#552): one value each, the two lists multi; the
+    // three credentials sealed and withheld (SEALED_FIELDS, WITHHELD_FIELDS).
+    editable: "set",
     kind: "single",
     from: "Protocols → SCIM → Clients, or by hand",
     families: #["scim-client"],
@@ -2521,6 +2917,7 @@ model Application {
   })
   scimClientBaseUrl?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "Protocols → SCIM → Clients, or by hand",
     families: #["scim-client"],
@@ -2528,6 +2925,7 @@ model Application {
   })
   scimClientEnabled?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "Protocols → SCIM → Clients, or by hand",
     families: #["scim-client"],
@@ -2535,6 +2933,7 @@ model Application {
   })
   scimClientAuthMethod?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "Protocols → SCIM → Clients, or by hand",
     families: #["scim-client"],
@@ -2542,6 +2941,7 @@ model Application {
   })
   scimClientUsername?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "Protocols → SCIM → Clients, or by hand",
     families: #["scim-client"],
@@ -2550,6 +2950,7 @@ model Application {
   })
   scimClientPassword?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "Protocols → SCIM → Clients, or by hand",
     families: #["scim-client"],
@@ -2557,6 +2958,7 @@ model Application {
   })
   scimClientTokenEndpoint?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "Protocols → SCIM → Clients, or by hand",
     families: #["scim-client"],
@@ -2564,6 +2966,7 @@ model Application {
   })
   scimClientOAuthClientId?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "Protocols → SCIM → Clients, or by hand",
     families: #["scim-client"],
@@ -2572,6 +2975,7 @@ model Application {
   })
   scimClientOAuthClientSecret?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "Protocols → SCIM → Clients, or by hand",
     families: #["scim-client"],
@@ -2579,6 +2983,7 @@ model Application {
   })
   scimClientOAuthClientAuth?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "Protocols → SCIM → Clients, or by hand",
     families: #["scim-client"],
@@ -2586,6 +2991,7 @@ model Application {
   })
   scimClientOAuthScope?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "Protocols → SCIM → Clients, or by hand",
     families: #["scim-client"],
@@ -2593,6 +2999,7 @@ model Application {
   })
   scimClientOAuthResource?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "Protocols → SCIM → Clients, or by hand",
     families: #["scim-client"],
@@ -2600,6 +3007,7 @@ model Application {
   })
   scimClientTlsSource?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "Protocols → SCIM → Clients, or by hand",
     families: #["scim-client"],
@@ -2607,6 +3015,7 @@ model Application {
   })
   scimClientTlsCertificate?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "Protocols → SCIM → Clients, or by hand",
     families: #["scim-client"],
@@ -2615,6 +3024,7 @@ model Application {
   })
   scimClientTlsPrivateKey?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "Protocols → SCIM → Clients, or by hand",
     families: #["scim-client"],
@@ -2622,6 +3032,7 @@ model Application {
   })
   scimClientCaCertificates?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "Protocols → SCIM → Clients, or by hand",
     families: #["scim-client"],
@@ -2629,6 +3040,7 @@ model Application {
   })
   scimClientScopeMode?: string;
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "Protocols → SCIM → Clients, or by hand",
     families: #["scim-client"],
@@ -2636,6 +3048,7 @@ model Application {
   })
   scimClientScopeGroups?: string[];
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "Protocols → SCIM → Clients, or by hand",
     families: #["scim-client"],
@@ -2643,6 +3056,7 @@ model Application {
   })
   scimClientScopeFilter?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "Protocols → SCIM → Clients, or by hand",
     families: #["scim-client"],
@@ -2650,6 +3064,7 @@ model Application {
   })
   scimClientGroupMode?: string;
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "Protocols → SCIM → Clients, or by hand",
     families: #["scim-client"],
@@ -2657,6 +3072,7 @@ model Application {
   })
   scimClientGroups?: string[];
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "Protocols → SCIM → Clients, or by hand",
     families: #["scim-client"],
@@ -2664,6 +3080,7 @@ model Application {
   })
   scimClientDeprovision?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "Protocols → SCIM → Clients, or by hand",
     families: #["scim-client"],
@@ -2675,6 +3092,7 @@ model Application {
   // person (`cell_transfer.ts`, purpose `scim-provision`), and which cells
   // push to it at all. Read only when the service is deployed as cells.
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "Protocols → SCIM → Clients, or by hand",
     families: #["scim-client"],
@@ -2682,6 +3100,7 @@ model Application {
   })
   scimClientJurisdiction?: string;
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "Protocols → SCIM → Clients, or by hand",
     families: #["scim-client"],
@@ -2689,6 +3108,7 @@ model Application {
   })
   scimClientCells?: string[];
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "Protocols → SCIM → Clients, or by hand",
     families: #["scim-client"],
@@ -2696,6 +3116,12 @@ model Application {
   })
   scimClientMaxRequestsPerSecond?: string;
   @attr(#{
+    // The Shared Signals pair. `ssfReceiverId` is the one identifier here that
+    // a PROTOCOL also writes — creating a stream records a sighting — so it is
+    // `multi` like every other accumulating identifier; the delivery endpoint
+    // is declaration only, and `multi` because a receiver legitimately runs one
+    // per environment.
+    editable: "multi",
     kind: "multi",
     from: "SSF, the console, or by hand",
     identifier: true,
@@ -2704,6 +3130,7 @@ model Application {
   })
   ssfReceiverId?: string[];
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "the console, or by hand",
     what: "WHERE THIS RECEIVER EXPECTS ITS EVENTS PUSHED — an RFC 8935 delivery endpoint. It is a DECLARATION and nothing reads it: a push goes to the endpoint on the STREAM, which the receiver named when it created one, and this service will not take a URL to dial from an application entry: a URL recorded here is a note about what a receiver is, and a URL on a stream is a URL this service opens a connection to. The two are deliberately not the same store."
@@ -2722,6 +3149,7 @@ model Application {
   // nobody declared for Shared Signals it would read like a policy in force
   // over streams that cannot be its.
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "the console, the management API, or by hand",
     families: #["ssf"],
@@ -2744,6 +3172,9 @@ model Application {
   // does not parse at the write, where the older overrides warn on read.
   // ---------------------------------------------------------------------
   @attr(#{
+    // The per-receiver Shared Signals overrides, each one value an empty write
+    // clears (the setting then decides); see their SCHEMA rows.
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     overrides: "caep.includeReasons",
@@ -2754,6 +3185,7 @@ model Application {
   })
   ssfCaepIncludeReasons?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     overrides: "caep.reasonLanguage",
@@ -2764,6 +3196,7 @@ model Application {
   })
   ssfCaepReasonLanguage?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     overrides: "caep.omitEventTimestamp",
@@ -2774,6 +3207,7 @@ model Application {
   })
   ssfCaepOmitEventTimestamp?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     overrides: "risc.includeReasons",
@@ -2784,6 +3218,7 @@ model Application {
   })
   ssfRiscIncludeReasons?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     overrides: "risc.reasonLanguage",
@@ -2794,6 +3229,7 @@ model Application {
   })
   ssfRiscReasonLanguage?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     overrides: "risc.omitEventTimestamp",
@@ -2804,6 +3240,7 @@ model Application {
   })
   ssfRiscOmitEventTimestamp?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     overrides: "ssf.signingAlgorithm",
@@ -2814,6 +3251,7 @@ model Application {
   })
   ssfSigningAlgorithm?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     overrides: "ssf.minVerificationInterval",
@@ -2824,6 +3262,7 @@ model Application {
   })
   ssfMinVerificationInterval?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     overrides: "ssf.inactivityTimeoutS",
@@ -2834,6 +3273,7 @@ model Application {
   })
   ssfInactivityTimeoutS?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     overrides: "ssf.inactivityAction",
@@ -2844,6 +3284,7 @@ model Application {
   })
   ssfInactivityAction?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     overrides: "ssf.verificationEveryS",
@@ -2854,6 +3295,7 @@ model Application {
   })
   ssfVerificationEveryS?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     overrides: "ssf.streamStatusOnCreate",
@@ -2864,6 +3306,7 @@ model Application {
   })
   ssfStreamStatusOnCreate?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     overrides: "ssf.maxStreams",
@@ -2874,6 +3317,7 @@ model Application {
   })
   ssfMaxStreams?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     overrides: "ssf.maxSubjectsPerStream",
@@ -2884,6 +3328,7 @@ model Application {
   })
   ssfMaxSubjectsPerStream?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     overrides: "ssf.maxQueuedEvents",
@@ -2894,6 +3339,7 @@ model Application {
   })
   ssfMaxQueuedEvents?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     overrides: "ssf.pollMaxEvents",
@@ -2904,6 +3350,7 @@ model Application {
   })
   ssfPollMaxEvents?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     overrides: "ssf.deadLetterMaxPerStream",
@@ -2914,6 +3361,7 @@ model Application {
   })
   ssfDeadLetterMaxPerStream?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     overrides: "ssf.pushTimeoutMs",
@@ -2924,6 +3372,7 @@ model Application {
   })
   ssfPushTimeoutMs?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     overrides: "ssf.pushRetries",
@@ -2934,6 +3383,7 @@ model Application {
   })
   ssfPushRetries?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     overrides: "ssf.pushRetryDelayMs",
@@ -2947,6 +3397,11 @@ model Application {
   // GNAP (RFC 9635 + RFC 9767), 2026-09-12. See gnap/CLAUDE.md.
   // ---------------------------------------------------------------------
   @attr(#{
+    // GNAP. `gnapKeyIdentity` and `gnapMacaroonKey` are the authorization
+    // server's to write and are deliberately absent: an identity that disagreed
+    // with gnapKey, or a macaroon key that was not the derived one, would be an
+    // entry that verified nothing.
+    editable: "set",
     kind: "single",
     from: "the console, or by hand",
     identifier: true,
@@ -2955,6 +3410,7 @@ model Application {
   })
   gnapInstanceId?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "GNAP (on first sight, development), the console, or by hand",
     what: "The client instance's or resource server's PUBLIC key, as the JSON key object of RFC 9635 section 7.1: a proof method and exactly one of jwk, cert or cert#S256. It is how a request by value is matched to this entry, by the key's thumbprint."
@@ -2967,24 +3423,28 @@ model Application {
   })
   gnapKeyIdentity?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, or by hand",
     what: "A KEY REFERENCE (RFC 9635 section 7.1.1): the opaque string a client sends as `key`. It resolves to gnapSymmetricKey when that is set, and to gnapKey otherwise."
   })
   gnapKeyReference?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, or by hand",
     what: "The proofing method a key reference is bound to (section 7.1.1: \"MUST be bound to a single proofing mechanism\"): httpsig, jwsd or jws. Default httpsig."
   })
   gnapKeyProof?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, or by hand",
     what: "How a key this client proves by mutual TLS is trusted, for this client alone (#107): `pki` or `pinned`, as the realm's gnap.mtlsTrust. It can only make the realm STRICTER — `pki` where the realm is pinned — and `pinned` is refused where the realm is pki (STS-REG-0196) and ignored if the realm is made pki afterwards. Empty follows the realm. Under pki the certificate must chain to the client truststore and be issued to this entry by this realm, or carry the one RFC 8705 subject parameter it registers (oauthTlsClientAuthSubjectDn or an oauthTlsClientAuthSan* attribute)."
   })
   gnapMtlsTrust?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, or by hand",
     sensitive: true,
@@ -2992,66 +3452,77 @@ model Application {
   })
   gnapSymmetricKey?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, or by hand",
     what: "The algorithm a shared secret signs with: HS256 (default), HS384 or HS512 for jwsd and jws; hmac-sha256 for httpsig."
   })
   gnapSymmetricAlg?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "GNAP, the console, or by hand",
     what: "The client software's class_id (section 2.3). A registered value takes precedence over the one a request carries."
   })
   gnapClassId?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "GNAP, the console, or by hand",
     what: "The client's display.uri, shown on the approval page (section 2.3.2)."
   })
   gnapDisplayUri?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "GNAP, the console, or by hand",
     what: "The client's display.logo_uri. Only a data: image is drawn; any other URI is shown as a link (section 11.16)."
   })
   gnapLogoUri?: string;
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "GNAP (observed, development), the console, or by hand",
     what: "An INTERACTION FINISH URI (section 2.5.2) this client may be sent back to or pushed to. A return address: in product mode a finish URI not listed here is refused."
   })
   gnapFinishUri?: string[];
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "the console, or by hand",
     what: "The interaction start modes this client may use (redirect, app, user_code, user_code_uri). Empty means every mode the authorization server offers."
   })
   gnapInteractionStartModes?: string[];
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "the console, or by hand",
     what: "The access types and reference strings this client may request, or this resource server may register. Empty means any."
   })
   gnapAllowedAccess?: string[];
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, or by hand",
     what: "FALSE refuses the bearer flag for this client with invalid_flag."
   })
   gnapBearerTokens?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, or by hand",
     what: "TRUE makes this a TRUSTED client instance (section 2.3.3): a grant that asks for no subject information is approved with no resource owner and no interaction, and one carrying a verified user assertion is approved for that person. Honoured only for a registered entry, never one GNAP created on sight."
   })
   gnapSkipInteraction?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, or by hand",
     what: "The RFC 9767 token format for tokens issued to this client, or for this resource server: jwt-signed, jwt-encrypted, macaroon, biscuit or zcap."
   })
   gnapAccessTokenFormat?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, or by hand",
     overrides: "gnap.accessTokenLifetimeS",
@@ -3059,18 +3530,21 @@ model Application {
   })
   gnapAccessTokenLifetimeS?: string;
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "the console, or by hand",
     what: "The locations this resource server answers for. An access right whose locations start with one of these is audienced to this entry, and a token for it is minted with this resource server's format, JWE key and macaroon key."
   })
   gnapResourceServerUri?: string[];
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, or by hand",
     what: "Where this resource server answers who owns a resource (#432 phase 5): an https URL template holding {identifier} once, in its path, e.g. https://rs.example.com/owners/{identifier}. The authorization server fetches it with the identifier percent-encoded into that segment and reads {\"owner\": \"<DN>\"} (404: nobody owns it); the person approving a right naming the identifier must be that person or a member of that group."
   })
   gnapOwnerLookupUri?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, or by hand",
     what: "This resource server's PUBLIC encryption key (a JWK) for jwt-encrypted tokens, so only this resource server can read them."
@@ -3084,12 +3558,14 @@ model Application {
   })
   gnapMacaroonKey?: string;
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, or by hand",
     what: "FALSE opts this web application out of Shared Signals scoping: a stream it owns then carries events about everybody, like any other receiver's."
   })
   gnapScopedSignals?: string;
   @attr(#{
+    editable: "multi",
     kind: "multi",
     from: "the console, or by hand",
     identifier: true,
@@ -3132,6 +3608,17 @@ model Application {
   // gets a page listing exactly two. See authn.js's federationFor(), which
   // resolves every value and reports the ones that would not work.
   @attr(#{
+    // And the pair that IS read, by authn.js, on the way to the sign-in screen.
+    // Editable for the reason the rest of the declared half is: nothing
+    // observes an application's home identity provider, so if this cannot be
+    // written here it cannot be written at all. `multi` since 2026-08-26, and
+    // it used to be `set`. An application may name SEVERAL
+    // service-provider-side relationships — a SAML 2.0 partner and an OpenID
+    // Connect one are an ordinary pair — and the person picks between them at
+    // /authn/select-idp. A `set` here would replace the list with one value and
+    // read afterwards as the others having been forgotten, which is the same
+    // argument every other identifier attribute above makes.
+    editable: "multi",
     kind: "multi",
     from: "the console, the management API, or by hand",
     what: "THE FEDERATION RELATIONSHIPS THIS APPLICATION'S USERS ARE AUTHENTICATED THROUGH — each value the `fedId` of an entry under ou=federations, in THIS trust realm, whose `fedRole` is service-provider. Both halves of that are checked when it is read rather than when it is written: an identity-provider-side relationship goes the other way (this service asserts to that partner, so there is nothing to sign in to), and the register is per realm, so an id that names a relationship in another realm names nothing here.\n\nIT HOLDS A LIST, and that is what makes an application able to offer more than one identity provider. ONE usable value with the auto-redirect on is the case this attribute was added for and it is unchanged: the browser goes straight to that partner. SEVERAL usable values draw /authn/select-idp, where the person chooses which one — home realm discovery narrowed to this application's partners rather than performed against every relationship this service has. They need not share a protocol: a SAML 2.0 partner and an OpenID Connect one are two values here and two buttons there, because what the list names is where a person can be authenticated and not how.\n\nA value that names a relationship this service cannot use is REPORTED on the screen rather than dropped, one line per value: a list of three whose middle entry is disabled must not look like a list of two.\n\nIt is WRITTEN BY NOBODY. No protocol presents it and no sighting derives it — an application's home identity provider is an arrangement somebody made, not something this service can observe — so it is editable and it starts empty."
@@ -3139,6 +3626,7 @@ model Application {
   @link(#{to: "federationRelationship", cardinality: "multi", owns: false, what: "Federation relationships this application is tied to."})
   appFederationRelationship?: string[];
   @attr(#{
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     what: "TRUE if a person signing in to this application should be sent STRAIGHT to the partner named above, without the sign-in screen in between. This is home realm discovery done by configuration instead of by asking, which is what a deployment with one federated identity provider actually does.\n\nIt is TRUE BY DEFAULT once a relationship is named, because naming one and then having to click a button is the state nobody wants; set it FALSE to keep the screen, where the partners are then the only buttons offered. An absent value therefore means \"yes\" here and not \"unknown\", which is the opposite of what RFC 7591 section 2 makes an omitted boolean mean — said out loud because the two rules meet on one entry.\n\nWITH SEVERAL RELATIONSHIPS NAMED IT MEANS EXACTLY WHAT IT ALWAYS MEANT — \"without the sign-in screen\" — and what changes is what that leaves. With one it is a redirect straight to the partner. With several it is the chooser at /authn/select-idp: one button per partner and no password field, which is the sign-in screen's job done without the sign-in screen. What it never means is \"pick one for them\"; there is no value of a boolean that can say which identity provider somebody's employer is.\n\nFALSE with several named is therefore the SCREEN, with one button per partner under the password box — the same thing FALSE has always done, with the partners plural.\n\nWith no relationship named it does nothing at all, rather than being an error: the two are edited separately and a value left behind by a relationship that was cleared should not refuse the next write."
@@ -3178,6 +3666,14 @@ model Application {
   // reference fails closed, as a misspelt list did.
   // ---------------------------------------------------------------------
   @attr(#{
+    // And the THIRD of that group, added 2026-08-26. Editable for the same
+    // reason the other two are: nothing in this service can OBSERVE how an
+    // application's people are supposed to authenticate, so if it cannot be
+    // written here it cannot be written at all. `multi` since #457: it is the
+    // list of mechanisms the application ALLOWS, one checkbox each. Since #1148
+    // the lists are a named authentication policy's and this names it: `set`,
+    // one value, for the same reason — nothing can observe it.
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     what: "THE AUTHENTICATION POLICY THIS APPLICATION'S PEOPLE SIGN IN UNDER: `default` (or empty), or the name of a named authentication policy of this realm (Directory > Policies). A named policy holds the first-factor mechanisms allowed (password, password-mfa, webauthn, spnego, wallet, federation; none allows every one) and the second factors allowed (password, securityKey, totp, recoveryCode, emailCode, emailLink, wallet; none leaves the realm's as it is). `default` allows every mechanism the realm's authentication policy allows.\n\nENFORCED at every browser sign-in to the application, in both modes: a person whose session stands on a mechanism the policy does not allow is sent to sign in again with one it does. One first-factor mechanism listed is also where the sign-in goes (`spnego` to /authn/spnego, `wallet` to /authn/wallet, `federation` to appFederationRelationship). The second factors only NARROW the realm's policy: one it has switched off stays off here.\n\nA name no policy of this realm holds — written past the console — allows NO mechanism until the policy exists (STS-AUTHN-0536).\n\nIt is WRITTEN BY NOBODY: no protocol presents it, so it is editable and starts empty."
@@ -3195,6 +3691,8 @@ model Application {
   // policy can ask which applications name it.
   // ---------------------------------------------------------------------
   @attr(#{
+    // #1235: the passkey policy, `appAuthnPolicy`'s reason.
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     what: "THE PASSKEY POLICY A SIGN-IN TO THIS APPLICATION IS HELD TO: `default` (or empty), or the name of a named passkey policy of this realm (Directory > Policies). It competes on precedence with the passkey policy each of the person's groups names (stsPasskeyPolicy): the lowest precedence applies, ties by name, and `default` where nothing names one.\n\nA name no policy of this realm holds — written past the console — names nothing and is logged (STS-AUTHN-0537). A named passkey policy this attribute names cannot be deleted (STS-AUTHN-0538).\n\nIt is WRITTEN BY NOBODY: no protocol presents it, so it is editable and starts empty."
@@ -3210,6 +3708,8 @@ model Application {
   // arrangement: one value, CHECKED AT THE WRITE, in POLICY_REFERENCES.
   // ---------------------------------------------------------------------
   @attr(#{
+    // #1238: the locale policy, the same reason.
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     what: "THE LOCALE POLICY A PAGE OR A MAIL FOR THIS APPLICATION FALLS BACK TO: `default` (or empty), or the name of a named locale policy of this realm (Directory > Policies). It decides the language a page is drawn in when the request, the person and the browser name none a catalog answers, and the preferredLanguage a person this application causes to be created is given. Where the person is known it competes on precedence with the locale policy each of the person's groups names (stsLocalePolicy): the lowest precedence applies, ties by name, and `default` where nothing names one.\n\nA name no policy of this realm holds — written past the console — names nothing and is logged (STS-I18N-0013): `default` applies, as a language is all it decides. A named locale policy this attribute names cannot be deleted (STS-I18N-0014).\n\nIt is WRITTEN BY NOBODY: no protocol presents it, so it is editable and starts empty."
@@ -3221,6 +3721,8 @@ model Application {
   // this realm's named password policies. Read where a password is set
   // with the application in hand — the sign-in's forced password change.
   @attr(#{
+    // #1236: the password policy, the same reason.
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     what: "THE PASSWORD POLICY A PASSWORD SET WHILE SIGNING IN TO THIS APPLICATION IS HELD TO: `default` (or empty), or the name of a named password policy of this realm (Directory > Policies). It competes on precedence with the password policy each of the person's groups names (stsPasswordPolicy): the lowest precedence applies, ties by name, and `default` where nothing names one. A door with no application in hand (the portal, the console, LDAP) ranks the groups' alone.\n\nA name no policy of this realm holds — written past the console — names nothing, the group references still rank, and it is logged (STS-AUTHN-0539). A named password policy this attribute names cannot be deleted (STS-AUTHN-0540).\n\nIt is WRITTEN BY NOBODY: no protocol presents it, so it is editable and starts empty."
@@ -3235,6 +3737,8 @@ model Application {
   // progress report) has no application and does not read it.
   // ---------------------------------------------------------------------
   @attr(#{
+    // #1239: the post-login activity policy, the same reason.
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     what: "THE POST-LOGIN ACTIVITY POLICY A SIGN-IN TO THIS APPLICATION FOLLOWS: `default` (or empty), or the name of a named post-login policy of this realm (Directory > Policies). It competes on precedence with the post-login policy each of the person's groups names (stsPostLoginPolicy): the lowest precedence applies, ties by name, and `default` where nothing names one. A named policy with its activity off EXCLUDES a sign-in to this application where it wins.\n\nIt is read at the sign-in only: a started activity's reminder mail and the progress report know no application, and select by the person's groups alone.\n\nA name no policy of this realm holds — written past the console — names nothing and is logged (STS-AUTHN-0542). A named post-login policy this attribute names cannot be deleted (STS-AUTHN-0543).\n\nIt is WRITTEN BY NOBODY: no protocol presents it, so it is editable and starts empty."
@@ -3274,6 +3778,8 @@ model Application {
   // presents. DECLARED, so editable, and family-scoped by its prefix.
   // -------------------------------------------------------------------
   @attr(#{
+    // UMA 2.0 (#1168): whether the resource server may own resources itself.
+    editable: "set",
     kind: "single",
     from: "the console, the management API, or by hand",
     what: "TRUE when this UMA 2.0 resource server may register resources it OWNS ITSELF, through a protection API token obtained with client_credentials. Absent or FALSE, the default, means a PAT must be a person's (the code flow) and that person owns what it registers."

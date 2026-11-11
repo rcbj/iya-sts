@@ -64,6 +64,7 @@ import errorCodes = require('./error_codes');
 import audit = require('./audit');
 import stsCrypto = require('./crypto');
 import mail = require('./mail');
+import Classes = require('./domain_classes');
 
 type Json = any;
 
@@ -532,17 +533,16 @@ class MailUses {
       log.debug("Leaving MailUses.checkVerification(). Nobody.");
       return refused;
     }
+    // The pending verification is the Credential's, its token a secret
+    // named here because this is the check that needs it (#1579); the
+    // address it is checked against is the User's.
     const attrs = entry.attributes || {};
-    const first = function (name: string): string {
-      log.debug("Entering first().");
-      const v = attrs[name.toLowerCase()] || [];
-      log.debug("Leaving first().");
-      return v.length ? String(v[0]) : '';
-    };
-    const stored = first('stsMailVerifyToken');
-    const expires = Number(first('stsMailVerifyExpires') || 0);
-    const address = first('stsMailVerifyAddress');
-    const current = first('mail');
+    const pending = Classes.Credential.fromEntry(attrs,
+      { secrets: ['mailVerifyToken'] });
+    const stored = pending.mailVerifyToken || '';
+    const expires = Number(pending.mailVerifyExpires || 0);
+    const address = pending.mailVerifyAddress || '';
+    const current = Classes.User.fromEntry(attrs).email || '';
     // THE HASH IS OF THE TOKEN AND THE ADDRESS THE ACCOUNT HAD WHEN IT WAS
     // SENT (#64), so a link for an address somebody has since replaced — or
     // a change asked for from an address since replaced — verifies nothing.

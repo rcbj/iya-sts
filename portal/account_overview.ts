@@ -51,6 +51,8 @@ import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
+type AccountAnswering<K extends keyof IyaApi.Account.Operations> =
+  import('../types/account-api').AccountAnswering<K>;
 type AccountContext = import('../types/account-api').AccountContext;
 type AccountCaller = import('../types/account-api').AccountCaller;
 
@@ -359,7 +361,9 @@ class AccountOverview {
    * @param body - the checked body: `attribute`, `values`
    * @returns nothing
    */
-  setCustomAttribute(ctx: AccountContext, res: Json, caller: AccountCaller,
+  setCustomAttribute(ctx: AccountContext,
+                     res: AccountAnswering<'setCustomAttribute'>,
+                     caller: AccountCaller,
                      body: Json): unknown {
     const { log } = this.deps;
     log.debug("Entering AccountOverview.setCustomAttribute().");
@@ -524,7 +528,8 @@ class AccountOverview {
    * @param body - the checked body
    * @returns nothing
    */
-  async setPhoto(ctx: AccountContext, req: Json, res: Json,
+  async setPhoto(ctx: AccountContext, req: Json,
+                 res: AccountAnswering<'setProfilePhoto'>,
                  caller: AccountCaller, body: Json): Promise<unknown> {
     const { log } = this.deps;
     log.debug("Entering AccountOverview.setPhoto().");
@@ -555,7 +560,7 @@ class AccountOverview {
    * @param caller - the token's person
    * @returns what the context's answer returns
    */
-  removePhoto(ctx: AccountContext, res: Json,
+  removePhoto(ctx: AccountContext, res: AccountAnswering<'removeProfilePhoto'>,
               caller: AccountCaller): unknown {
     const { log } = this.deps;
     log.debug("Entering AccountOverview.removePhoto().");
@@ -566,7 +571,8 @@ class AccountOverview {
                                 message: t.text('portal.done.photoRemoved') });
   }
 
-  setLanguage(ctx: AccountContext, res: Json, caller: AccountCaller,
+  setLanguage(ctx: AccountContext, res: AccountAnswering<'setLanguage'>,
+              caller: AccountCaller,
               body: Json): unknown {
     const { log } = this.deps;
     log.debug("Entering AccountOverview.setLanguage().");
@@ -902,7 +908,8 @@ class AccountOverview {
    * @param body - the checked body
    * @returns nothing
    */
-  async moveParticipation(ctx: AccountContext, req: Json, res: Json,
+  async moveParticipation(ctx: AccountContext, req: Json,
+                          res: AccountAnswering<'moveRiscParticipation'>,
                           caller: AccountCaller, body: Json):
       Promise<unknown> {
     const { log, risc, accountSignals } = this.deps;
@@ -965,54 +972,54 @@ class AccountOverview {
       { method: 'GET', path: ctx.BASE + '/overview',
         operationId: 'getOverview', access: 'person',
         query: PORTAL_QUERY,
-        handler: function (req: Json, res: Json,
+        handler: function (req, res,
                            caller: AccountCaller): unknown {
           return ctx.json(res, 200, self.overview(caller));
         } },
       { method: 'POST', path: ctx.BASE + '/language',
         operationId: 'setLanguage', access: 'person',
         body: LANGUAGE_FORM,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.setLanguage(ctx, res, caller, input.body);
         } },
       { method: 'POST', path: ctx.BASE + '/photo',
         operationId: 'setProfilePhoto', access: 'person',
         body: PHOTO_FORM,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.setPhoto(ctx, req, res, caller, input.body);
         } },
       { method: 'POST', path: ctx.BASE + '/photo/remove',
         operationId: 'removeProfilePhoto', access: 'person',
-        handler: function (req: Json, res: Json,
+        handler: function (req, res,
                            caller: AccountCaller): unknown {
           return self.removePhoto(ctx, res, caller);
         } },
       { method: 'POST', path: ctx.BASE + '/attributes',
         operationId: 'setCustomAttribute', access: 'person', body: ATTRIBUTE_FORM,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.setCustomAttribute(ctx, res, caller, input.body);
         } },
       { method: 'GET', path: ctx.BASE + '/applications',
         operationId: 'getApplications', access: 'person', query: PAGED_QUERY,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return ctx.json(res, 200, self.applicationsView(caller,
             Number(input.query.page || 1), ctx.baseUrlOf(req)));
         } },
       { method: 'GET', path: ctx.BASE + '/signals',
         operationId: 'getSecurityActivity', access: 'person', query: PAGED_QUERY,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return ctx.json(res, 200, self.signalsView(caller,
             Number(input.query.page || 1)));
         } },
       { method: 'POST', path: ctx.BASE + '/signals',
         operationId: 'moveRiscParticipation', access: 'person', body: PARTICIPATION_FORM,
-        handler: function (req: Json, res: Json, caller: AccountCaller,
-                           input: Json): unknown {
+        handler: function (req, res, caller: AccountCaller,
+                           input): unknown {
           return self.moveParticipation(ctx, req, res, caller, input.body);
         } }
     ];
