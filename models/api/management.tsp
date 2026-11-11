@@ -36566,7 +36566,7 @@ op `getPolicies`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: inte
   
 
 @js(#{
-    `description`:"scrypt's CPU and memory cost for a newly stored password while the algorithm is scrypt, as a power of two: 15 (the default) is N=32768. OWASP's table pairs it with the parallelism: 2^17 with p=1, 2^16 with p=2, 2^15 with p=3, 2^14 with p=5, or 2^13 with p=10. The default, 2^15 with p=1, is below it. Between 13 and 20. Default 15.",
+    `description`:"scrypt's CPU and memory cost for a newly stored password while the algorithm is scrypt, as a power of two: 15 (the default) is N=32768. OWASP's table pairs it with the parallelism: 2^17 with p=1, 2^16 with p=2, 2^15 with p=3, 2^14 with p=5, or 2^13 with p=10. The default is 2^15 with p=3, one of those pairs. A parallelism below the pair for the chosen cost is refused. Between 13 and 20. Default 15.",
     `$comb`:"oneOf"
   }) @hoisted union post_admin_api_policies_save_password_policy_b_application_json_scryptLogN_h2973 {
     post_admin_api_policies_save_password_policy_b_application_json_scryptLogN_v0_h2972,
@@ -36587,7 +36587,7 @@ op `getPolicies`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: inte
   
 
 @js(#{
-    `description`:"scrypt's parallelism for a newly stored password while the algorithm is scrypt. Node computes it on one thread, so a higher value costs time rather than cores; the cost's description lists the pairs OWASP accepts. Between 1 and 16. Default 1.",
+    `description`:"scrypt's parallelism for a newly stored password while the algorithm is scrypt. Node computes it on one thread, so a higher value costs time rather than cores; the cost's description lists the pairs OWASP accepts. The default is 3. A value below OWASP's pair for the chosen cost is refused. Between 1 and 16. Default 3.",
     `$comb`:"oneOf"
   }) @hoisted union post_admin_api_policies_save_password_policy_b_application_json_scryptParallelism_h2977 {
     IntegerFrom1To16,
@@ -36634,7 +36634,7 @@ op `savePasswordPolicy`(@js(#{
         `argon2Parallelism`:1,
         `scryptLogN`:15,
         `scryptBlockSize`:8,
-        `scryptParallelism`:1
+        `scryptParallelism`:3
       }
     ]
   }) `requestBody/content/application~1json/schema`: {
@@ -36651,7 +36651,7 @@ op `savePasswordPolicy`(@js(#{
     `requireDigit`: post_admin_api_policies_save_password_policy_b_application_json_requireDigit_h2963;
     `generatedLength`: post_admin_api_policies_save_password_policy_b_application_json_generatedLength_h2965;
     @js(#{
-      `description`:"The algorithm a newly stored password is hashed with: scrypt (RFC 7914), the default, or argon2id (RFC 9106, the OWASP Password Storage Cheat Sheet's first choice). A stored hash names its own algorithm and parameters and keeps verifying; one that is not in this algorithm with these parameters is hashed again at the person's next verified sign-in. Client secrets, activation tokens, recovery codes and app passwords are not passwords and stay scrypt. Default `scrypt`."
+      `description`:"The algorithm a newly stored password is hashed with: scrypt (RFC 7914), the default, or argon2id (RFC 9106, the OWASP Password Storage Cheat Sheet's first choice). A stored hash names its own algorithm and parameters and keeps verifying. One in another algorithm, or in the same algorithm at a strictly lower cost, is hashed again at the person's next verified sign-in. A same-algorithm hash already at least this cost is left. Client secrets, activation tokens, recovery codes and app passwords are not passwords and stay scrypt. Default `scrypt`."
     }) `hashAlgorithm`?: "scrypt" | "argon2id";
     `argon2Memory`?: post_admin_api_policies_save_password_policy_b_application_json_argon2Memory_h2967;
     `argon2Iterations`?: post_admin_api_policies_save_password_policy_b_application_json_argon2Iterations_h2969;

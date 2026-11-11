@@ -144,10 +144,13 @@ single sign-on consent switches `saml2.ssoConsent`, `saml11.ssoConsent` and
 * **A password is changed where the current one is proved.** A person cannot
   replace their own `userPassword` over LDAP unless an operator adds it to
   `ldap.selfWritableAttributes`, which would weaken this.
-* **Stored passwords.** Where the password policy hashes with scrypt, the
-  parallelism is at least 3, whatever the policy names: the default is N=2^15,
-  r=8, p=3, one of OWASP's pairs. A stored hash with other parameters is hashed
-  again at the person's next successful sign-in. See
+* **Stored passwords.** A new password is scrypt at N=2^15, r=8, p=3 by
+  default, one of OWASP's pairs, in both modes. A pair below that table is
+  refused, and one that reaches the writer another way is raised to the table.
+  A stored hash keeps verifying. One in another algorithm, or in the same
+  algorithm at a strictly lower cost, is hashed again at the person's next
+  successful sign-in. A same-algorithm hash already at least that cost is
+  left. See
   [How a password is stored](configure-ldap.md#how-a-password-is-stored).
 * **Repeated guesses are slowed, and no account is locked.** See
   [Authentication](authentication.md#how-repeated-password-guesses-are-slowed).

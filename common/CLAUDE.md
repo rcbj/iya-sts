@@ -1417,8 +1417,8 @@ PASSWORD* block:
    policy**: `passwordHashSpec()` clamps a spec to `ARGON2_LIMITS` and
    `SCRYPT_PASSWORD_LIMITS` and raises scrypt's p to OWASP's table for its N
    (`scryptOwaspMinP()`: 2^17 p=1, 2^16 p=2, 2^15 p=3, 2^14 p=5, 2^13
-   p=10), whatever reached it. A spec it is not given is argon2id at the
-   minimum.
+   p=10), whatever reached it. A spec it is not given is scrypt at 2^15,
+   r=8, p=3 (#872).
 4. **`storedSecretMatchesSpec()`** says whether a stored hash is already the
    spec's algorithm with every parameter equal — what the upgrade on sign-in
    asks (3ac).
@@ -1428,22 +1428,28 @@ about **35 ms**, scrypt at 2^15 (p=3) about **250 ms** and at 2^17 (p=1) about
 **460 ms**, `hashSecret()`'s scrypt at 2^15 p=1 about **97 ms** —
 `tests/password_argon2id.js` logs the figures every run.
 
-**THE DEFAULT IS scrypt AGAIN SINCE 2026-10-22 (#820), AND ARGON2ID IS AN
-OPTION.** rcbj: "Make the default scrypt hashes, but keep argon2id as a
-supported option. Restore the original defaults for now." #847's defaults
-rehashed every stored password at its next sign-in, and on the load host 8081
-sign-in went from about 206 ms to about 387 ms. So `passwordHashSpec()` with no
-spec, and the policy's `hashAlgorithm` default, are scrypt at N=2^15, r=8, p=1
-— the pre-#847 parameters every stored password there already has — and
-`PASSWORD_HASH_ALGORITHMS` lists scrypt first. Decision 3 is half undone for
-scrypt: **the p floor in `passwordHashSpec()` is off** (p is taken as asked;
-`scryptOwaspMinP()` is still exported) and so is the policy's OWASP
-cross-field check, because the default itself is below the table and a policy
-must be able to save its own default. argon2id's floors are unchanged. The
-rehash rule is unchanged too and stays "different from the policy": a person
-whose stored hash is argon2id is hashed again with scrypt at 2^15 at their
-next verified sign-in, once, at about 100 ms. **#872 makes one of OWASP's
-pairs the default and restores both checks.**
+**THE DEFAULT IS scrypt AT 2^15, r=8, p=3 SINCE 2026-11-11 (#872), AND
+ARGON2ID STAYS SELECTABLE.** #820 had put the default back to scrypt at
+N=2^15, r=8, p=1, because #847's argon2id default rehashed every stored
+password at its next sign-in and on the load host 8081 sign-in went from
+about 206 ms to about 387 ms. #889 priced this pair at about 250 ms against
+that 97 ms hash; 2^17 with p=1 was about 460 ms and was not chosen. 8081 was
+not measured again for #872. `passwordHashSpec()` with no spec, and the
+policy's `hashAlgorithm` default, are scrypt at N=2^15, r=8, p=3, and
+`PASSWORD_HASH_ALGORITHMS` lists scrypt first. Decision 3 stands in both
+modes: `passwordHashSpec()` raises scrypt's p to OWASP's table, and the
+policy refuses a save below it. Product also applies
+`mode.minScryptParallelism()` (at least 3) before that clamp, so a profile
+saved at 2^17 with p=1 is written at p=3 there and stays p=1 in development.
+The rehash rule is a strictly lower cost within one algorithm, or a change
+of algorithm. A same-algorithm hash already at least the policy's cost is
+left, so a stronger hash is not rewritten down onto the new default, and an
+equal cost with different parameters is left too. A person whose stored hash
+is argon2id is still hashed again with scrypt at the next verified sign-in.
+The plaintext exists only then, so there is no bulk rehash, and development
+mode never verifies, so the rewrite is product-only. The one-time extra hash
+of each weaker password stays on that awaited sign-in, because the Kerberos
+keys are re-stamped inside the write.
 
 ### The four scrypt functions are one implementation with two doors
 
@@ -9581,10 +9587,11 @@ form. `tests/password_policy.js` holds all of it, eight mutants caught.
 Seven more rows: `hashAlgorithm` (`stsPwdHashAlgorithm`, `argon2id` or
 `scrypt`, an `enum` row), `argon2Memory` / `argon2Iterations` /
 `argon2Parallelism` (min 19456 KiB / 2 / 1) and `scryptLogN` /
-`scryptBlockSize` / `scryptParallelism` (min 13 / 8 / 1, with OWASP's N-and-p
-table as a cross-field rule until 2026-10-22: since then the default is
-scrypt at 2^15, r=8, p=1, below that table, and the rule is off until #872 —
-see *A person's password is argon2id*, above). **They are `optional`**: a save that leaves one
+`scryptBlockSize` / `scryptParallelism` (min 13 / 8 / 1). The default is
+scrypt at 2^15, r=8, p=3 (#872). OWASP's N-and-p table is a cross-field rule
+again, and `passwordHashSpec()` raises a new scrypt hash to it in both modes.
+Product also applies `minScryptParallelism()` (at least 3) before that clamp
+(see *A person's password is argon2id*, above). **They are `optional`**: a save that leaves one
 out keeps the value in force rather than being refused, because every caller
 written before them sends the six composition rows only.
 `hashSpec(profile)` answers them in `crypto.hashPassword()`'s shape, and
@@ -9595,8 +9602,9 @@ used only when it already matches the spec). Not mode-dependent.
 `upgradeHashAsync()`, after `verify()` and `verifyAsync()`): a password the
 CURRENT stored hash has just verified — never development's unchecked yes,
 never a service account's previous password — is hashed again and written
-back where the stored hash is not the profile's algorithm AND parameters
-(rcbj's decision 4: a parameter change counts). Compare and set: the entry's
+back where the stored hash is another algorithm, or the same algorithm at a
+strictly lower cost (#847's decision 4, narrowed by #872: a same-algorithm
+hash already at least that cost is left). Compare and set: the entry's
 hash is read again with no await before the write, and a hash changed
 meanwhile is not overwritten. The hash alone is written — no `pwdHistory`, no
 `pwdChangedTime`, no credential-change signal or mail — and the Kerberos

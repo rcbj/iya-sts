@@ -22,22 +22,21 @@
 //      AND parameters is hashed again and written back — a parameter change
 //      counts as much as an algorithm change.
 //
-// THE DEFAULT IS scrypt AGAIN SINCE 2026-10-22 (rcbj, #820): "Make the
-// default scrypt hashes, but keep argon2id as a supported option." The
-// default is scrypt at N=2^15, r=8, p=1, the pre-#847 parameters, so
-// decision 1 holds for argon2id only where a policy selects it, and the
-// sections below select it explicitly where they need it. OWASP's scrypt
-// table is no longer a floor: `passwordHashSpec()` takes p as asked and the
-// policy saves 2^15 with p=1, its own default. #872 restores both checks.
-// Rule 4 is unchanged, so a person holding an argon2id hash is hashed again
-// with scrypt at their next sign-in under the default (section F).
+// THE DEFAULT IS scrypt AT N=2^15, r=8, p=3 SINCE #872 (2026-11-11), one of
+// OWASP's pairs. #820 had put it back to p=1; argon2id stays selectable, so
+// decision 1 holds where a policy selects it, and the sections below select
+// it explicitly where they need it. `passwordHashSpec()` raises scrypt's p
+// to OWASP's table, and the policy refuses a pair below it. Within one
+// algorithm a stored hash is upgraded only when its cost is strictly lower
+// (section C); a different algorithm is still upgraded (section F).
 //
 // Sections:
 //   A. crypto: the default, the round trip, scrypt and argon2id side by
-//      side, argon2id's floors, scrypt's p taken as asked.
+//      side, both algorithms' floors.
 //   B. the policy's seven rows and their bounds.
-//   C. the upgrade on sign-in: an algorithm change, a parameter change, both
-//      doors; nothing for a wrong password or in development.
+//   C. the upgrade on sign-in: an algorithm change, a parameter change, a
+//      weaker hash and not a stronger one, both doors; nothing for a wrong
+//      password or in development.
 //   D. a history holding both forms.
 //   E. the console's view and the management API's request schema carry the
 //      same rows (rule 7).
@@ -55,6 +54,7 @@ const credentials = require('../common/credentials');
 const passwordPolicy = require('../common/password_policy');
 const ldap = require('../ldap/ldap_server');
 const adminViews = require('../admin-core/admin_views');
+const ldapjs = require('ldapjs');
 
 const log = require('bunyan').createLogger({ name: 'password_argon2id',
   level: process.env.LOG_LEVEL || 'info' });
@@ -64,9 +64,8 @@ const log = require('bunyan').createLogger({ name: 'password_argon2id',
 const ARGON2_DEFAULT =
   /^\$argon2id\$v=19\$m=19456,t=2,p=1\$[A-Za-z0-9+/]+\$[A-Za-z0-9+/]+$/;
 
-// The DEFAULT password hash (#820): scrypt at N=2^15, r=8, p=1.
-// In product at least p=3, OWASP's table (#1544).
-const SCRYPT_DEFAULT = /^\$scrypt\$32768\$8\$[13]\$/;
+// The DEFAULT password hash (#872): scrypt at N=2^15, r=8, p=3.
+const SCRYPT_DEFAULT = /^\$scrypt\$32768\$8\$3\$/;
 
 // argon2id at OWASP's minimum, named, since it is no longer the default.
 const ARGON2 = { algorithm: 'argon2id' };
@@ -117,6 +116,39 @@ async function inProduct(fn) {
   }
 }
 
+// Development keeps a pre-hashed userPassword (tests/password_policy.js,
+// section 1f). Product refuses one, so a cost the policy will not save is
+// planted here and verified later, inside inProduct().
+function plantHash(username, hash) {
+  log.debug("Entering plantHash().");
+  const view = ldap.objectFor(username);
+  const handler = ldap.localHandler('modify');
+  const req = {
+    dn: ldapjs.parseDN(view.entry.dn),
+    changes: [{ operation: 'replace',
+                modification: { type: 'userPassword', values: [hash] } }],
+    connection: { encrypted: false,
+                  ldap: { bindDN: 'cn=anonymous', id: 'password-argon2id' },
+                  remoteAddress: '127.0.0.1', remotePort: 40000 },
+    logId: 'password-argon2id'
+  };
+  return new Promise(function (resolve) {
+    handler(req, { end: function () {
+      log.debug("Entering end().");
+      log.debug("Leaving end().");
+    } }, function (err) {
+      log.debug("Entering the modify's next().");
+      if (err) {
+        log.debug("Caught in plantHash(): " + ((err && err.message) || err));
+      }
+      const kept = !err && storedOf(username) === hash;
+      log.debug("Leaving the modify's next().");
+      log.debug("Leaving plantHash(). " + kept);
+      resolve(kept);
+    });
+  });
+}
+
 function msOf(fn) {
   log.debug("Entering msOf().");
   const started = process.hrtime.bigint();
@@ -137,8 +169,8 @@ async function sectionA(t) {
   const unnamed = crypto.hashPassword('Default-Passw0rd!');
   t.check(SCRYPT_DEFAULT.test(unnamed) &&
           crypto.verifySecret('Default-Passw0rd!', unnamed),
-          'A1. a password hashed with no spec is scrypt at 2^15, r=8, p=1 ' +
-          '(the pre-#847 default, #820), and verifies',
+          'A1. a password hashed with no spec is scrypt at 2^15, r=8, p=3 ' +
+          '(OWASP\'s pair, #872), and verifies',
           unnamed.slice(0, 24));
   const argon = crypto.hashPassword('Argon-Passw0rd!', ARGON2);
   t.check(ARGON2_DEFAULT.test(argon),
@@ -176,25 +208,42 @@ async function sectionA(t) {
   t.check(low.memory === 19456 && low.passes === 2,
           'A8. an argon2id spec below OWASP\'s minimum is raised to it, ' +
           'whatever reached this file', JSON.stringify(low));
-  // OWASP's scrypt table is not a floor while the default is below it
-  // (#820; #872 restores it): p is the one asked for.
+  // OWASP's scrypt table is a floor again (#872).
   const thin = crypto.passwordHashSpec({ algorithm: 'scrypt', logN: 14, r: 8,
                                          p: 1 });
   const wide = crypto.passwordHashSpec({ algorithm: 'scrypt', logN: 14, r: 8,
                                          p: 4 });
-  t.check(thin.logN === 14 && thin.p === 1 && wide.p === 4,
-          'A9. scrypt\'s parallelism is taken as asked (1 and 4 at 2^14), ' +
-          'not raised to OWASP\'s table', JSON.stringify([thin, wide]));
+  const high = crypto.passwordHashSpec({ algorithm: 'scrypt', logN: 17, r: 8,
+                                         p: 1 });
+  const over = crypto.passwordHashSpec({ algorithm: 'scrypt', logN: 15, r: 8,
+                                         p: 99 });
+  t.check(thin.logN === 14 && thin.p === 5 && wide.p === 5 && high.p === 1 &&
+          over.p === 16,
+          'A9. scrypt below OWASP\'s table is raised to it (p=5 at 2^14), ' +
+          '2^17 with p=1 stays, and p above the ceiling stays at the ceiling',
+          JSON.stringify([thin, wide, high, over]));
+  const fresh = crypto.hashPassword('Fresh-Passw0rd!');
+  const equal = '$scrypt$65536$8$2$YQ==$YQ==';
   t.check(crypto.storedSecretMatchesSpec(argon, { algorithm: 'argon2id' }) &&
           !crypto.storedSecretMatchesSpec(argon, { algorithm: 'argon2id',
                                                    memory: 20480 }) &&
           !crypto.storedSecretMatchesSpec(legacy, { algorithm: 'argon2id' }) &&
-          crypto.storedSecretMatchesSpec(legacy, null) &&
+          crypto.storedSecretMatchesSpec(fresh, null) &&
+          !crypto.storedSecretMatchesSpec(legacy, null) &&
           !crypto.storedSecretMatchesSpec(argon, null) &&
           !crypto.storedSecretMatchesSpec(legacy, { algorithm: 'scrypt',
                                                     logN: 16 }),
           'A10. storedSecretMatchesSpec() reads the algorithm AND every ' +
-          'parameter, and a scrypt hash at 2^15 already is the default');
+          'parameter: the password default matches, hashSecret()\'s p=1 ' +
+          'does not', fresh.slice(0, 24));
+  t.check(crypto.storedSecretIsWeaker(legacy, null) &&
+          !crypto.storedSecretIsWeaker(scrypted, null) &&
+          !crypto.storedSecretIsWeaker(equal,
+            { algorithm: 'scrypt', logN: 17, r: 8, p: 1 }) &&
+          crypto.storedSecretIsWeaker(argon, null) &&
+          !crypto.storedSecretIsWeaker('not-a-hash', null),
+          'A10b. a hash is weaker only at a strictly lower cost, and a ' +
+          'different algorithm counts; an equal cost is not rewritten');
   // A tampered parameter must not verify.
   const tampered = argon.replace('m=19456', 'm=19457');
   t.check(!crypto.verifySecret('Argon-Passw0rd!', tampered),
@@ -217,7 +266,7 @@ async function sectionA(t) {
   const secretMs = msOf(function () {
     crypto.hashSecret('Timing-Passw0rd!');
   });
-  t.log.info({ passwordDefaultScrypt15p1Ms: defaultMs,
+  t.log.info({ passwordDefaultScrypt15p3Ms: defaultMs,
                argon2idMinimumMs: argonMs, scrypt15p3Ms: scrypt15Ms,
                scrypt17p1Ms: scrypt17Ms, hashSecretScrypt15p1Ms: secretMs },
              'COST of one hash on this machine (information only)');
@@ -235,12 +284,12 @@ function sectionB(t) {
   t.check(built.hashAlgorithm === 'scrypt' && built.argon2Memory === 19456 &&
           built.argon2Iterations === 2 && built.argon2Parallelism === 1 &&
           built.scryptLogN === 15 && built.scryptBlockSize === 8 &&
-          built.scryptParallelism === 1,
-          'B1. the built-in profile is scrypt at 2^15, r=8, p=1 (#820), ' +
+          built.scryptParallelism === 3,
+          'B1. the built-in profile is scrypt at 2^15, r=8, p=3 (#872), ' +
           'with argon2id\'s rows at m=19456, t=2, p=1',
           JSON.stringify(built));
   t.equal(JSON.stringify(passwordPolicy.hashSpec(built)),
-          JSON.stringify({ algorithm: 'scrypt', logN: 15, r: 8, p: 1 }),
+          JSON.stringify({ algorithm: 'scrypt', logN: 15, r: 8, p: 3 }),
           'B2. hashSpec() answers it in crypto.js\'s shape');
   t.equal(JSON.stringify(passwordPolicy.hashSpec(
             profileWith({ hashAlgorithm: 'argon2id' }))),
@@ -260,20 +309,32 @@ function sectionB(t) {
             'B3. ' + pair[0] + ' = ' + pair[1] + ' is refused',
             JSON.stringify(saved.errors || saved));
   });
-  // Below OWASP's table and SAVED: it is the default (#820), and a policy
-  // must be able to save its own default. #872 brings the refusal back.
+  // Below OWASP's table and REFUSED (#872): the default is on the table,
+  // so a policy can no longer save a pair beneath it.
   const pair = passwordPolicy.save('default', profileWith(
     { hashAlgorithm: 'scrypt', scryptLogN: 15, scryptParallelism: 1 }));
-  const pairRead = passwordPolicy.read('default');
-  t.check(pair.ok && pairRead.scryptLogN === 15 &&
-          pairRead.scryptParallelism === 1,
-          'B4. scrypt at 2^15 with p=1, the default, is saved although it ' +
-          'is below OWASP\'s table', JSON.stringify(pair.errors));
+  t.check(!pair.ok,
+          'B4. scrypt at 2^15 with p=1 is refused: OWASP\'s pair there is p=3',
+          JSON.stringify(pair.errors));
   const thinner = passwordPolicy.save('default', profileWith(
     { hashAlgorithm: 'scrypt', scryptLogN: 13, scryptParallelism: 1 }));
-  t.check(thinner.ok,
-          'B4b. and so is 2^13 with p=1: the table is not enforced until ' +
-          '#872', JSON.stringify(thinner.errors));
+  t.check(!thinner.ok,
+          'B4b. and so is 2^13 with p=1: the table asks for p=10',
+          JSON.stringify(thinner.errors));
+  const onTable = passwordPolicy.save('default', profileWith(
+    { hashAlgorithm: 'scrypt', scryptLogN: 17, scryptParallelism: 1 }));
+  t.check(onTable.ok && passwordPolicy.read('default').scryptLogN === 17 &&
+          passwordPolicy.read('default').scryptParallelism === 1,
+          'B4c. 2^17 with p=1 is on the table and is saved',
+          JSON.stringify(onTable.errors));
+  const under = passwordPolicy.save('default', profileWith(
+    { hashAlgorithm: 'scrypt', scryptLogN: 14, scryptParallelism: 4 }));
+  const at = passwordPolicy.save('default', profileWith(
+    { hashAlgorithm: 'scrypt', scryptLogN: 14, scryptParallelism: 5 }));
+  t.check(!under.ok && at.ok &&
+          passwordPolicy.read('default').scryptParallelism === 5,
+          'B4d. 2^14 with p=4 is refused and p=5, the table\'s pair, is saved',
+          JSON.stringify([under.errors, at.errors]));
   const fine = passwordPolicy.save('default', profileWith(
     { hashAlgorithm: 'scrypt', scryptLogN: 15, scryptParallelism: 3 }));
   t.check(fine.ok && passwordPolicy.read('default').hashAlgorithm === 'scrypt',
@@ -312,7 +373,7 @@ async function sectionC(t) {
             'C0. a password is set while the policy says scrypt');
     const scrypted = storedOf(who);
     t.check(SCRYPT_DEFAULT.test(scrypted),
-            'C1. and is stored as scrypt at the policy\'s 2^15, r=8, p=1',
+            'C1. and is stored as scrypt at the policy\'s 2^15, r=8, p=3',
             scrypted.slice(0, 24));
     const historyBefore = historyOf(who).join('|');
 
@@ -376,6 +437,36 @@ async function sectionC(t) {
           'C11. DEVELOPMENT mode verifies nothing, so it never rewrites a ' +
           'hash — whatever was typed would have become the password',
           dev.reason);
+
+  // A stronger same-algorithm hash is left. A weaker one is rewritten.
+  // Both are planted in development, which keeps a pre-hashed value, and
+  // read back in product, which is where a password is verified.
+  const costWho = 'scrypt-cost-probe';
+  const costPassword = 'Cost-Probe-Passw0rd!';
+  ldap.createUser(costWho, {});
+  const strong = crypto.hashPassword(costPassword,
+    { algorithm: 'scrypt', logN: 17, r: 8, p: 1 });
+  t.check(await plantHash(costWho, strong),
+          'C12. a 2^17 p=1 hash can be planted', strong.slice(0, 24));
+  const weakWho = 'scrypt-weak-probe';
+  const weakPassword = 'Cost-Weak-Passw0rd!';
+  ldap.createUser(weakWho, {});
+  const weak = crypto.hashSecret(weakPassword);
+  t.check(/^\$scrypt\$32768\$8\$1\$/.test(weak) &&
+          await plantHash(weakWho, weak),
+          'C13. a 2^15 p=1 hash, hashSecret()\'s cost, can be planted',
+          weak.slice(0, 24));
+  passwordPolicy.reset('default');
+  await inProduct(async function () {
+    const kept = credentials.verify(costWho, costPassword);
+    t.check(kept.ok && storedOf(costWho) === strong,
+            'C14. a stronger scrypt hash is not rewritten down onto the ' +
+            'default 2^15 p=3', storedOf(costWho).slice(0, 24));
+    const raised = credentials.verify(weakWho, weakPassword);
+    t.check(raised.ok && SCRYPT_DEFAULT.test(storedOf(weakWho)),
+            'C15. a weaker scrypt hash is rewritten to the default at the ' +
+            'next verified sign-in', storedOf(weakWho).slice(0, 24));
+  });
   log.debug("Leaving sectionC().");
 }
 
@@ -460,10 +551,9 @@ function sectionE(t) {
 // ---------------------------------------------------------------------------
 // F. an argon2id hash under the scrypt default.
 // ---------------------------------------------------------------------------
-// A person whose password was stored as argon2id (by #847's default, or a
-// policy that selected it) signs in under the scrypt default. Rule 4 is
-// "different from the policy", not "weaker", so the sign-in succeeds and the
-// stored hash becomes scrypt at 2^15, r=8, p=1 (#820, deliberately).
+// A person whose password was stored as argon2id signs in under the scrypt
+// default. A different algorithm is still upgraded (#847 decision 4), so the
+// sign-in succeeds and the stored hash becomes scrypt at 2^15, r=8, p=3.
 async function sectionF(t) {
   log.debug("Entering sectionF().");
   t.log.info('=== F. argon2id rehashed to the scrypt default ===');
@@ -508,12 +598,12 @@ async function sectionF(t) {
 
 module.exports = {
   name: 'password_argon2id',
-  describe: 'a person\'s password hash (#847, #820): scrypt at 2^15 ' +
-            'by default and argon2id when selected, the password policy\'s ' +
-            'hash rows and their bounds, the upgrade at a verified sign-in ' +
-            'for an algorithm or a parameter change, a history of both ' +
-            'forms, the console and API carrying the rows, and an argon2id ' +
-            'hash rehashed to the scrypt default',
+  describe: 'a person\'s password hash (#847, #872): scrypt at 2^15, ' +
+            'r=8, p=3 by default and argon2id when selected, the password ' +
+            'policy\'s hash rows and OWASP\'s table, the upgrade at a ' +
+            'verified sign-in for a different algorithm or a weaker cost, ' +
+            'a history of both forms, the console and API carrying the ' +
+            'rows, and an argon2id hash rehashed to the scrypt default',
   run: async function (t) {
     log.debug("Entering run().");
     try {

@@ -102,16 +102,20 @@
 // are the ones that silently end or change the string there.
 //
 // ---------------------------------------------------------------------------
-// HOW A PASSWORD IS STORED IS A RULE OF THE PROFILE TOO (2026-10-22, #847).
+// HOW A PASSWORD IS STORED IS A RULE OF THE PROFILE TOO (2026-10-22, #847;
+// the default since #872, 2026-11-11).
 //
 // `stsPwdHashAlgorithm` names the algorithm a NEWLY stored password is hashed
-// with — argon2id by default, at OWASP's minimum (m=19 MiB, t=2, p=1), or
-// scrypt — and six more rows carry both algorithms' parameters. rcbj's
-// decisions on #847: argon2id is the default; scrypt stays selectable; no
-// bound is below OWASP's minimums, in either mode; a stored hash that is not
-// the preferred algorithm AND parameters is hashed again at the person's next
-// verified sign-in (`credentials.ts`); and the password policy governs
-// people's passwords only — every other secret stays scrypt. The seven rows
+// with — scrypt by default, at N=2^15, r=8, p=3, one of OWASP's pairs, or
+// argon2id at OWASP's minimum (m=19 MiB, t=2, p=1) — and six more rows carry
+// both algorithms' parameters. rcbj's decisions on #847, as #820 and #872
+// left them: scrypt is the default and argon2id stays selectable; no bound a
+// NEW hash is written under is below OWASP's minimums, in either mode; a
+// stored hash in another algorithm, or in the same algorithm at a strictly
+// lower cost, is hashed again at the person's next verified sign-in
+// (`credentials.ts`); a same-algorithm hash already at least that cost is
+// left; and the password policy governs people's passwords only — every
+// other secret stays scrypt. The seven rows
 // are OPTIONAL in a save: one left out keeps the value in force rather than
 // being refused, because every caller written before they existed sends the
 // six composition rows and nothing else, and keeping the value in force is
@@ -630,13 +634,16 @@ class PasswordPolicy {
                'password of any composition; set a longer minimum length ' +
                'instead.');
     }
-    // OWASP's scrypt table (#847): the parallelism a cost needs. Asked
-    // whichever algorithm is chosen, because the values are stored either
-    // way and switching to scrypt must not switch to a pair below it.
-    // NOT ENFORCED SINCE 2026-10-22 (rcbj, #820): the default itself,
-    // 2^15 with p=1, is below the table, and a policy must be able to save
-    // its own default. #872, which makes OWASP's minimum the default,
-    // brings this check back.
+    // OWASP's scrypt table (#847, restored by #872): the parallelism a cost
+    // needs. Asked whichever algorithm is chosen, because the values are
+    // stored either way and switching to scrypt must not switch to a pair
+    // below it.
+    const need = stsCrypto.scryptOwaspMinP(values.scryptLogN);
+    if (Number(values.scryptParallelism) < need) {
+      out.push('scrypt at 2^' + values.scryptLogN + ' needs a parallelism ' +
+               'of at least ' + need + ', which is what OWASP\'s table lists ' +
+               'at r=8; ' + values.scryptParallelism + ' is below it.');
+    }
     log.debug("Leaving PasswordPolicy.crossFieldProblems().");
     return out;
   }
@@ -1329,9 +1336,11 @@ class PasswordPolicy {
 
   // -------------------------------------------------------------------------
   // HOW A NEW PASSWORD IS STORED (#847): the profile's algorithm and its
-  // parameters, in the shape `crypto.hashPassword()` takes. NOT mode
-  // dependent: the floors are OWASP's in both modes, and `crypto.js` clamps
-  // to them again.
+  // parameters, in the shape `crypto.hashPassword()` takes. `crypto.js`
+  // raises scrypt's p to OWASP's table for the cost, in both modes (#872).
+  // Product also applies `mode.minScryptParallelism()` (at least 3, #1544)
+  // before that clamp, so a profile naming 2^17 with p=1 is written at p=3
+  // there.
   // -------------------------------------------------------------------------
   /**
    * Returns the hash spec a profile names for a newly stored password.

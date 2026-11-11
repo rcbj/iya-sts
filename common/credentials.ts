@@ -1802,12 +1802,17 @@ class Credentials {
   // ---------------------------------------------------------------------------
   // THE UPGRADE ON SIGN-IN (2026-10-22, #847).
   //
-  // A password that has just VERIFIED against the stored hash, where that
-  // hash is not the password policy's preferred algorithm AND parameters, is
-  // hashed again under the policy and written back. rcbj's decision 4: a
-  // parameter change within one algorithm counts as much as a change of
-  // algorithm. It is the only way an old hash can move — there is no bulk
-  // rehash, because the plaintext exists only at a sign-in.
+  // A password that has just VERIFIED against the stored hash is hashed again
+  // under the policy and written back when the stored hash is a different
+  // algorithm, or the same algorithm at a strictly lower cost (#872). rcbj's
+  // decision 4 on #847 still holds for an algorithm change and for a cost
+  // that goes up. A same-algorithm hash that is already at least the policy's
+  // cost is left, so a stronger stored hash is not rewritten down onto the
+  // new default. It is the only way an old hash can move — there is no bulk
+  // rehash, because the plaintext exists only at a sign-in. The one-time
+  // extra hash of each weaker password is still on this sign-in: the Kerberos
+  // keys are re-stamped inside the write, and the new hash has to be the one
+  // the caller sees when the promise resolves.
   //
   // Five rules, each a way to get it wrong:
   //
@@ -1827,9 +1832,10 @@ class Credentials {
   //     (`kerberos/krb5_person_keys.ts`), so the observer is told of a
   //     `rehash`, which re-stamps them at the SAME kvno: the password, and so
   //     every key, is the one it was.
-  //   * IT NEVER COSTS THE SIGN-IN. A hash or a write that fails is logged
-  //     (STS-AUTHN-0409) and the person is signed in as they would have been;
-  //     the next verified sign-in tries again.
+  //   * A FAILED UPGRADE NEVER COSTS THE SIGN-IN. A hash or a write that
+  //     fails is logged (STS-AUTHN-0409) and the person is signed in as they
+  //     would have been; the next verified sign-in tries again. A successful
+  //     one is awaited, for the reason above.
   // ---------------------------------------------------------------------------
   private rehashSpecFor(name, stored) {
     const { log, crypto, passwordPolicy } = this.deps;
@@ -1842,6 +1848,12 @@ class Credentials {
     const spec = passwordPolicy.hashSpec(passwordPolicy.profileFor(name));
     if (crypto.storedSecretMatchesSpec(stored, spec)) {
       log.debug('Leaving Credentials.rehashSpecFor(). Already in force.');
+      return null;
+    }
+    // Same algorithm and not strictly weaker (#872): left as stored. A
+    // different algorithm is weaker here, so it is still upgraded.
+    if (!crypto.storedSecretIsWeaker(stored, spec)) {
+      log.debug('Leaving Credentials.rehashSpecFor(). Not weaker.');
       return null;
     }
     log.debug('Leaving Credentials.rehashSpecFor(). Out of date.');
@@ -1896,8 +1908,8 @@ class Credentials {
 
   /**
    * Hashes a just-verified password again under the password policy and
-   * writes it back where the stored hash is not the policy's algorithm and
-   * parameters (#847). On this thread; never throws.
+   * writes it back where the stored hash is another algorithm, or the same
+   * one at a strictly lower cost (#847, #872). On this thread; never throws.
    *
    * @param name - the person
    * @param password - the password the stored hash just verified
