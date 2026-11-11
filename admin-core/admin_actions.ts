@@ -1905,13 +1905,12 @@ class AdminActions {
    *   sentence naming every action
    */
   logoutAction(body: IyaApi.AdminActionBody<
-    '/admin-api/logout'> &
-    IyaApi.NotInModel<'actor' | 'id' | 'target' | 'username'>) {
+    '/admin-api/logout'> & IyaApi.NamedActor) {
     const { log, stats, krb5Principals, mode } = this.deps;
     log.debug("Entering AdminActions.logoutAction(). action=" + (body.action ||
                                                                  '(none)'));
     const action = String(body.action || '');
-    const user = String(body.user || body.username || '').trim();
+    const user = String(body.user || '').trim();
     // RESTORE-KERBEROS IS A DEVELOPMENT TEST CONTROL (#111, 2026-09-23), and
     // refused here — the one function the console form and `POST
     // /admin-api/logout/restore-kerberos` both reach (rule 7) — before the
@@ -1934,7 +1933,7 @@ class AdminActions {
     // `backchannel_logout.ts`'s retry() argues it.
     if (action === 'retry-backchannel') {
       const { backchannel } = this.deps;
-      const id = String(body.delivery || body.id || '').trim();
+      const id = String(body.delivery || '').trim();
       if (!id) {
         log.debug("Leaving AdminActions.logoutAction(). No delivery named.");
         return this.refused('STS-OAUTH-0550', { ok: false, errors: ['Name ' +
@@ -2029,7 +2028,7 @@ class AdminActions {
       // jti belongs. It is the same call tokenAction() makes further up, where
       // it was always spelt `found.jti` — which is why /admin/tokens' restore
       // worked and this one did not.
-      const found = this.jtiFrom(String(body.jti || body.target || ''));
+      const found = this.jtiFrom(String(body.jti || ''));
       if (!found.jti) {
         log.debug("Leaving AdminActions.logoutAction().");
         return this.refused('STS-ADMIN-0502', { ok: false, errors: ['Name ' +
@@ -2081,24 +2080,24 @@ class AdminActions {
    *   sentence naming every action
    */
   permissionsAction(body: IyaApi.AdminActionBody<
-    '/admin-api/permissions'> &
-    IyaApi.NotInModel<'actor' | 'application' | 'value'>) {
+    '/admin-api/permissions'> & IyaApi.NamedActor) {
     const { log, numberWord, appPermissions } = this.deps;
     log.debug("Entering AdminActions.permissionsAction(). action=" +
               (body.action || '(none)'));
     const action = String(body.action || '');
     const actor = String(body.actor || '');
-    const resource = String(body.resource || body.application || '').trim();
-    const client = String(body.client || body.application || '').trim();
+    const resource = String(body.resource || '').trim();
+    const client = String(body.client || '').trim();
 
     // WHICH APPLICATION, ASKED ONCE FOR EACH SIDE. The two names are
     // deliberately different — `resource` for the application that EXPOSES a
     // permission and `client` for the one that HOLDS it — because this is the
     // one feature here where a body naming the wrong one still succeeds and
-    // writes a grant onto the API instead of onto its caller. `application` is
-    // accepted for either as a convenience for a caller editing one entry, and
-    // the refusals below name the field that was missing rather than "an
-    // application".
+    // writes a grant onto the API instead of onto its caller. The refusals
+    // below name the field that was missing rather than "an application".
+    // (`application` was once accepted for either, and `value` for
+    // `baseUri`; neither is in the model, and both were removed — rcbj on
+    // #1579, 2026-11-11.)
     const needsResource = ['set-permission-base', 'define-permission',
                            'remove-permission'];
     const needsClient = ['grant-permission', 'revoke-permission'];
@@ -2128,8 +2127,7 @@ class AdminActions {
       // entry. It is the same convention every `set` on /admin/applications
       // follows.
       const result = appPermissions.setBaseUri(resource,
-                                               String(body.baseUri === undefined
-        ? (body.value === undefined ? '' : body.value) : body.baseUri), actor);
+        String(body.baseUri === undefined ? '' : body.baseUri), actor);
       log.debug("Leaving AdminActions.permissionsAction(). " +
                 "set-permission-base " +
                 (result.ok ? 'ok' : 'refused') + ".");
@@ -4109,9 +4107,7 @@ class AdminActions {
    *   sentence naming every action
    */
   usersAction(body: IyaApi.AdminActionBody<
-    '/admin-api/users'> &
-    IyaApi.NotInModel<'actor' | 'aud_sub' | 'client_id' | 'enrolment_id' |
-      'risc_reason' | 'upgrade_id'>, context?) {
+    '/admin-api/users'> & IyaApi.NamedActor, context?) {
     const { log, numberWord, credentials, auditLog,
             accountSignals } = this.deps;
     log.debug("Entering AdminActions.usersAction(). action=" + (body.action ||
@@ -4204,7 +4200,7 @@ class AdminActions {
         posted = typeof body.credential === 'string'
           ? JSON.parse(body.credential || 'null') : body.credential;
       } catch (e) { posted = null; }
-      const upgradeId = String(body.upgradeId || body.upgrade_id || '');
+      const upgradeId = String(body.upgradeId || '');
       if (action === 'prove-passkey-upgrade') {
         const checked = passkeyPolicy.withSelection(who, '', function () {
           return credentials.proveKeyUpgrade(who, upgradeId, posted, {
@@ -4280,7 +4276,7 @@ class AdminActions {
         return this.refused('STS-ADMIN-0518', { ok: false, errors: ['Name ' +
             'the person in `user`.'] });
       }
-      const riscReason = String(body.riscReason || body.risc_reason || '');
+      const riscReason = String(body.riscReason || '');
       if (riscReason && ['hijacking', 'bulk-account'].indexOf(riscReason) < 0) {
         log.debug("Leaving AdminActions.usersAction(). Not a RISC reason.");
         return this.refused('STS-ADMIN-0794', { ok: false, errors: ['"' +
@@ -4785,8 +4781,8 @@ class AdminActions {
     // Commands (#151); this is the administrator's door.
     if (action === 'set-aud-sub') {
       const who = String(body.user || body.username || '').trim();
-      const client = String(body.client || body.client_id || '').trim();
-      const value = String(body.value || body.aud_sub || '').trim();
+      const client = String(body.client || '').trim();
+      const value = String(body.value || '').trim();
       if (!who || !client || /\s/.test(client) || value.length > 255 ||
           /[\u0000-\u001f]/.test(value)) {
         log.debug("Leaving AdminActions.usersAction(). A malformed aud_sub.");
@@ -5089,7 +5085,7 @@ class AdminActions {
       log.debug("Leaving AdminActions.usersAction(). finish-passkey-" +
                 "enrolment answers when the verification settles.");
       return credentials.confirmAdminKeyEnrolment(who, admin,
-        String(body.enrolmentId || body.enrolment_id || ''), posted,
+        String(body.enrolmentId || ''), posted,
         { origin: authn.expectedOriginFor(ctx.base, posted),
           rpId: authn.rpIdOf(ctx.base) }).then(function (done) {
         return self.adminKeyEnrolled(who, done, ctx);
@@ -5495,8 +5491,7 @@ class AdminActions {
    *   sentence naming every action
    */
   groupsAction(body: IyaApi.AdminActionBody<
-    '/admin-api/groups'> &
-    IyaApi.NotInModel<'actor' | 'cn'>) {
+    '/admin-api/groups'> & IyaApi.NamedActor) {
     const { log } = this.deps;
     log.debug("Entering AdminActions.groupsAction(). action=" + (body.action ||
                                                                  '(none)'));
@@ -5519,8 +5514,7 @@ class AdminActions {
     }
 
     if (action === 'create') {
-      const name = String(body.group || body.displayName || body.cn || '')
-        .trim();
+      const name = String(body.group || body.displayName || '').trim();
       // THE MEMBERS BOX IS SPLIT ON NEWLINES AND COMMAS, which is where this
       // differs from userFieldsFrom() one section up and is worth saying rather
       // than leaving as an apparent inconsistency: a person's attributes are
@@ -6817,7 +6811,7 @@ class AdminActions {
    */
   applicationsAction(body: IyaApi.AdminActionBody<
     '/admin-api/applications' | '/admin-api/console/applications'> &
-    IyaApi.NotInModel<'actor' | 'filename'>, protocols, context) {
+    IyaApi.NamedActor, protocols, context) {
     const { log, numberWord, applications, spMetadata, resourceMetadata,
       softwareStatement, tlsClientCertificates } = this.deps;
     const self = this;
@@ -7844,10 +7838,11 @@ class AdminActions {
     // promise, like `refresh-metadata`, for that action's reason.
     if (action === 'load-resource-metadata') {
       const ctx = context || {};
+      // `file` is the model's `{ name, text }`. A bare string beside a
+      // `filename` was an older spelling, removed (rcbj on #1579,
+      // 2026-11-11).
       const file = body.file && typeof body.file === 'object'
-        ? body.file
-        : (body.file ? { name: String(body.filename || ''),
-                         text: String(body.file) } : null);
+        ? body.file : null;
       log.debug("Leaving AdminActions.applicationsAction(). Loading RFC 9728 " +
                 "metadata.");
       return resourceMetadata.load({ document: body.document, url: body.url,
@@ -8160,13 +8155,13 @@ class AdminActions {
    *   with the sentence naming every action
    */
   saml2Action(body: IyaApi.AdminActionBody<'/admin-api/saml2'> &
-    IyaApi.NotInModel<'actor' | 'document' | 'serviceProvider'>): any {
+    IyaApi.NamedActor): any {
     const { log, applications, saml2 } = this.deps;
     const self = this;
     log.debug("Entering AdminActions.saml2Action(). action=" + (body.action ||
                                                                 '(none)'));
     const action = String(body.action || '');
-    const identifier = String(body.sp || body.serviceProvider || '').trim();
+    const identifier = String(body.sp || '').trim();
     if (!identifier) {
       log.debug("Leaving AdminActions.saml2Action(). No service provider " +
                 "named.");
@@ -8263,17 +8258,16 @@ class AdminActions {
     }
     // AN UPLOADED METADATA DOCUMENT, consumed exactly as a refresh consumes a
     // fetched one — `sp_metadata.ts`'s `consume()`. `document` is a pasted
-    // document; `file` is what the console's file input carries, as text.
-    // `family` makes the SAML 1.1/SAML 2.0 sub-tab authoritative when one
-    // application is declared for both protocols.
+    // document, as XML; `file` is what the console's file input carries,
+    // `{ name, text }`. `family` makes the SAML 1.1/SAML 2.0 sub-tab
+    // authoritative when one application is declared for both protocols.
+    // Each in the model's one type: a `document` object and a bare-string
+    // `file` were older shapes, removed (rcbj on #1579, 2026-11-11).
     if (action === 'upload-metadata') {
-      const document = body.document;
-      const documentText = typeof document === 'string' ? document :
-        (document && typeof document.text === 'string'
-          ? document.text : '');
-      const fileText = typeof body.file === 'string' ? body.file :
-        (body.file && typeof body.file.text === 'string'
-          ? body.file.text : '');
+      const documentText = typeof body.document === 'string'
+        ? body.document : '';
+      const fileText = body.file && typeof body.file.text === 'string'
+        ? body.file.text : '';
       const text = documentText || fileText;
       if (!text.trim()) {
         log.debug("Leaving AdminActions.saml2Action(). No document.");
@@ -8397,13 +8391,12 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  saml11Action(body: IyaApi.AdminActionBody<'/admin-api/saml11'> &
-    IyaApi.NotInModel<'relyingParty'>) {
+  saml11Action(body: IyaApi.AdminActionBody<'/admin-api/saml11'>) {
     const { log, applications, saml11 } = this.deps;
     log.debug("Entering AdminActions.saml11Action(). action=" + (body.action ||
                                                                  '(none)'));
     const action = String(body.action || '');
-    const identifier = String(body.rp || body.relyingParty || '').trim();
+    const identifier = String(body.rp || '').trim();
     if (!identifier) {
       log.debug("Leaving AdminActions.saml11Action(). No relying party named.");
       return this.refused('STS-ADMIN-0538', { ok: false, errors: ['Name the ' +
@@ -8493,13 +8486,12 @@ class AdminActions {
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  rbacAction(body: IyaApi.AdminActionBody<'/admin-api/rbac'> &
-    IyaApi.NotInModel<'user'>, context) {
+  rbacAction(body: IyaApi.AdminActionBody<'/admin-api/rbac'>, context) {
     const { log, realms, rbac } = this.deps;
     log.debug("Entering AdminActions.rbacAction(). action=" + (body.action ||
                                                                '(none)'));
     const action = String(body.action || '');
-    const username = String(body.username || body.user || '').trim();
+    const username = String(body.username || '').trim();
     const role = String(body.role || '').trim();
     // THE ROSTER OF THE REALM BEING READ (2026-09-14, #32): the default realm's
     // is the service roster, any other realm's its own. A realm administrator
@@ -8537,8 +8529,7 @@ class AdminActions {
    *   sentence naming every action
    */
   consentAction(body: IyaApi.AdminActionBody<
-    '/admin-api/consent'> &
-    IyaApi.NotInModel<'actor' | 'application' | 'user'>) {
+    '/admin-api/consent'> & IyaApi.NamedActor) {
     const { log, numberWord, auditLog, consent } = this.deps;
     log.debug("Entering AdminActions.consentAction(). action=" + (body.action ||
                                                                   '(none)'));
@@ -8547,10 +8538,11 @@ class AdminActions {
     // `client` for the application half and `username` for the person half,
     // named apart for `permissionsAction()`'s reason: this is another feature
     // where a body naming the wrong field still succeeds and writes the
-    // right-looking thing onto the wrong entry. `application` is accepted for
-    // `client` as a convenience for a caller editing one entry.
-    const client = String(body.client || body.application || '').trim();
-    const username = String(body.username || body.user || '').trim();
+    // right-looking thing onto the wrong entry. (`application` for `client`
+    // and `user` for `username` were older spellings, not in the model, and
+    // were removed — rcbj on #1579, 2026-11-11.)
+    const client = String(body.client || '').trim();
+    const username = String(body.username || '').trim();
     const scope = String(body.scope || '').trim();
 
     if (action === 'grant-global-consent') {
@@ -8670,15 +8662,14 @@ class AdminActions {
    *   sentence naming every action
    */
   rolesAction(body: IyaApi.AdminActionBody<
-    '/admin-api/roles'> &
-    IyaApi.NotInModel<'actor' | 'name'>, context) {
+    '/admin-api/roles'> & IyaApi.NamedActor, context) {
     const { log, numberWord, auditLog, applications, roles } = this.deps;
     log.debug("Entering AdminActions.rolesAction(). action=" + (body.action ||
                                                                 '(none)'));
     const action = String(body.action || '');
     const ctx = context || {};
     const actor = String(ctx.actor || body.actor || '');
-    const name = String(body.role || body.name || '').trim();
+    const name = String(body.role || '').trim();
     const kind = String(body.kind || '').trim();
     // `member` for the thing being added and never `name`, which is the ROLE's.
     // Named apart for `permissionsAction()`'s reason: this is another feature
@@ -9180,8 +9171,7 @@ class AdminActions {
    *   sentence naming every action
    */
   policiesAction(body: IyaApi.AdminActionBody<
-    '/admin-api/policies'> &
-    IyaApi.NotInModel<'actor' | 'form'>, context) {
+    '/admin-api/policies'> & IyaApi.NamedActor, context) {
     const { log, auditLog, policyKinds, numberWord } = this.deps;
     log.debug("Entering AdminActions.policiesAction(). action=" +
               (body.action || '(none)'));
@@ -9252,7 +9242,10 @@ class AdminActions {
     }
 
     if (found.verb === 'save') {
-      const given = Object.assign({}, body);
+      // `form` is no member of the body: it is this function telling the
+      // policy module's `save()` which door the values came through, and the
+      // copy is what carries it (#1579).
+      const given: Record<string, any> = Object.assign({}, body);
       if (ctx.via === 'console') {
         given.form = 'console';
       }
@@ -9362,8 +9355,8 @@ class AdminActions {
    */
   claimsAction(body: IyaApi.AdminActionBody<
     '/admin-api/claims' | '/admin-api/kerberos/claims' |
-    '/admin-api/saml-attributes' | '/admin-api/userinfo-claims'> &
-    IyaApi.NotInModel<'multi'>, names, allowed) {
+    '/admin-api/saml-attributes' | '/admin-api/userinfo-claims'>, names,
+    allowed) {
     const { log, stats, claimAttributes } = this.deps;
     log.debug("Entering AdminActions.claimsAction(). action=" + (body.action ||
                                                                  '(none)'));
@@ -9410,8 +9403,10 @@ class AdminActions {
       const entry: Record<string, any> = {
         name: String(body.name || '').trim(),
         attribute: String(body.attribute || '').trim(),
-        multi: body.multi === true || body.multi === 'true' ||
-               body.multi === 'on',
+        // A boolean, the model's type (the console sends one); the strings
+        // `'true'` and `'on'` were an older form's, removed (rcbj on #1579,
+        // 2026-11-11).
+        multi: body.multi === true,
         type: String(body.type || 'string').trim() || 'string' };
       if (!entry.attribute) {
         log.debug("Leaving AdminActions.claimsAction(). No attribute.");
@@ -11510,13 +11505,12 @@ class AdminActions {
    *   with the sentence naming every action
    */
   async federationAction(body: IyaApi.AdminActionBody<
-    '/admin-api/federation'> &
-    IyaApi.NotInModel<'relationship'>, ctx?) {
+    '/admin-api/federation'>, ctx?) {
     const { log, federation, fedEncryption, loadSignals } = this.deps;
     log.debug("Entering AdminActions.federationAction(). action=" +
               (body.action || '(none)'));
     const action = String(body.action || '');
-    const id = String(body.id || body.relationship || '').trim();
+    const id = String(body.id || '').trim();
     const context = ctx || { via: 'console', actor: '', base: '' };
 
     // AN OPENID CONNECT PARTNER CHECKED (#930): its discovery document and

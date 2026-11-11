@@ -5376,8 +5376,7 @@ class AdminApi {
           const request = self.withAction(req, body);
           // A CREATE CLAIMS ITS NAME FIRST — see `claimForCreate()`.
           return self.runClaimed(res, request.action === 'create'
-            ? { group: String(request.group || request.displayName ||
-                              request.cn || '') }
+            ? { group: String(request.group || request.displayName || '') }
             : null, function (held) {
             const result = adminActions.groupsAction(request);
             held.settle(!!result.ok);

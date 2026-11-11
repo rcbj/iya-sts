@@ -1378,7 +1378,11 @@ is who did it.
   open. Every handler reads its own body with `parseBody(req)`, which parses
   `req.body` each time, so the one place that reaches all of them is the text
   they parse. A body that is not JSON, and one its handler owns (a streamed
-  upload), is left alone; the HTTP row names the caller either way.
+  upload), is left alone; the HTTP row names the caller either way. **It is
+  the one member an action reads that the model does not declare**, typed
+  `IyaApi.NamedActor` on the action (`types/api-handlers.d.ts`), because the
+  server sets it; the older spellings typed beside it were removed (rcbj on
+  #1579, 2026-11-11; `models/CLAUDE.md`).
 * **`common/audit.js`'s HTTP row reads `res.locals.apiCaller` first**, before
   the sign-on cookie's resolver: the credential that let the call in is the
   token.

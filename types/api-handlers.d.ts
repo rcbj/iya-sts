@@ -137,15 +137,16 @@ declare namespace IyaApi {
     MergedBody<AdminOperations[ActionsAt<AdminOperations, P>]['body']> &
     { action?: string };
 
-  // WHAT AN ACTION READS THAT NO OPERATION DECLARES (#1579), named where it
-  // is read so the checker holds every other read to the model. Each is an
-  // older spelling of a member (`user` beside `username`), a member an
-  // in-process caller adds (`actor`, `form`), or a value an in-process
-  // caller sends in another type (`multi: 'on'`). `/admin-api`'s bodies are
-  // closed, so none of them reaches an action from the API: only a direct
-  // call (a test) sends them. Typed `any`, because the model says nothing
-  // of them to check against.
-  type NotInModel<N extends string> = { [K in N]?: any };
+  // THE ONE MEMBER AN ACTION READS THAT NO OPERATION DECLARES (#1579):
+  // `actor`, which no caller sends — `/admin-api`'s bodies are closed — and
+  // `AdminApi.nameActor()` (`mgmt-api/admin_api.ts`) SETS, after the body
+  // has passed its schema, to the subject of the token the gate verified,
+  // for the audit rows an action writes (#446). It is the server's, not
+  // the caller's, which is why the model does not declare it. The older
+  // spellings once typed beside it (`IyaApi.NotInModel<…>`: `user` beside
+  // `username`, `client_id`, `relationship` and the rest) were removed
+  // with their reads, rcbj on #1579, 2026-11-11.
+  type NamedActor = { actor?: string };
 
   // A response to one or more of the Authentication API's operations, for
   // the acts `/authn-api` hands its response to (`authn/authn.ts` and the
