@@ -245,10 +245,10 @@ what to do when 389 or 88 will not bind.
 
 ## Architecture
 
-One leader process owns every listener, and a request dispatcher hands work
-from it to three worker pools. The protocol subsystems and hosted surfaces
-share one session model and one set of services, over an embedded directory
-and key material sealed in their stores. [Architecture](architecture.md) has
+One front process owns every listener, and a request dispatcher hands work
+from it to two pools of worker threads. The protocol families and hosted
+applications share one session model and one set of services, over an
+embedded directory and key material sealed in their stores. [Architecture](architecture.md) has
 the diagram and a walk through each layer.
 
 ## What it speaks
