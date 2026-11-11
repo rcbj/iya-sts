@@ -4618,6 +4618,11 @@ async function theAdminRolesRoundTrip() {
     attributes: { cn: "Operations " + subject, givenName: "Operations",
                   sn: subject, mail: subject + "@admin-api-operations.test" }
   }, "created the person a console role is granted to");
+  // Every write here is read back through its resource's own read.
+  const subjectBack = await get("/users?user=" + encodeURIComponent(subject));
+  assert.strictEqual(subjectBack.status, 200,
+    "GET /users?user=" + subject + " should read the person just created; " +
+    "it answered " + subjectBack.status);
   const granted = await ok("/rbac/grant",
     { username: subject, role: rolesAvailable[0] },
     "granted a console role");

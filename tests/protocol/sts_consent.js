@@ -657,12 +657,14 @@ async function theScreenRefusesWhatItShould() {
   const anon = await authnSignin.answerConsent(
     Object.assign({}, theirs.opened, { id: decodeURIComponent(id),
                                        cookie: "" }), "allow");
-  // IN PRODUCT A STEP IS TIED TO THE BROWSER THAT FIRST ASKED ABOUT IT
-  // (#1454, ASVS 5.0.0 14.2.1, `mode.bindsSignInSteps()`), and that check
-  // comes first: a request with no cookie is not that browser, so it is
-  // refused 400 (STS-AUTHN-0552) before the session door's 403. Either way
-  // nothing is recorded, which is asserted next.
-  const anonExpected = (await facts.isProduct(api)) ? 400 : 403;
+  // 403 IN BOTH MODES. For one day (#1633) product expected 400 here, the
+  // browser binding's refusal (#1454): the interloper's refused requests
+  // above had claimed the consent for their browser, so a request with no
+  // cookie was "another browser". That claim was the bug #1645 fixed — only
+  // the person it was asked of claims a consent — so nothing is claimed
+  // yet, the binding passes a request with no session, and the session
+  // door refuses it. Nothing is recorded either way, asserted next.
+  const anonExpected = 403;
   assert.strictEqual(anon.status, anonExpected,
     "an answer from a browser with no session belongs to nobody; got " +
     anon.status);
